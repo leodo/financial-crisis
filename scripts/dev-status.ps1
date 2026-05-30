@@ -41,3 +41,34 @@ function Get-ServiceStatus {
 
 Get-ServiceStatus -Name "fc-api" -PidFile $ApiPidFile -Port 18080 -Url "http://127.0.0.1:18080/health"
 Get-ServiceStatus -Name "web" -PidFile $WebPidFile -Port 5173 -Url "http://127.0.0.1:5173"
+
+if ((Get-NetTCPConnection -LocalPort 18080 -State Listen -ErrorAction SilentlyContinue)) {
+    try {
+        $assessment = Invoke-RestMethod -Uri "http://127.0.0.1:18080/api/assessment/current" -Method Get
+        $usdJpy = $assessment.key_indicators |
+            Where-Object { $_.indicator_id -eq "us_external_usdjpy_level" } |
+            Select-Object -First 1
+        $latestObservationAt = $assessment.runtime.latest_observation_at
+        if (-not $latestObservationAt) {
+            $latestObservationAt = "-"
+        }
+
+        Write-Host ""
+        Write-Host "API runtime summary:"
+        Write-Host ("  Data mode : {0}" -f $assessment.runtime.data_mode)
+        Write-Host ("  As of     : {0}" -f $assessment.as_of_date)
+        Write-Host ("  Latest    : {0}" -f $latestObservationAt)
+        Write-Host ("  Generated : {0}" -f $assessment.runtime.generated_at)
+
+        if ($usdJpy) {
+            Write-Host ("  USDJPY    : {0} @ {1} ({2}/{3}, {4})" -f `
+                $usdJpy.latest_value,
+                $usdJpy.latest_as_of_date,
+                $usdJpy.source_id,
+                $usdJpy.dataset_id,
+                $usdJpy.status)
+        }
+    } catch {
+        Write-Warning "API is listening, but runtime summary could not be loaded from /api/assessment/current."
+    }
+}

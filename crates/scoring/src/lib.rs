@@ -38,7 +38,11 @@ impl ScoringEngine {
         let mut by_indicator: BTreeMap<&str, Vec<&Observation>> = BTreeMap::new();
         for observation in observations
             .iter()
-            .filter(|observation| observation.entity_id == entity_id)
+            .filter(|observation| {
+                observation.entity_id == entity_id
+                    || external_proxy_entity(&observation.indicator_id)
+                        == Some(observation.entity_id.as_str())
+            })
             .filter(|observation| observation.as_of_date <= as_of_date)
         {
             by_indicator
@@ -66,8 +70,12 @@ impl ScoringEngine {
                 .collect::<Vec<_>>();
             let (score, percentile) = latest
                 .as_ref()
-                .map(|observation| {
-                    score_value(&values, observation.value, indicator.risk_direction)
+                .map(|observation| match indicator.risk_direction {
+                    RiskDirection::ManualRule => (
+                        score_manual_rule(&indicator.indicator_id, observation.value),
+                        None,
+                    ),
+                    other => score_value(&values, observation.value, other),
                 })
                 .unwrap_or((0.0, None));
             let quality_grade = latest
@@ -137,6 +145,14 @@ impl ScoringEngine {
     }
 }
 
+fn external_proxy_entity(indicator_id: &str) -> Option<&'static str> {
+    if indicator_id.starts_with("jp_") {
+        Some("jp")
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ScoringOutput {
     pub snapshot: RiskSnapshot,
@@ -155,6 +171,54 @@ pub fn score_value(history: &[f64], value: f64, direction: RiskDirection) -> (f6
         RiskDirection::ManualRule => percentile,
     };
     (score.clamp(0.0, 100.0), Some(percentile))
+}
+
+fn score_manual_rule(indicator_id: &str, value: f64) -> f64 {
+    if !value.is_finite() || value <= 0.0 {
+        return 0.0;
+    }
+
+    match indicator_id {
+        "us_event_bank_8k_count" => {
+            if value >= 5.0 {
+                92.0
+            } else if value >= 4.0 {
+                82.0
+            } else if value >= 3.0 {
+                68.0
+            } else if value >= 2.0 {
+                48.0
+            } else {
+                24.0
+            }
+        }
+        "us_event_risk_keyword_count" => {
+            if value >= 6.0 {
+                94.0
+            } else if value >= 4.0 {
+                82.0
+            } else if value >= 3.0 {
+                66.0
+            } else if value >= 2.0 {
+                48.0
+            } else {
+                28.0
+            }
+        }
+        "us_banking_filing_stress_count" => {
+            if value >= 4.0 {
+                92.0
+            } else if value >= 3.0 {
+                78.0
+            } else if value >= 2.0 {
+                60.0
+            } else {
+                34.0
+            }
+        }
+        "us_event_official_filing_severity" => value.clamp(0.0, 100.0),
+        _ => value.clamp(0.0, 100.0),
+    }
 }
 
 fn percentile_rank(history: &[f64], value: f64) -> f64 {

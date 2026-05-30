@@ -1,6 +1,6 @@
 # 文档总览
 
-本文档系统用于沉淀金融危机预警系统的设计、取舍、数据源研究和后续实现计划。
+本文档系统用于沉淀金融危机概率评估系统的设计、取舍、数据源研究和后续实现计划。
 
 ## 目录结构
 
@@ -25,6 +25,7 @@ docs/
 - [全局设计](architecture/global-design.md)
 - [本地 SQLite 历史数据总体设计](architecture/local-sqlite-historical-data-design.md)
 - [设计 TODO 总索引](roadmap/design-todo.md)
+- [危机概率评估设计 TODO](roadmap/crisis-probability-design-todo.md)
 - [SQLite 历史数据实现路线](roadmap/sqlite-historical-data-implementation-plan.md)
 
 ### 数据层
@@ -39,6 +40,10 @@ docs/
 - [数据库 Schema 设计](data/storage-schema.md)
 - [SQLite 本地存储方案](data/sqlite-local-storage-design.md)
 - [数据质量模型](data/data-quality-model.md)
+- [美国主线免费数据方案](data/us-centric-free-data-plan.md)
+- [日元套息外部风险模块设计](data/jpy-carry-risk-module-design.md)
+- [SEC EDGAR 连接器实现规格](data/sec-edgar-connector-spec.md)
+- [BOJ / USDJPY 连接器实现规格](data/boj-connector-spec.md)
 
 ### 分析层
 
@@ -46,16 +51,28 @@ docs/
 - [风险评分方法](analytics/scoring-methodology.md)
 - [风险等级设计](analytics/risk-levels.md)
 - [回测设计](analytics/backtesting-design.md)
+- [危机窗口与标签设计](analytics/horizon-label-design.md)
+- [危机概率引擎设计](analytics/probability-engine-design.md)
+- [决策支持策略设计](analytics/decision-support-policy.md)
+- [特征库设计](analytics/feature-store-design.md)
+- [概率校准设计](analytics/probability-calibration-design.md)
+- [真实回测执行设计](analytics/real-backtest-execution-design.md)
+- [历史相似阶段设计](analytics/historical-analog-design.md)
+- [Posture 阈值调优设计](analytics/posture-threshold-tuning.md)
 
 ### 产品层
 
 - [Web 面板信息架构](product/dashboard-information-architecture.md)
 - [Web 面板草图说明](product/dashboard-wireframe-notes.md)
 - [风险面板 UX 改造设计](product/dashboard-ux-redesign.md)
+- [决策面板设计](product/decision-dashboard-design.md)
+- [Assessment API Contract](product/assessment-api-contract.md)
+- [方法页设计](product/methodology-page-design.md)
 
 ### 预警、事件、研究和运维
 
 - [预警事件模型](alerts/alert-event-model.md)
+- [银行业风险事件分类设计](events/banking-event-taxonomy.md)
 - [新闻、公告和 LLM 事件分析设计](events/news-and-filing-analysis.md)
 - [研究和模型工作台设计](research/modeling-workbench.md)
 - [部署设计](ops/deployment-design.md)
@@ -70,10 +87,11 @@ docs/
 
 ## 设计原则
 
-- 先做可解释预警，再做复杂模型。
+- 先做可解释风险层，再做可校准概率层。
 - 先用免费和官方数据源验证系统闭环，再接商业实时数据。
 - 慢变量判断系统脆弱性，快变量捕捉危机触发。
 - 原始数据必须可追溯，评分结果必须可解释。
+- 概率、风险强度和决策 posture 必须明确区分。
 - Rust 优先承担后端服务、抓取、分析和任务调度，前端优先采用成熟 Web 生态。
 
 ## 实现入口

@@ -100,4 +100,7 @@ foreach ($Item in $PidFiles) {
     foreach ($Port in $Item.Ports) {
         Stop-PortListeners -Name $Item.Name -Port $Port
     }
+    if (Test-Path -LiteralPath $Item.Path) {
+        Remove-Item -LiteralPath $Item.Path -Force -ErrorAction SilentlyContinue
+    }
 }

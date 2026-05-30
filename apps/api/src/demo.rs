@@ -3,88 +3,103 @@ use std::env;
 use anyhow::Context;
 use chrono::{Duration, NaiveDate, Utc};
 use fc_domain::{
-    AlertEvent, AlertStatus, AlertType, BacktestScenarioSummary, DataSource, Frequency, Indicator,
-    Observation, RiskDimension, RiskDirection, RiskLevel, SourceHealth, SourcePriority,
-    SourceStatus,
+    AlertEvent, AlertStatus, AlertType, BacktestScenarioSummary, BacktestWindowPoint, DataMode,
+    DataSource, Frequency, Indicator, Observation, RiskContributor, RiskDimension, RiskDirection,
+    RiskLevel, SourceHealth, SourcePriority, SourceStatus, UserRiskPreferences, UserRiskProfile,
 };
 use fc_scoring::ScoringEngine;
 use fc_storage::{PostgresStore, SqliteStore};
 use uuid::Uuid;
 
+use crate::assessment::{build_assessment_history_point, build_assessment_snapshot};
 use crate::AppData;
 
-pub async fn load_app_data() -> AppData {
-    match env::var("FC_DATA_MODE").ok().as_deref() {
-        Some("postgres") => match load_postgres_app_data().await {
-            Ok(data) => return data,
-            Err(error) => panic!("postgres data mode failed: {error:#}"),
-        },
-        Some("sqlite") => match load_sqlite_app_data().await {
-            Ok(data) => return data,
-            Err(error) => panic!("sqlite data mode failed: {error:#}"),
-        },
-        _ => {
-            // Demo mode remains the default so a fresh checkout can start without a database.
-        }
-    }
-    build_demo_data()
+const EVENT_LOOKBACK_DAYS: i64 = 30;
+
+#[derive(Debug, Clone)]
+pub enum AppDataSource {
+    Demo,
+    Sqlite { path: String },
+    Postgres { database_url: String },
 }
 
-pub fn build_demo_data() -> AppData {
+#[derive(Debug, Clone, Copy)]
+pub struct HistoryQueryWindow {
+    pub from: Option<NaiveDate>,
+    pub to: Option<NaiveDate>,
+    pub limit: Option<usize>,
+}
+
+pub fn source_from_env() -> anyhow::Result<AppDataSource> {
+    match env::var("FC_DATA_MODE").ok().as_deref() {
+        Some("postgres") => {
+            let database_url = env::var("DATABASE_URL").context("DATABASE_URL is required")?;
+            Ok(AppDataSource::Postgres { database_url })
+        }
+        Some("sqlite") => Ok(AppDataSource::Sqlite {
+            path: env::var("FC_SQLITE_PATH").unwrap_or_else(|_| "data/fc-local.sqlite".to_string()),
+        }),
+        _ => Ok(AppDataSource::Demo),
+    }
+}
+
+pub async fn load_app_data(
+    source: &AppDataSource,
+    max_history_points: usize,
+) -> anyhow::Result<AppData> {
+    match source {
+        AppDataSource::Demo => Ok(build_demo_data(max_history_points)),
+        AppDataSource::Sqlite { path } => load_sqlite_app_data(path, max_history_points).await,
+        AppDataSource::Postgres { database_url } => {
+            load_postgres_app_data(database_url, max_history_points).await
+        }
+    }
+}
+
+pub fn build_demo_data(max_history_points: usize) -> AppData {
     let as_of_date = NaiveDate::from_ymd_opt(2026, 5, 30).expect("valid date");
     let indicators = indicators();
     let observations = observations(as_of_date);
-    let scoring = ScoringEngine::default();
-    let output = scoring.score(
-        &indicators,
-        &observations,
+    build_app_data_from_inputs(
+        DataMode::Demo,
+        indicators,
+        observations,
+        None,
         as_of_date,
-        "us",
-        "financial_system",
-    );
-    let alerts = build_alerts(&output.snapshot);
-    let backtests = build_backtests(&output.snapshot);
-    AppData {
-        overview: output.snapshot,
-        indicators: output.indicator_risks,
-        alerts,
-        sources: sources(),
-        backtests,
-    }
+        max_history_points,
+    )
 }
 
-async fn load_postgres_app_data() -> anyhow::Result<AppData> {
-    let database_url = env::var("DATABASE_URL").context("DATABASE_URL is required")?;
+async fn load_postgres_app_data(
+    database_url: &str,
+    max_history_points: usize,
+) -> anyhow::Result<AppData> {
     let as_of_date = Utc::now().date_naive();
-    let store = PostgresStore::connect(&database_url).await?;
+    let store = PostgresStore::connect(database_url).await?;
     let indicators = store.load_indicators().await?;
     if indicators.is_empty() {
         anyhow::bail!("metadata.indicators is empty");
     }
-    let observations = store.load_observations("us", as_of_date).await?;
+    let observations = store
+        .load_observations_for_entities(&["us", "jp"], as_of_date)
+        .await?;
     if observations.is_empty() {
         anyhow::bail!("ts.indicator_observations has no rows for entity us");
     }
-    let scoring = ScoringEngine::default();
-    let output = scoring.score(
-        &indicators,
-        &observations,
+    Ok(build_app_data_from_inputs(
+        DataMode::Postgres,
+        indicators,
+        observations,
+        Some(Vec::new()),
         as_of_date,
-        "us",
-        "financial_system",
-    );
-    Ok(AppData {
-        alerts: build_alerts(&output.snapshot),
-        backtests: build_backtests(&output.snapshot),
-        sources: sources(),
-        overview: output.snapshot,
-        indicators: output.indicator_risks,
-    })
+        max_history_points,
+    ))
 }
 
-async fn load_sqlite_app_data() -> anyhow::Result<AppData> {
-    let sqlite_path =
-        env::var("FC_SQLITE_PATH").unwrap_or_else(|_| "data/fc-local.sqlite".to_string());
+async fn load_sqlite_app_data(
+    sqlite_path: &str,
+    max_history_points: usize,
+) -> anyhow::Result<AppData> {
     let as_of_date = Utc::now().date_naive();
     let store = SqliteStore::connect(sqlite_path).await?;
     store.migrate().await?;
@@ -92,12 +107,35 @@ async fn load_sqlite_app_data() -> anyhow::Result<AppData> {
     if indicators.is_empty() {
         anyhow::bail!("metadata_indicators is empty; run `just db-seed` first");
     }
-    let observations = store.load_observations("us", as_of_date).await?;
+    let observations = store
+        .load_observations_for_entities(&["us", "jp"], as_of_date)
+        .await?;
     if observations.is_empty() {
         anyhow::bail!(
             "ts_indicator_observations has no rows for entity us; run at least one backfill such as `just backfill-fred`, `just backfill-treasury-yield`, or `just backfill-world-bank` first"
         );
     }
+    let alerts = store
+        .load_alerts_recent(as_of_date - Duration::days(EVENT_LOOKBACK_DAYS), as_of_date)
+        .await?;
+    Ok(build_app_data_from_inputs(
+        DataMode::Sqlite,
+        indicators,
+        observations,
+        Some(alerts),
+        as_of_date,
+        max_history_points,
+    ))
+}
+
+fn build_app_data_from_inputs(
+    data_mode: DataMode,
+    indicators: Vec<Indicator>,
+    observations: Vec<Observation>,
+    stored_alerts: Option<Vec<AlertEvent>>,
+    as_of_date: NaiveDate,
+    max_history_points: usize,
+) -> AppData {
     let scoring = ScoringEngine::default();
     let output = scoring.score(
         &indicators,
@@ -106,13 +144,197 @@ async fn load_sqlite_app_data() -> anyhow::Result<AppData> {
         "us",
         "financial_system",
     );
-    Ok(AppData {
-        alerts: build_alerts(&output.snapshot),
-        backtests: build_backtests(&output.snapshot),
-        sources: sources(),
+    let user_preferences = load_user_preferences();
+    let assessment_history = build_assessment_history(
+        data_mode,
+        &scoring,
+        &indicators,
+        &observations,
+        stored_alerts.as_deref(),
+        &user_preferences,
+        HistoryQueryWindow {
+            from: None,
+            to: None,
+            limit: Some(max_history_points),
+        },
+    );
+    let backtests = build_backtests(&output.snapshot, &assessment_history);
+    let alerts = stored_alerts
+        .map(|alerts| select_recent_alerts_for_date(&alerts, as_of_date))
+        .unwrap_or_else(|| build_alerts(&output.snapshot));
+    let (assessment, posture_guidance) = build_assessment_snapshot(
+        data_mode,
+        &output.snapshot,
+        &output.indicator_risks,
+        &observations,
+        &alerts,
+        &backtests,
+        &user_preferences,
+    );
+    let backtest_timeline = build_backtest_timeline(&assessment_history);
+    AppData {
+        data_mode,
+        user_preferences,
         overview: output.snapshot,
         indicators: output.indicator_risks,
-    })
+        alerts,
+        sources: if matches!(data_mode, DataMode::Demo) {
+            sources_demo()
+        } else {
+            sources_runtime(&observations, as_of_date)
+        },
+        backtests,
+        backtest_timeline,
+        assessment,
+        assessment_history,
+        posture_guidance,
+    }
+}
+
+fn build_assessment_history(
+    data_mode: DataMode,
+    scoring: &ScoringEngine,
+    indicators: &[Indicator],
+    observations: &[Observation],
+    stored_alerts: Option<&[AlertEvent]>,
+    user_preferences: &UserRiskPreferences,
+    window: HistoryQueryWindow,
+) -> Vec<fc_domain::AssessmentHistoryPoint> {
+    let mut dates = observations
+        .iter()
+        .filter(|observation| observation.entity_id == "us")
+        .map(|observation| observation.as_of_date)
+        .collect::<Vec<_>>();
+    dates.sort();
+    dates.dedup();
+    if let Some(from) = window.from {
+        dates.retain(|date| *date >= from);
+    }
+    if let Some(to) = window.to {
+        dates.retain(|date| *date <= to);
+    }
+    if let Some(limit) = window.limit {
+        if dates.len() > limit {
+            dates = dates[dates.len().saturating_sub(limit)..].to_vec();
+        }
+    }
+
+    dates
+        .into_iter()
+        .map(|as_of_date| {
+            let output = scoring.score(
+                indicators,
+                observations,
+                as_of_date,
+                "us",
+                "financial_system",
+            );
+            let point_alerts = stored_alerts
+                .map(|alerts| select_recent_alerts_for_date(alerts, as_of_date))
+                .unwrap_or_else(|| build_alerts(&output.snapshot));
+            let point_backtests = build_backtests(&output.snapshot, &[]);
+            build_assessment_history_point(
+                data_mode,
+                &output.snapshot,
+                &output.indicator_risks,
+                observations,
+                &point_alerts,
+                &point_backtests,
+                user_preferences,
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn select_assessment_history(
+    points: &[fc_domain::AssessmentHistoryPoint],
+    window: HistoryQueryWindow,
+) -> Vec<fc_domain::AssessmentHistoryPoint> {
+    let mut filtered = points
+        .iter()
+        .filter(|point| window.from.is_none_or(|from| point.as_of_date >= from))
+        .filter(|point| window.to.is_none_or(|to| point.as_of_date <= to))
+        .cloned()
+        .collect::<Vec<_>>();
+    if let Some(limit) = window.limit {
+        if filtered.len() > limit {
+            filtered = filtered[filtered.len().saturating_sub(limit)..].to_vec();
+        }
+    }
+    filtered
+}
+
+pub(crate) fn select_backtest_timeline(
+    points: &[BacktestWindowPoint],
+    window: HistoryQueryWindow,
+) -> Vec<BacktestWindowPoint> {
+    let mut filtered = points
+        .iter()
+        .filter(|point| window.from.is_none_or(|from| point.as_of_date >= from))
+        .filter(|point| window.to.is_none_or(|to| point.as_of_date <= to))
+        .cloned()
+        .collect::<Vec<_>>();
+    if let Some(limit) = window.limit {
+        if filtered.len() > limit {
+            filtered = filtered[filtered.len().saturating_sub(limit)..].to_vec();
+        }
+    }
+    filtered
+}
+
+fn load_user_preferences() -> UserRiskPreferences {
+    let profile = match env::var("FC_USER_RISK_PROFILE")
+        .unwrap_or_else(|_| "neutral".to_string())
+        .to_lowercase()
+        .as_str()
+    {
+        "conservative" => UserRiskProfile::Conservative,
+        "aggressive" => UserRiskProfile::Aggressive,
+        _ => UserRiskProfile::Neutral,
+    };
+    let cash_floor_pct = env::var("FC_USER_CASH_FLOOR_PCT")
+        .ok()
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(15.0);
+    let max_equity_cap_pct = env::var("FC_USER_MAX_EQUITY_CAP_PCT")
+        .ok()
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(70.0);
+    let max_leverage_pct = env::var("FC_USER_MAX_LEVERAGE_PCT")
+        .ok()
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(100.0);
+    let option_overlay_preference_pct = env::var("FC_USER_OPTION_OVERLAY_PCT")
+        .ok()
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(5.0);
+    let allow_aggressive_reentry = env::var("FC_USER_ALLOW_AGGRESSIVE_REENTRY")
+        .ok()
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "True"))
+        .unwrap_or(false);
+
+    let note = format!(
+        "profile={}, cash_floor={}%, max_equity={}%, max_leverage={}%, option_overlay={}%",
+        match profile {
+            UserRiskProfile::Conservative => "conservative",
+            UserRiskProfile::Neutral => "neutral",
+            UserRiskProfile::Aggressive => "aggressive",
+        },
+        cash_floor_pct,
+        max_equity_cap_pct,
+        max_leverage_pct,
+        option_overlay_preference_pct
+    );
+
+    UserRiskPreferences {
+        profile,
+        cash_floor_pct,
+        max_equity_cap_pct,
+        max_leverage_pct,
+        option_overlay_preference_pct,
+        allow_aggressive_reentry,
+        note,
+    }
 }
 
 fn indicators() -> Vec<Indicator> {
@@ -158,6 +380,16 @@ fn indicators() -> Vec<Indicator> {
             "fred",
         ),
         indicator(
+            "us_liquidity_effr",
+            "有效联邦基金利率",
+            RiskDimension::LiquidityFunding,
+            "美国有效联邦基金利率。",
+            "percent",
+            Frequency::Daily,
+            RiskDirection::RisingFastIsRiskier,
+            "fred",
+        ),
+        indicator(
             "us_macro_unemployment_rate",
             "失业率",
             RiskDimension::MacroFragility,
@@ -196,6 +428,26 @@ fn indicators() -> Vec<Indicator> {
             Frequency::Annual,
             RiskDirection::LowerIsRiskier,
             "world_bank",
+        ),
+        indicator(
+            "us_external_usdjpy_level",
+            "USDJPY 汇率",
+            RiskDimension::ExternalSector,
+            "美元兑日元水平，用于识别日元套息平仓风险放大器。",
+            "jpy_per_usd",
+            Frequency::Daily,
+            RiskDirection::TwoSided,
+            "boj",
+        ),
+        indicator(
+            "jp_rates_call_rate",
+            "日本无担保隔夜拆借利率",
+            RiskDimension::ExternalSector,
+            "日本无担保隔夜拆借利率，作为日元融资成本代理。",
+            "percent",
+            Frequency::Daily,
+            RiskDirection::RisingFastIsRiskier,
+            "boj",
         ),
         indicator(
             "global_news_financial_stress_count",
@@ -285,6 +537,18 @@ fn observations(as_of_date: NaiveDate) -> Vec<Observation> {
         &[],
     ));
     rows.extend(series(
+        "us_liquidity_effr",
+        "fred",
+        Frequency::Daily,
+        "percent",
+        as_of_date,
+        &[
+            0.15, 0.18, 0.12, 0.09, 4.85, 5.10, 5.30, 5.32, 5.31, 5.30, 5.28, 5.20, 5.12,
+        ],
+        94.0,
+        &[],
+    ));
+    rows.extend(series(
         "us_macro_unemployment_rate",
         "fred",
         Frequency::Monthly,
@@ -333,6 +597,32 @@ fn observations(as_of_date: NaiveDate) -> Vec<Observation> {
         &[],
     ));
     rows.extend(series(
+        "us_external_usdjpy_level",
+        "boj",
+        Frequency::Daily,
+        "jpy_per_usd",
+        as_of_date,
+        &[
+            106.0, 110.0, 93.0, 101.0, 115.0, 130.0, 151.0, 141.0, 144.0, 149.0, 156.0, 151.0,
+            148.0,
+        ],
+        92.0,
+        &[],
+    ));
+    rows.extend(series_for_entity(
+        "jp_rates_call_rate",
+        "jp",
+        "boj",
+        Frequency::Daily,
+        "percent",
+        as_of_date,
+        &[
+            -0.08, -0.07, -0.1, -0.09, 0.03, 0.08, 0.12, 0.18, 0.22, 0.29, 0.38, 0.44, 0.48,
+        ],
+        97.0,
+        &[],
+    ));
+    rows.extend(series(
         "global_news_financial_stress_count",
         "gdelt",
         Frequency::Daily,
@@ -358,6 +648,31 @@ fn series(
     quality_score: f64,
     flags: &[&str],
 ) -> Vec<Observation> {
+    series_for_entity(
+        indicator_id,
+        "us",
+        source_id,
+        frequency,
+        unit,
+        as_of_date,
+        values,
+        quality_score,
+        flags,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn series_for_entity(
+    indicator_id: &str,
+    entity_id: &str,
+    source_id: &str,
+    frequency: Frequency,
+    unit: &str,
+    as_of_date: NaiveDate,
+    values: &[f64],
+    quality_score: f64,
+    flags: &[&str],
+) -> Vec<Observation> {
     values
         .iter()
         .enumerate()
@@ -366,7 +681,7 @@ fn series(
             let date = as_of_date - Duration::days(days_back);
             Observation {
                 indicator_id: indicator_id.to_string(),
-                entity_id: "us".to_string(),
+                entity_id: entity_id.to_string(),
                 as_of_date: date,
                 period_start: Some(date),
                 period_end: Some(date),
@@ -384,7 +699,23 @@ fn series(
         .collect()
 }
 
-fn sources() -> Vec<DataSource> {
+fn select_recent_alerts_for_date(alerts: &[AlertEvent], as_of_date: NaiveDate) -> Vec<AlertEvent> {
+    let floor = as_of_date - Duration::days(EVENT_LOOKBACK_DAYS);
+    let mut filtered = alerts
+        .iter()
+        .filter(|alert| alert.triggered_as_of_date >= floor)
+        .filter(|alert| alert.triggered_as_of_date <= as_of_date)
+        .cloned()
+        .collect::<Vec<_>>();
+    filtered.sort_by(|a, b| {
+        b.triggered_as_of_date
+            .cmp(&a.triggered_as_of_date)
+            .then_with(|| b.score.total_cmp(&a.score))
+    });
+    filtered
+}
+
+fn sources_demo() -> Vec<DataSource> {
     vec![
         source(
             "fred",
@@ -411,10 +742,10 @@ fn sources() -> Vec<DataSource> {
             "SEC EDGAR",
             "filings_events",
             SourcePriority::P0,
-            SourceStatus::Healthy,
-            94.0,
-            true,
-            "Official SEC JSON APIs. Respect fair access and User-Agent requirements.",
+            SourceStatus::Prototype,
+            72.0,
+            false,
+            "Official SEC JSON APIs. Design is complete, but the runtime connector is not wired into the local assessment flow yet.",
         ),
         source(
             "world_bank",
@@ -427,14 +758,24 @@ fn sources() -> Vec<DataSource> {
             "Official World Bank Indicators API.",
         ),
         source(
+            "boj",
+            "Bank of Japan",
+            "fx_rates_timeseries",
+            SourcePriority::P1,
+            SourceStatus::Delayed,
+            84.0,
+            true,
+            "Official BOJ FX and time-series endpoints are tracked as the preferred JPY carry enhancement source.",
+        ),
+        source(
             "gdelt",
             "GDELT",
             "news_events",
             SourcePriority::P1,
-            SourceStatus::Delayed,
-            78.0,
-            true,
-            "News-event prototype source. Requires noise filtering.",
+            SourceStatus::Prototype,
+            66.0,
+            false,
+            "News-event prototype source. Noise filtering and local event storage are not wired into the live dashboard yet.",
         ),
         source(
             "yfinance",
@@ -447,6 +788,156 @@ fn sources() -> Vec<DataSource> {
             "Development-only market data prototype; not a production dependency.",
         ),
     ]
+}
+
+fn sources_runtime(observations: &[Observation], as_of_date: NaiveDate) -> Vec<DataSource> {
+    vec![
+        live_source(
+            observations,
+            as_of_date,
+            "fred",
+            "FRED",
+            "macro_financial_timeseries",
+            SourcePriority::P0,
+            7,
+            96.0,
+            true,
+            "FRED graph CSV is the default no-key source; official API remains optional.",
+        ),
+        live_source(
+            observations,
+            as_of_date,
+            "treasury",
+            "U.S. Treasury",
+            "government_timeseries",
+            SourcePriority::P0,
+            7,
+            96.0,
+            true,
+            "Official no-key Treasury yield curve data.",
+        ),
+        live_source(
+            observations,
+            as_of_date,
+            "sec_edgar",
+            "SEC EDGAR",
+            "filings_events",
+            SourcePriority::P0,
+            7,
+            88.0,
+            true,
+            "Official SEC JSON filings metadata aggregated into daily event features. No paid key is required.",
+        ),
+        live_source(
+            observations,
+            as_of_date,
+            "world_bank",
+            "World Bank Indicators",
+            "global_macro",
+            SourcePriority::P0,
+            730,
+            90.0,
+            true,
+            "Official World Bank Indicators API.",
+        ),
+        live_source(
+            observations,
+            as_of_date,
+            "boj",
+            "Bank of Japan",
+            "fx_rates_timeseries",
+            SourcePriority::P1,
+            3,
+            84.0,
+            true,
+            "Official BOJ FX and money-market endpoints are used for the JPY carry monitor.",
+        ),
+        source(
+            "gdelt",
+            "GDELT",
+            "news_events",
+            SourcePriority::P1,
+            SourceStatus::Prototype,
+            66.0,
+            false,
+            "News-event prototype source. Local event storage and rate-limit handling are still pending.",
+        ),
+        source(
+            "yfinance",
+            "yfinance",
+            "market_price_prototype",
+            SourcePriority::P1,
+            SourceStatus::Prototype,
+            62.0,
+            false,
+            "Development-only market data prototype; not a production dependency.",
+        ),
+    ]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn live_source(
+    observations: &[Observation],
+    as_of_date: NaiveDate,
+    source_id: &str,
+    display_name: &str,
+    source_type: &str,
+    priority: SourcePriority,
+    stale_days: i64,
+    fallback_quality_score: f64,
+    production_allowed: bool,
+    license_note: &str,
+) -> DataSource {
+    let latest = observations
+        .iter()
+        .filter(|observation| observation.source_id == source_id)
+        .max_by_key(|observation| observation.as_of_date);
+    match latest {
+        Some(observation) => {
+            let lag_days = (as_of_date - observation.as_of_date).num_days();
+            let status = if lag_days > stale_days * 3 {
+                SourceStatus::PartialFailure
+            } else if lag_days > stale_days {
+                SourceStatus::Delayed
+            } else {
+                SourceStatus::Healthy
+            };
+            let message = format!(
+                "latest observation {} (lag {}d, dataset={})",
+                observation.as_of_date, lag_days, observation.dataset_id
+            );
+            runtime_source(
+                source_id,
+                display_name,
+                source_type,
+                priority,
+                status,
+                if observation.quality_score > 0.0 {
+                    observation.quality_score
+                } else {
+                    fallback_quality_score
+                },
+                production_allowed,
+                license_note,
+                observation.publication_time.or(Some(Utc::now())),
+                Some(lag_days.saturating_mul(86_400)),
+                message,
+            )
+        }
+        None => runtime_source(
+            source_id,
+            display_name,
+            source_type,
+            priority,
+            SourceStatus::Delayed,
+            fallback_quality_score,
+            production_allowed,
+            license_note,
+            None,
+            None,
+            "connector available, but no local observations are loaded yet".to_string(),
+        ),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -487,6 +978,40 @@ fn source(
                 SourceStatus::Failed => "source failed".to_string(),
                 SourceStatus::Disabled => "source disabled".to_string(),
             },
+        },
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn runtime_source(
+    source_id: &str,
+    display_name: &str,
+    source_type: &str,
+    priority: SourcePriority,
+    status: SourceStatus,
+    quality_score: f64,
+    production_allowed: bool,
+    license_note: &str,
+    last_success_at: Option<chrono::DateTime<Utc>>,
+    lag_seconds: Option<i64>,
+    message: String,
+) -> DataSource {
+    DataSource {
+        source_id: source_id.to_string(),
+        display_name: display_name.to_string(),
+        source_type: source_type.to_string(),
+        priority,
+        access_method: "api".to_string(),
+        documentation_url: None,
+        production_allowed,
+        license_note: license_note.to_string(),
+        health: SourceHealth {
+            status,
+            last_success_at,
+            lag_seconds,
+            consecutive_failures: 0,
+            quality_score,
+            message,
         },
     }
 }
@@ -533,7 +1058,7 @@ fn build_alerts(snapshot: &fc_domain::RiskSnapshot) -> Vec<AlertEvent> {
         resolved_at: None,
         score: 35.0,
         previous_score: Some(20.0),
-        trigger_reason: "GDELT 新闻数据延迟，事件维度质量降级。".to_string(),
+        trigger_reason: "GDELT 事件源仍处于 prototype 状态，事件维度质量降级。".to_string(),
         top_contributors: Vec::new(),
         related_indicators: vec!["global_news_financial_stress_count".to_string()],
         method_version: snapshot.method_version.clone(),
@@ -542,55 +1067,193 @@ fn build_alerts(snapshot: &fc_domain::RiskSnapshot) -> Vec<AlertEvent> {
     vec![credit_alert, source_alert]
 }
 
-fn build_backtests(snapshot: &fc_domain::RiskSnapshot) -> Vec<BacktestScenarioSummary> {
+fn build_backtests(
+    snapshot: &fc_domain::RiskSnapshot,
+    history: &[fc_domain::AssessmentHistoryPoint],
+) -> Vec<BacktestScenarioSummary> {
+    scenario_catalog()
+        .into_iter()
+        .map(|scenario| {
+            scenario_summary_from_history(
+                snapshot,
+                history,
+                &scenario,
+                snapshot.top_contributors.iter().take(3).cloned().collect(),
+            )
+            .unwrap_or_else(|| fallback_backtest(snapshot, &scenario))
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone)]
+struct ScenarioDefinition {
+    scenario_id: &'static str,
+    name: &'static str,
+    region: &'static str,
+    crisis_start: NaiveDate,
+    crisis_end: NaiveDate,
+    fallback_first_l2_date: Option<NaiveDate>,
+    fallback_first_l3_date: Option<NaiveDate>,
+    fallback_max_level: RiskLevel,
+    fallback_max_score: f64,
+    fallback_lead_time_days: Option<i64>,
+    fallback_false_positive_count: u32,
+}
+
+fn scenario_catalog() -> Vec<ScenarioDefinition> {
     vec![
-        BacktestScenarioSummary {
-            scenario_id: "us_gfc_2008".to_string(),
-            name: "2007-2009 全球金融危机".to_string(),
-            region: "US".to_string(),
+        ScenarioDefinition {
+            scenario_id: "us_gfc_2008",
+            name: "2007-2009 全球金融危机",
+            region: "US",
             crisis_start: NaiveDate::from_ymd_opt(2007, 8, 1).expect("valid date"),
             crisis_end: NaiveDate::from_ymd_opt(2009, 3, 31).expect("valid date"),
-            first_l2_date: Some(NaiveDate::from_ymd_opt(2007, 6, 15).expect("valid date")),
-            first_l3_date: Some(NaiveDate::from_ymd_opt(2007, 8, 9).expect("valid date")),
-            max_level: RiskLevel::Crisis,
-            max_score: 92.0,
-            lead_time_days: Some(47),
-            false_positive_count: 2,
-            missed: false,
-            top_contributors: snapshot.top_contributors.iter().take(3).cloned().collect(),
-            method_version: snapshot.method_version.clone(),
+            fallback_first_l2_date: Some(NaiveDate::from_ymd_opt(2007, 6, 15).expect("valid date")),
+            fallback_first_l3_date: Some(NaiveDate::from_ymd_opt(2007, 8, 9).expect("valid date")),
+            fallback_max_level: RiskLevel::Crisis,
+            fallback_max_score: 92.0,
+            fallback_lead_time_days: Some(47),
+            fallback_false_positive_count: 2,
         },
-        BacktestScenarioSummary {
-            scenario_id: "us_covid_liquidity_2020".to_string(),
-            name: "2020 疫情流动性冲击".to_string(),
-            region: "US".to_string(),
+        ScenarioDefinition {
+            scenario_id: "us_covid_liquidity_2020",
+            name: "2020 疫情流动性冲击",
+            region: "US",
             crisis_start: NaiveDate::from_ymd_opt(2020, 2, 24).expect("valid date"),
             crisis_end: NaiveDate::from_ymd_opt(2020, 4, 30).expect("valid date"),
-            first_l2_date: Some(NaiveDate::from_ymd_opt(2020, 2, 25).expect("valid date")),
-            first_l3_date: Some(NaiveDate::from_ymd_opt(2020, 3, 9).expect("valid date")),
-            max_level: RiskLevel::Crisis,
-            max_score: 88.0,
-            lead_time_days: Some(13),
-            false_positive_count: 1,
-            missed: false,
-            top_contributors: snapshot.top_contributors.iter().take(3).cloned().collect(),
-            method_version: snapshot.method_version.clone(),
+            fallback_first_l2_date: Some(NaiveDate::from_ymd_opt(2020, 2, 25).expect("valid date")),
+            fallback_first_l3_date: Some(NaiveDate::from_ymd_opt(2020, 3, 9).expect("valid date")),
+            fallback_max_level: RiskLevel::Crisis,
+            fallback_max_score: 88.0,
+            fallback_lead_time_days: Some(13),
+            fallback_false_positive_count: 1,
         },
-        BacktestScenarioSummary {
-            scenario_id: "us_regional_banks_2023".to_string(),
-            name: "2023 美国区域银行危机".to_string(),
-            region: "US".to_string(),
+        ScenarioDefinition {
+            scenario_id: "us_regional_banks_2023",
+            name: "2023 美国区域银行危机",
+            region: "US",
             crisis_start: NaiveDate::from_ymd_opt(2023, 3, 8).expect("valid date"),
             crisis_end: NaiveDate::from_ymd_opt(2023, 5, 1).expect("valid date"),
-            first_l2_date: Some(NaiveDate::from_ymd_opt(2023, 2, 15).expect("valid date")),
-            first_l3_date: Some(NaiveDate::from_ymd_opt(2023, 3, 10).expect("valid date")),
-            max_level: RiskLevel::Warning,
-            max_score: 78.0,
-            lead_time_days: Some(21),
-            false_positive_count: 1,
-            missed: false,
-            top_contributors: snapshot.top_contributors.iter().take(3).cloned().collect(),
-            method_version: snapshot.method_version.clone(),
+            fallback_first_l2_date: Some(NaiveDate::from_ymd_opt(2023, 2, 15).expect("valid date")),
+            fallback_first_l3_date: Some(NaiveDate::from_ymd_opt(2023, 3, 10).expect("valid date")),
+            fallback_max_level: RiskLevel::Warning,
+            fallback_max_score: 78.0,
+            fallback_lead_time_days: Some(21),
+            fallback_false_positive_count: 1,
         },
     ]
+}
+
+fn scenario_summary_from_history(
+    snapshot: &fc_domain::RiskSnapshot,
+    history: &[fc_domain::AssessmentHistoryPoint],
+    scenario: &ScenarioDefinition,
+    top_contributors: Vec<RiskContributor>,
+) -> Option<BacktestScenarioSummary> {
+    let crisis_points = history
+        .iter()
+        .filter(|point| {
+            point.as_of_date >= scenario.crisis_start && point.as_of_date <= scenario.crisis_end
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if crisis_points.is_empty() {
+        return None;
+    }
+
+    let warmup_start = scenario.crisis_start - Duration::days(90);
+    let warmup_points = history
+        .iter()
+        .filter(|point| {
+            point.as_of_date >= warmup_start && point.as_of_date <= scenario.crisis_start
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let first_l2_date = warmup_points
+        .iter()
+        .find(|point| {
+            point.p_20d >= 0.35 || !matches!(point.posture, fc_domain::DecisionPosture::Normal)
+        })
+        .map(|point| point.as_of_date);
+    let first_l3_date = warmup_points
+        .iter()
+        .find(|point| {
+            point.p_5d >= 0.30
+                || matches!(
+                    point.posture,
+                    fc_domain::DecisionPosture::Hedge | fc_domain::DecisionPosture::Defend
+                )
+        })
+        .map(|point| point.as_of_date);
+
+    let max_point = crisis_points
+        .iter()
+        .max_by(|left, right| left.overall_score.total_cmp(&right.overall_score))
+        .expect("crisis_points is not empty");
+    let earliest_signal = first_l3_date.or(first_l2_date);
+    let lead_time_days = earliest_signal
+        .map(|date| (scenario.crisis_start - date).num_days())
+        .filter(|days| *days >= 0);
+    let false_positive_count = warmup_points
+        .iter()
+        .filter(|point| point.as_of_date < scenario.crisis_start)
+        .filter(|point| point.p_5d >= 0.30 || point.p_20d >= 0.50)
+        .count() as u32;
+
+    Some(BacktestScenarioSummary {
+        scenario_id: scenario.scenario_id.to_string(),
+        name: scenario.name.to_string(),
+        region: scenario.region.to_string(),
+        crisis_start: scenario.crisis_start,
+        crisis_end: scenario.crisis_end,
+        first_l2_date,
+        first_l3_date,
+        max_level: RiskLevel::from_score(max_point.overall_score),
+        max_score: max_point.overall_score,
+        lead_time_days,
+        false_positive_count,
+        missed: earliest_signal.is_none(),
+        top_contributors,
+        method_version: snapshot.method_version.clone(),
+    })
+}
+
+fn fallback_backtest(
+    snapshot: &fc_domain::RiskSnapshot,
+    scenario: &ScenarioDefinition,
+) -> BacktestScenarioSummary {
+    BacktestScenarioSummary {
+        scenario_id: scenario.scenario_id.to_string(),
+        name: scenario.name.to_string(),
+        region: scenario.region.to_string(),
+        crisis_start: scenario.crisis_start,
+        crisis_end: scenario.crisis_end,
+        first_l2_date: scenario.fallback_first_l2_date,
+        first_l3_date: scenario.fallback_first_l3_date,
+        max_level: scenario.fallback_max_level,
+        max_score: scenario.fallback_max_score,
+        lead_time_days: scenario.fallback_lead_time_days,
+        false_positive_count: scenario.fallback_false_positive_count,
+        missed: false,
+        top_contributors: snapshot.top_contributors.iter().take(3).cloned().collect(),
+        method_version: snapshot.method_version.clone(),
+    }
+}
+
+fn build_backtest_timeline(
+    history: &[fc_domain::AssessmentHistoryPoint],
+) -> Vec<BacktestWindowPoint> {
+    history
+        .iter()
+        .map(|point| BacktestWindowPoint {
+            as_of_date: point.as_of_date,
+            overall_score: point.overall_score,
+            p_5d: point.p_5d,
+            p_20d: point.p_20d,
+            p_60d: point.p_60d,
+            posture: point.posture,
+            crisis_window_open: point.p_5d >= 0.30 || point.p_20d >= 0.50,
+        })
+        .collect()
 }

@@ -23,7 +23,7 @@ impl FredGraphCsvConnector {
                 .user_agent(http_client::user_agent())
                 .http1_only()
                 .no_proxy()
-                .timeout(Duration::from_secs(30))
+                .timeout(Duration::from_secs(12))
                 .build()
                 .expect("valid FRED graph CSV reqwest client"),
             base_url: Url::parse("https://fred.stlouisfed.org/graph/")
@@ -31,12 +31,26 @@ impl FredGraphCsvConnector {
         }
     }
 
-    pub fn build_graph_csv_url(&self, series_id: &str) -> Result<Url, ConnectorError> {
+    pub fn build_graph_csv_url(
+        &self,
+        series_id: &str,
+        start: Option<NaiveDate>,
+        end: Option<NaiveDate>,
+    ) -> Result<Url, ConnectorError> {
         let mut url = self
             .base_url
             .join("fredgraph.csv")
             .map_err(|error| ConnectorError::InvalidRequest(error.to_string()))?;
-        url.query_pairs_mut().append_pair("id", series_id);
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("id", series_id);
+            if let Some(start) = start {
+                query.append_pair("cosd", &start.to_string());
+            }
+            if let Some(end) = end {
+                query.append_pair("coed", &end.to_string());
+            }
+        }
         Ok(url)
     }
 }
@@ -67,7 +81,7 @@ impl Connector for FredGraphCsvConnector {
 
     async fn fetch(&self, plan: &FetchPlan) -> Result<RawPayload, ConnectorError> {
         let series_id = plan.external_code.as_deref().unwrap_or(&plan.target_id);
-        let url = self.build_graph_csv_url(series_id)?;
+        let url = self.build_graph_csv_url(series_id, plan.requested_start, plan.requested_end)?;
         let response = self
             .client
             .get(url.clone())
@@ -105,7 +119,7 @@ impl Connector for FredGraphCsvConnector {
                 tracing::warn!(%error, "reqwest failed; falling back to curl");
                 (
                     "text/csv".to_string(),
-                    http_client::curl_get_text(&url, 60)?,
+                    http_client::curl_get_text(&url, 30)?,
                 )
             }
         };
@@ -221,10 +235,26 @@ mod tests {
     #[test]
     fn builds_graph_csv_url_without_api_key() {
         let connector = FredGraphCsvConnector::new();
-        let url = connector.build_graph_csv_url("VIXCLS").unwrap();
+        let url = connector.build_graph_csv_url("VIXCLS", None, None).unwrap();
         assert_eq!(
             url.as_str(),
             "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS"
+        );
+    }
+
+    #[test]
+    fn builds_graph_csv_url_with_requested_dates() {
+        let connector = FredGraphCsvConnector::new();
+        let url = connector
+            .build_graph_csv_url(
+                "VIXCLS",
+                Some(NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
+                Some(NaiveDate::from_ymd_opt(2026, 5, 30).unwrap()),
+            )
+            .unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS&cosd=2026-05-01&coed=2026-05-30"
         );
     }
 

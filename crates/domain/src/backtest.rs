@@ -1,7 +1,25 @@
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{RiskContributor, RiskLevel};
+use crate::{DataMode, RiskContributor, RiskLevel};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BacktestRunRecord {
+    pub run_id: String,
+    pub entity_id: String,
+    pub market_scope: String,
+    pub data_mode: DataMode,
+    pub point_in_time_mode: String,
+    pub status: String,
+    pub scenario_scope: Option<String>,
+    pub from_date: NaiveDate,
+    pub to_date: NaiveDate,
+    pub history_points: u32,
+    pub scenario_summary_count: u32,
+    pub method_version: String,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: DateTime<Utc>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BacktestScenarioSummary {
@@ -19,4 +37,15 @@ pub struct BacktestScenarioSummary {
     pub missed: bool,
     pub top_contributors: Vec<RiskContributor>,
     pub method_version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BacktestWindowPoint {
+    pub as_of_date: NaiveDate,
+    pub overall_score: f64,
+    pub p_5d: f64,
+    pub p_20d: f64,
+    pub p_60d: f64,
+    pub posture: crate::DecisionPosture,
+    pub crisis_window_open: bool,
 }

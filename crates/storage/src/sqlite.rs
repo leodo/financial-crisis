@@ -1,7 +1,10 @@
 use std::{fs, path::Path, str::FromStr};
 
 use chrono::{DateTime, NaiveDate, Utc};
-use fc_domain::{Frequency, Indicator, Observation, RiskDimension, RiskDirection};
+use fc_domain::{
+    AlertEvent, AlertStatus, AlertType, Frequency, Indicator, Observation, RiskDimension,
+    RiskDirection, RiskLevel,
+};
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
     Row, SqlitePool,
@@ -14,8 +17,13 @@ use crate::{
 };
 
 pub const FRED_DATASET_ID: &str = "fred_series_observations";
+pub const BOJ_FX_DATASET_ID: &str = "boj_fx_daily";
+pub const BOJ_MONEY_MARKET_DATASET_ID: &str = "boj_money_market_rates";
 pub const TREASURY_YIELD_DATASET_ID: &str = "treasury_daily_yield_curve";
 pub const WORLD_BANK_DATASET_ID: &str = "world_bank_country_indicators";
+pub const SEC_SUBMISSIONS_DATASET_ID: &str = "sec_company_submissions";
+pub const SEC_EVENTS_DATASET_ID: &str = "sec_filing_events";
+pub const GDELT_DOC_DATASET_ID: &str = "gdelt_doc_timeline";
 
 const SQLITE_INIT_SQL: &str = include_str!("../../../migrations/sqlite/0001_init.sql");
 
@@ -369,6 +377,365 @@ impl SqliteStore {
 
         sqlx::query(
             r#"
+            INSERT INTO metadata_sources (
+                source_id,
+                display_name,
+                source_type,
+                official_url,
+                documentation_url,
+                access_method,
+                auth_required,
+                auth_secret_ref,
+                rate_limit_policy_json,
+                license_note,
+                commercial_use_status,
+                production_allowed,
+                enabled
+            )
+            VALUES (
+                'boj',
+                'Bank of Japan Statistics API',
+                'government_timeseries',
+                'https://www.boj.or.jp/en/statistics/',
+                'https://www.stat-search.boj.or.jp/info/api_manual_en.pdf',
+                'rest_csv',
+                0,
+                NULL,
+                '{"policy":"public_rest_csv","note":"Official BOJ API, no key required. Prefer BOJ for USDJPY and Japan short rates, cache locally."}',
+                'Official BOJ statistics API for FX daily and money market time series.',
+                'public_official',
+                1,
+                1
+            )
+            ON CONFLICT(source_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                documentation_url = excluded.documentation_url,
+                access_method = excluded.access_method,
+                auth_required = excluded.auth_required,
+                auth_secret_ref = excluded.auth_secret_ref,
+                rate_limit_policy_json = excluded.rate_limit_policy_json,
+                license_note = excluded.license_note,
+                production_allowed = excluded.production_allowed,
+                enabled = excluded.enabled,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO metadata_datasets (
+                dataset_id,
+                source_id,
+                display_name,
+                frequency_set_json,
+                region_set_json,
+                supports_backfill,
+                supports_incremental,
+                supports_vintage,
+                expected_latency_seconds,
+                config_version,
+                enabled
+            )
+            VALUES (
+                ?1,
+                'boj',
+                'BOJ foreign exchange daily series',
+                '["daily"]',
+                '["jp","us"]',
+                1,
+                1,
+                0,
+                86400,
+                'boj_fx_seed_v1_20260530',
+                1
+            )
+            ON CONFLICT(dataset_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                frequency_set_json = excluded.frequency_set_json,
+                region_set_json = excluded.region_set_json,
+                supports_backfill = excluded.supports_backfill,
+                supports_incremental = excluded.supports_incremental,
+                supports_vintage = excluded.supports_vintage,
+                config_version = excluded.config_version,
+                enabled = excluded.enabled
+            "#,
+        )
+        .bind(BOJ_FX_DATASET_ID)
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO metadata_datasets (
+                dataset_id,
+                source_id,
+                display_name,
+                frequency_set_json,
+                region_set_json,
+                supports_backfill,
+                supports_incremental,
+                supports_vintage,
+                expected_latency_seconds,
+                config_version,
+                enabled
+            )
+            VALUES (
+                ?1,
+                'boj',
+                'BOJ money market call rate series',
+                '["daily"]',
+                '["jp"]',
+                1,
+                1,
+                0,
+                86400,
+                'boj_money_market_seed_v1_20260530',
+                1
+            )
+            ON CONFLICT(dataset_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                frequency_set_json = excluded.frequency_set_json,
+                region_set_json = excluded.region_set_json,
+                supports_backfill = excluded.supports_backfill,
+                supports_incremental = excluded.supports_incremental,
+                supports_vintage = excluded.supports_vintage,
+                config_version = excluded.config_version,
+                enabled = excluded.enabled
+            "#,
+        )
+        .bind(BOJ_MONEY_MARKET_DATASET_ID)
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO metadata_sources (
+                source_id,
+                display_name,
+                source_type,
+                official_url,
+                documentation_url,
+                access_method,
+                auth_required,
+                auth_secret_ref,
+                rate_limit_policy_json,
+                license_note,
+                commercial_use_status,
+                production_allowed,
+                enabled
+            )
+            VALUES (
+                'sec_edgar',
+                'SEC EDGAR',
+                'filings_events',
+                'https://www.sec.gov/edgar/search/',
+                'https://www.sec.gov/edgar/sec-api-documentation',
+                'json_download',
+                0,
+                NULL,
+                '{"policy":"fair_access","note":"Sequential requests, local cache, and archived submissions only when the requested range overlaps."}',
+                'Official SEC submissions JSON. Local event features are aggregated from filing metadata only; no paid key required.',
+                'public_official',
+                1,
+                1
+            )
+            ON CONFLICT(source_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                documentation_url = excluded.documentation_url,
+                access_method = excluded.access_method,
+                auth_required = excluded.auth_required,
+                auth_secret_ref = excluded.auth_secret_ref,
+                rate_limit_policy_json = excluded.rate_limit_policy_json,
+                license_note = excluded.license_note,
+                production_allowed = excluded.production_allowed,
+                enabled = excluded.enabled,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO metadata_datasets (
+                dataset_id,
+                source_id,
+                display_name,
+                frequency_set_json,
+                region_set_json,
+                supports_backfill,
+                supports_incremental,
+                supports_vintage,
+                expected_latency_seconds,
+                config_version,
+                enabled
+            )
+            VALUES (
+                ?1,
+                'sec_edgar',
+                'SEC company submissions metadata',
+                '["event"]',
+                '["us"]',
+                1,
+                1,
+                0,
+                86400,
+                'sec_submissions_seed_v1_20260531',
+                1
+            )
+            ON CONFLICT(dataset_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                frequency_set_json = excluded.frequency_set_json,
+                region_set_json = excluded.region_set_json,
+                supports_backfill = excluded.supports_backfill,
+                supports_incremental = excluded.supports_incremental,
+                supports_vintage = excluded.supports_vintage,
+                config_version = excluded.config_version,
+                enabled = excluded.enabled
+            "#,
+        )
+        .bind(SEC_SUBMISSIONS_DATASET_ID)
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO metadata_datasets (
+                dataset_id,
+                source_id,
+                display_name,
+                frequency_set_json,
+                region_set_json,
+                supports_backfill,
+                supports_incremental,
+                supports_vintage,
+                expected_latency_seconds,
+                config_version,
+                enabled
+            )
+            VALUES (
+                ?1,
+                'sec_edgar',
+                'SEC filing event aggregates',
+                '["daily"]',
+                '["us"]',
+                1,
+                1,
+                0,
+                86400,
+                'sec_events_seed_v1_20260531',
+                1
+            )
+            ON CONFLICT(dataset_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                frequency_set_json = excluded.frequency_set_json,
+                region_set_json = excluded.region_set_json,
+                supports_backfill = excluded.supports_backfill,
+                supports_incremental = excluded.supports_incremental,
+                supports_vintage = excluded.supports_vintage,
+                config_version = excluded.config_version,
+                enabled = excluded.enabled
+            "#,
+        )
+        .bind(SEC_EVENTS_DATASET_ID)
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO metadata_sources (
+                source_id,
+                display_name,
+                source_type,
+                official_url,
+                documentation_url,
+                access_method,
+                auth_required,
+                auth_secret_ref,
+                rate_limit_policy_json,
+                license_note,
+                commercial_use_status,
+                production_allowed,
+                enabled
+            )
+            VALUES (
+                'gdelt',
+                'GDELT',
+                'news_events',
+                'https://api.gdeltproject.org/',
+                'https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/amp/',
+                'rest_api',
+                0,
+                NULL,
+                '{"policy":"public_doc_api","note":"Strictly one request every 5+ seconds, cache locally, and keep it as a low-confidence auxiliary source."}',
+                'Public GDELT DOC API used only for aggregate news counts. Keep it as an auxiliary prototype signal.',
+                'review_required',
+                0,
+                1
+            )
+            ON CONFLICT(source_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                documentation_url = excluded.documentation_url,
+                access_method = excluded.access_method,
+                auth_required = excluded.auth_required,
+                auth_secret_ref = excluded.auth_secret_ref,
+                rate_limit_policy_json = excluded.rate_limit_policy_json,
+                license_note = excluded.license_note,
+                production_allowed = excluded.production_allowed,
+                enabled = excluded.enabled,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO metadata_datasets (
+                dataset_id,
+                source_id,
+                display_name,
+                frequency_set_json,
+                region_set_json,
+                supports_backfill,
+                supports_incremental,
+                supports_vintage,
+                expected_latency_seconds,
+                config_version,
+                enabled
+            )
+            VALUES (
+                ?1,
+                'gdelt',
+                'GDELT DOC API timeline aggregates',
+                '["daily"]',
+                '["us","global"]',
+                1,
+                1,
+                0,
+                86400,
+                'gdelt_doc_seed_v1_20260531',
+                1
+            )
+            ON CONFLICT(dataset_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                frequency_set_json = excluded.frequency_set_json,
+                region_set_json = excluded.region_set_json,
+                supports_backfill = excluded.supports_backfill,
+                supports_incremental = excluded.supports_incremental,
+                supports_vintage = excluded.supports_vintage,
+                config_version = excluded.config_version,
+                enabled = excluded.enabled
+            "#,
+        )
+        .bind(GDELT_DOC_DATASET_ID)
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
             INSERT INTO metadata_entities (
                 entity_id,
                 entity_type,
@@ -387,11 +754,43 @@ impl SqliteStore {
         .execute(&self.pool)
         .await?;
 
+        sqlx::query(
+            r#"
+            INSERT INTO metadata_entities (
+                entity_id,
+                entity_type,
+                display_name,
+                iso_country_code,
+                currency,
+                metadata_json
+            )
+            VALUES ('jp', 'country', 'Japan', 'JPN', 'JPY', '{}')
+            ON CONFLICT(entity_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                iso_country_code = excluded.iso_country_code,
+                currency = excluded.currency
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
         for seed in fred_indicator_seeds() {
             let indicator = seed.indicator();
             self.upsert_indicator(&indicator).await?;
             self.upsert_fred_mapping(&indicator.indicator_id, seed.external_code)
                 .await?;
+        }
+        for seed in boj_indicator_seeds() {
+            let indicator = seed.indicator();
+            self.upsert_indicator(&indicator).await?;
+            self.upsert_external_mapping(
+                &indicator.indicator_id,
+                "boj",
+                seed.dataset_id,
+                seed.external_code,
+                seed.priority,
+            )
+            .await?;
         }
         self.upsert_external_mapping(
             "us_rates_yield_curve_10y2y",
@@ -413,6 +812,14 @@ impl SqliteStore {
             )
             .await?;
         }
+        for seed in sec_event_indicator_seeds() {
+            let indicator = seed.indicator();
+            self.upsert_indicator(&indicator).await?;
+        }
+        for seed in gdelt_indicator_seeds() {
+            let indicator = seed.indicator();
+            self.upsert_indicator(&indicator).await?;
+        }
 
         Ok(())
     }
@@ -432,6 +839,29 @@ impl SqliteStore {
         &self,
     ) -> Result<Vec<ExternalIndicatorMapping>, StorageError> {
         self.load_external_mappings("world_bank", WORLD_BANK_DATASET_ID)
+            .await
+    }
+
+    pub async fn load_jpy_carry_mappings(
+        &self,
+    ) -> Result<Vec<ExternalIndicatorMapping>, StorageError> {
+        let boj = self
+            .load_external_mappings("boj", BOJ_FX_DATASET_ID)
+            .await?
+            .into_iter()
+            .filter(|mapping| mapping.indicator_id == "us_external_usdjpy_level");
+        let fred = self
+            .load_external_mappings("fred", FRED_DATASET_ID)
+            .await?
+            .into_iter()
+            .filter(|mapping| mapping.indicator_id == "us_external_usdjpy_level");
+        Ok(boj.chain(fred).collect())
+    }
+
+    pub async fn load_boj_money_market_mappings(
+        &self,
+    ) -> Result<Vec<ExternalIndicatorMapping>, StorageError> {
+        self.load_external_mappings("boj", BOJ_MONEY_MARKET_DATASET_ID)
             .await
     }
 
@@ -468,6 +898,201 @@ impl SqliteStore {
                 })
             })
             .collect()
+    }
+
+    pub async fn load_alerts_recent(
+        &self,
+        since_date: NaiveDate,
+        as_of_date: NaiveDate,
+    ) -> Result<Vec<AlertEvent>, StorageError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                alert_id,
+                event_type,
+                scope,
+                entity_id,
+                dimension,
+                level,
+                status,
+                triggered_at,
+                triggered_as_of_date,
+                resolved_at,
+                score,
+                previous_score,
+                trigger_reason,
+                top_contributors_json,
+                related_indicators_json,
+                method_version
+            FROM alerts_events
+            WHERE triggered_as_of_date >= ?1
+              AND triggered_as_of_date <= ?2
+            ORDER BY triggered_as_of_date DESC, triggered_at DESC
+            "#,
+        )
+        .bind(since_date.to_string())
+        .bind(as_of_date.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter()
+            .map(|row| {
+                let top_contributors_json: String = row.try_get("top_contributors_json")?;
+                let related_indicators_json: String = row.try_get("related_indicators_json")?;
+                Ok(AlertEvent {
+                    alert_id: Uuid::parse_str(row.try_get::<String, _>("alert_id")?.as_str())
+                        .map_err(|error| {
+                            StorageError::Database(sqlx::Error::Decode(Box::new(error)))
+                        })?,
+                    event_type: parse_alert_type(row.try_get::<String, _>("event_type")?.as_str())?,
+                    scope: row.try_get("scope")?,
+                    entity_id: row.try_get("entity_id")?,
+                    dimension: row
+                        .try_get::<Option<String>, _>("dimension")?
+                        .map(|value| parse_dimension(&value))
+                        .transpose()?,
+                    level: parse_risk_level(row.try_get::<String, _>("level")?.as_str())?,
+                    status: parse_alert_status(row.try_get::<String, _>("status")?.as_str())?,
+                    triggered_at: parse_optional_datetime(Some(
+                        row.try_get::<String, _>("triggered_at")?,
+                    ))?
+                    .ok_or_else(|| StorageError::Database(sqlx::Error::RowNotFound))?,
+                    triggered_as_of_date: parse_date(
+                        row.try_get::<String, _>("triggered_as_of_date")?.as_str(),
+                    )?,
+                    resolved_at: parse_optional_datetime(
+                        row.try_get::<Option<String>, _>("resolved_at")?,
+                    )?,
+                    score: row.try_get("score")?,
+                    previous_score: row.try_get("previous_score")?,
+                    trigger_reason: row.try_get("trigger_reason")?,
+                    top_contributors: serde_json::from_str(&top_contributors_json)
+                        .unwrap_or_default(),
+                    related_indicators: serde_json::from_str(&related_indicators_json)
+                        .unwrap_or_default(),
+                    method_version: row.try_get("method_version")?,
+                })
+            })
+            .collect()
+    }
+
+    pub async fn load_watermark_date(
+        &self,
+        source_id: &str,
+        dataset_id: &str,
+        target_id: &str,
+    ) -> Result<Option<NaiveDate>, StorageError> {
+        let row = sqlx::query(
+            r#"
+            SELECT last_successful_period
+            FROM ingest_watermarks
+            WHERE source_id = ?1
+              AND dataset_id = ?2
+              AND target_id = ?3
+            "#,
+        )
+        .bind(source_id)
+        .bind(dataset_id)
+        .bind(target_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match row {
+            Some(row) => {
+                parse_optional_date(row.try_get::<Option<String>, _>("last_successful_period")?)
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub async fn replace_alerts_for_scope(
+        &self,
+        scope: &str,
+        start: NaiveDate,
+        end: NaiveDate,
+        alerts: &[AlertEvent],
+    ) -> Result<(), StorageError> {
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query(
+            r#"
+            DELETE FROM alerts_events
+            WHERE scope = ?1
+              AND triggered_as_of_date >= ?2
+              AND triggered_as_of_date <= ?3
+            "#,
+        )
+        .bind(scope)
+        .bind(start.to_string())
+        .bind(end.to_string())
+        .execute(&mut *transaction)
+        .await?;
+
+        for alert in alerts {
+            let top_contributors_json =
+                serde_json::to_string(&alert.top_contributors).unwrap_or_else(|_| "[]".to_string());
+            let related_indicators_json = serde_json::to_string(&alert.related_indicators)
+                .unwrap_or_else(|_| "[]".to_string());
+            sqlx::query(
+                r#"
+                INSERT INTO alerts_events (
+                    alert_id,
+                    event_type,
+                    scope,
+                    entity_id,
+                    dimension,
+                    level,
+                    status,
+                    triggered_at,
+                    triggered_as_of_date,
+                    resolved_at,
+                    score,
+                    previous_score,
+                    trigger_reason,
+                    top_contributors_json,
+                    related_indicators_json,
+                    method_version
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                ON CONFLICT(alert_id) DO UPDATE SET
+                    event_type = excluded.event_type,
+                    scope = excluded.scope,
+                    entity_id = excluded.entity_id,
+                    dimension = excluded.dimension,
+                    level = excluded.level,
+                    status = excluded.status,
+                    triggered_at = excluded.triggered_at,
+                    triggered_as_of_date = excluded.triggered_as_of_date,
+                    resolved_at = excluded.resolved_at,
+                    score = excluded.score,
+                    previous_score = excluded.previous_score,
+                    trigger_reason = excluded.trigger_reason,
+                    top_contributors_json = excluded.top_contributors_json,
+                    related_indicators_json = excluded.related_indicators_json,
+                    method_version = excluded.method_version
+                "#,
+            )
+            .bind(alert.alert_id.to_string())
+            .bind(format_alert_type(alert.event_type))
+            .bind(&alert.scope)
+            .bind(&alert.entity_id)
+            .bind(alert.dimension.map(format_dimension))
+            .bind(format_risk_level(alert.level))
+            .bind(format_alert_status(alert.status))
+            .bind(format_datetime(alert.triggered_at))
+            .bind(alert.triggered_as_of_date.to_string())
+            .bind(alert.resolved_at.map(format_datetime))
+            .bind(alert.score)
+            .bind(alert.previous_score)
+            .bind(&alert.trigger_reason)
+            .bind(top_contributors_json)
+            .bind(related_indicators_json)
+            .bind(&alert.method_version)
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        transaction.commit().await?;
+        Ok(())
     }
 
     pub async fn insert_raw_response(
@@ -587,7 +1212,25 @@ impl SqliteStore {
         entity_id: &str,
         as_of_date: NaiveDate,
     ) -> Result<Vec<Observation>, StorageError> {
-        let rows = sqlx::query(
+        self.load_observations_for_entities(&[entity_id], as_of_date)
+            .await
+    }
+
+    pub async fn load_observations_for_entities(
+        &self,
+        entity_ids: &[&str],
+        as_of_date: NaiveDate,
+    ) -> Result<Vec<Observation>, StorageError> {
+        if entity_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders = (0..entity_ids.len())
+            .map(|index| format!("?{}", index + 1))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let date_placeholder = format!("?{}", entity_ids.len() + 1);
+        let query = format!(
             r#"
             SELECT
                 indicator_id,
@@ -605,15 +1248,20 @@ impl SqliteStore {
                 quality_score,
                 quality_flags_json
             FROM ts_indicator_observations
-            WHERE entity_id = ?1
-              AND as_of_date <= ?2
-            ORDER BY indicator_id, as_of_date
-            "#,
-        )
-        .bind(entity_id)
-        .bind(as_of_date.to_string())
-        .fetch_all(&self.pool)
-        .await?;
+            WHERE entity_id IN ({placeholders})
+              AND as_of_date <= {date_placeholder}
+            ORDER BY indicator_id, entity_id, as_of_date
+            "#
+        );
+
+        let mut statement = sqlx::query(&query);
+        for entity_id in entity_ids {
+            statement = statement.bind(entity_id);
+        }
+        let rows = statement
+            .bind(as_of_date.to_string())
+            .fetch_all(&self.pool)
+            .await?;
 
         rows.into_iter()
             .map(|row| {
@@ -634,9 +1282,9 @@ impl SqliteStore {
                     unit: row.try_get("unit")?,
                     source_id: row.try_get("source_id")?,
                     dataset_id: row.try_get("dataset_id")?,
-                    revision_time: parse_optional_datetime(
-                        row.try_get::<Option<String>, _>("revision_time")?,
-                    )?,
+                    revision_time: parse_optional_datetime(Some(
+                        row.try_get::<String, _>("revision_time")?,
+                    ))?,
                     publication_time: parse_optional_datetime(
                         row.try_get::<Option<String>, _>("publication_time")?,
                     )?,
@@ -866,6 +1514,21 @@ struct FredIndicatorSeed {
     external_code: &'static str,
 }
 
+struct BojIndicatorSeed {
+    indicator_id: &'static str,
+    display_name: &'static str,
+    dimension: RiskDimension,
+    description: &'static str,
+    unit: &'static str,
+    frequency: Frequency,
+    risk_direction: RiskDirection,
+    dataset_id: &'static str,
+    external_code: &'static str,
+    default_source_id: &'static str,
+    quality_tier: &'static str,
+    priority: i64,
+}
+
 struct WorldBankIndicatorSeed {
     indicator_id: &'static str,
     display_name: &'static str,
@@ -875,6 +1538,22 @@ struct WorldBankIndicatorSeed {
     frequency: Frequency,
     risk_direction: RiskDirection,
     external_code: &'static str,
+}
+
+struct SecEventIndicatorSeed {
+    indicator_id: &'static str,
+    display_name: &'static str,
+    description: &'static str,
+    unit: &'static str,
+    risk_direction: RiskDirection,
+}
+
+struct GdeltIndicatorSeed {
+    indicator_id: &'static str,
+    display_name: &'static str,
+    description: &'static str,
+    unit: &'static str,
+    risk_direction: RiskDirection,
 }
 
 impl FredIndicatorSeed {
@@ -889,6 +1568,22 @@ impl FredIndicatorSeed {
             risk_direction: self.risk_direction,
             default_source_id: "fred".to_string(),
             quality_tier: "core".to_string(),
+        }
+    }
+}
+
+impl BojIndicatorSeed {
+    fn indicator(&self) -> Indicator {
+        Indicator {
+            indicator_id: self.indicator_id.to_string(),
+            display_name: self.display_name.to_string(),
+            dimension: self.dimension,
+            description: self.description.to_string(),
+            unit: self.unit.to_string(),
+            frequency: self.frequency,
+            risk_direction: self.risk_direction,
+            default_source_id: self.default_source_id.to_string(),
+            quality_tier: self.quality_tier.to_string(),
         }
     }
 }
@@ -909,8 +1604,130 @@ impl WorldBankIndicatorSeed {
     }
 }
 
+impl SecEventIndicatorSeed {
+    fn indicator(&self) -> Indicator {
+        Indicator {
+            indicator_id: self.indicator_id.to_string(),
+            display_name: self.display_name.to_string(),
+            dimension: RiskDimension::EventsSentiment,
+            description: self.description.to_string(),
+            unit: self.unit.to_string(),
+            frequency: Frequency::Daily,
+            risk_direction: self.risk_direction,
+            default_source_id: "sec_edgar".to_string(),
+            quality_tier: "supplemental".to_string(),
+        }
+    }
+}
+
+impl GdeltIndicatorSeed {
+    fn indicator(&self) -> Indicator {
+        Indicator {
+            indicator_id: self.indicator_id.to_string(),
+            display_name: self.display_name.to_string(),
+            dimension: RiskDimension::EventsSentiment,
+            description: self.description.to_string(),
+            unit: self.unit.to_string(),
+            frequency: Frequency::Daily,
+            risk_direction: self.risk_direction,
+            default_source_id: "gdelt".to_string(),
+            quality_tier: "supplemental".to_string(),
+        }
+    }
+}
+
+fn boj_indicator_seeds() -> Vec<BojIndicatorSeed> {
+    vec![
+        BojIndicatorSeed {
+            indicator_id: "us_external_usdjpy_level",
+            display_name: "USDJPY 汇率",
+            dimension: RiskDimension::ExternalSector,
+            description: "BOJ 官方美元兑日元汇率水平，用于识别日元套息交易的潜在平仓压力。",
+            unit: "jpy_per_usd",
+            frequency: Frequency::Daily,
+            risk_direction: RiskDirection::TwoSided,
+            dataset_id: BOJ_FX_DATASET_ID,
+            external_code: "FXERD01",
+            default_source_id: "boj",
+            quality_tier: "core",
+            priority: 10,
+        },
+        BojIndicatorSeed {
+            indicator_id: "jp_rates_call_rate",
+            display_name: "日本无担保隔夜拆借利率",
+            dimension: RiskDimension::ExternalSector,
+            description: "BOJ 官方无担保隔夜拆借利率，可作为日元融资成本与 BOJ 政策变化代理。",
+            unit: "percent",
+            frequency: Frequency::Daily,
+            risk_direction: RiskDirection::RisingFastIsRiskier,
+            dataset_id: BOJ_MONEY_MARKET_DATASET_ID,
+            external_code: "STRDCLUCON",
+            default_source_id: "boj",
+            quality_tier: "extended",
+            priority: 20,
+        },
+    ]
+}
+
+fn sec_event_indicator_seeds() -> Vec<SecEventIndicatorSeed> {
+    vec![
+        SecEventIndicatorSeed {
+            indicator_id: "us_event_bank_8k_count",
+            display_name: "白名单银行 8-K 数量",
+            description: "Daily count of 8-K filings from the SEC EDGAR bank watchlist.",
+            unit: "count",
+            risk_direction: RiskDirection::ManualRule,
+        },
+        SecEventIndicatorSeed {
+            indicator_id: "us_event_risk_keyword_count",
+            display_name: "SEC 风险关键词/规则命中数",
+            description:
+                "Daily count of SEC filing metadata keyword hits plus high-risk 8-K item rule matches.",
+            unit: "count",
+            risk_direction: RiskDirection::ManualRule,
+        },
+        SecEventIndicatorSeed {
+            indicator_id: "us_banking_filing_stress_count",
+            display_name: "银行 filing 压力计数",
+            description:
+                "Daily count of filings whose rule-based severity passes the stress threshold.",
+            unit: "count",
+            risk_direction: RiskDirection::ManualRule,
+        },
+        SecEventIndicatorSeed {
+            indicator_id: "us_event_official_filing_severity",
+            display_name: "SEC 官方公告严重度",
+            description:
+                "Daily severity index aggregated from SEC filing form types, items, and watchlist breadth.",
+            unit: "score",
+            risk_direction: RiskDirection::ManualRule,
+        },
+    ]
+}
+
+fn gdelt_indicator_seeds() -> Vec<GdeltIndicatorSeed> {
+    vec![GdeltIndicatorSeed {
+        indicator_id: "global_news_financial_stress_count",
+        display_name: "金融压力新闻数量",
+        description:
+            "Daily GDELT DOC API count for banking, liquidity, funding, and credit-stress coverage.",
+        unit: "count",
+        risk_direction: RiskDirection::HigherIsRiskier,
+    }]
+}
+
 fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
     vec![
+        FredIndicatorSeed {
+            indicator_id: "us_external_usdjpy_level",
+            display_name: "USDJPY 汇率",
+            dimension: RiskDimension::ExternalSector,
+            description: "美元兑日元汇率水平，用于识别日元套息交易的潜在平仓压力。",
+            unit: "jpy_per_usd",
+            frequency: Frequency::Daily,
+            risk_direction: RiskDirection::TwoSided,
+            external_code: "DEXJPUS",
+        },
         FredIndicatorSeed {
             indicator_id: "us_market_vix_close",
             display_name: "VIX 收盘价",
@@ -1096,9 +1913,82 @@ fn format_datetime(value: DateTime<Utc>) -> String {
     value.to_rfc3339()
 }
 
+fn parse_risk_level(value: &str) -> Result<RiskLevel, StorageError> {
+    match value {
+        "normal" => Ok(RiskLevel::Normal),
+        "watch" => Ok(RiskLevel::Watch),
+        "stress" => Ok(RiskLevel::Stress),
+        "warning" => Ok(RiskLevel::Warning),
+        "crisis" => Ok(RiskLevel::Crisis),
+        other => Err(StorageError::UnknownRiskLevel(other.to_string())),
+    }
+}
+
+fn format_risk_level(value: RiskLevel) -> &'static str {
+    match value {
+        RiskLevel::Normal => "normal",
+        RiskLevel::Watch => "watch",
+        RiskLevel::Stress => "stress",
+        RiskLevel::Warning => "warning",
+        RiskLevel::Crisis => "crisis",
+    }
+}
+
+fn parse_alert_type(value: &str) -> Result<AlertType, StorageError> {
+    match value {
+        "risk_watch" => Ok(AlertType::RiskWatch),
+        "risk_stress" => Ok(AlertType::RiskStress),
+        "risk_warning" => Ok(AlertType::RiskWarning),
+        "risk_crisis" => Ok(AlertType::RiskCrisis),
+        "data_quality_issue" => Ok(AlertType::DataQualityIssue),
+        "source_health_issue" => Ok(AlertType::SourceHealthIssue),
+        other => Err(StorageError::UnknownAlertType(other.to_string())),
+    }
+}
+
+fn format_alert_type(value: AlertType) -> &'static str {
+    match value {
+        AlertType::RiskWatch => "risk_watch",
+        AlertType::RiskStress => "risk_stress",
+        AlertType::RiskWarning => "risk_warning",
+        AlertType::RiskCrisis => "risk_crisis",
+        AlertType::DataQualityIssue => "data_quality_issue",
+        AlertType::SourceHealthIssue => "source_health_issue",
+    }
+}
+
+fn parse_alert_status(value: &str) -> Result<AlertStatus, StorageError> {
+    match value {
+        "open" => Ok(AlertStatus::Open),
+        "acknowledged" => Ok(AlertStatus::Acknowledged),
+        "monitoring" => Ok(AlertStatus::Monitoring),
+        "escalated" => Ok(AlertStatus::Escalated),
+        "deescalated" => Ok(AlertStatus::Deescalated),
+        "resolved" => Ok(AlertStatus::Resolved),
+        "archived" => Ok(AlertStatus::Archived),
+        other => Err(StorageError::UnknownAlertStatus(other.to_string())),
+    }
+}
+
+fn format_alert_status(value: AlertStatus) -> &'static str {
+    match value {
+        AlertStatus::Open => "open",
+        AlertStatus::Acknowledged => "acknowledged",
+        AlertStatus::Monitoring => "monitoring",
+        AlertStatus::Escalated => "escalated",
+        AlertStatus::Deescalated => "deescalated",
+        AlertStatus::Resolved => "resolved",
+        AlertStatus::Archived => "archived",
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use chrono::NaiveDate;
+    use chrono::{NaiveDate, Utc};
+    use fc_domain::{
+        AlertEvent, AlertStatus, AlertType, RiskContributor, RiskDimension, RiskLevel,
+    };
+    use uuid::Uuid;
 
     use crate::SqliteStore;
 
@@ -1140,5 +2030,66 @@ mod tests {
 
         assert_eq!(observations.len(), 1);
         assert_eq!(observations[0].value, 82.69);
+    }
+
+    #[tokio::test]
+    async fn sqlite_store_round_trips_alerts() {
+        let store = SqliteStore::connect_url("sqlite::memory:").await.unwrap();
+        store.migrate().await.unwrap();
+
+        let alert = AlertEvent {
+            alert_id: Uuid::new_v4(),
+            event_type: AlertType::RiskStress,
+            scope: "sec_edgar_daily".to_string(),
+            entity_id: "us".to_string(),
+            dimension: Some(RiskDimension::EventsSentiment),
+            level: RiskLevel::Stress,
+            status: AlertStatus::Open,
+            triggered_at: Utc::now(),
+            triggered_as_of_date: NaiveDate::from_ymd_opt(2026, 5, 30).unwrap(),
+            resolved_at: None,
+            score: 61.0,
+            previous_score: Some(28.0),
+            trigger_reason: "SEC filing stress cluster".to_string(),
+            top_contributors: vec![RiskContributor {
+                indicator_id: "us_event_official_filing_severity".to_string(),
+                display_name: "SEC 官方公告严重度".to_string(),
+                dimension: RiskDimension::EventsSentiment,
+                score: 61.0,
+                contribution: 61.0,
+                explanation: "bank filing spike".to_string(),
+            }],
+            related_indicators: vec![
+                "us_event_bank_8k_count".to_string(),
+                "us_event_official_filing_severity".to_string(),
+            ],
+            method_version: "sec_rules_v1".to_string(),
+        };
+
+        store
+            .replace_alerts_for_scope(
+                "sec_edgar_daily",
+                NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 5, 31).unwrap(),
+                &[alert.clone()],
+            )
+            .await
+            .unwrap();
+
+        let alerts = store
+            .load_alerts_recent(
+                NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 5, 31).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].alert_id, alert.alert_id);
+        assert_eq!(alerts[0].related_indicators.len(), 2);
+        assert_eq!(
+            alerts[0].top_contributors[0].dimension,
+            RiskDimension::EventsSentiment
+        );
     }
 }

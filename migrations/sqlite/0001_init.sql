@@ -149,6 +149,64 @@ CREATE TABLE IF NOT EXISTS analytics_risk_snapshots (
     UNIQUE (entity_id, market_scope, as_of_date, method_version)
 );
 
+CREATE TABLE IF NOT EXISTS analytics_backtest_runs (
+    run_id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    market_scope TEXT NOT NULL,
+    data_mode TEXT NOT NULL,
+    point_in_time_mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    scenario_scope TEXT,
+    from_date TEXT NOT NULL,
+    to_date TEXT NOT NULL,
+    history_points INTEGER NOT NULL,
+    scenario_summary_count INTEGER NOT NULL DEFAULT 0,
+    method_version TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS analytics_backtest_daily_results (
+    run_id TEXT NOT NULL REFERENCES analytics_backtest_runs(run_id) ON DELETE CASCADE,
+    as_of_date TEXT NOT NULL,
+    overall_score REAL NOT NULL,
+    p_5d REAL NOT NULL,
+    p_20d REAL NOT NULL,
+    p_60d REAL NOT NULL,
+    posture TEXT NOT NULL,
+    crisis_window_open INTEGER NOT NULL,
+    result_json TEXT NOT NULL,
+    PRIMARY KEY (run_id, as_of_date)
+);
+
+CREATE TABLE IF NOT EXISTS analytics_backtest_scenario_summaries (
+    run_id TEXT NOT NULL REFERENCES analytics_backtest_runs(run_id) ON DELETE CASCADE,
+    scenario_id TEXT NOT NULL,
+    summary_json TEXT NOT NULL,
+    PRIMARY KEY (run_id, scenario_id)
+);
+
+CREATE TABLE IF NOT EXISTS alerts_events (
+    alert_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    dimension TEXT,
+    level TEXT NOT NULL,
+    status TEXT NOT NULL,
+    triggered_at TEXT NOT NULL,
+    triggered_as_of_date TEXT NOT NULL,
+    resolved_at TEXT,
+    score REAL NOT NULL,
+    previous_score REAL,
+    trigger_reason TEXT NOT NULL,
+    top_contributors_json TEXT NOT NULL DEFAULT '[]',
+    related_indicators_json TEXT NOT NULL DEFAULT '[]',
+    method_version TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_ts_indicator_entity_date
     ON ts_indicator_observations(indicator_id, entity_id, as_of_date);
 
@@ -163,3 +221,12 @@ CREATE INDEX IF NOT EXISTS idx_ingest_watermarks_target
 
 CREATE INDEX IF NOT EXISTS idx_analytics_snapshots_entity_date
     ON analytics_risk_snapshots(entity_id, market_scope, as_of_date);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_backtest_runs_finished
+    ON analytics_backtest_runs(finished_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_events_status
+    ON alerts_events(status, level, triggered_as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_events_scope_date
+    ON alerts_events(scope, triggered_as_of_date DESC);

@@ -9,10 +9,18 @@ help:
     @just --list
 
 # 一键启动本地开发环境：后台启动 Rust API 和 React Web 面板。
+# 如果 data/fc-local.sqlite 已存在，API 默认读取本地 SQLite；否则退回 demo 数据。
 dev:
     ./scripts/dev-start.ps1
 
-# 查看一键启动的服务状态、PID 和访问地址。
+# 一键启动并强制 API 使用本地 SQLite 数据。
+# 适合已经执行过 `just db-init` / `just db-seed` / backfill 的场景。
+dev-sqlite:
+    $env:FC_DATA_MODE='sqlite'
+    $env:FC_SQLITE_PATH='data/fc-local.sqlite'
+    ./scripts/dev-start.ps1
+
+# 查看一键启动的服务状态、PID、访问地址，以及当前 data mode / 最新观测 / USDJPY。
 status:
     ./scripts/dev-status.ps1
 
@@ -48,6 +56,17 @@ db-init:
 db-seed:
     cargo run -p fc-worker -- db seed
 
+# 检查本地 SQLite 关键指标是否足够新鲜，避免把旧数据误当成当前市场值。
+db-check:
+    cargo run -p fc-worker -- db check
+
+# 一键刷新最近一段免费高频数据，并在 API 运行时自动触发 /api/system/reload。
+# 当前会串行刷新 FRED / Treasury / BOJ / SEC EDGAR，World Bank 可按需关闭。
+# 这是日常维护本地评估库的首选入口。
+refresh-latest:
+    cargo run -p fc-worker -- refresh latest-free
+    ./scripts/dev-status.ps1
+
 # 无需 API key，使用 FRED 图表 CSV 回填历史数据到本地 SQLite。
 backfill-fred:
     cargo run -p fc-worker -- backfill fred
@@ -79,6 +98,53 @@ backfill-world-bank:
 # 无需 API key，回填指定日期范围的 World Bank 年频慢变量。
 backfill-world-bank-range start end:
     cargo run -p fc-worker -- backfill world-bank --start {{start}} --end {{end}}
+
+# 无需 API key，回填 SEC EDGAR 银行/金融机构公告事件，并写入本地告警。
+backfill-sec-edgar:
+    cargo run -p fc-worker -- backfill sec-edgar
+
+# 无需 API key，按日期范围回填 SEC EDGAR 公告事件。
+backfill-sec-edgar-range start end:
+    cargo run -p fc-worker -- backfill sec-edgar --start {{start}} --end {{end}}
+
+# 无需 API key，回填 GDELT 金融压力新闻聚合序列。
+# 当前属于 prototype 信号，建议按需手动回填，不默认放进 refresh-latest。
+backfill-gdelt:
+    cargo run -p fc-worker -- backfill gdelt
+
+# 无需 API key，按日期范围回填 GDELT 新闻聚合序列。
+backfill-gdelt-range start end:
+    cargo run -p fc-worker -- backfill gdelt --start {{start}} --end {{end}}
+
+# 无需 API key，回填日元套息监控所需的 USDJPY 历史数据。
+# 当前优先使用 BOJ 官方 USDJPY；失败时自动回退到 FRED 免费序列。
+backfill-jpy-carry:
+    cargo run -p fc-worker -- backfill jpy-carry
+
+# 无需 API key，回填指定日期范围的 USDJPY 历史数据。
+backfill-jpy-carry-range start end:
+    cargo run -p fc-worker -- backfill jpy-carry --start {{start}} --end {{end}}
+
+# 无需 API key，直接回填 BOJ 官方 USDJPY 历史数据。
+backfill-boj-fx:
+    cargo run -p fc-worker -- backfill boj --dataset fx-daily
+
+# 无需 API key，按日期范围回填 BOJ 官方 USDJPY 历史数据。
+backfill-boj-fx-range start end:
+    cargo run -p fc-worker -- backfill boj --dataset fx-daily --start {{start}} --end {{end}}
+
+# 无需 API key，回填 BOJ 官方无担保隔夜拆借利率。
+backfill-boj-money-market:
+    cargo run -p fc-worker -- backfill boj --dataset money-market
+
+# 无需 API key，按日期范围回填 BOJ 官方无担保隔夜拆借利率。
+backfill-boj-money-market-range start end:
+    cargo run -p fc-worker -- backfill boj --dataset money-market --start {{start}} --end {{end}}
+
+# 初始化本地 SQLite，并写入元数据。
+bootstrap-sqlite:
+    cargo run -p fc-worker -- db init
+    cargo run -p fc-worker -- db seed
 
 # 安装前端依赖。首次运行前端前需要执行一次。
 web-install:

@@ -6,8 +6,9 @@ use thiserror::Error;
 mod sqlite;
 
 pub use sqlite::{
-    ExternalIndicatorMapping, RawResponseRecord, SqliteStore, FRED_DATASET_ID,
-    TREASURY_YIELD_DATASET_ID, WORLD_BANK_DATASET_ID,
+    ExternalIndicatorMapping, RawResponseRecord, SqliteStore, BOJ_FX_DATASET_ID,
+    BOJ_MONEY_MARKET_DATASET_ID, FRED_DATASET_ID, GDELT_DOC_DATASET_ID, SEC_EVENTS_DATASET_ID,
+    SEC_SUBMISSIONS_DATASET_ID, TREASURY_YIELD_DATASET_ID, WORLD_BANK_DATASET_ID,
 };
 
 #[derive(Debug, Error)]
@@ -20,6 +21,12 @@ pub enum StorageError {
     UnknownFrequency(String),
     #[error("unknown risk direction: {0}")]
     UnknownRiskDirection(String),
+    #[error("unknown risk level: {0}")]
+    UnknownRiskLevel(String),
+    #[error("unknown alert type: {0}")]
+    UnknownAlertType(String),
+    #[error("unknown alert status: {0}")]
+    UnknownAlertStatus(String),
 }
 
 #[async_trait::async_trait]
@@ -100,7 +107,25 @@ impl PostgresStore {
         entity_id: &str,
         as_of_date: NaiveDate,
     ) -> Result<Vec<Observation>, StorageError> {
-        let rows = sqlx::query(
+        self.load_observations_for_entities(&[entity_id], as_of_date)
+            .await
+    }
+
+    pub async fn load_observations_for_entities(
+        &self,
+        entity_ids: &[&str],
+        as_of_date: NaiveDate,
+    ) -> Result<Vec<Observation>, StorageError> {
+        if entity_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders = (0..entity_ids.len())
+            .map(|index| format!("${}", index + 1))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let date_placeholder = format!("${}", entity_ids.len() + 1);
+        let query = format!(
             r#"
             SELECT
                 indicator_id,
@@ -118,15 +143,16 @@ impl PostgresStore {
                 quality_score,
                 quality_flags
             FROM ts.indicator_observations
-            WHERE entity_id = $1
-              AND as_of_date <= $2
-            ORDER BY indicator_id, as_of_date
+            WHERE entity_id IN ({placeholders})
+              AND as_of_date <= {date_placeholder}
+            ORDER BY indicator_id, entity_id, as_of_date
             "#,
-        )
-        .bind(entity_id)
-        .bind(as_of_date)
-        .fetch_all(&self.pool)
-        .await?;
+        );
+        let mut statement = sqlx::query(&query);
+        for entity_id in entity_ids {
+            statement = statement.bind(entity_id);
+        }
+        let rows = statement.bind(as_of_date).fetch_all(&self.pool).await?;
 
         rows.into_iter()
             .map(|row| {

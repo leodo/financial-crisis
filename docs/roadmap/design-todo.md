@@ -1,10 +1,12 @@
 # 设计 TODO 总索引
 
-状态：`Done`
+状态：`Review`
 
 最后更新：2026-05-30
 
-本文档是后续细分设计的执行清单。当前所有列出的设计文档已经落地为初稿。
+本文档是第一阶段设计清单，用于记录风险强度看板和基础数据层设计的落地情况。
+
+自 2026-05-30 起，系统主线已经升级为“危机概率评估系统”。与概率、时距判断、决策 posture 直接相关的新一轮设计，统一由 [危机概率评估设计 TODO](crisis-probability-design-todo.md) 管理。
 
 ## 执行原则
 
@@ -12,6 +14,7 @@
 - 每个设计文档都要能独立回答“目标、边界、核心结构、关键流程、风险、后续实现提示”。
 - 文档先于代码，当前阶段不写实现代码。
 - 免费数据源相关设计优先落地，后续实现时可参考开源项目，但不能依赖未经确认授权的数据抓取方式。
+- 本文档覆盖的是第一阶段基线；若涉及危机概率、标签、时距和决策支持，以新 TODO 为准。
 
 ## P0：MVP 前置设计
 
@@ -57,3 +60,29 @@
 - `second-round-design-backlog.md` 与本 TODO 不冲突。
 - 文件路径可通过 `rg --files` 检查到。
 - 文档中没有明显未解决占位标记。
+
+## 与新主线的关系
+
+第一阶段已完成项主要提供：
+
+- 可解释风险强度层
+- 基础数据连接器和本地 SQLite 落地
+- 旧版风险面板和回测骨架
+
+若后续开发目标是：
+
+- `5d / 20d / 60d` 危机概率
+- “离风险还有多远”的时距判断
+- 决策 posture
+- JPY carry 外部风险增强
+
+则应优先参考：
+
+- `docs/architecture/global-design.md`
+- `docs/analytics/horizon-label-design.md`
+- `docs/analytics/probability-engine-design.md`
+- `docs/analytics/decision-support-policy.md`
+- `docs/data/us-centric-free-data-plan.md`
+- `docs/data/jpy-carry-risk-module-design.md`
+- `docs/product/decision-dashboard-design.md`
+- `docs/roadmap/crisis-probability-design-todo.md`
