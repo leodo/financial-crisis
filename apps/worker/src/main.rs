@@ -8,11 +8,11 @@ use chrono::{NaiveDate, Utc};
 use fc_domain::Frequency;
 use fc_ingestion::{
     Connector, FetchPlan, FredConnector, FredGraphCsvConnector, MockConnector, RunMode,
-    TreasuryYieldCurveConnector,
+    TreasuryYieldCurveConnector, WorldBankConnector,
 };
 use fc_storage::{
     ExternalIndicatorMapping, RawResponseRecord, SqliteStore, FRED_DATASET_ID,
-    TREASURY_YIELD_DATASET_ID,
+    TREASURY_YIELD_DATASET_ID, WORLD_BANK_DATASET_ID,
 };
 
 const DEFAULT_SQLITE_PATH: &str = "data/fc-local.sqlite";
@@ -32,6 +32,9 @@ async fn main() -> anyhow::Result<()> {
         }
         [scope, source, rest @ ..] if scope == "backfill" && source == "treasury-yield" => {
             backfill_treasury_yield(rest).await
+        }
+        [scope, source, rest @ ..] if scope == "backfill" && source == "world-bank" => {
+            backfill_world_bank(rest).await
         }
         [scope, ..] if scope == "help" || scope == "--help" || scope == "-h" => {
             print_help();
@@ -55,7 +58,10 @@ async fn db_seed() -> anyhow::Result<()> {
     let store = open_sqlite_store().await?;
     store.migrate().await?;
     store.seed_fred_metadata().await?;
-    println!("Seeded FRED and Treasury metadata into {}", sqlite_path());
+    println!(
+        "Seeded FRED, Treasury, and World Bank metadata into {}",
+        sqlite_path()
+    );
     Ok(())
 }
 
@@ -106,6 +112,28 @@ async fn backfill_treasury_yield(args: &[String]) -> anyhow::Result<()> {
         TREASURY_YIELD_DATASET_ID,
         options,
         "Treasury yield",
+    )
+    .await
+}
+
+async fn backfill_world_bank(args: &[String]) -> anyhow::Result<()> {
+    let options = BackfillOptions::parse(args)?;
+    let store = open_sqlite_store().await?;
+    store.migrate().await?;
+    store.seed_fred_metadata().await?;
+
+    let mappings = store.load_world_bank_mappings().await?;
+    if mappings.is_empty() {
+        bail!("no World Bank mappings found; run `just db-seed` first");
+    }
+
+    let connector = WorldBankConnector::new();
+    backfill_mappings(
+        &connector,
+        mappings,
+        WORLD_BANK_DATASET_ID,
+        options,
+        "World Bank",
     )
     .await
 }
@@ -376,6 +404,9 @@ fn print_help() {
 
   cargo run -p fc-worker -- backfill treasury-yield [--start YYYY-MM-DD] [--end YYYY-MM-DD]
       Fetch U.S. Treasury yield curve observations into SQLite. No API key required.
+
+  cargo run -p fc-worker -- backfill world-bank [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+      Fetch World Bank annual macro indicators into SQLite. No API key required.
 "#
     );
 }

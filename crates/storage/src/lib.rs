@@ -7,7 +7,7 @@ mod sqlite;
 
 pub use sqlite::{
     ExternalIndicatorMapping, RawResponseRecord, SqliteStore, FRED_DATASET_ID,
-    TREASURY_YIELD_DATASET_ID,
+    TREASURY_YIELD_DATASET_ID, WORLD_BANK_DATASET_ID,
 };
 
 #[derive(Debug, Error)]

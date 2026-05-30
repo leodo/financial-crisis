@@ -103,6 +103,12 @@ just backfill-fred-api-range 2020-01-01 2020-12-31
 just backfill-treasury-yield-range 2020-01-01 2020-12-31
 ```
 
+World Bank 年频慢变量同样可以直接回填，不需要 key：
+
+```powershell
+just backfill-world-bank-range 1960-01-01 2024-12-31
+```
+
 使用 SQLite 数据启动 API：
 
 ```powershell
@@ -124,9 +130,10 @@ just web-dev
 just          # 查看所有命令
 just dev      # 一键启动 API + Web
 just db-init  # 初始化本地 SQLite
-just db-seed  # 写入 FRED/Treasury 元数据
+just db-seed  # 写入 FRED/Treasury/World Bank 元数据
 just backfill-fred            # 无 key FRED CSV 回填
 just backfill-treasury-yield  # 无 key Treasury 收益率回填
+just backfill-world-bank      # 无 key World Bank 年频回填
 just stop     # 停止一键启动的服务
 just status   # 查看服务状态
 just fmt

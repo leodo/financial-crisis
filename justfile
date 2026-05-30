@@ -72,6 +72,14 @@ backfill-treasury-yield:
 backfill-treasury-yield-range start end:
     cargo run -p fc-worker -- backfill treasury-yield --start {{start}} --end {{end}}
 
+# 无需 API key，回填 World Bank 年频慢变量。
+backfill-world-bank:
+    cargo run -p fc-worker -- backfill world-bank
+
+# 无需 API key，回填指定日期范围的 World Bank 年频慢变量。
+backfill-world-bank-range start end:
+    cargo run -p fc-worker -- backfill world-bank --start {{start}} --end {{end}}
+
 # 安装前端依赖。首次运行前端前需要执行一次。
 web-install:
     cd apps/web; npm install

@@ -15,6 +15,7 @@ use crate::{
 
 pub const FRED_DATASET_ID: &str = "fred_series_observations";
 pub const TREASURY_YIELD_DATASET_ID: &str = "treasury_daily_yield_curve";
+pub const WORLD_BANK_DATASET_ID: &str = "world_bank_country_indicators";
 
 const SQLITE_INIT_SQL: &str = include_str!("../../../migrations/sqlite/0001_init.sql");
 
@@ -277,6 +278,97 @@ impl SqliteStore {
 
         sqlx::query(
             r#"
+            INSERT INTO metadata_sources (
+                source_id,
+                display_name,
+                source_type,
+                official_url,
+                documentation_url,
+                access_method,
+                auth_required,
+                auth_secret_ref,
+                rate_limit_policy_json,
+                license_note,
+                commercial_use_status,
+                production_allowed,
+                enabled
+            )
+            VALUES (
+                'world_bank',
+                'World Bank Indicators',
+                'global_macro',
+                'https://api.worldbank.org/',
+                'https://datahelpdesk.worldbank.org/knowledgebase/articles/889392',
+                'rest_api',
+                0,
+                NULL,
+                '{"policy":"public_rest_api","note":"Annual slow variables; no API key required."}',
+                'Official World Bank Indicators API.',
+                'public_official',
+                1,
+                1
+            )
+            ON CONFLICT(source_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                documentation_url = excluded.documentation_url,
+                access_method = excluded.access_method,
+                auth_required = excluded.auth_required,
+                auth_secret_ref = excluded.auth_secret_ref,
+                rate_limit_policy_json = excluded.rate_limit_policy_json,
+                license_note = excluded.license_note,
+                production_allowed = excluded.production_allowed,
+                enabled = excluded.enabled,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO metadata_datasets (
+                dataset_id,
+                source_id,
+                display_name,
+                frequency_set_json,
+                region_set_json,
+                supports_backfill,
+                supports_incremental,
+                supports_vintage,
+                expected_latency_seconds,
+                config_version,
+                enabled
+            )
+            VALUES (
+                ?1,
+                'world_bank',
+                'World Bank country indicators',
+                '["annual"]',
+                '["us"]',
+                1,
+                1,
+                0,
+                86400,
+                'world_bank_seed_v1_20260530',
+                1
+            )
+            ON CONFLICT(dataset_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                frequency_set_json = excluded.frequency_set_json,
+                region_set_json = excluded.region_set_json,
+                supports_backfill = excluded.supports_backfill,
+                supports_incremental = excluded.supports_incremental,
+                supports_vintage = excluded.supports_vintage,
+                config_version = excluded.config_version,
+                enabled = excluded.enabled
+            "#,
+        )
+        .bind(WORLD_BANK_DATASET_ID)
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
             INSERT INTO metadata_entities (
                 entity_id,
                 entity_type,
@@ -309,6 +401,18 @@ impl SqliteStore {
             90,
         )
         .await?;
+        for seed in world_bank_indicator_seeds() {
+            let indicator = seed.indicator();
+            self.upsert_indicator(&indicator).await?;
+            self.upsert_external_mapping(
+                &indicator.indicator_id,
+                "world_bank",
+                WORLD_BANK_DATASET_ID,
+                seed.external_code,
+                100,
+            )
+            .await?;
+        }
 
         Ok(())
     }
@@ -321,6 +425,13 @@ impl SqliteStore {
         &self,
     ) -> Result<Vec<ExternalIndicatorMapping>, StorageError> {
         self.load_external_mappings("treasury", TREASURY_YIELD_DATASET_ID)
+            .await
+    }
+
+    pub async fn load_world_bank_mappings(
+        &self,
+    ) -> Result<Vec<ExternalIndicatorMapping>, StorageError> {
+        self.load_external_mappings("world_bank", WORLD_BANK_DATASET_ID)
             .await
     }
 
@@ -755,6 +866,17 @@ struct FredIndicatorSeed {
     external_code: &'static str,
 }
 
+struct WorldBankIndicatorSeed {
+    indicator_id: &'static str,
+    display_name: &'static str,
+    dimension: RiskDimension,
+    description: &'static str,
+    unit: &'static str,
+    frequency: Frequency,
+    risk_direction: RiskDirection,
+    external_code: &'static str,
+}
+
 impl FredIndicatorSeed {
     fn indicator(&self) -> Indicator {
         Indicator {
@@ -766,6 +888,22 @@ impl FredIndicatorSeed {
             frequency: self.frequency,
             risk_direction: self.risk_direction,
             default_source_id: "fred".to_string(),
+            quality_tier: "core".to_string(),
+        }
+    }
+}
+
+impl WorldBankIndicatorSeed {
+    fn indicator(&self) -> Indicator {
+        Indicator {
+            indicator_id: self.indicator_id.to_string(),
+            display_name: self.display_name.to_string(),
+            dimension: self.dimension,
+            description: self.description.to_string(),
+            unit: self.unit.to_string(),
+            frequency: self.frequency,
+            risk_direction: self.risk_direction,
+            default_source_id: "world_bank".to_string(),
             quality_tier: "core".to_string(),
         }
     }
@@ -892,6 +1030,41 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Monthly,
             risk_direction: RiskDirection::FallingFastIsRiskier,
             external_code: "M2SL",
+        },
+    ]
+}
+
+fn world_bank_indicator_seeds() -> Vec<WorldBankIndicatorSeed> {
+    vec![
+        WorldBankIndicatorSeed {
+            indicator_id: "global_macro_gdp_growth",
+            display_name: "GDP 实际增速",
+            dimension: RiskDimension::MacroFragility,
+            description: "World Bank 年频 GDP 实际增速，当前默认抓取美国。",
+            unit: "percent",
+            frequency: Frequency::Annual,
+            risk_direction: RiskDirection::LowerIsRiskier,
+            external_code: "US__NY.GDP.MKTP.KD.ZG",
+        },
+        WorldBankIndicatorSeed {
+            indicator_id: "global_macro_inflation_yoy",
+            display_name: "CPI 通胀",
+            dimension: RiskDimension::MacroFragility,
+            description: "World Bank 年频 CPI 通胀，当前默认抓取美国。",
+            unit: "percent",
+            frequency: Frequency::Annual,
+            risk_direction: RiskDirection::TwoSided,
+            external_code: "US__FP.CPI.TOTL.ZG",
+        },
+        WorldBankIndicatorSeed {
+            indicator_id: "global_external_current_account_gdp",
+            display_name: "经常账户/GDP",
+            dimension: RiskDimension::ExternalSector,
+            description: "World Bank 年频经常账户余额占 GDP 比重，当前默认抓取美国。",
+            unit: "percent",
+            frequency: Frequency::Annual,
+            risk_direction: RiskDirection::LowerIsRiskier,
+            external_code: "US__BN.CAB.XOKA.GD.ZS",
         },
     ]
 }

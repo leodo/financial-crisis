@@ -95,7 +95,7 @@ async fn load_sqlite_app_data() -> anyhow::Result<AppData> {
     let observations = store.load_observations("us", as_of_date).await?;
     if observations.is_empty() {
         anyhow::bail!(
-            "ts_indicator_observations has no rows for entity us; run `just backfill-fred` first"
+            "ts_indicator_observations has no rows for entity us; run at least one backfill such as `just backfill-fred`, `just backfill-treasury-yield`, or `just backfill-world-bank` first"
         );
     }
     let scoring = ScoringEngine::default();
