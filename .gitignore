@@ -11,6 +11,8 @@ apps/web/dist/
 apps/web/node_modules/
 apps/web/tsconfig.tsbuildinfo
 artifacts/
+.run/
+logs/
 
 .DS_Store
 Thumbs.db

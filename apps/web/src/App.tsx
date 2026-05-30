@@ -6,18 +6,28 @@ import {
   AlertTriangle,
   BarChart3,
   Database,
+  Gauge,
+  Info,
   LineChart,
   ShieldCheck,
   Table2
 } from "lucide-react";
 import { api } from "./api";
-import { formatDate, formatNumber, levelClass, levelLabel, qualityLabel } from "./format";
+import {
+  formatDate,
+  formatNumber,
+  levelClass,
+  levelLabel,
+  levelPlainText,
+  qualityLabel
+} from "./format";
 import type {
   AlertEvent,
   BacktestScenarioSummary,
   DataSource,
   DimensionScore,
   IndicatorRisk,
+  RiskLevel,
   RiskSnapshot
 } from "./types";
 
@@ -40,7 +50,11 @@ export default function App() {
   const backtests = useQuery({ queryKey: ["backtests"], queryFn: api.backtests });
 
   const isLoading =
-    overview.isLoading || indicators.isLoading || alerts.isLoading || sources.isLoading;
+    overview.isLoading ||
+    indicators.isLoading ||
+    alerts.isLoading ||
+    sources.isLoading ||
+    backtests.isLoading;
   const error =
     overview.error ?? indicators.error ?? alerts.error ?? sources.error ?? backtests.error;
 
@@ -99,6 +113,7 @@ export default function App() {
                 indicators={indicators.data ?? []}
                 alerts={alerts.data ?? []}
                 sources={sources.data ?? []}
+                backtests={backtests.data ?? []}
               />
             )}
             {view === "indicators" && <Indicators indicators={indicators.data ?? []} />}
@@ -116,31 +131,73 @@ function Overview({
   overview,
   indicators,
   alerts,
-  sources
+  sources,
+  backtests
 }: {
   overview: RiskSnapshot;
   indicators: IndicatorRisk[];
   alerts: AlertEvent[];
   sources: DataSource[];
+  backtests: BacktestScenarioSummary[];
 }) {
   const trendOption = useMemo(() => buildTrendOption(overview), [overview]);
+  const historyOption = useMemo(
+    () => buildHistoryComparisonOption(overview, backtests),
+    [overview, backtests]
+  );
   const sourceIssues = sources.filter((source) => source.health.status !== "healthy");
+  const topDimension = overview.dimensions[0];
 
   return (
     <section className="view-stack">
+      <section className="explain-banner">
+        <Info size={18} />
+        <div>
+          <strong>这里的 0-100 是风险强度分，不是金融危机概率。</strong>
+          <span>
+            分数越高，说明当前指标组合越接近历史压力区间；是否认定“已经危机”还需要事件确认、多个维度共振和数据质量支持。
+          </span>
+        </div>
+      </section>
+
       <div className="overview-grid">
         <section className={`risk-hero ${levelClass(overview.overall_level)}`}>
-          <span className="eyebrow">Overall Risk</span>
+          <span className="eyebrow">Risk Score · 风险强度</span>
           <div className="risk-score">{formatNumber(overview.overall_score)}</div>
           <div className="risk-level">{levelLabel(overview.overall_level)}</div>
-          <p>{overview.level_reason}</p>
+          <p>{riskConclusion(overview)}</p>
+          <div className="risk-footnote">
+            当前最高风险维度：{topDimension?.label ?? "暂无"} · 数据质量{" "}
+            {qualityLabel(overview.data_quality_summary.grade)}
+          </div>
         </section>
 
         <section className="panel">
           <div className="panel-heading">
-            <h2>结构性 vs 触发性</h2>
-            <LineChart size={18} />
+            <h2>分数怎么读</h2>
+            <Gauge size={18} />
           </div>
+          <ScoreGuide />
+        </section>
+
+        <section className="panel">
+          <div className="panel-heading">
+            <h2>历史危机对照</h2>
+            <BarChart3 size={18} />
+          </div>
+          <ReactECharts option={historyOption} style={{ height: 250 }} notMerge lazyUpdate />
+          <div className="history-caption">
+            当前样例分数与历史峰值并排显示，用来辅助理解风险强度，不代表历史情景已经重演。
+          </div>
+        </section>
+      </div>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <h2>结构性风险、触发性风险与趋势</h2>
+          <LineChart size={18} />
+        </div>
+        <div className="trend-layout">
           <div className="split-metrics">
             <Metric label="结构性风险" value={overview.structural_score} />
             <Metric label="触发性风险" value={overview.trigger_score} />
@@ -150,9 +207,9 @@ function Overview({
               suffix=""
             />
           </div>
-          <ReactECharts option={trendOption} style={{ height: 210 }} notMerge lazyUpdate />
-        </section>
-      </div>
+          <ReactECharts option={trendOption} style={{ height: 240 }} notMerge lazyUpdate />
+        </div>
+      </section>
 
       <section className="dimension-grid">
         {overview.dimensions.map((dimension) => (
@@ -218,8 +275,11 @@ function Overview({
 
       <section className="panel">
         <div className="panel-heading">
-          <h2>当前异常指标</h2>
+          <h2>当前重点指标</h2>
           <Table2 size={18} />
+        </div>
+        <div className="table-help">
+          按当前风险贡献排序。风险分表示该指标在自身历史区间里的压力强度，不同指标的原始数值不能直接相加。
         </div>
         <IndicatorTable indicators={indicators.slice(0, 6)} compact />
       </section>
@@ -261,6 +321,9 @@ function Indicators({ indicators }: { indicators: IndicatorRisk[] }) {
         <h2>指标库</h2>
         <Table2 size={18} />
       </div>
+      <div className="table-help">
+        单指标风险分来自历史分位和方向规则。例如“越高越危险”的指标处于历史高分位时分数较高；“越低越危险”的指标处于历史低分位时分数较高。
+      </div>
       <IndicatorTable indicators={indicators} />
     </section>
   );
@@ -277,8 +340,10 @@ function IndicatorTable({ indicators, compact = false }: { indicators: Indicator
             {!compact && <th>维度</th>}
             <th>最新值</th>
             <th>风险分</th>
+            <th>历史分位</th>
             <th>等级</th>
             <th>质量</th>
+            {!compact && <th>解读</th>}
             {!compact && <th>来源</th>}
           </tr>
         </thead>
@@ -292,8 +357,10 @@ function IndicatorTable({ indicators, compact = false }: { indicators: Indicator
               {!compact && <td>{risk.indicator.dimension}</td>}
               <td>{formatNumber(risk.latest_observation?.value)} {risk.indicator.unit}</td>
               <td>{formatNumber(risk.score)}</td>
+              <td>{formatNumber(risk.percentile, "%")}</td>
               <td><span className={`badge ${levelClass(risk.level)}`}>{levelLabel(risk.level)}</span></td>
               <td>{qualityLabel(risk.quality_grade)}</td>
+              {!compact && <td className="interpretation">{indicatorMeaning(risk)}</td>}
               {!compact && <td>{risk.indicator.default_source_id}</td>}
             </tr>
           ))}
@@ -377,6 +444,9 @@ function Backtests({ backtests }: { backtests: BacktestScenarioSummary[] }) {
         <h2>回测场景</h2>
         <BarChart3 size={18} />
       </div>
+      <div className="table-help">
+        回测页用于理解历史危机附近的分数范围。第一版是场景摘要，后续会接入完整历史曲线、触发点和误报统计。
+      </div>
       <div className="scenario-grid">
         {backtests.map((scenario) => (
           <section className="scenario" key={scenario.scenario_id}>
@@ -395,6 +465,68 @@ function Backtests({ backtests }: { backtests: BacktestScenarioSummary[] }) {
       </div>
     </section>
   );
+}
+
+const scoreBands: Array<{
+  level: RiskLevel;
+  range: string;
+  title: string;
+  description: string;
+}> = [
+  { level: "normal", range: "0-29", title: "正常", description: "多数指标处于历史常态。" },
+  { level: "watch", range: "30-49", title: "观察", description: "少数指标开始偏离。" },
+  { level: "stress", range: "50-69", title: "压力", description: "多个信号提示风险积累。" },
+  { level: "warning", range: "70-84", title: "预警", description: "多维度共振，需要人工关注。" },
+  { level: "crisis", range: "85-100", title: "危机态", description: "接近历史危机区间，需要事件确认。" }
+];
+
+function ScoreGuide() {
+  return (
+    <div className="score-guide">
+      {scoreBands.map((band) => (
+        <div className="score-band" key={band.level}>
+          <span className={`band-dot ${levelClass(band.level)}`} />
+          <div>
+            <strong>{band.range} · {band.title}</strong>
+            <span>{band.description}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function riskConclusion(overview: RiskSnapshot): string {
+  if (overview.overall_level === "crisis") {
+    return "当前分数进入危机态区间，表示风险组合接近历史危机压力区间；仍需结合事件层确认，不能单独视为官方危机判定。";
+  }
+  if (overview.overall_level === "warning") {
+    return "当前处于预警区间，说明多个风险维度已经共振，建议重点查看贡献指标和数据质量。";
+  }
+  if (overview.overall_level === "stress") {
+    return "当前处于压力区间，风险已经高于常态，但尚未达到危机态，需要持续观察触发性指标。";
+  }
+  if (overview.overall_level === "watch") {
+    return "当前处于观察区间，少数指标偏离正常水平，还不足以形成系统性预警。";
+  }
+  return "当前处于正常区间，指标组合没有显示明显系统性压力。";
+}
+
+function indicatorMeaning(risk: IndicatorRisk): string {
+  const percentile = risk.percentile === null ? "暂无足够历史分位" : `历史分位 ${formatNumber(risk.percentile, "%")}`;
+  return `${percentile}；${directionLabel(risk.indicator.risk_direction)}；当前为 ${levelPlainText(risk.level)}。`;
+}
+
+function directionLabel(direction: string): string {
+  const labels: Record<string, string> = {
+    higher_is_riskier: "越高越危险",
+    lower_is_riskier: "越低越危险",
+    two_sided: "偏离正常区间越远越危险",
+    falling_fast_is_riskier: "快速下降越危险",
+    rising_fast_is_riskier: "快速上升越危险",
+    manual_rule: "使用专项规则"
+  };
+  return labels[direction] ?? direction;
 }
 
 function buildTrendOption(overview: RiskSnapshot) {
@@ -432,3 +564,57 @@ function buildTrendOption(overview: RiskSnapshot) {
   };
 }
 
+function buildHistoryComparisonOption(overview: RiskSnapshot, backtests: BacktestScenarioSummary[]) {
+  const rows = [
+    { name: "当前", score: overview.overall_score, level: overview.overall_level },
+    ...backtests.map((scenario) => ({
+      name: scenario.name.replace(" 全球金融危机", "").replace(" 美国区域银行危机", ""),
+      score: scenario.max_score,
+      level: scenario.max_level
+    }))
+  ].sort((a, b) => a.score - b.score);
+
+  return {
+    grid: { top: 18, right: 18, bottom: 26, left: 84 },
+    tooltip: { trigger: "axis" },
+    xAxis: {
+      type: "value",
+      min: 0,
+      max: 100,
+      splitLine: { lineStyle: { color: "#e7ebef" } }
+    },
+    yAxis: {
+      type: "category",
+      data: rows.map((row) => row.name),
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: "#c8d0d7" } }
+    },
+    series: [
+      {
+        name: "风险强度",
+        type: "bar",
+        data: rows.map((row) => ({
+          value: row.score,
+          itemStyle: { color: levelColor(row.level) }
+        })),
+        label: {
+          show: true,
+          position: "right",
+          formatter: "{c}"
+        },
+        barWidth: 16
+      }
+    ]
+  };
+}
+
+function levelColor(level: RiskLevel): string {
+  const colors: Record<RiskLevel, string> = {
+    normal: "#1f8a70",
+    watch: "#628395",
+    stress: "#c88a1d",
+    warning: "#c75f2a",
+    crisis: "#b23a48"
+  };
+  return colors[level];
+}

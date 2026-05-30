@@ -42,32 +42,59 @@
 
 ## 本地运行
 
-后端 API：
+最简单的方式是一键启动：
 
 ```powershell
-cargo run -p fc-api
+just dev
 ```
 
-前端面板：
+启动后访问：
+
+- Web 面板：<http://127.0.0.1:5173>
+- API 健康检查：<http://127.0.0.1:18080/health>
+
+查看服务状态：
 
 ```powershell
-cd apps/web
-npm install
-npm run dev
+just status
 ```
 
-访问：
+停止后台服务：
 
-- API: <http://127.0.0.1:18080/health>
-- Web: <http://127.0.0.1:5173>
+```powershell
+just stop
+```
+
+后台日志：
+
+- `logs/api.log`
+- `logs/web.log`
+
+如果只想单独启动后端 API：
+
+```powershell
+just api
+```
+
+如果只想单独启动前端面板：
+
+```powershell
+just web-install
+just web-dev
+```
 
 常用命令：
 
 ```powershell
+just          # 查看所有命令
+just dev      # 一键启动 API + Web
+just stop     # 停止一键启动的服务
+just status   # 查看服务状态
 just fmt
 just test
 just lint
 just web-build
+just verify
 ```
 
 Docker Compose 草案：

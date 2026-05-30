@@ -45,6 +45,7 @@ docs/
 
 - [Web 面板信息架构](product/dashboard-information-architecture.md)
 - [Web 面板草图说明](product/dashboard-wireframe-notes.md)
+- [风险面板 UX 改造设计](product/dashboard-ux-redesign.md)
 
 ### 预警、事件、研究和运维
 

@@ -204,7 +204,9 @@ fn observations(as_of_date: NaiveDate) -> Vec<Observation> {
         Frequency::Daily,
         "index",
         as_of_date,
-        &[14.0, 16.0, 18.0, 22.0, 24.0, 29.0],
+        &[
+            18.0, 21.0, 79.0, 32.0, 20.0, 15.0, 17.0, 66.0, 28.0, 20.0, 18.0, 25.0, 24.0,
+        ],
         96.0,
         &[],
     ));
@@ -214,7 +216,9 @@ fn observations(as_of_date: NaiveDate) -> Vec<Observation> {
         Frequency::Daily,
         "percent",
         as_of_date,
-        &[3.1, 3.4, 3.8, 4.0, 4.5, 5.2],
+        &[
+            3.1, 4.2, 10.8, 7.9, 3.8, 3.4, 4.6, 8.7, 4.1, 3.7, 4.5, 5.8, 5.2,
+        ],
         95.0,
         &[],
     ));
@@ -224,7 +228,9 @@ fn observations(as_of_date: NaiveDate) -> Vec<Observation> {
         Frequency::Daily,
         "percent",
         as_of_date,
-        &[1.2, 0.8, 0.3, 0.0, -0.2, -0.45],
+        &[
+            1.2, 0.8, -0.8, -0.2, 0.5, 0.1, -1.05, -0.6, -0.1, 0.0, -0.35, -0.55, -0.45,
+        ],
         94.0,
         &[],
     ));
@@ -234,7 +240,9 @@ fn observations(as_of_date: NaiveDate) -> Vec<Observation> {
         Frequency::Weekly,
         "index",
         as_of_date,
-        &[-0.3, -0.1, 0.1, 0.25, 0.35, 0.55],
+        &[
+            -0.4, -0.2, 4.0, 1.2, -0.3, -0.4, 0.1, 1.6, 0.2, -0.1, 0.25, 0.7, 0.55,
+        ],
         92.0,
         &[],
     ));
@@ -244,7 +252,9 @@ fn observations(as_of_date: NaiveDate) -> Vec<Observation> {
         Frequency::Monthly,
         "percent",
         as_of_date,
-        &[3.6, 3.7, 3.8, 3.9, 4.0, 4.1],
+        &[
+            4.6, 5.8, 10.0, 7.8, 4.2, 3.7, 3.5, 14.7, 6.2, 4.0, 3.8, 4.3, 4.1,
+        ],
         91.0,
         &[],
     ));
@@ -254,7 +264,9 @@ fn observations(as_of_date: NaiveDate) -> Vec<Observation> {
         Frequency::Weekly,
         "percent",
         as_of_date,
-        &[6.0, 5.2, 4.1, 3.0, 1.2, -0.8],
+        &[
+            7.0, 5.5, -3.5, -1.4, 4.0, 5.2, 2.3, -2.1, 1.1, 2.0, 0.2, -1.2, -0.8,
+        ],
         86.0,
         &[],
     ));
@@ -264,7 +276,9 @@ fn observations(as_of_date: NaiveDate) -> Vec<Observation> {
         Frequency::Monthly,
         "percent",
         as_of_date,
-        &[4.0, 5.5, 6.2, 7.5, 8.4, 9.0],
+        &[
+            7.0, 12.5, -8.2, -4.1, 3.2, 5.6, 6.8, 13.5, 10.1, 4.8, 3.2, 5.2, 4.5,
+        ],
         87.0,
         &[],
     ));
@@ -274,7 +288,9 @@ fn observations(as_of_date: NaiveDate) -> Vec<Observation> {
         Frequency::Annual,
         "percent",
         as_of_date,
-        &[-1.0, -1.4, -1.8, -2.0, -2.3, -2.7],
+        &[
+            -2.0, -4.2, -6.1, -3.5, -1.5, -1.8, -2.1, -4.8, -3.2, -2.0, -1.7, -3.1, -2.7,
+        ],
         82.0,
         &[],
     ));
@@ -284,7 +300,9 @@ fn observations(as_of_date: NaiveDate) -> Vec<Observation> {
         Frequency::Daily,
         "count",
         as_of_date,
-        &[40.0, 52.0, 61.0, 78.0, 82.0, 96.0],
+        &[
+            40.0, 72.0, 210.0, 128.0, 52.0, 44.0, 61.0, 180.0, 82.0, 70.0, 65.0, 110.0, 96.0,
+        ],
         78.0,
         &["prototype_source"],
     ));
@@ -490,6 +508,22 @@ fn build_backtests(snapshot: &fc_domain::RiskSnapshot) -> Vec<BacktestScenarioSu
             max_score: 92.0,
             lead_time_days: Some(47),
             false_positive_count: 2,
+            missed: false,
+            top_contributors: snapshot.top_contributors.iter().take(3).cloned().collect(),
+            method_version: snapshot.method_version.clone(),
+        },
+        BacktestScenarioSummary {
+            scenario_id: "us_covid_liquidity_2020".to_string(),
+            name: "2020 疫情流动性冲击".to_string(),
+            region: "US".to_string(),
+            crisis_start: NaiveDate::from_ymd_opt(2020, 2, 24).expect("valid date"),
+            crisis_end: NaiveDate::from_ymd_opt(2020, 4, 30).expect("valid date"),
+            first_l2_date: Some(NaiveDate::from_ymd_opt(2020, 2, 25).expect("valid date")),
+            first_l3_date: Some(NaiveDate::from_ymd_opt(2020, 3, 9).expect("valid date")),
+            max_level: RiskLevel::Crisis,
+            max_score: 88.0,
+            lead_time_days: Some(13),
+            false_positive_count: 1,
             missed: false,
             top_contributors: snapshot.top_contributors.iter().take(3).cloned().collect(),
             method_version: snapshot.method_version.clone(),

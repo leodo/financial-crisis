@@ -6,6 +6,8 @@ apps/web/dist/
 apps/web/node_modules/
 apps/web/tsconfig.tsbuildinfo
 artifacts/
+.run/
+logs/
 data/raw/
 data/parquet/
 data/backtests/
