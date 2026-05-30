@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use chrono::{NaiveDate, Utc};
 use fc_domain::Observation;
 use serde::Deserialize;
@@ -5,8 +7,8 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::{
-    Connector, ConnectorCapability, ConnectorError, FetchPlan, NormalizedBatch, RawPayload,
-    SourceDescriptor,
+    http_client, Connector, ConnectorCapability, ConnectorError, FetchPlan, NormalizedBatch,
+    RawPayload, SourceDescriptor,
 };
 
 #[derive(Debug, Clone)]
@@ -19,7 +21,13 @@ pub struct FredConnector {
 impl FredConnector {
     pub fn new(api_key: Option<String>) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .user_agent(http_client::user_agent())
+                .http1_only()
+                .no_proxy()
+                .timeout(Duration::from_secs(30))
+                .build()
+                .expect("valid FRED reqwest client"),
             base_url: Url::parse("https://api.stlouisfed.org/fred/").expect("valid FRED base URL"),
             api_key,
         }
@@ -83,30 +91,42 @@ impl Connector for FredConnector {
             .get(url.clone())
             .send()
             .await
-            .map_err(|error| ConnectorError::TemporaryNetwork(error.to_string()))?;
-        let status = response.status();
-        if status.as_u16() == 429 {
-            return Err(ConnectorError::RateLimited);
-        }
-        if status.as_u16() == 401 || status.as_u16() == 403 {
-            return Err(ConnectorError::AuthFailed);
-        }
-        if status.is_server_error() {
-            return Err(ConnectorError::SourceUnavailable(status.to_string()));
-        }
-        if !status.is_success() {
-            return Err(ConnectorError::InvalidRequest(status.to_string()));
-        }
-        let content_type = response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or("application/json")
-            .to_string();
-        let body = response
-            .text()
-            .await
-            .map_err(|error| ConnectorError::TemporaryNetwork(error.to_string()))?;
+            .map_err(|error| ConnectorError::TemporaryNetwork(format!("{error:?}")));
+        let (content_type, body) = match response {
+            Ok(response) => {
+                let status = response.status();
+                if status.as_u16() == 429 {
+                    return Err(ConnectorError::RateLimited);
+                }
+                if status.as_u16() == 401 || status.as_u16() == 403 {
+                    return Err(ConnectorError::AuthFailed);
+                }
+                if status.is_server_error() {
+                    return Err(ConnectorError::SourceUnavailable(status.to_string()));
+                }
+                if !status.is_success() {
+                    return Err(ConnectorError::InvalidRequest(status.to_string()));
+                }
+                let content_type = response
+                    .headers()
+                    .get(reqwest::header::CONTENT_TYPE)
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or("application/json")
+                    .to_string();
+                let body = response
+                    .text()
+                    .await
+                    .map_err(|error| ConnectorError::TemporaryNetwork(format!("{error:?}")))?;
+                (content_type, body)
+            }
+            Err(error) => {
+                tracing::warn!(%error, "reqwest failed; falling back to curl");
+                (
+                    "application/json".to_string(),
+                    http_client::curl_get_text(&url, 60)?,
+                )
+            }
+        };
         Ok(RawPayload {
             raw_payload_id: Uuid::new_v4(),
             source_id: plan.source_id.clone(),

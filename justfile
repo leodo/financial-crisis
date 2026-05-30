@@ -44,17 +44,33 @@ worker:
 db-init:
     cargo run -p fc-worker -- db init
 
-# 写入本地 SQLite 所需的 FRED 元数据和首批指标映射。
+# 写入本地 SQLite 所需的 FRED、Treasury 元数据和首批指标映射。
 db-seed:
     cargo run -p fc-worker -- db seed
 
-# 使用 FRED_API_KEY 回填 FRED 历史数据到本地 SQLite。
+# 无需 API key，使用 FRED 图表 CSV 回填历史数据到本地 SQLite。
 backfill-fred:
     cargo run -p fc-worker -- backfill fred
 
-# 使用 FRED_API_KEY 回填指定日期范围的 FRED 历史数据。
+# 无需 API key，使用 FRED 图表 CSV 回填指定日期范围的历史数据。
 backfill-fred-range start end:
     cargo run -p fc-worker -- backfill fred --start {{start}} --end {{end}}
+
+# 可选增强：使用官方 FRED API 回填历史数据，需要先设置 FRED_API_KEY。
+backfill-fred-api:
+    cargo run -p fc-worker -- backfill fred --api
+
+# 可选增强：使用官方 FRED API 回填指定日期范围，需要先设置 FRED_API_KEY。
+backfill-fred-api-range start end:
+    cargo run -p fc-worker -- backfill fred --api --start {{start}} --end {{end}}
+
+# 无需 API key，使用美国财政部官方收益率曲线作为利率数据兜底源。
+backfill-treasury-yield:
+    cargo run -p fc-worker -- backfill treasury-yield
+
+# 无需 API key，回填指定日期范围的美国财政部收益率曲线。
+backfill-treasury-yield-range start end:
+    cargo run -p fc-worker -- backfill treasury-yield --start {{start}} --end {{end}}
 
 # 安装前端依赖。首次运行前端前需要执行一次。
 web-install:

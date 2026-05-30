@@ -11,7 +11,8 @@
 - 可以覆盖：美国宏观、利率、期限利差、信用利差、波动率、金融压力、全球宏观慢变量、上市公司公告、新闻事件聚合。
 - 暂不能免费稳定覆盖：实时逐笔行情、Level-2 订单簿、全量 CDS、商业信用违约数据库、机构级资金流和银行内部流动性。
 - 第一版目标应是“日频风险评估 + 小时/日级事件补充”，不是高频交易级实时风控。
-- FRED 适合作为 P0 主源，但官方 API 需要免费 API key；当前本地环境未发现 `FRED_API_KEY`。
+- FRED 适合作为 P0 主源；默认采用公开图表 CSV 下载口，不需要 API key。官方 API 仅作为可选增强，用于后续需要 realtime/vintage 字段的场景。
+- FRED 图表 CSV 的少数授权序列可能只返回最近窗口，不能假设每个 series 都覆盖 2008/2020；首批回测需要为信用利差准备 BAA10Y 等长历史代理。
 - SQLite 可以作为本地个人版和开发版主数据库；生产多人访问或高并发抓取再迁移 PostgreSQL/TimescaleDB。
 
 ## 2. 需求范围
@@ -40,7 +41,8 @@
 
 | Source ID | 官方入口 | 历史数据可用性 | 认证 | 适合用途 | MVP 判断 |
 |---|---|---|---|---|---|
-| `fred` | [FRED API](https://fred.stlouisfed.org/docs/api/fred/) | 多数美国宏观和金融序列可回填多年；部分序列支持 realtime/vintage 字段 | 免费 API key | 利率、信用、VIX、金融压力、宏观 | P0，可落地 |
+| `fred` | [FRED Graph CSV](https://fred.stlouisfed.org/graph/fredgraph.csv?id=FEDFUNDS) / [FRED API](https://fred.stlouisfed.org/docs/api/fred/) | 多数美国宏观和金融序列可回填多年；CSV 无 vintage，API 支持 realtime/vintage 字段 | CSV 无需 key；API 需要免费 key | 利率、信用、VIX、金融压力、宏观 | P0，可落地 |
+| `treasury` | [U.S. Treasury Yield Curve](https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve) | 每日美国国债收益率曲线，可作为 FRED 利率序列兜底 | 无需 key | 10Y、2Y、期限利差 | P0，可落地 |
 | `world_bank` | [World Bank Indicators API](https://datahelpdesk.worldbank.org/knowledgebase/articles/889392) | 国家级年频指标历史长，适合 1960 年后慢变量 | 通常无需 key | GDP、通胀、失业、经常账户 | P0，可落地 |
 | `sec_edgar` | [SEC EDGAR APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces) | 公司申报历史可追溯，事件抽取需要 CIK 白名单 | 无 key，但要合理 User-Agent 和限流 | 8-K、10-Q、10-K、银行风险事件 | P0，可落地 |
 | `imf` | [IMF Data API](https://data.imf.org/en/Resource-Pages/IMF-API) | 全球宏观金融统计覆盖广，接入复杂度高于 FRED | 以官方 API 为准 | 外储、国际收支、金融稳健指标 | P0，需先做 dataset/key 映射 |
@@ -58,7 +60,8 @@
 | World Bank | `US/NY.GDP.MKTP.KD.ZG?date=1960:2024` | 返回 65 个年度点，覆盖 1960-2024 |
 | SEC EDGAR | `data.sec.gov/submissions/CIK0000320193.json` | 使用普通 User-Agent 可返回 Apple filing 元数据，recent filing 数量约 1000 |
 | GDELT | `financial crisis` 2020-01 timeline volume | 返回 31 个日度时间线点 |
-| FRED | 检查本地 `FRED_API_KEY` | 未配置 key；实现前需要用户申请免费 key 或配置替代下载路径 |
+| FRED Graph CSV | `fredgraph.csv?id=FEDFUNDS` | 无需 key，返回 FEDFUNDS 长历史 CSV |
+| Treasury Yield XML | `daily_treasury_yield_curve&field_tdr_date_value_month=202605` | 无需 key，返回 2026-05 每日收益率曲线 XML |
 
 该验证只证明“官方接口可访问并能返回历史样本”，不等于完成字段级授权审查和生产 SLA 验证。
 

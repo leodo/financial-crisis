@@ -6,8 +6,14 @@ use std::{
 use anyhow::{bail, Context};
 use chrono::{NaiveDate, Utc};
 use fc_domain::Frequency;
-use fc_ingestion::{Connector, FetchPlan, FredConnector, MockConnector, RunMode};
-use fc_storage::{RawResponseRecord, SqliteStore, FRED_DATASET_ID};
+use fc_ingestion::{
+    Connector, FetchPlan, FredConnector, FredGraphCsvConnector, MockConnector, RunMode,
+    TreasuryYieldCurveConnector,
+};
+use fc_storage::{
+    ExternalIndicatorMapping, RawResponseRecord, SqliteStore, FRED_DATASET_ID,
+    TREASURY_YIELD_DATASET_ID,
+};
 
 const DEFAULT_SQLITE_PATH: &str = "data/fc-local.sqlite";
 const DEFAULT_RAW_DATA_DIR: &str = "data/raw";
@@ -23,6 +29,9 @@ async fn main() -> anyhow::Result<()> {
         [scope, action] if scope == "db" && action == "seed" => db_seed().await,
         [scope, source, rest @ ..] if scope == "backfill" && source == "fred" => {
             backfill_fred(rest).await
+        }
+        [scope, source, rest @ ..] if scope == "backfill" && source == "treasury-yield" => {
+            backfill_treasury_yield(rest).await
         }
         [scope, ..] if scope == "help" || scope == "--help" || scope == "-h" => {
             print_help();
@@ -46,30 +55,75 @@ async fn db_seed() -> anyhow::Result<()> {
     let store = open_sqlite_store().await?;
     store.migrate().await?;
     store.seed_fred_metadata().await?;
-    println!("Seeded FRED metadata into {}", sqlite_path());
+    println!("Seeded FRED and Treasury metadata into {}", sqlite_path());
     Ok(())
 }
 
 async fn backfill_fred(args: &[String]) -> anyhow::Result<()> {
-    let api_key = env::var("FRED_API_KEY")
-        .context("FRED_API_KEY is required. Create a free FRED API key and set it locally.")?;
-    let options = BackfillOptions::parse(args)?;
+    let options = FredBackfillOptions::parse(args)?;
     let store = open_sqlite_store().await?;
     store.migrate().await?;
     store.seed_fred_metadata().await?;
 
-    let connector = FredConnector::new(Some(api_key));
+    let connector: Box<dyn Connector> = match options.fred_mode {
+        FredBackfillMode::GraphCsv => Box::new(FredGraphCsvConnector::new()),
+        FredBackfillMode::Api => {
+            let api_key = env::var("FRED_API_KEY")
+                .context("FRED_API_KEY is required only when using `backfill fred --api`.")?;
+            Box::new(FredConnector::new(Some(api_key)))
+        }
+    };
     let mappings = store.load_fred_mappings().await?;
     if mappings.is_empty() {
         bail!("no FRED mappings found; run `just db-seed` first");
     }
 
+    backfill_mappings(
+        connector.as_ref(),
+        mappings,
+        FRED_DATASET_ID,
+        options.options,
+        "FRED",
+    )
+    .await
+}
+
+async fn backfill_treasury_yield(args: &[String]) -> anyhow::Result<()> {
+    let options = BackfillOptions::parse(args)?;
+    let store = open_sqlite_store().await?;
+    store.migrate().await?;
+    store.seed_fred_metadata().await?;
+
+    let mappings = store.load_treasury_yield_mappings().await?;
+    if mappings.is_empty() {
+        bail!("no Treasury yield mappings found; run `just db-seed` first");
+    }
+
+    let connector = TreasuryYieldCurveConnector::new();
+    backfill_mappings(
+        &connector,
+        mappings,
+        TREASURY_YIELD_DATASET_ID,
+        options,
+        "Treasury yield",
+    )
+    .await
+}
+
+async fn backfill_mappings(
+    connector: &dyn Connector,
+    mappings: Vec<ExternalIndicatorMapping>,
+    dataset_id: &str,
+    options: BackfillOptions,
+    label: &str,
+) -> anyhow::Result<()> {
+    let store = open_sqlite_store().await?;
     let raw_root = raw_data_dir();
     let mut total_written = 0_usize;
     for mapping in mappings {
         let plan = FetchPlan {
-            source_id: "fred".to_string(),
-            dataset_id: FRED_DATASET_ID.to_string(),
+            source_id: connector.describe().source_id,
+            dataset_id: dataset_id.to_string(),
             target_id: mapping.indicator_id.clone(),
             external_code: Some(mapping.external_code.clone()),
             run_mode: RunMode::Backfill,
@@ -79,11 +133,18 @@ async fn backfill_fred(args: &[String]) -> anyhow::Result<()> {
         };
         tracing::info!(
             indicator_id = %plan.target_id,
-            series_id = %mapping.external_code,
-            "fetching FRED observations"
+            external_code = %mapping.external_code,
+            source_id = %plan.source_id,
+            "fetching observations"
         );
         let payload = connector.fetch(&plan).await?;
-        let raw_path = write_raw_payload(&raw_root, &mapping.external_code, &payload.body)?;
+        let raw_path = write_raw_payload(
+            &raw_root,
+            &payload.source_id,
+            &mapping.external_code,
+            raw_file_extension(&payload.content_type),
+            &payload.body,
+        )?;
         store
             .insert_raw_response(&RawResponseRecord {
                 raw_payload_id: payload.raw_payload_id,
@@ -118,18 +179,28 @@ async fn backfill_fred(args: &[String]) -> anyhow::Result<()> {
                 )
                 .await?;
         }
+        if written == 0 {
+            tracing::warn!(
+                indicator_id = %mapping.indicator_id,
+                external_code = %mapping.external_code,
+                start = %options.start,
+                end = %options.end,
+                "no observations were written for requested range"
+            );
+        }
         total_written += written;
         println!(
-            "backfilled {} ({}) with {} observations",
-            mapping.indicator_id, mapping.external_code, written
+            "backfilled {} ({}) from {} with {} observations",
+            mapping.indicator_id, mapping.external_code, payload.source_id, written
         );
         for warning in batch.warnings.iter().take(3) {
-            tracing::warn!(%warning, indicator_id = %mapping.indicator_id, "FRED parse warning");
+            tracing::warn!(%warning, indicator_id = %mapping.indicator_id, "parse warning");
         }
     }
 
     println!(
-        "FRED backfill completed: {} observations written to {}",
+        "{} backfill completed: {} observations written to {}",
+        label,
         total_written,
         sqlite_path()
     );
@@ -184,7 +255,7 @@ impl BackfillOptions {
                     index += 1;
                     end = parse_date_arg(args.get(index), "--end")?;
                 }
-                other => bail!("unknown backfill fred option: {other}"),
+                other => bail!("unknown backfill option: {other}"),
             }
             index += 1;
         }
@@ -193,6 +264,36 @@ impl BackfillOptions {
         }
         Ok(Self { start, end })
     }
+}
+
+#[derive(Debug, Clone)]
+struct FredBackfillOptions {
+    options: BackfillOptions,
+    fred_mode: FredBackfillMode,
+}
+
+impl FredBackfillOptions {
+    fn parse(args: &[String]) -> anyhow::Result<Self> {
+        let mut filtered_args = Vec::new();
+        let mut fred_mode = FredBackfillMode::GraphCsv;
+        for arg in args {
+            match arg.as_str() {
+                "--api" => fred_mode = FredBackfillMode::Api,
+                "--graph-csv" => fred_mode = FredBackfillMode::GraphCsv,
+                _ => filtered_args.push(arg.clone()),
+            }
+        }
+        Ok(Self {
+            options: BackfillOptions::parse(&filtered_args)?,
+            fred_mode,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum FredBackfillMode {
+    GraphCsv,
+    Api,
 }
 
 fn parse_date_arg(value: Option<&String>, option: &str) -> anyhow::Result<NaiveDate> {
@@ -217,13 +318,31 @@ fn raw_data_dir() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from(DEFAULT_RAW_DATA_DIR))
 }
 
-fn write_raw_payload(raw_root: &Path, series_id: &str, body: &str) -> anyhow::Result<PathBuf> {
+fn write_raw_payload(
+    raw_root: &Path,
+    source_id: &str,
+    external_code: &str,
+    extension: &str,
+    body: &str,
+) -> anyhow::Result<PathBuf> {
     let year = Utc::now().format("%Y").to_string();
-    let directory = raw_root.join("fred").join(series_id).join(year);
+    let directory = raw_root.join(source_id).join(external_code).join(year);
     fs::create_dir_all(&directory)?;
-    let path = directory.join(format!("{}.json", simple_hash(body)));
+    let path = directory.join(format!("{}.{}", simple_hash(body), extension));
     fs::write(&path, body)?;
     Ok(path)
+}
+
+fn raw_file_extension(content_type: &str) -> &'static str {
+    if content_type.contains("csv") {
+        "csv"
+    } else if content_type.contains("json") {
+        "json"
+    } else if content_type.contains("xml") {
+        "xml"
+    } else {
+        "txt"
+    }
 }
 
 fn path_to_string(path: &Path) -> String {
@@ -247,10 +366,16 @@ fn print_help() {
       Create or migrate the local SQLite database.
 
   cargo run -p fc-worker -- db seed
-      Seed FRED source, dataset, entity, indicator, and mapping metadata.
+      Seed FRED, Treasury, entity, indicator, and mapping metadata.
 
   cargo run -p fc-worker -- backfill fred [--start YYYY-MM-DD] [--end YYYY-MM-DD]
-      Fetch FRED historical observations into SQLite. Requires FRED_API_KEY.
+      Fetch FRED public graph CSV observations into SQLite. No API key required.
+
+  cargo run -p fc-worker -- backfill fred --api [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+      Fetch FRED official API observations into SQLite. Requires FRED_API_KEY.
+
+  cargo run -p fc-worker -- backfill treasury-yield [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+      Fetch U.S. Treasury yield curve observations into SQLite. No API key required.
 "#
     );
 }

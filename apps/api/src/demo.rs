@@ -394,7 +394,17 @@ fn sources() -> Vec<DataSource> {
             SourceStatus::Healthy,
             96.0,
             true,
-            "Official FRED API. API key recommended for production.",
+            "FRED graph CSV is the default no-key source; official API remains optional.",
+        ),
+        source(
+            "treasury",
+            "U.S. Treasury",
+            "government_timeseries",
+            SourcePriority::P0,
+            SourceStatus::Healthy,
+            96.0,
+            true,
+            "Official no-key Treasury yield curve data.",
         ),
         source(
             "sec_edgar",

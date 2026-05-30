@@ -31,7 +31,7 @@ P2 数据源只作为后续增强或商业替代方案。
 
 | 优先级 | Source ID | 数据源 | 类型 | 主要用途 | 接入方式 | 生产判断 |
 |---|---|---|---|---|---|---|
-| P0 | `fred` | FRED | 宏观/金融时序 | 美国利率、信用、宏观、压力指标 | 官方 REST API | 可作为核心源 |
+| P0 | `fred` | FRED | 宏观/金融时序 | 美国利率、信用、宏观、压力指标 | 图表 CSV；官方 REST API 可选 | 可作为核心源 |
 | P0 | `sec_edgar` | SEC EDGAR | 公告/事件 | 上市公司申报、风险事件 | 官方 JSON API | 可作为核心源 |
 | P0 | `world_bank` | World Bank Indicators | 全球宏观 | GDP、通胀、失业、外部指标 | 官方 API | 可作为核心源 |
 | P0 | `imf` | IMF Data | 全球宏观金融 | 国际收支、外储、财政、金融统计 | 官方 API/SDMX | 可作为核心源 |
@@ -42,10 +42,12 @@ P2 数据源只作为后续增强或商业替代方案。
 | P1 | `alpha_vantage` | Alpha Vantage | 市场价格 | 股票、FX、部分宏观补充 | 官方 API | 原型或低频补充 |
 | P1 | `yfinance` | yfinance | 市场价格 | Yahoo Finance 数据下载 | 非官方封装 | 仅研发原型 |
 | P2 | `nasdaq_data_link` | Nasdaq Data Link | 多类数据集 | 扩展数据集 | 官方 API | 按数据集审查 |
+| P0 | `treasury` | U.S. Treasury Yield Curve | 美国利率 | 国债收益率曲线、期限利差兜底 | 官方 XML | 利率兜底核心源 |
 | P2 | `treasury_fiscaldata` | Fiscal Data | 美国财政 | 债务、财政和国债相关数据 | 官方 API | 补充源 |
 
 官方资料入口：
 
+- FRED Graph CSV: <https://fred.stlouisfed.org/graph/fredgraph.csv?id=FEDFUNDS>
 - FRED API: <https://fred.stlouisfed.org/docs/api/fred/>
 - SEC EDGAR APIs: <https://www.sec.gov/search-filings/edgar-application-programming-interfaces>
 - World Bank Indicators API: <https://datahelpdesk.worldbank.org/knowledgebase/articles/889392>
@@ -88,16 +90,17 @@ P2 数据源只作为后续增强或商业替代方案。
 
 接入策略：
 
-- 使用 `series/observations` 拉取观测值。
-- 使用 `series` 或 `series/search` 获取元数据。
-- 增量抓取以 `observation_start` 和最后发布日期为水位。
-- 保存 FRED 的 `realtime_start`、`realtime_end`，为后续 point-in-time 回测预留空间。
+- 默认使用 `fredgraph.csv?id=<series>` 拉取观测值，不依赖账号或 API key。
+- 可选官方 API 使用 `series/observations` 拉取观测值，并可使用 `series` 或 `series/search` 获取元数据。
+- 默认 CSV 模式在本地按日期过滤增量窗口。
+- 只有官方 API 模式保存 FRED 的 `realtime_start`、`realtime_end`，为后续 point-in-time 回测预留空间。
 
 主要风险：
 
 - 部分序列有发布滞后。
 - 部分数据存在历史修订。
-- API key 和限流需要在连接器配置中显式管理。
+- 默认 CSV 没有 vintage/realtime 字段；需要严格 point-in-time 回测时切换官方 API。
+- 可选 API key 和限流需要在连接器配置中显式管理。
 
 ### 4.2 SEC EDGAR
 
@@ -260,4 +263,3 @@ replacement_strategy
 - SEC 首批 CIK 白名单确认。
 - IMF/BIS 的具体 dataset 和 key 完成映射。
 - 市场价格原型源和生产替代源分离。
-

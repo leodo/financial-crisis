@@ -14,6 +14,7 @@ use crate::{
 };
 
 pub const FRED_DATASET_ID: &str = "fred_series_observations";
+pub const TREASURY_YIELD_DATASET_ID: &str = "treasury_daily_yield_curve";
 
 const SQLITE_INIT_SQL: &str = include_str!("../../../migrations/sqlite/0001_init.sql");
 
@@ -114,18 +115,19 @@ impl SqliteStore {
                 'FRED',
                 'macro_financial_timeseries',
                 'https://fred.stlouisfed.org/',
-                'https://fred.stlouisfed.org/docs/api/fred/',
-                'rest_api',
-                1,
-                'FRED_API_KEY',
-                '{"policy":"free_api_key_required","note":"Use conservative local backfill cadence."}',
-                'Use according to FRED API terms and source-specific notes.',
+                'https://fred.stlouisfed.org/graph/fredgraph.csv',
+                'graph_csv',
+                0,
+                NULL,
+                '{"policy":"public_graph_csv","note":"No API key; cache locally and keep conservative cadence."}',
+                'Use according to FRED source-specific notes; public graph CSV has no vintage fields.',
                 'review_required',
                 1,
                 1
             )
             ON CONFLICT(source_id) DO UPDATE SET
                 display_name = excluded.display_name,
+                access_method = excluded.access_method,
                 documentation_url = excluded.documentation_url,
                 auth_required = excluded.auth_required,
                 auth_secret_ref = excluded.auth_secret_ref,
@@ -162,9 +164,9 @@ impl SqliteStore {
                 '["us"]',
                 1,
                 1,
-                1,
+                0,
                 86400,
-                'fred_seed_v1_20260530',
+                'fred_graph_csv_seed_v2_20260530',
                 1
             )
             ON CONFLICT(dataset_id) DO UPDATE SET
@@ -179,6 +181,97 @@ impl SqliteStore {
             "#,
         )
         .bind(FRED_DATASET_ID)
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO metadata_sources (
+                source_id,
+                display_name,
+                source_type,
+                official_url,
+                documentation_url,
+                access_method,
+                auth_required,
+                auth_secret_ref,
+                rate_limit_policy_json,
+                license_note,
+                commercial_use_status,
+                production_allowed,
+                enabled
+            )
+            VALUES (
+                'treasury',
+                'U.S. Treasury',
+                'government_timeseries',
+                'https://home.treasury.gov/',
+                'https://home.treasury.gov/resource-center/data-chart-center/interest-rates',
+                'xml_download',
+                0,
+                NULL,
+                '{"policy":"public_xml","note":"Fetch by month and cache locally."}',
+                'Official U.S. Treasury daily yield curve publication.',
+                'public_official',
+                1,
+                1
+            )
+            ON CONFLICT(source_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                documentation_url = excluded.documentation_url,
+                access_method = excluded.access_method,
+                auth_required = excluded.auth_required,
+                auth_secret_ref = excluded.auth_secret_ref,
+                rate_limit_policy_json = excluded.rate_limit_policy_json,
+                license_note = excluded.license_note,
+                production_allowed = excluded.production_allowed,
+                enabled = excluded.enabled,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO metadata_datasets (
+                dataset_id,
+                source_id,
+                display_name,
+                frequency_set_json,
+                region_set_json,
+                supports_backfill,
+                supports_incremental,
+                supports_vintage,
+                expected_latency_seconds,
+                config_version,
+                enabled
+            )
+            VALUES (
+                ?1,
+                'treasury',
+                'Daily Treasury yield curve',
+                '["daily"]',
+                '["us"]',
+                1,
+                1,
+                0,
+                86400,
+                'treasury_yield_seed_v1_20260530',
+                1
+            )
+            ON CONFLICT(dataset_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                frequency_set_json = excluded.frequency_set_json,
+                region_set_json = excluded.region_set_json,
+                supports_backfill = excluded.supports_backfill,
+                supports_incremental = excluded.supports_incremental,
+                supports_vintage = excluded.supports_vintage,
+                config_version = excluded.config_version,
+                enabled = excluded.enabled
+            "#,
+        )
+        .bind(TREASURY_YIELD_DATASET_ID)
         .execute(&self.pool)
         .await?;
 
@@ -208,11 +301,34 @@ impl SqliteStore {
             self.upsert_fred_mapping(&indicator.indicator_id, seed.external_code)
                 .await?;
         }
+        self.upsert_external_mapping(
+            "us_rates_yield_curve_10y2y",
+            "treasury",
+            TREASURY_YIELD_DATASET_ID,
+            "T10Y2Y",
+            90,
+        )
+        .await?;
 
         Ok(())
     }
 
     pub async fn load_fred_mappings(&self) -> Result<Vec<ExternalIndicatorMapping>, StorageError> {
+        self.load_external_mappings("fred", FRED_DATASET_ID).await
+    }
+
+    pub async fn load_treasury_yield_mappings(
+        &self,
+    ) -> Result<Vec<ExternalIndicatorMapping>, StorageError> {
+        self.load_external_mappings("treasury", TREASURY_YIELD_DATASET_ID)
+            .await
+    }
+
+    pub async fn load_external_mappings(
+        &self,
+        source_id: &str,
+        dataset_id: &str,
+    ) -> Result<Vec<ExternalIndicatorMapping>, StorageError> {
         let rows = sqlx::query(
             r#"
             SELECT
@@ -221,13 +337,14 @@ impl SqliteStore {
                 ind.frequency
             FROM metadata_external_indicator_mappings map
             JOIN metadata_indicators ind ON ind.indicator_id = map.indicator_id
-            WHERE map.source_id = 'fred'
-              AND map.dataset_id = ?1
+            WHERE map.source_id = ?1
+              AND map.dataset_id = ?2
               AND ind.enabled = 1
             ORDER BY map.priority, map.indicator_id
             "#,
         )
-        .bind(FRED_DATASET_ID)
+        .bind(source_id)
+        .bind(dataset_id)
         .fetch_all(&self.pool)
         .await?;
 
@@ -563,6 +680,18 @@ impl SqliteStore {
         indicator_id: &str,
         external_code: &str,
     ) -> Result<(), StorageError> {
+        self.upsert_external_mapping(indicator_id, "fred", FRED_DATASET_ID, external_code, 100)
+            .await
+    }
+
+    async fn upsert_external_mapping(
+        &self,
+        indicator_id: &str,
+        source_id: &str,
+        dataset_id: &str,
+        external_code: &str,
+        priority: i64,
+    ) -> Result<(), StorageError> {
         sqlx::query(
             r#"
             INSERT INTO metadata_external_indicator_mappings (
@@ -574,7 +703,7 @@ impl SqliteStore {
                 external_params_json,
                 priority
             )
-            VALUES (?1, ?2, 'fred', ?3, ?4, '{}', 100)
+            VALUES (?1, ?2, ?3, ?4, ?5, '{}', ?6)
             ON CONFLICT(indicator_id, source_id, dataset_id, external_code) DO UPDATE SET
                 external_params_json = excluded.external_params_json,
                 priority = excluded.priority
@@ -582,8 +711,10 @@ impl SqliteStore {
         )
         .bind(Uuid::new_v4().to_string())
         .bind(indicator_id)
-        .bind(FRED_DATASET_ID)
+        .bind(source_id)
+        .bind(dataset_id)
         .bind(external_code)
+        .bind(priority)
         .execute(&self.pool)
         .await?;
         Ok(())

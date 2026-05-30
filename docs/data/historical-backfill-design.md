@@ -72,7 +72,8 @@ last_watermark -> request window -> raw_saved -> parsed -> upsert -> new_waterma
 
 - 使用 `series/observations`。
 - 保存 `realtime_start`、`realtime_end`、`date`、`value`。
-- FRED API key 放本地环境变量 `FRED_API_KEY`，不写入仓库。
+- 默认 FRED 图表 CSV 回填不需要 API key。
+- 可选官方 FRED API 模式使用本地环境变量 `FRED_API_KEY`，不写入仓库。
 
 回填策略：
 

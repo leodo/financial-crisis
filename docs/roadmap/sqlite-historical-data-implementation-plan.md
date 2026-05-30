@@ -50,7 +50,8 @@ SQLite init
 ```text
 FC_DATA_MODE=demo|sqlite|postgres
 FC_SQLITE_PATH=data/fc-local.sqlite
-FRED_API_KEY=<user local secret>
+# Optional only for official FRED API mode. Default FRED graph CSV backfill needs no key.
+FRED_API_KEY=<optional user local secret>
 FC_RAW_DATA_DIR=data/raw
 ```
 
@@ -66,7 +67,7 @@ just db-check
 
 验收：
 
-- 未配置 `FRED_API_KEY` 时，命令给出明确错误，不 panic。
+- 默认 `backfill fred` 不依赖 `FRED_API_KEY`；只有 `backfill fred --api` 未配置 key 时给出明确错误，不 panic。
 - `just db-init` 可以重复运行。
 - `data/`、`data/raw/` 默认进入 `.gitignore`。
 
@@ -227,7 +228,7 @@ FC_SQLITE_PATH=data/fc-local.sqlite
 - `just backfill-fred` 写入至少 10 个指标、每个指标不少于 5 年历史。
 - `FC_DATA_MODE=sqlite just api` 可以启动。
 - Web 面板展示真实 SQLite 风险评分。
-- README 写明如何申请和配置 `FRED_API_KEY`。
+- README 写明默认无 key FRED CSV、Treasury 兜底源和可选 FRED API key 配置。
 
 ## 7. 暂不做事项
 

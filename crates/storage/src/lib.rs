@@ -5,7 +5,10 @@ use thiserror::Error;
 
 mod sqlite;
 
-pub use sqlite::{ExternalIndicatorMapping, RawResponseRecord, SqliteStore, FRED_DATASET_ID};
+pub use sqlite::{
+    ExternalIndicatorMapping, RawResponseRecord, SqliteStore, FRED_DATASET_ID,
+    TREASURY_YIELD_DATASET_ID,
+};
 
 #[derive(Debug, Error)]
 pub enum StorageError {
