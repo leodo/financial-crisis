@@ -1,0 +1,11 @@
+target/
+.serena/
+node_modules/
+dist/
+apps/web/dist/
+apps/web/node_modules/
+apps/web/tsconfig.tsbuildinfo
+artifacts/
+data/raw/
+data/parquet/
+data/backtests/

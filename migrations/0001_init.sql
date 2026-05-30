@@ -1,0 +1,283 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+CREATE SCHEMA IF NOT EXISTS metadata;
+CREATE SCHEMA IF NOT EXISTS ingest;
+CREATE SCHEMA IF NOT EXISTS raw;
+CREATE SCHEMA IF NOT EXISTS ts;
+CREATE SCHEMA IF NOT EXISTS quality;
+CREATE SCHEMA IF NOT EXISTS alerts;
+CREATE SCHEMA IF NOT EXISTS audit;
+
+CREATE TABLE IF NOT EXISTS metadata.sources (
+    source_id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    official_url TEXT,
+    documentation_url TEXT,
+    access_method TEXT NOT NULL,
+    auth_required BOOLEAN NOT NULL DEFAULT FALSE,
+    auth_secret_ref TEXT,
+    rate_limit_policy JSONB NOT NULL DEFAULT '{}'::jsonb,
+    license_note TEXT NOT NULL DEFAULT '',
+    commercial_use_status TEXT NOT NULL DEFAULT 'unknown',
+    production_allowed BOOLEAN NOT NULL DEFAULT FALSE,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS metadata.datasets (
+    dataset_id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL REFERENCES metadata.sources(source_id),
+    display_name TEXT NOT NULL,
+    frequency_set TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    region_set TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    supports_backfill BOOLEAN NOT NULL DEFAULT TRUE,
+    supports_incremental BOOLEAN NOT NULL DEFAULT TRUE,
+    supports_vintage BOOLEAN NOT NULL DEFAULT FALSE,
+    expected_latency INTERVAL,
+    config_version TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS metadata.indicators (
+    indicator_id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    dimension TEXT NOT NULL,
+    subdimension TEXT,
+    description TEXT NOT NULL DEFAULT '',
+    unit TEXT NOT NULL,
+    currency TEXT,
+    frequency TEXT NOT NULL,
+    risk_direction TEXT NOT NULL,
+    default_transform TEXT,
+    default_source_id TEXT REFERENCES metadata.sources(source_id),
+    quality_tier TEXT NOT NULL DEFAULT 'core',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS metadata.external_indicator_mappings (
+    mapping_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    indicator_id TEXT NOT NULL REFERENCES metadata.indicators(indicator_id),
+    source_id TEXT NOT NULL REFERENCES metadata.sources(source_id),
+    dataset_id TEXT NOT NULL REFERENCES metadata.datasets(dataset_id),
+    external_code TEXT NOT NULL,
+    external_params JSONB NOT NULL DEFAULT '{}'::jsonb,
+    valid_from DATE NOT NULL DEFAULT CURRENT_DATE,
+    valid_to DATE,
+    priority INTEGER NOT NULL DEFAULT 100
+);
+
+CREATE TABLE IF NOT EXISTS metadata.entities (
+    entity_id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    iso_country_code TEXT,
+    currency TEXT,
+    parent_entity_id TEXT REFERENCES metadata.entities(entity_id),
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE TABLE IF NOT EXISTS metadata.calendars (
+    calendar_id TEXT NOT NULL,
+    region TEXT NOT NULL,
+    calendar_type TEXT NOT NULL,
+    calendar_date DATE NOT NULL,
+    is_open BOOLEAN NOT NULL,
+    note TEXT,
+    PRIMARY KEY (calendar_id, calendar_date)
+);
+
+CREATE TABLE IF NOT EXISTS ingest.jobs (
+    job_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_id TEXT NOT NULL REFERENCES metadata.sources(source_id),
+    dataset_id TEXT NOT NULL REFERENCES metadata.datasets(dataset_id),
+    target_id TEXT,
+    run_mode TEXT NOT NULL,
+    schedule TEXT NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 100,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    next_run_at TIMESTAMPTZ,
+    config_version TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ingest.runs (
+    run_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id UUID REFERENCES ingest.jobs(job_id),
+    source_id TEXT NOT NULL,
+    dataset_id TEXT NOT NULL,
+    target_id TEXT,
+    run_mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at TIMESTAMPTZ,
+    attempt INTEGER NOT NULL DEFAULT 1,
+    watermark_before JSONB,
+    watermark_after JSONB,
+    records_read INTEGER NOT NULL DEFAULT 0,
+    records_written INTEGER NOT NULL DEFAULT 0,
+    error_type TEXT,
+    error_message TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ingest.watermarks (
+    source_id TEXT NOT NULL,
+    dataset_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    last_successful_period DATE,
+    last_publication_time TIMESTAMPTZ,
+    last_revision_time TIMESTAMPTZ,
+    last_run_id UUID,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (source_id, dataset_id, target_id)
+);
+
+CREATE TABLE IF NOT EXISTS raw.objects (
+    raw_payload_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id UUID REFERENCES ingest.runs(run_id),
+    source_id TEXT NOT NULL,
+    dataset_id TEXT NOT NULL,
+    request_url TEXT NOT NULL,
+    request_params_hash TEXT,
+    response_hash TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    content_length BIGINT,
+    raw_object_uri TEXT NOT NULL,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ts.indicator_observations (
+    indicator_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    as_of_date DATE NOT NULL,
+    period_start DATE,
+    period_end DATE,
+    frequency TEXT NOT NULL,
+    value DOUBLE PRECISION NOT NULL,
+    unit TEXT NOT NULL,
+    currency TEXT,
+    source_id TEXT NOT NULL,
+    dataset_id TEXT NOT NULL,
+    revision_time TIMESTAMPTZ,
+    publication_time TIMESTAMPTZ,
+    raw_payload_id UUID,
+    quality_score DOUBLE PRECISION NOT NULL,
+    quality_flags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (indicator_id, entity_id, as_of_date, frequency, source_id, revision_time)
+);
+
+SELECT create_hypertable('ts.indicator_observations', 'as_of_date', if_not_exists => TRUE);
+
+CREATE TABLE IF NOT EXISTS ts.feature_values (
+    feature_id TEXT NOT NULL,
+    indicator_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    as_of_date DATE NOT NULL,
+    feature_name TEXT NOT NULL,
+    feature_value DOUBLE PRECISION NOT NULL,
+    lookback_window TEXT,
+    method_version TEXT NOT NULL,
+    quality_score DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (feature_id, indicator_id, entity_id, as_of_date, method_version)
+);
+
+SELECT create_hypertable('ts.feature_values', 'as_of_date', if_not_exists => TRUE);
+
+CREATE TABLE IF NOT EXISTS ts.risk_scores (
+    score_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    score_scope TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    as_of_date DATE NOT NULL,
+    dimension TEXT NOT NULL,
+    score DOUBLE PRECISION NOT NULL,
+    level TEXT NOT NULL,
+    method_version TEXT NOT NULL,
+    top_contributors JSONB NOT NULL DEFAULT '[]'::jsonb,
+    explanation JSONB NOT NULL DEFAULT '{}'::jsonb,
+    quality_score DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (score_id, as_of_date)
+);
+
+SELECT create_hypertable('ts.risk_scores', 'as_of_date', if_not_exists => TRUE);
+
+CREATE TABLE IF NOT EXISTS quality.rules (
+    rule_id TEXT PRIMARY KEY,
+    rule_name TEXT NOT NULL,
+    scope_type TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS quality.check_results (
+    check_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id UUID REFERENCES ingest.runs(run_id),
+    indicator_id TEXT,
+    entity_id TEXT,
+    as_of_date DATE,
+    rule_id TEXT REFERENCES quality.rules(rule_id),
+    status TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    message TEXT NOT NULL,
+    observed_value JSONB,
+    expected_value JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS alerts.events (
+    alert_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    entity_id TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    dimension TEXT,
+    level TEXT NOT NULL,
+    status TEXT NOT NULL,
+    triggered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    triggered_as_of_date DATE NOT NULL,
+    resolved_at TIMESTAMPTZ,
+    score DOUBLE PRECISION NOT NULL,
+    trigger_reason TEXT NOT NULL,
+    contributors JSONB NOT NULL DEFAULT '[]'::jsonb,
+    related_indicators TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    method_version TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS alerts.event_history (
+    history_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    alert_id UUID NOT NULL REFERENCES alerts.events(alert_id),
+    event_type TEXT NOT NULL,
+    from_status TEXT,
+    to_status TEXT,
+    actor TEXT NOT NULL DEFAULT 'system',
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS audit.config_changes (
+    change_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    object_type TEXT NOT NULL,
+    object_id TEXT NOT NULL,
+    before_value JSONB,
+    after_value JSONB,
+    actor TEXT NOT NULL,
+    reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_indicator_observations_lookup
+    ON ts.indicator_observations (indicator_id, entity_id, as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_indicator_observations_source
+    ON ts.indicator_observations (source_id, dataset_id, as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_risk_scores_lookup
+    ON ts.risk_scores (entity_id, score_scope, as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_runs_status
+    ON ingest.runs (source_id, dataset_id, status, started_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_events_status
+    ON alerts.events (status, level, triggered_at DESC);

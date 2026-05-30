@@ -1,0 +1,21 @@
+[server]
+bind_addr = "127.0.0.1:18080"
+
+[database]
+url = "postgres://financial:financial@localhost:5432/financial_crisis"
+data_mode = "demo"
+
+[sources.fred]
+enabled = true
+api_key_env = "FRED_API_KEY"
+min_request_interval_ms = 250
+
+[sources.sec_edgar]
+enabled = true
+user_agent = "financial-crisis-research contact@example.com"
+min_request_interval_ms = 250
+
+[scoring]
+method_version = "scoring_v1_20260530"
+default_entity = "us"
+market_scope = "financial_system"
