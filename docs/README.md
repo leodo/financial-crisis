@@ -23,15 +23,19 @@ docs/
 ## 当前文档
 
 - [全局设计](architecture/global-design.md)
+- [本地 SQLite 历史数据总体设计](architecture/local-sqlite-historical-data-design.md)
 - [设计 TODO 总索引](roadmap/design-todo.md)
 
 ### 数据层
 
 - [免费数据源与抓取设计](data/free-data-ingestion.md)
 - [免费数据源目录](data/source-catalog.md)
+- [免费历史数据可落地性与需求分析](data/free-historical-data-feasibility.md)
 - [数据连接器契约](data/connector-contract.md)
 - [抓取任务状态机](data/ingestion-state-machine.md)
+- [历史回填设计](data/historical-backfill-design.md)
 - [数据库 Schema 设计](data/storage-schema.md)
+- [SQLite 本地存储方案](data/sqlite-local-storage-design.md)
 - [数据质量模型](data/data-quality-model.md)
 
 ### 分析层

@@ -39,6 +39,13 @@
 - [x] `docs/events/news-and-filing-analysis.md`：新闻、公告和 LLM 事件分析
 - [x] `docs/security/security-design.md`：权限、安全和审计
 
+## 专项补充设计：免费历史数据与本地 SQLite
+
+- [x] `docs/data/free-historical-data-feasibility.md`：免费历史数据可落地性与需求分析
+- [x] `docs/architecture/local-sqlite-historical-data-design.md`：本地 SQLite 历史数据总体设计
+- [x] `docs/data/historical-backfill-design.md`：历史回填设计
+- [x] `docs/data/sqlite-local-storage-design.md`：SQLite 本地存储方案
+
 ## 完成定义
 
 本轮设计完成需要满足：
