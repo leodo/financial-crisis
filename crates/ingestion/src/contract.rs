@@ -40,7 +40,10 @@ pub enum RunMode {
 pub struct FetchPlan {
     pub source_id: String,
     pub dataset_id: String,
+    /// Internal system indicator id.
     pub target_id: String,
+    /// External provider code, such as a FRED series id. Falls back to target_id.
+    pub external_code: Option<String>,
     pub run_mode: RunMode,
     pub requested_start: Option<NaiveDate>,
     pub requested_end: Option<NaiveDate>,

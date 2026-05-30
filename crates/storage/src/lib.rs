@@ -3,6 +3,10 @@ use fc_domain::{Frequency, Indicator, Observation, RiskDimension, RiskDirection}
 use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 use thiserror::Error;
 
+mod sqlite;
+
+pub use sqlite::{ExternalIndicatorMapping, RawResponseRecord, SqliteStore, FRED_DATASET_ID};
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("database error: {0}")]
@@ -13,6 +17,21 @@ pub enum StorageError {
     UnknownFrequency(String),
     #[error("unknown risk direction: {0}")]
     UnknownRiskDirection(String),
+}
+
+#[async_trait::async_trait]
+pub trait RiskStore: Send + Sync {
+    async fn load_indicators(&self) -> Result<Vec<Indicator>, StorageError>;
+
+    async fn load_observations(
+        &self,
+        entity_id: &str,
+        as_of_date: NaiveDate,
+    ) -> Result<Vec<Observation>, StorageError>;
+
+    async fn upsert_indicator(&self, indicator: &Indicator) -> Result<(), StorageError>;
+
+    async fn insert_observations(&self, observations: &[Observation]) -> Result<(), StorageError>;
 }
 
 #[derive(Debug, Clone)]
@@ -226,7 +245,30 @@ impl PostgresStore {
     }
 }
 
-fn parse_dimension(value: &str) -> Result<RiskDimension, StorageError> {
+#[async_trait::async_trait]
+impl RiskStore for PostgresStore {
+    async fn load_indicators(&self) -> Result<Vec<Indicator>, StorageError> {
+        self.load_indicators().await
+    }
+
+    async fn load_observations(
+        &self,
+        entity_id: &str,
+        as_of_date: NaiveDate,
+    ) -> Result<Vec<Observation>, StorageError> {
+        self.load_observations(entity_id, as_of_date).await
+    }
+
+    async fn upsert_indicator(&self, indicator: &Indicator) -> Result<(), StorageError> {
+        self.upsert_indicator(indicator).await
+    }
+
+    async fn insert_observations(&self, observations: &[Observation]) -> Result<(), StorageError> {
+        self.insert_observations(observations).await
+    }
+}
+
+pub(crate) fn parse_dimension(value: &str) -> Result<RiskDimension, StorageError> {
     match value {
         "macro_fragility" => Ok(RiskDimension::MacroFragility),
         "leverage_credit" => Ok(RiskDimension::LeverageCredit),
@@ -240,7 +282,7 @@ fn parse_dimension(value: &str) -> Result<RiskDimension, StorageError> {
     }
 }
 
-fn format_dimension(value: RiskDimension) -> &'static str {
+pub(crate) fn format_dimension(value: RiskDimension) -> &'static str {
     match value {
         RiskDimension::MacroFragility => "macro_fragility",
         RiskDimension::LeverageCredit => "leverage_credit",
@@ -253,7 +295,7 @@ fn format_dimension(value: RiskDimension) -> &'static str {
     }
 }
 
-fn parse_frequency(value: &str) -> Result<Frequency, StorageError> {
+pub(crate) fn parse_frequency(value: &str) -> Result<Frequency, StorageError> {
     match value {
         "daily" => Ok(Frequency::Daily),
         "weekly" => Ok(Frequency::Weekly),
@@ -265,7 +307,7 @@ fn parse_frequency(value: &str) -> Result<Frequency, StorageError> {
     }
 }
 
-fn format_frequency(value: Frequency) -> &'static str {
+pub(crate) fn format_frequency(value: Frequency) -> &'static str {
     match value {
         Frequency::Daily => "daily",
         Frequency::Weekly => "weekly",
@@ -276,7 +318,7 @@ fn format_frequency(value: Frequency) -> &'static str {
     }
 }
 
-fn parse_risk_direction(value: &str) -> Result<RiskDirection, StorageError> {
+pub(crate) fn parse_risk_direction(value: &str) -> Result<RiskDirection, StorageError> {
     match value {
         "higher_is_riskier" => Ok(RiskDirection::HigherIsRiskier),
         "lower_is_riskier" => Ok(RiskDirection::LowerIsRiskier),
@@ -288,7 +330,7 @@ fn parse_risk_direction(value: &str) -> Result<RiskDirection, StorageError> {
     }
 }
 
-fn format_risk_direction(value: RiskDirection) -> &'static str {
+pub(crate) fn format_risk_direction(value: RiskDirection) -> &'static str {
     match value {
         RiskDirection::HigherIsRiskier => "higher_is_riskier",
         RiskDirection::LowerIsRiskier => "lower_is_riskier",

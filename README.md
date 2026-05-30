@@ -14,10 +14,11 @@
 
 当前已经落地一个可运行 MVP 骨架：
 
-- Rust workspace：领域模型、数据抓取契约、FRED/Mock 连接器、规则评分引擎、PostgreSQL 存储层。
+- Rust workspace：领域模型、数据抓取契约、FRED/Mock 连接器、规则评分引擎、SQLite/PostgreSQL 存储层。
 - Axum API：提供总览、分项风险、指标、预警、数据源和回测接口。
 - React 面板：提供总览、指标库、预警记录、数据源状态和回测页面。
-- PostgreSQL/TimescaleDB：提供初始 migration。
+- SQLite：提供本地历史库 migration、FRED metadata seed 和 FRED 历史回填入口。
+- PostgreSQL/TimescaleDB：提供初始 migration 和生产迁移路径。
 - Docker Compose：提供数据库、API 和 Web 面板组合部署草案。
 
 ## 文档入口
@@ -36,9 +37,9 @@
 
 ## 当前状态
 
-- 当前目录暂未初始化 Git 仓库。
 - 当前已完成全局设计、细分设计文档和 MVP 工程骨架。
-- 当前 API 默认使用内置 demo 数据；设置 `FC_DATA_MODE=postgres` 和 `DATABASE_URL` 后，可从 PostgreSQL 读取指标和观测值并即时评分。
+- 当前 API 默认使用内置 demo 数据；设置 `FC_DATA_MODE=sqlite` 和 `FC_SQLITE_PATH` 后，可从本地 SQLite 读取指标和观测值并即时评分。
+- 设置 `FC_DATA_MODE=postgres` 和 `DATABASE_URL` 后，可从 PostgreSQL 读取指标和观测值并即时评分。
 
 ## 本地运行
 
@@ -76,6 +77,28 @@ just stop
 just api
 ```
 
+本地 SQLite 历史库：
+
+```powershell
+just db-init
+just db-seed
+```
+
+FRED 历史回填需要先申请并配置免费 FRED API key：
+
+```powershell
+$env:FRED_API_KEY = "your-fred-api-key"
+just backfill-fred-range 2020-01-01 2020-12-31
+```
+
+使用 SQLite 数据启动 API：
+
+```powershell
+$env:FC_DATA_MODE = "sqlite"
+$env:FC_SQLITE_PATH = "data/fc-local.sqlite"
+just api
+```
+
 如果只想单独启动前端面板：
 
 ```powershell
@@ -88,6 +111,9 @@ just web-dev
 ```powershell
 just          # 查看所有命令
 just dev      # 一键启动 API + Web
+just db-init  # 初始化本地 SQLite
+just db-seed  # 写入 FRED 元数据
+just backfill-fred
 just stop     # 停止一键启动的服务
 just status   # 查看服务状态
 just fmt

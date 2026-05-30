@@ -9,5 +9,7 @@ artifacts/
 .run/
 logs/
 data/raw/
+data/*.sqlite
+data/*.sqlite-*
 data/parquet/
 data/backtests/

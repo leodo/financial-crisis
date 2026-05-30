@@ -8,18 +8,23 @@ use fc_domain::{
     SourceStatus,
 };
 use fc_scoring::ScoringEngine;
-use fc_storage::PostgresStore;
+use fc_storage::{PostgresStore, SqliteStore};
 use uuid::Uuid;
 
 use crate::AppData;
 
 pub async fn load_app_data() -> AppData {
-    if env::var("FC_DATA_MODE").ok().as_deref() == Some("postgres") {
-        match load_postgres_app_data().await {
+    match env::var("FC_DATA_MODE").ok().as_deref() {
+        Some("postgres") => match load_postgres_app_data().await {
             Ok(data) => return data,
-            Err(error) => {
-                tracing::warn!(%error, "postgres data mode failed, falling back to demo data");
-            }
+            Err(error) => panic!("postgres data mode failed: {error:#}"),
+        },
+        Some("sqlite") => match load_sqlite_app_data().await {
+            Ok(data) => return data,
+            Err(error) => panic!("sqlite data mode failed: {error:#}"),
+        },
+        _ => {
+            // Demo mode remains the default so a fresh checkout can start without a database.
         }
     }
     build_demo_data()
@@ -59,6 +64,39 @@ async fn load_postgres_app_data() -> anyhow::Result<AppData> {
     let observations = store.load_observations("us", as_of_date).await?;
     if observations.is_empty() {
         anyhow::bail!("ts.indicator_observations has no rows for entity us");
+    }
+    let scoring = ScoringEngine::default();
+    let output = scoring.score(
+        &indicators,
+        &observations,
+        as_of_date,
+        "us",
+        "financial_system",
+    );
+    Ok(AppData {
+        alerts: build_alerts(&output.snapshot),
+        backtests: build_backtests(&output.snapshot),
+        sources: sources(),
+        overview: output.snapshot,
+        indicators: output.indicator_risks,
+    })
+}
+
+async fn load_sqlite_app_data() -> anyhow::Result<AppData> {
+    let sqlite_path =
+        env::var("FC_SQLITE_PATH").unwrap_or_else(|_| "data/fc-local.sqlite".to_string());
+    let as_of_date = Utc::now().date_naive();
+    let store = SqliteStore::connect(sqlite_path).await?;
+    store.migrate().await?;
+    let indicators = store.load_indicators().await?;
+    if indicators.is_empty() {
+        anyhow::bail!("metadata_indicators is empty; run `just db-seed` first");
+    }
+    let observations = store.load_observations("us", as_of_date).await?;
+    if observations.is_empty() {
+        anyhow::bail!(
+            "ts_indicator_observations has no rows for entity us; run `just backfill-fred` first"
+        );
     }
     let scoring = ScoringEngine::default();
     let output = scoring.score(

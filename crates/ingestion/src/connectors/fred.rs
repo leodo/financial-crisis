@@ -72,8 +72,9 @@ impl Connector for FredConnector {
     }
 
     async fn fetch(&self, plan: &FetchPlan) -> Result<RawPayload, ConnectorError> {
+        let series_id = plan.external_code.as_deref().unwrap_or(&plan.target_id);
         let url = self.build_series_observations_url(
-            &plan.target_id,
+            series_id,
             plan.requested_start,
             plan.requested_end,
         )?;
@@ -110,7 +111,7 @@ impl Connector for FredConnector {
             raw_payload_id: Uuid::new_v4(),
             source_id: plan.source_id.clone(),
             dataset_id: plan.dataset_id.clone(),
-            request_url: url.to_string(),
+            request_url: redact_api_key(&url),
             response_hash: simple_hash(&body),
             content_type,
             body,
@@ -188,6 +189,28 @@ fn simple_hash(input: &str) -> String {
         acc.wrapping_mul(31).wrapping_add(*byte as u64)
     });
     format!("{hash:x}")
+}
+
+fn redact_api_key(url: &Url) -> String {
+    let mut redacted = url.clone();
+    let pairs = url
+        .query_pairs()
+        .map(|(key, value)| {
+            if key == "api_key" {
+                (key.into_owned(), "REDACTED".to_string())
+            } else {
+                (key.into_owned(), value.into_owned())
+            }
+        })
+        .collect::<Vec<_>>();
+    redacted.set_query(None);
+    {
+        let mut query = redacted.query_pairs_mut();
+        for (key, value) in pairs {
+            query.append_pair(&key, &value);
+        }
+    }
+    redacted.to_string()
 }
 
 #[cfg(test)]

@@ -40,6 +40,22 @@ api:
 worker:
     cargo run -p fc-worker
 
+# 初始化本地 SQLite 数据库，默认路径 data/fc-local.sqlite。
+db-init:
+    cargo run -p fc-worker -- db init
+
+# 写入本地 SQLite 所需的 FRED 元数据和首批指标映射。
+db-seed:
+    cargo run -p fc-worker -- db seed
+
+# 使用 FRED_API_KEY 回填 FRED 历史数据到本地 SQLite。
+backfill-fred:
+    cargo run -p fc-worker -- backfill fred
+
+# 使用 FRED_API_KEY 回填指定日期范围的 FRED 历史数据。
+backfill-fred-range start end:
+    cargo run -p fc-worker -- backfill fred --start {{start}} --end {{end}}
+
 # 安装前端依赖。首次运行前端前需要执行一次。
 web-install:
     cd apps/web; npm install
