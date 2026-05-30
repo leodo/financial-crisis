@@ -45,6 +45,8 @@
 - [x] `docs/architecture/local-sqlite-historical-data-design.md`：本地 SQLite 历史数据总体设计
 - [x] `docs/data/historical-backfill-design.md`：历史回填设计
 - [x] `docs/data/sqlite-local-storage-design.md`：SQLite 本地存储方案
+- [x] `docs/roadmap/sqlite-historical-data-implementation-plan.md`：SQLite 历史数据实现路线
+- [x] `docs/data/fred-first-connector-implementation-spec.md`：FRED 首个真实连接器实现规格
 
 ## 完成定义
 
