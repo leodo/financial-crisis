@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-05-30
+最后更新：2026-05-31
 
 ## 1. 目的
 
@@ -10,6 +10,7 @@
 
 ## 2. 当前已完成的设计
 
+- [x] `docs/architecture/system-feasibility-analysis.md`
 - [x] `docs/architecture/global-design.md`
 - [x] `docs/analytics/horizon-label-design.md`
 - [x] `docs/analytics/probability-engine-design.md`
@@ -72,7 +73,10 @@
 
 ## 6. 当前结论
 
-当前这轮“危机概率评估系统”开发前设计已经完成第一批和第二批文档落地。
+当前这轮“危机概率评估系统”主线设计已经基本成型，但需要区分两件事：
+
+1. `P0 / P1` 的工程开发已经有足够文档支撑，可以继续推进。
+2. 最终的 raw-feature 正式概率模型，在 `system-feasibility-analysis.md` 提到的可见性、标签覆盖和历史样本问题补齐前，还不能算“设计已全部完成”。
 
 后续可以按以下顺序直接进入编码：
 
@@ -83,3 +87,11 @@
 5. assessment API
 6. 真实回测链路
 7. 持仓动作手册与新决策面板
+
+补充判断：
+
+- 如果目标是继续完善当前可运行系统，上述顺序成立。
+- 如果目标是做“最终可信的 formal probability model”，则在第 `3` 步和第 `4` 步之间，还需要先补：
+  - `feature coverage matrix`
+  - `scenario catalog`
+  - 扩展危机窗口与 `1987 / 1998 / 2011` 的标签归类

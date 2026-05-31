@@ -23,6 +23,7 @@ docs/
 ## 当前文档
 
 - [全局设计](architecture/global-design.md)
+- [系统可行性分析](architecture/system-feasibility-analysis.md)
 - [本地 SQLite 历史数据总体设计](architecture/local-sqlite-historical-data-design.md)
 - [设计 TODO 总索引](roadmap/design-todo.md)
 - [危机概率评估设计 TODO](roadmap/crisis-probability-design-todo.md)

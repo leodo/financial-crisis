@@ -27,6 +27,7 @@
 
 - [文档总览](docs/README.md)
 - [全局设计](docs/architecture/global-design.md)
+- [系统可行性分析](docs/architecture/system-feasibility-analysis.md)
 - [危机窗口与标签设计](docs/analytics/horizon-label-design.md)
 - [危机概率引擎设计](docs/analytics/probability-engine-design.md)
 - [决策支持策略设计](docs/analytics/decision-support-policy.md)
