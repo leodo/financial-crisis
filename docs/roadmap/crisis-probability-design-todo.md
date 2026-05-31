@@ -133,6 +133,21 @@
 
 在这个前提下重新复核两个 PIT 候选，护栏结论仍然不变。
 
+随后又补做了一轮“场景感知加权”训练：
+
+- 让正样本权重显式感知 `scenario family`
+- 感知该场景是否适合作为对应 horizon 的主正例
+- 感知离 `crisis_start` 还有多少天
+- 对 `5d` 急性场景使用更贴近 `acute_start` 的标签锚点
+
+新的候选版 `us_formal_pit_scenweight_20260531T184905` 仍未通过护栏。
+
+因此可以把当前判断再收敛一步：
+
+- “formal 主线失败” 不再主要是缓存问题；
+- 也不再主要是简单类别失衡问题；
+- 下一个必须做的方向，应是 `action-oriented labels / episode objective / actionability layer`。
+
 因此当前工程状态应理解为：
 
 - 设计文档已经够用；

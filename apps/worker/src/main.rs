@@ -1225,6 +1225,8 @@ struct CrisisScenario {
     scenario_id: String,
     family: String,
     crisis_start: NaiveDate,
+    acute_start: Option<NaiveDate>,
+    default_horizon_roles: Vec<u32>,
 }
 
 impl AuditExportOptions {
@@ -2562,7 +2564,6 @@ fn build_main_formal_dataset_rows_with_catalog(
     scenario_set_version: &str,
 ) -> anyhow::Result<Vec<FormalDatasetRowRecord>> {
     let scenarios = load_label_set_crisis_scenarios(scenario_set_version, label_version)?;
-    let scenario_start_dates = scenario_start_dates(&scenarios);
     let min_date = NaiveDate::from_ymd_opt(1990, 1, 2).expect("valid date");
     let mut rows = snapshots
         .iter()
@@ -2592,9 +2593,9 @@ fn build_main_formal_dataset_rows_with_catalog(
                     .as_ref()
                     .map(|scenario| scenario.scenario_id.clone()),
                 scenario_family: primary_scenario.map(|scenario| scenario.family),
-                label_5d: forward_crisis_label(snapshot.as_of_date, &scenario_start_dates, 5),
-                label_20d: forward_crisis_label(snapshot.as_of_date, &scenario_start_dates, 20),
-                label_60d: forward_crisis_label(snapshot.as_of_date, &scenario_start_dates, 60),
+                label_5d: forward_crisis_label(snapshot.as_of_date, &scenarios, 5),
+                label_20d: forward_crisis_label(snapshot.as_of_date, &scenarios, 20),
+                label_60d: forward_crisis_label(snapshot.as_of_date, &scenarios, 60),
                 features: snapshot.features.clone(),
                 created_at: Utc::now(),
             }
@@ -2984,6 +2985,8 @@ fn load_label_set_crisis_scenarios(
             scenario_id: scenario.scenario_id.clone(),
             family: scenario_family_code(scenario.family).to_string(),
             crisis_start: scenario.crisis_start,
+            acute_start: scenario.acute_start,
+            default_horizon_roles: scenario.default_horizon_roles.clone(),
         })
         .collect())
 }
@@ -3003,11 +3006,16 @@ fn scenario_family_code(family: fc_domain::CrisisScenarioFamily) -> &'static str
     }
 }
 
-fn scenario_start_dates(scenarios: &[CrisisScenario]) -> Vec<NaiveDate> {
-    scenarios
-        .iter()
-        .map(|scenario| scenario.crisis_start)
-        .collect()
+fn scenario_supports_horizon(scenario: &CrisisScenario, horizon_days: u32) -> bool {
+    scenario.default_horizon_roles.contains(&horizon_days)
+}
+
+fn label_anchor_date(scenario: &CrisisScenario, horizon_days: u32) -> NaiveDate {
+    if horizon_days == 5 {
+        scenario.acute_start.unwrap_or(scenario.crisis_start)
+    } else {
+        scenario.crisis_start
+    }
 }
 
 fn forward_scenario(
@@ -3049,6 +3057,12 @@ struct ProbabilityTrainingRow {
     time_to_risk_bucket: Option<String>,
     split_name: Option<String>,
     features: BTreeMap<String, f64>,
+    primary_scenario_id: Option<String>,
+    scenario_family: Option<String>,
+    days_to_primary_crisis_start: Option<i64>,
+    primary_scenario_supports_5d: bool,
+    primary_scenario_supports_20d: bool,
+    primary_scenario_supports_60d: bool,
     label_5d: u8,
     label_20d: u8,
     label_60d: u8,
@@ -3062,6 +3076,17 @@ impl ProbabilityTrainingRow {
             60 => self.label_60d as f64,
             _ => 0.0,
         }
+    }
+
+    fn primary_scenario_supports_horizon(&self, horizon_days: u32) -> Option<bool> {
+        self.primary_scenario_id
+            .as_ref()
+            .map(|_| match horizon_days {
+                5 => self.primary_scenario_supports_5d,
+                20 => self.primary_scenario_supports_20d,
+                60 => self.primary_scenario_supports_60d,
+                _ => false,
+            })
     }
 }
 
@@ -3255,18 +3280,42 @@ async fn load_formal_training_dataset(
         );
     }
 
-    let to_training_row = |row: &FormalDatasetRowRecord| ProbabilityTrainingRow {
-        as_of_date: row.as_of_date,
-        market_scope: row.market_scope.clone(),
-        release_id: None,
-        probability_mode: Some("formal_bundle_v1".to_string()),
-        freshness_status: Some(row.sample_quality_grade.clone()),
-        time_to_risk_bucket: row.primary_scenario_id.clone(),
-        split_name: Some(row.split_name.clone()),
-        features: row.features.clone(),
-        label_5d: row.label_5d,
-        label_20d: row.label_20d,
-        label_60d: row.label_60d,
+    let scenario_by_id = load_label_set_crisis_scenarios(
+        &dataset.manifest.scenario_set_version,
+        &dataset.manifest.label_version,
+    )?
+    .into_iter()
+    .map(|scenario| (scenario.scenario_id.clone(), scenario))
+    .collect::<BTreeMap<_, _>>();
+
+    let to_training_row = |row: &FormalDatasetRowRecord| {
+        let primary_scenario = row
+            .primary_scenario_id
+            .as_ref()
+            .and_then(|scenario_id| scenario_by_id.get(scenario_id));
+        ProbabilityTrainingRow {
+            as_of_date: row.as_of_date,
+            market_scope: row.market_scope.clone(),
+            release_id: None,
+            probability_mode: Some("formal_bundle_v1".to_string()),
+            freshness_status: Some(row.sample_quality_grade.clone()),
+            time_to_risk_bucket: row.primary_scenario_id.clone(),
+            split_name: Some(row.split_name.clone()),
+            features: row.features.clone(),
+            primary_scenario_id: row.primary_scenario_id.clone(),
+            scenario_family: row.scenario_family.clone(),
+            days_to_primary_crisis_start: primary_scenario
+                .map(|scenario| (scenario.crisis_start - row.as_of_date).num_days()),
+            primary_scenario_supports_5d: primary_scenario
+                .is_some_and(|scenario| scenario_supports_horizon(scenario, 5)),
+            primary_scenario_supports_20d: primary_scenario
+                .is_some_and(|scenario| scenario_supports_horizon(scenario, 20)),
+            primary_scenario_supports_60d: primary_scenario
+                .is_some_and(|scenario| scenario_supports_horizon(scenario, 60)),
+            label_5d: row.label_5d,
+            label_20d: row.label_20d,
+            label_60d: row.label_60d,
+        }
     };
 
     let train_rows = rows
@@ -3487,7 +3536,7 @@ async fn train_probability_pipeline(
     let release_id = format!("{}_{}", options.release_prefix, release_suffix);
     let bundle_note = match training.dataset_source {
         PipelineDatasetSource::Formal => format!(
-            "Formal bundle trained from persisted formal dataset {} built from raw observations -> feature snapshots -> forward crisis labels, with positive-class weighting to favor earlier actionable warnings under severe class imbalance.",
+            "Formal bundle trained from persisted formal dataset {} built from raw observations -> feature snapshots -> forward crisis labels, with positive-class and scenario-aware weighting to favor earlier actionable warnings under severe class imbalance.",
             training.dataset_label
         ),
         PipelineDatasetSource::Snapshot => {
@@ -3591,11 +3640,10 @@ async fn train_probability_pipeline(
 fn build_pipeline_dataset_rows(
     snapshots: &[PredictionSnapshotRecord],
 ) -> Vec<ProbabilityTrainingRow> {
-    let crisis_starts = load_label_set_crisis_scenarios(
+    let scenarios = load_label_set_crisis_scenarios(
         DEFAULT_FORMAL_SCENARIO_SET_VERSION,
         DEFAULT_FORMAL_LABEL_VERSION,
     )
-    .map(|scenarios| scenario_start_dates(&scenarios))
     .expect("default scenario catalog must contain the main training label set");
     let mut rows = snapshots
         .iter()
@@ -3610,9 +3658,15 @@ fn build_pipeline_dataset_rows(
                 time_to_risk_bucket: Some(snapshot.time_to_risk_bucket.clone()),
                 split_name: None,
                 features,
-                label_5d: forward_crisis_label(snapshot.as_of_date, &crisis_starts, 5),
-                label_20d: forward_crisis_label(snapshot.as_of_date, &crisis_starts, 20),
-                label_60d: forward_crisis_label(snapshot.as_of_date, &crisis_starts, 60),
+                primary_scenario_id: None,
+                scenario_family: None,
+                days_to_primary_crisis_start: None,
+                primary_scenario_supports_5d: false,
+                primary_scenario_supports_20d: false,
+                primary_scenario_supports_60d: false,
+                label_5d: forward_crisis_label(snapshot.as_of_date, &scenarios, 5),
+                label_20d: forward_crisis_label(snapshot.as_of_date, &scenarios, 20),
+                label_60d: forward_crisis_label(snapshot.as_of_date, &scenarios, 60),
             }
         })
         .collect::<Vec<_>>();
@@ -3677,11 +3731,17 @@ fn pipeline_features_from_snapshot(snapshot: &PredictionSnapshotRecord) -> BTree
 
 fn forward_crisis_label(
     as_of_date: NaiveDate,
-    crisis_starts: &[NaiveDate],
+    scenarios: &[CrisisScenario],
     horizon_days: i64,
 ) -> u8 {
-    crisis_starts.iter().any(|crisis_start| {
-        let lead_days = (*crisis_start - as_of_date).num_days();
+    let horizon_days_u32 = horizon_days as u32;
+    scenarios.iter().any(|scenario| {
+        let anchor_date = if scenario_supports_horizon(scenario, horizon_days_u32) {
+            label_anchor_date(scenario, horizon_days_u32)
+        } else {
+            scenario.crisis_start
+        };
+        let lead_days = (anchor_date - as_of_date).num_days();
         (1..=horizon_days).contains(&lead_days)
     }) as u8
 }
@@ -3790,9 +3850,7 @@ fn fit_logistic_model(
     let l2 = 0.01;
     let sample_weight_sum = rows
         .iter()
-        .map(|row| {
-            logistic_sample_weight(row.label_for_horizon(horizon_days), positive_class_weight)
-        })
+        .map(|row| logistic_sample_weight(row, horizon_days, positive_class_weight))
         .sum::<f64>()
         .max(1.0);
 
@@ -3803,7 +3861,7 @@ fn fit_logistic_model(
             let normalized = normalized_features(row, &feature_stats);
             let prediction = sigmoid(intercept + dot(&weights, &normalized));
             let label = row.label_for_horizon(horizon_days);
-            let sample_weight = logistic_sample_weight(label, positive_class_weight);
+            let sample_weight = logistic_sample_weight(row, horizon_days, positive_class_weight);
             let error = (prediction - label) * sample_weight;
             intercept_gradient += error;
             for (index, value) in normalized.iter().enumerate() {
@@ -3865,14 +3923,12 @@ fn initial_intercept(
         .iter()
         .map(|row| {
             let label = row.label_for_horizon(horizon_days);
-            logistic_sample_weight(label, positive_class_weight) * label
+            logistic_sample_weight(row, horizon_days, positive_class_weight) * label
         })
         .sum::<f64>();
     let weighted_total = rows
         .iter()
-        .map(|row| {
-            logistic_sample_weight(row.label_for_horizon(horizon_days), positive_class_weight)
-        })
+        .map(|row| logistic_sample_weight(row, horizon_days, positive_class_weight))
         .sum::<f64>()
         .max(1.0);
     let positive_rate = weighted_positive / weighted_total;
@@ -3900,11 +3956,73 @@ fn horizon_positive_class_weight(rows: &[ProbabilityTrainingRow], horizon_days: 
     (imbalance_weight * horizon_emphasis).clamp(1.0, 18.0)
 }
 
-fn logistic_sample_weight(label: f64, positive_class_weight: f64) -> f64 {
+fn logistic_sample_weight(
+    row: &ProbabilityTrainingRow,
+    horizon_days: u32,
+    positive_class_weight: f64,
+) -> f64 {
+    let label = row.label_for_horizon(horizon_days);
     if label > 0.0 {
-        positive_class_weight
+        (positive_class_weight * positive_sample_action_weight(row, horizon_days)).clamp(1.0, 36.0)
     } else {
         1.0
+    }
+}
+
+fn positive_sample_action_weight(row: &ProbabilityTrainingRow, horizon_days: u32) -> f64 {
+    let mut weight = 1.0;
+    if let Some(lead_days) = row.days_to_primary_crisis_start {
+        weight *= lead_time_positive_multiplier(lead_days, horizon_days);
+    }
+    weight *= horizon_role_weight_multiplier(row, horizon_days);
+    weight *= scenario_family_weight_multiplier(row.scenario_family.as_deref(), horizon_days);
+    weight.clamp(0.5, 2.75)
+}
+
+fn lead_time_positive_multiplier(lead_days: i64, horizon_days: u32) -> f64 {
+    if lead_days <= 0 {
+        return 1.0;
+    }
+
+    let capped = lead_days.min(horizon_days as i64) as f64;
+    let horizon = horizon_days.max(1) as f64;
+    let normalized = if horizon <= 1.0 {
+        0.0
+    } else {
+        (capped - 1.0) / (horizon - 1.0)
+    };
+    let max_lift = match horizon_days {
+        5 => 0.35,
+        20 => 0.45,
+        60 => 0.55,
+        _ => 0.30,
+    };
+    1.0 + normalized.clamp(0.0, 1.0) * max_lift
+}
+
+fn horizon_role_weight_multiplier(row: &ProbabilityTrainingRow, horizon_days: u32) -> f64 {
+    match row.primary_scenario_supports_horizon(horizon_days) {
+        Some(true) => 1.25,
+        Some(false) => 0.55,
+        None => 1.0,
+    }
+}
+
+fn scenario_family_weight_multiplier(scenario_family: Option<&str>, horizon_days: u32) -> f64 {
+    match (horizon_days, scenario_family) {
+        (5, Some("acute_market_liquidity_crash")) => 1.35,
+        (5, Some("systemic_credit_banking_crisis")) => 0.75,
+        (5, Some("mixed_systemic_stress")) => 0.70,
+        (5, Some("rate_shock_or_policy_dislocation")) => 0.65,
+        (20, Some("acute_market_liquidity_crash")) => 1.15,
+        (20, Some("systemic_credit_banking_crisis")) => 1.20,
+        (20, Some("mixed_systemic_stress")) => 1.00,
+        (20, Some("rate_shock_or_policy_dislocation")) => 0.80,
+        (60, Some("acute_market_liquidity_crash")) => 0.65,
+        (60, Some("systemic_credit_banking_crisis")) => 1.35,
+        (60, Some("mixed_systemic_stress")) => 1.10,
+        (60, Some("rate_shock_or_policy_dislocation")) => 0.70,
+        _ => 1.0,
     }
 }
 
@@ -6136,16 +6254,18 @@ fn print_help() {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     use chrono::{NaiveDate, TimeZone, Utc};
     use fc_domain::{Frequency, Observation};
 
     use super::{
-        observation_is_visible_for_date, AuditExportOptions, FeatureSnapshotBuildOptions,
-        FormalDatasetBuildOptions, FormalDatasetSummaryOptions, PipelineDatasetSource,
-        PipelineTrainOptions, PointInTimeMode, PredictionSnapshotQueryOptions,
-        RefreshLatestOptions, ReleasePublishOptions, ReleaseReviewOptions, ReleaseSwitchOptions,
+        forward_crisis_label, observation_is_visible_for_date, positive_sample_action_weight,
+        AuditExportOptions, CrisisScenario, FeatureSnapshotBuildOptions, FormalDatasetBuildOptions,
+        FormalDatasetSummaryOptions, PipelineDatasetSource, PipelineTrainOptions, PointInTimeMode,
+        PredictionSnapshotQueryOptions, ProbabilityTrainingRow, RefreshLatestOptions,
+        ReleasePublishOptions, ReleaseReviewOptions, ReleaseSwitchOptions,
     };
 
     fn observation(
@@ -6433,5 +6553,103 @@ mod tests {
             NaiveDate::from_ymd_opt(2020, 1, 3).unwrap(),
             PointInTimeMode::Strict
         ));
+    }
+
+    #[test]
+    fn forward_crisis_label_uses_acute_anchor_for_5d_without_dropping_other_crisis_starts() {
+        let acute_only = CrisisScenario {
+            scenario_id: "acute".to_string(),
+            family: "acute_market_liquidity_crash".to_string(),
+            crisis_start: NaiveDate::from_ymd_opt(2020, 2, 24).unwrap(),
+            acute_start: Some(NaiveDate::from_ymd_opt(2020, 3, 9).unwrap()),
+            default_horizon_roles: vec![5, 20],
+        };
+        let systemic_only = CrisisScenario {
+            scenario_id: "systemic".to_string(),
+            family: "systemic_credit_banking_crisis".to_string(),
+            crisis_start: NaiveDate::from_ymd_opt(2023, 3, 8).unwrap(),
+            acute_start: Some(NaiveDate::from_ymd_opt(2023, 3, 10).unwrap()),
+            default_horizon_roles: vec![20, 60],
+        };
+
+        assert_eq!(
+            forward_crisis_label(
+                NaiveDate::from_ymd_opt(2020, 3, 4).unwrap(),
+                &[acute_only.clone(), systemic_only.clone()],
+                5,
+            ),
+            1
+        );
+        assert_eq!(
+            forward_crisis_label(
+                NaiveDate::from_ymd_opt(2020, 2, 20).unwrap(),
+                &[acute_only.clone(), systemic_only.clone()],
+                5,
+            ),
+            0
+        );
+        assert_eq!(
+            forward_crisis_label(
+                NaiveDate::from_ymd_opt(2023, 3, 4).unwrap(),
+                &[acute_only.clone(), systemic_only.clone()],
+                5,
+            ),
+            1
+        );
+        assert_eq!(
+            forward_crisis_label(
+                NaiveDate::from_ymd_opt(2023, 2, 20).unwrap(),
+                &[acute_only, systemic_only],
+                20,
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn positive_sample_action_weight_prefers_early_role_aligned_systemic_samples_for_60d() {
+        let aligned = ProbabilityTrainingRow {
+            as_of_date: NaiveDate::from_ymd_opt(2007, 6, 5).unwrap(),
+            market_scope: "financial_system".to_string(),
+            release_id: None,
+            probability_mode: Some("formal_bundle_v1".to_string()),
+            freshness_status: Some("a".to_string()),
+            time_to_risk_bucket: Some("us_gfc_2008".to_string()),
+            split_name: Some("train".to_string()),
+            features: BTreeMap::new(),
+            primary_scenario_id: Some("us_gfc_2008".to_string()),
+            scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+            days_to_primary_crisis_start: Some(57),
+            primary_scenario_supports_5d: false,
+            primary_scenario_supports_20d: true,
+            primary_scenario_supports_60d: true,
+            label_5d: 0,
+            label_20d: 0,
+            label_60d: 1,
+        };
+        let misaligned = ProbabilityTrainingRow {
+            as_of_date: NaiveDate::from_ymd_opt(2020, 2, 20).unwrap(),
+            market_scope: "financial_system".to_string(),
+            release_id: None,
+            probability_mode: Some("formal_bundle_v1".to_string()),
+            freshness_status: Some("a".to_string()),
+            time_to_risk_bucket: Some("us_covid_liquidity_2020".to_string()),
+            split_name: Some("train".to_string()),
+            features: BTreeMap::new(),
+            primary_scenario_id: Some("us_covid_liquidity_2020".to_string()),
+            scenario_family: Some("acute_market_liquidity_crash".to_string()),
+            days_to_primary_crisis_start: Some(4),
+            primary_scenario_supports_5d: true,
+            primary_scenario_supports_20d: true,
+            primary_scenario_supports_60d: false,
+            label_5d: 1,
+            label_20d: 1,
+            label_60d: 1,
+        };
+
+        assert!(
+            positive_sample_action_weight(&aligned, 60)
+                > positive_sample_action_weight(&misaligned, 60)
+        );
     }
 }

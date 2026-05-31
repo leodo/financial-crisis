@@ -219,6 +219,37 @@ not active_default
 - “旧缓存污染了 formal 候选版复核结果” 现在已经不是主要解释；
 - formal PIT 主线当前确实没有学出足够稳定的动作级提前量。
 
+### 7.2 2026-06-01 场景感知加权复核结果
+
+本轮又补做了一次更贴近业务目标的训练尝试：
+
+- 保留现有 formal dataset 主线；
+- 不再只做简单的正负样本类别加权；
+- 额外引入 `scenario family + horizon role + days_to_crisis_start` 的正样本权重；
+- 同时把 `5d` 急性场景的标签锚点切到更接近 `acute_start` 的位置。
+
+生成的候选版：
+
+- `us_formal_pit_scenweight_20260531T184905`
+
+离线指标仍然不差：
+
+- `brier=0.0134`
+- `log_loss=0.0695`
+- `ece=0.0040`
+
+但 runtime guard 结果仍然没有改善：
+
+- `timely_warning_rate`: `37.5% -> 12.5%`
+- `actionable_precision`: `29.6% -> 20.6%`
+- `longest_false_positive_episode_days`: `9 -> 18`
+
+这进一步说明：
+
+- formal 主线现在的问题不只是“训练时没给正样本足够权重”；
+- 更像是当前二元 horizon 标签本身就没有把“提前一周可执行离场”表达清楚；
+- 下一步应优先进入 `action-oriented label / episode objective / separate actionability model`，而不是继续微调同一套逻辑回归权重。
+
 这说明当前主要矛盾已经不是“线上动作阈值太高”这么简单，而更可能是：
 
 - 正式训练样本的标签过稀；
