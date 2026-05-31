@@ -2,11 +2,12 @@ use std::{fs, path::Path, str::FromStr};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use fc_domain::{
-    AlertEvent, AlertStatus, AlertType, Frequency, Indicator, Observation, RiskDimension,
+    ActiveModelPointer, AlertEvent, AlertStatus, AlertType, Frequency, Indicator,
+    ModelReleaseManifest, ModelReleaseRecord, Observation, PredictionSnapshotRecord, RiskDimension,
     RiskDirection, RiskLevel,
 };
 use sqlx::{
-    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow},
     Row, SqlitePool,
 };
 use uuid::Uuid;
@@ -976,6 +977,557 @@ impl SqliteStore {
             .collect()
     }
 
+    pub async fn upsert_model_release(
+        &self,
+        release: &ModelReleaseRecord,
+    ) -> Result<(), StorageError> {
+        let manifest_json =
+            serde_json::to_string(&release.manifest).unwrap_or_else(|_| "{}".to_string());
+        sqlx::query(
+            r#"
+            INSERT INTO analytics_model_releases (
+                release_id,
+                market_scope,
+                status,
+                probability_mode,
+                serving_status,
+                bundle_uri,
+                manifest_json,
+                feature_set_version,
+                label_version,
+                prob_model_version,
+                calibration_version,
+                posture_policy_version,
+                action_playbook_version,
+                point_in_time_mode,
+                training_range_start,
+                training_range_end,
+                calibration_range_start,
+                calibration_range_end,
+                evaluation_range_start,
+                evaluation_range_end,
+                brier_score,
+                log_loss,
+                ece,
+                note,
+                created_at,
+                activated_at,
+                retired_at
+            )
+            VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
+                ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27
+            )
+            ON CONFLICT(release_id) DO UPDATE SET
+                market_scope = excluded.market_scope,
+                status = excluded.status,
+                probability_mode = excluded.probability_mode,
+                serving_status = excluded.serving_status,
+                bundle_uri = excluded.bundle_uri,
+                manifest_json = excluded.manifest_json,
+                feature_set_version = excluded.feature_set_version,
+                label_version = excluded.label_version,
+                prob_model_version = excluded.prob_model_version,
+                calibration_version = excluded.calibration_version,
+                posture_policy_version = excluded.posture_policy_version,
+                action_playbook_version = excluded.action_playbook_version,
+                point_in_time_mode = excluded.point_in_time_mode,
+                training_range_start = excluded.training_range_start,
+                training_range_end = excluded.training_range_end,
+                calibration_range_start = excluded.calibration_range_start,
+                calibration_range_end = excluded.calibration_range_end,
+                evaluation_range_start = excluded.evaluation_range_start,
+                evaluation_range_end = excluded.evaluation_range_end,
+                brier_score = excluded.brier_score,
+                log_loss = excluded.log_loss,
+                ece = excluded.ece,
+                note = excluded.note,
+                activated_at = excluded.activated_at,
+                retired_at = excluded.retired_at
+            "#,
+        )
+        .bind(&release.manifest.release_id)
+        .bind(&release.manifest.market_scope)
+        .bind(&release.manifest.status)
+        .bind(&release.manifest.probability_mode)
+        .bind(&release.manifest.serving_status)
+        .bind(&release.manifest.bundle_uri)
+        .bind(manifest_json)
+        .bind(&release.manifest.feature_set_version)
+        .bind(&release.manifest.label_version)
+        .bind(&release.manifest.prob_model_version)
+        .bind(&release.manifest.calibration_version)
+        .bind(&release.manifest.posture_policy_version)
+        .bind(&release.manifest.action_playbook_version)
+        .bind(&release.manifest.point_in_time_mode)
+        .bind(
+            release
+                .manifest
+                .training_range_start
+                .map(|date| date.to_string()),
+        )
+        .bind(
+            release
+                .manifest
+                .training_range_end
+                .map(|date| date.to_string()),
+        )
+        .bind(
+            release
+                .manifest
+                .calibration_range_start
+                .map(|date| date.to_string()),
+        )
+        .bind(
+            release
+                .manifest
+                .calibration_range_end
+                .map(|date| date.to_string()),
+        )
+        .bind(
+            release
+                .manifest
+                .evaluation_range_start
+                .map(|date| date.to_string()),
+        )
+        .bind(
+            release
+                .manifest
+                .evaluation_range_end
+                .map(|date| date.to_string()),
+        )
+        .bind(release.manifest.brier_score)
+        .bind(release.manifest.log_loss)
+        .bind(release.manifest.ece)
+        .bind(&release.manifest.note)
+        .bind(format_datetime(release.created_at))
+        .bind(release.activated_at.map(format_datetime))
+        .bind(release.retired_at.map(format_datetime))
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_model_releases(
+        &self,
+        market_scope: Option<&str>,
+    ) -> Result<Vec<ModelReleaseRecord>, StorageError> {
+        let rows = if let Some(market_scope) = market_scope {
+            sqlx::query(
+                r#"
+                SELECT *
+                FROM analytics_model_releases
+                WHERE market_scope = ?1
+                ORDER BY created_at DESC, release_id DESC
+                "#,
+            )
+            .bind(market_scope)
+            .fetch_all(&self.pool)
+            .await?
+        } else {
+            sqlx::query(
+                r#"
+                SELECT *
+                FROM analytics_model_releases
+                ORDER BY created_at DESC, release_id DESC
+                "#,
+            )
+            .fetch_all(&self.pool)
+            .await?
+        };
+        rows.into_iter().map(map_model_release_row).collect()
+    }
+
+    pub async fn load_model_release(
+        &self,
+        release_id: &str,
+    ) -> Result<Option<ModelReleaseRecord>, StorageError> {
+        let row = sqlx::query(
+            r#"
+            SELECT *
+            FROM analytics_model_releases
+            WHERE release_id = ?1
+            "#,
+        )
+        .bind(release_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(map_model_release_row).transpose()
+    }
+
+    pub async fn load_active_model_pointer(
+        &self,
+        market_scope: &str,
+    ) -> Result<Option<ActiveModelPointer>, StorageError> {
+        let row = sqlx::query(
+            r#"
+            SELECT market_scope, release_id, updated_at, updated_by
+            FROM analytics_active_model_pointers
+            WHERE market_scope = ?1
+            "#,
+        )
+        .bind(market_scope)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(map_active_pointer_row).transpose()
+    }
+
+    pub async fn load_active_model_release(
+        &self,
+        market_scope: &str,
+    ) -> Result<Option<ModelReleaseRecord>, StorageError> {
+        let row = sqlx::query(
+            r#"
+            SELECT r.*
+            FROM analytics_active_model_pointers p
+            JOIN analytics_model_releases r ON r.release_id = p.release_id
+            WHERE p.market_scope = ?1
+            "#,
+        )
+        .bind(market_scope)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(map_model_release_row).transpose()
+    }
+
+    pub async fn activate_model_release(
+        &self,
+        market_scope: &str,
+        release_id: &str,
+        actor: &str,
+    ) -> Result<ModelReleaseRecord, StorageError> {
+        let now = Utc::now();
+        let mut transaction = self.pool.begin().await?;
+        let current_active = sqlx::query(
+            r#"
+            SELECT release_id
+            FROM analytics_active_model_pointers
+            WHERE market_scope = ?1
+            "#,
+        )
+        .bind(market_scope)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if let Some(current_active) = current_active {
+            let current_release_id: String = current_active.try_get("release_id")?;
+            if current_release_id != release_id {
+                sqlx::query(
+                    r#"
+                    UPDATE analytics_model_releases
+                    SET status = 'retired',
+                        retired_at = ?2
+                    WHERE release_id = ?1
+                    "#,
+                )
+                .bind(current_release_id)
+                .bind(format_datetime(now))
+                .execute(&mut *transaction)
+                .await?;
+            }
+        }
+
+        let updated = sqlx::query(
+            r#"
+            UPDATE analytics_model_releases
+            SET status = 'active',
+                activated_at = ?2,
+                retired_at = NULL
+            WHERE release_id = ?1
+              AND market_scope = ?3
+            "#,
+        )
+        .bind(release_id)
+        .bind(format_datetime(now))
+        .bind(market_scope)
+        .execute(&mut *transaction)
+        .await?;
+        if updated.rows_affected() == 0 {
+            return Err(StorageError::Database(sqlx::Error::RowNotFound));
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO analytics_active_model_pointers (
+                market_scope, release_id, updated_at, updated_by
+            )
+            VALUES (?1, ?2, ?3, ?4)
+            ON CONFLICT(market_scope) DO UPDATE SET
+                release_id = excluded.release_id,
+                updated_at = excluded.updated_at,
+                updated_by = excluded.updated_by
+            "#,
+        )
+        .bind(market_scope)
+        .bind(release_id)
+        .bind(format_datetime(now))
+        .bind(actor)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        self.load_model_release(release_id)
+            .await?
+            .ok_or(StorageError::Database(sqlx::Error::RowNotFound))
+    }
+
+    pub async fn rollback_model_release(
+        &self,
+        market_scope: &str,
+        to_release_id: &str,
+        actor: &str,
+    ) -> Result<ModelReleaseRecord, StorageError> {
+        let now = Utc::now();
+        let mut transaction = self.pool.begin().await?;
+        let current_active = sqlx::query(
+            r#"
+            SELECT release_id
+            FROM analytics_active_model_pointers
+            WHERE market_scope = ?1
+            "#,
+        )
+        .bind(market_scope)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if let Some(current_active) = current_active {
+            let current_release_id: String = current_active.try_get("release_id")?;
+            if current_release_id != to_release_id {
+                sqlx::query(
+                    r#"
+                    UPDATE analytics_model_releases
+                    SET status = 'rolled_back',
+                        retired_at = ?2
+                    WHERE release_id = ?1
+                    "#,
+                )
+                .bind(current_release_id)
+                .bind(format_datetime(now))
+                .execute(&mut *transaction)
+                .await?;
+            }
+        }
+
+        let updated = sqlx::query(
+            r#"
+            UPDATE analytics_model_releases
+            SET status = 'active',
+                activated_at = ?2,
+                retired_at = NULL
+            WHERE release_id = ?1
+              AND market_scope = ?3
+            "#,
+        )
+        .bind(to_release_id)
+        .bind(format_datetime(now))
+        .bind(market_scope)
+        .execute(&mut *transaction)
+        .await?;
+        if updated.rows_affected() == 0 {
+            return Err(StorageError::Database(sqlx::Error::RowNotFound));
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO analytics_active_model_pointers (
+                market_scope, release_id, updated_at, updated_by
+            )
+            VALUES (?1, ?2, ?3, ?4)
+            ON CONFLICT(market_scope) DO UPDATE SET
+                release_id = excluded.release_id,
+                updated_at = excluded.updated_at,
+                updated_by = excluded.updated_by
+            "#,
+        )
+        .bind(market_scope)
+        .bind(to_release_id)
+        .bind(format_datetime(now))
+        .bind(actor)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        self.load_model_release(to_release_id)
+            .await?
+            .ok_or(StorageError::Database(sqlx::Error::RowNotFound))
+    }
+
+    pub async fn upsert_prediction_snapshots(
+        &self,
+        snapshots: &[PredictionSnapshotRecord],
+    ) -> Result<(), StorageError> {
+        let mut transaction = self.pool.begin().await?;
+        for snapshot in snapshots {
+            let snapshot_id = prediction_snapshot_id(
+                &snapshot.entity_id,
+                &snapshot.market_scope,
+                snapshot.as_of_date,
+                snapshot.release_id.as_deref(),
+                &snapshot.point_in_time_mode,
+            );
+            sqlx::query(
+                r#"
+                INSERT INTO analytics_prediction_snapshots (
+                    snapshot_id,
+                    entity_id,
+                    market_scope,
+                    as_of_date,
+                    release_id,
+                    probability_mode,
+                    release_status,
+                    point_in_time_mode,
+                    overall_score,
+                    external_shock_score,
+                    raw_p_5d,
+                    raw_p_20d,
+                    raw_p_60d,
+                    calibrated_p_5d,
+                    calibrated_p_20d,
+                    calibrated_p_60d,
+                    posture,
+                    time_to_risk_bucket,
+                    feature_set_version,
+                    label_version,
+                    coverage_score,
+                    freshness_status,
+                    method_version,
+                    recorded_at
+                )
+                VALUES (
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+                    ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24
+                )
+                ON CONFLICT(snapshot_id) DO UPDATE SET
+                    release_id = excluded.release_id,
+                    probability_mode = excluded.probability_mode,
+                    release_status = excluded.release_status,
+                    point_in_time_mode = excluded.point_in_time_mode,
+                    overall_score = excluded.overall_score,
+                    external_shock_score = excluded.external_shock_score,
+                    raw_p_5d = excluded.raw_p_5d,
+                    raw_p_20d = excluded.raw_p_20d,
+                    raw_p_60d = excluded.raw_p_60d,
+                    calibrated_p_5d = excluded.calibrated_p_5d,
+                    calibrated_p_20d = excluded.calibrated_p_20d,
+                    calibrated_p_60d = excluded.calibrated_p_60d,
+                    posture = excluded.posture,
+                    time_to_risk_bucket = excluded.time_to_risk_bucket,
+                    feature_set_version = excluded.feature_set_version,
+                    label_version = excluded.label_version,
+                    coverage_score = excluded.coverage_score,
+                    freshness_status = excluded.freshness_status,
+                    method_version = excluded.method_version,
+                    recorded_at = excluded.recorded_at
+                "#,
+            )
+            .bind(snapshot_id)
+            .bind(&snapshot.entity_id)
+            .bind(&snapshot.market_scope)
+            .bind(snapshot.as_of_date.to_string())
+            .bind(snapshot.release_id.as_deref())
+            .bind(&snapshot.probability_mode)
+            .bind(&snapshot.release_status)
+            .bind(&snapshot.point_in_time_mode)
+            .bind(snapshot.overall_score)
+            .bind(snapshot.external_shock_score)
+            .bind(snapshot.raw_p_5d)
+            .bind(snapshot.raw_p_20d)
+            .bind(snapshot.raw_p_60d)
+            .bind(snapshot.calibrated_p_5d)
+            .bind(snapshot.calibrated_p_20d)
+            .bind(snapshot.calibrated_p_60d)
+            .bind(&snapshot.posture)
+            .bind(&snapshot.time_to_risk_bucket)
+            .bind(&snapshot.feature_set_version)
+            .bind(&snapshot.label_version)
+            .bind(snapshot.coverage_score)
+            .bind(&snapshot.freshness_status)
+            .bind(&snapshot.method_version)
+            .bind(format_datetime(snapshot.recorded_at))
+            .execute(&mut *transaction)
+            .await?;
+        }
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn list_prediction_snapshots(
+        &self,
+        market_scope: Option<&str>,
+        release_id: Option<&str>,
+        from: Option<NaiveDate>,
+        to: Option<NaiveDate>,
+        limit: Option<usize>,
+    ) -> Result<Vec<PredictionSnapshotRecord>, StorageError> {
+        let mut query = String::from(
+            r#"
+            SELECT
+                entity_id,
+                market_scope,
+                as_of_date,
+                release_id,
+                probability_mode,
+                release_status,
+                point_in_time_mode,
+                overall_score,
+                external_shock_score,
+                raw_p_5d,
+                raw_p_20d,
+                raw_p_60d,
+                calibrated_p_5d,
+                calibrated_p_20d,
+                calibrated_p_60d,
+                posture,
+                time_to_risk_bucket,
+                feature_set_version,
+                label_version,
+                coverage_score,
+                freshness_status,
+                method_version,
+                recorded_at
+            FROM analytics_prediction_snapshots
+            WHERE 1 = 1
+            "#,
+        );
+        let mut param_index = 1;
+        if market_scope.is_some() {
+            query.push_str(&format!(" AND market_scope = ?{param_index}"));
+            param_index += 1;
+        }
+        if release_id.is_some() {
+            query.push_str(&format!(" AND release_id = ?{param_index}"));
+            param_index += 1;
+        }
+        if from.is_some() {
+            query.push_str(&format!(" AND as_of_date >= ?{param_index}"));
+            param_index += 1;
+        }
+        if to.is_some() {
+            query.push_str(&format!(" AND as_of_date <= ?{param_index}"));
+            param_index += 1;
+        }
+        query.push_str(" ORDER BY as_of_date DESC, recorded_at DESC");
+        if limit.is_some() {
+            query.push_str(&format!(" LIMIT ?{param_index}"));
+        }
+
+        let mut statement = sqlx::query(&query);
+        if let Some(scope) = market_scope {
+            statement = statement.bind(scope);
+        }
+        if let Some(release_id) = release_id {
+            statement = statement.bind(release_id);
+        }
+        if let Some(start_date) = from {
+            statement = statement.bind(start_date.to_string());
+        }
+        if let Some(end_date) = to {
+            statement = statement.bind(end_date.to_string());
+        }
+        if let Some(limit) = limit {
+            statement = statement.bind(limit as i64);
+        }
+
+        let rows = statement.fetch_all(&self.pool).await?;
+        rows.into_iter().map(map_prediction_snapshot_row).collect()
+    }
+
     pub async fn load_watermark_date(
         &self,
         source_id: &str,
@@ -1913,6 +2465,107 @@ fn format_datetime(value: DateTime<Utc>) -> String {
     value.to_rfc3339()
 }
 
+fn parse_required_datetime(value: &str) -> Result<DateTime<Utc>, StorageError> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|datetime| datetime.with_timezone(&Utc))
+        .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))
+}
+
+fn map_model_release_row(row: SqliteRow) -> Result<ModelReleaseRecord, StorageError> {
+    let manifest_json: String = row.try_get("manifest_json")?;
+    let mut manifest = serde_json::from_str::<ModelReleaseManifest>(&manifest_json)
+        .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+    manifest.release_id = row.try_get("release_id")?;
+    manifest.market_scope = row.try_get("market_scope")?;
+    manifest.status = row.try_get("status")?;
+    manifest.probability_mode = row.try_get("probability_mode")?;
+    manifest.serving_status = row.try_get("serving_status")?;
+    manifest.bundle_uri = row.try_get("bundle_uri")?;
+    manifest.feature_set_version = row.try_get("feature_set_version")?;
+    manifest.label_version = row.try_get("label_version")?;
+    manifest.prob_model_version = row.try_get("prob_model_version")?;
+    manifest.calibration_version = row.try_get("calibration_version")?;
+    manifest.posture_policy_version = row.try_get("posture_policy_version")?;
+    manifest.action_playbook_version = row.try_get("action_playbook_version")?;
+    manifest.point_in_time_mode = row.try_get("point_in_time_mode")?;
+    manifest.training_range_start =
+        parse_optional_date(row.try_get::<Option<String>, _>("training_range_start")?)?;
+    manifest.training_range_end =
+        parse_optional_date(row.try_get::<Option<String>, _>("training_range_end")?)?;
+    manifest.calibration_range_start =
+        parse_optional_date(row.try_get::<Option<String>, _>("calibration_range_start")?)?;
+    manifest.calibration_range_end =
+        parse_optional_date(row.try_get::<Option<String>, _>("calibration_range_end")?)?;
+    manifest.evaluation_range_start =
+        parse_optional_date(row.try_get::<Option<String>, _>("evaluation_range_start")?)?;
+    manifest.evaluation_range_end =
+        parse_optional_date(row.try_get::<Option<String>, _>("evaluation_range_end")?)?;
+    manifest.brier_score = row.try_get("brier_score")?;
+    manifest.log_loss = row.try_get("log_loss")?;
+    manifest.ece = row.try_get("ece")?;
+    manifest.note = row.try_get("note")?;
+    Ok(ModelReleaseRecord {
+        manifest,
+        created_at: parse_required_datetime(row.try_get::<String, _>("created_at")?.as_str())?,
+        activated_at: parse_optional_datetime(row.try_get::<Option<String>, _>("activated_at")?)?,
+        retired_at: parse_optional_datetime(row.try_get::<Option<String>, _>("retired_at")?)?,
+    })
+}
+
+fn map_active_pointer_row(row: SqliteRow) -> Result<ActiveModelPointer, StorageError> {
+    Ok(ActiveModelPointer {
+        market_scope: row.try_get("market_scope")?,
+        release_id: row.try_get("release_id")?,
+        updated_at: parse_required_datetime(row.try_get::<String, _>("updated_at")?.as_str())?,
+        updated_by: row.try_get("updated_by")?,
+    })
+}
+
+fn map_prediction_snapshot_row(row: SqliteRow) -> Result<PredictionSnapshotRecord, StorageError> {
+    Ok(PredictionSnapshotRecord {
+        as_of_date: parse_date(row.try_get::<String, _>("as_of_date")?.as_str())?,
+        entity_id: row.try_get("entity_id")?,
+        market_scope: row.try_get("market_scope")?,
+        release_id: row.try_get("release_id")?,
+        probability_mode: row.try_get("probability_mode")?,
+        release_status: row.try_get("release_status")?,
+        point_in_time_mode: row.try_get("point_in_time_mode")?,
+        overall_score: row.try_get("overall_score")?,
+        external_shock_score: row.try_get("external_shock_score")?,
+        raw_p_5d: row.try_get("raw_p_5d")?,
+        raw_p_20d: row.try_get("raw_p_20d")?,
+        raw_p_60d: row.try_get("raw_p_60d")?,
+        calibrated_p_5d: row.try_get("calibrated_p_5d")?,
+        calibrated_p_20d: row.try_get("calibrated_p_20d")?,
+        calibrated_p_60d: row.try_get("calibrated_p_60d")?,
+        posture: row.try_get("posture")?,
+        time_to_risk_bucket: row.try_get("time_to_risk_bucket")?,
+        feature_set_version: row.try_get("feature_set_version")?,
+        label_version: row.try_get("label_version")?,
+        coverage_score: row.try_get("coverage_score")?,
+        freshness_status: row.try_get("freshness_status")?,
+        method_version: row.try_get("method_version")?,
+        recorded_at: parse_required_datetime(row.try_get::<String, _>("recorded_at")?.as_str())?,
+    })
+}
+
+fn prediction_snapshot_id(
+    entity_id: &str,
+    market_scope: &str,
+    as_of_date: NaiveDate,
+    release_id: Option<&str>,
+    point_in_time_mode: &str,
+) -> String {
+    format!(
+        "{}:{}:{}:{}:{}",
+        market_scope,
+        entity_id,
+        as_of_date,
+        release_id.unwrap_or("inline"),
+        point_in_time_mode
+    )
+}
+
 fn parse_risk_level(value: &str) -> Result<RiskLevel, StorageError> {
     match value {
         "normal" => Ok(RiskLevel::Normal),
@@ -1986,7 +2639,8 @@ fn format_alert_status(value: AlertStatus) -> &'static str {
 mod tests {
     use chrono::{NaiveDate, Utc};
     use fc_domain::{
-        AlertEvent, AlertStatus, AlertType, RiskContributor, RiskDimension, RiskLevel,
+        AlertEvent, AlertStatus, AlertType, ModelReleaseManifest, ModelReleaseRecord,
+        PredictionSnapshotRecord, RiskContributor, RiskDimension, RiskLevel,
     };
     use uuid::Uuid;
 
@@ -2091,5 +2745,126 @@ mod tests {
             alerts[0].top_contributors[0].dimension,
             RiskDimension::EventsSentiment
         );
+    }
+
+    #[tokio::test]
+    async fn sqlite_store_round_trips_model_releases_and_active_pointer() {
+        let store = SqliteStore::connect_url("sqlite::memory:").await.unwrap();
+        store.migrate().await.unwrap();
+        let created_at = Utc::now();
+        let release = ModelReleaseRecord {
+            manifest: ModelReleaseManifest {
+                release_id: "heuristic_bootstrap_20260531".to_string(),
+                market_scope: "financial_system".to_string(),
+                status: "candidate".to_string(),
+                probability_mode: "heuristic_mvp".to_string(),
+                serving_status: "degraded".to_string(),
+                bundle_uri: "config/model-releases/us-heuristic-bootstrap.json".to_string(),
+                feature_set_version: "feature_v2_20260531".to_string(),
+                label_version: "label_v1_20260530".to_string(),
+                prob_model_version: "prob_v1_20260531".to_string(),
+                calibration_version: "calib_v1_20260531".to_string(),
+                posture_policy_version: "posture_v1_20260530".to_string(),
+                action_playbook_version: "action_playbook_v1_20260531".to_string(),
+                point_in_time_mode: "best_effort".to_string(),
+                training_range_start: Some(NaiveDate::from_ymd_opt(2007, 1, 1).unwrap()),
+                training_range_end: Some(NaiveDate::from_ymd_opt(2021, 12, 31).unwrap()),
+                calibration_range_start: Some(NaiveDate::from_ymd_opt(2022, 1, 1).unwrap()),
+                calibration_range_end: Some(NaiveDate::from_ymd_opt(2023, 12, 31).unwrap()),
+                evaluation_range_start: Some(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+                evaluation_range_end: Some(NaiveDate::from_ymd_opt(2025, 12, 31).unwrap()),
+                brier_score: Some(0.082),
+                log_loss: Some(0.241),
+                ece: Some(0.031),
+                note: "bootstrap heuristic release".to_string(),
+            },
+            created_at,
+            activated_at: None,
+            retired_at: None,
+        };
+        store.upsert_model_release(&release).await.unwrap();
+
+        let releases = store
+            .list_model_releases(Some("financial_system"))
+            .await
+            .unwrap();
+        assert_eq!(releases.len(), 1);
+        assert_eq!(releases[0].manifest.release_id, release.manifest.release_id);
+
+        let active = store
+            .activate_model_release("financial_system", &release.manifest.release_id, "test")
+            .await
+            .unwrap();
+        assert_eq!(active.manifest.status, "active");
+
+        let active_pointer = store
+            .load_active_model_pointer("financial_system")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(active_pointer.release_id, release.manifest.release_id);
+
+        let loaded = store
+            .load_active_model_release("financial_system")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.manifest.bundle_uri, release.manifest.bundle_uri);
+    }
+
+    #[tokio::test]
+    async fn sqlite_store_round_trips_prediction_snapshots() {
+        let store = SqliteStore::connect_url("sqlite::memory:").await.unwrap();
+        store.migrate().await.unwrap();
+        let recorded_at = Utc::now();
+        let snapshot = PredictionSnapshotRecord {
+            as_of_date: NaiveDate::from_ymd_opt(2026, 5, 31).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            release_id: Some("us_heuristic_bootstrap_20260531".to_string()),
+            probability_mode: "heuristic_mvp".to_string(),
+            release_status: "degraded".to_string(),
+            point_in_time_mode: "best_effort".to_string(),
+            overall_score: 67.4,
+            external_shock_score: 58.1,
+            raw_p_5d: 0.18,
+            raw_p_20d: 0.34,
+            raw_p_60d: 0.41,
+            calibrated_p_5d: 0.18,
+            calibrated_p_20d: 0.34,
+            calibrated_p_60d: 0.41,
+            posture: "prepare".to_string(),
+            time_to_risk_bucket: "weeks".to_string(),
+            feature_set_version: "feature_v2_20260531".to_string(),
+            label_version: "label_v1_20260530".to_string(),
+            coverage_score: 0.87,
+            freshness_status: "fresh".to_string(),
+            method_version: "scoring_v2_20260531".to_string(),
+            recorded_at,
+        };
+
+        store
+            .upsert_prediction_snapshots(std::slice::from_ref(&snapshot))
+            .await
+            .unwrap();
+
+        let rows = store
+            .list_prediction_snapshots(
+                Some("financial_system"),
+                Some("us_heuristic_bootstrap_20260531"),
+                Some(NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
+                Some(NaiveDate::from_ymd_opt(2026, 5, 31).unwrap()),
+                Some(10),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].release_id.as_deref(),
+            Some("us_heuristic_bootstrap_20260531")
+        );
+        assert_eq!(rows[0].time_to_risk_bucket, "weeks");
+        assert_eq!(rows[0].freshness_status, "fresh");
     }
 }

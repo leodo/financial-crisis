@@ -2,12 +2,13 @@ use std::collections::BTreeMap;
 
 use chrono::{NaiveDate, Utc};
 use fc_domain::{
-    DataQualitySummary, DimensionScore, Indicator, IndicatorRisk, Observation, QualityGrade,
-    RiskContributor, RiskDimension, RiskDirection, RiskLevel, RiskSnapshot,
+    DataQualitySummary, DimensionScore, Frequency, Indicator, IndicatorRisk, Observation,
+    QualityGrade, RiskContributor, RiskDimension, RiskDirection, RiskLevel, RiskSnapshot,
 };
 
-const METHOD_VERSION: &str = "scoring_v1_20260530";
+const METHOD_VERSION: &str = "scoring_v2_20260531";
 const TAIL_WEIGHT: f64 = 0.2;
+const YOY_DAYS: i64 = 365;
 
 #[derive(Debug, Clone)]
 pub struct ScoringEngine {
@@ -62,22 +63,7 @@ impl ScoringEngine {
                 .cloned()
                 .unwrap_or_default();
             let latest = history.last().copied().cloned();
-            let values = history
-                .iter()
-                .filter_map(|observation| {
-                    observation.value.is_finite().then_some(observation.value)
-                })
-                .collect::<Vec<_>>();
-            let (score, percentile) = latest
-                .as_ref()
-                .map(|observation| match indicator.risk_direction {
-                    RiskDirection::ManualRule => (
-                        score_manual_rule(&indicator.indicator_id, observation.value),
-                        None,
-                    ),
-                    other => score_value(&values, observation.value, other),
-                })
-                .unwrap_or((0.0, None));
+            let signal = compute_signal(indicator, &history, latest.as_ref());
             let quality_grade = latest
                 .as_ref()
                 .map(|observation| QualityGrade::from_score(observation.quality_score))
@@ -88,10 +74,13 @@ impl ScoringEngine {
             indicator_risks.push(IndicatorRisk {
                 indicator: indicator.clone(),
                 latest_observation: latest,
-                score,
-                level: RiskLevel::from_score(score),
-                percentile,
+                score: signal.score,
+                level: RiskLevel::from_score(signal.score),
+                percentile: signal.percentile,
                 change_30d,
+                score_basis: signal.score_basis,
+                score_input_value: signal.score_input_value,
+                score_input_unit: signal.score_input_unit,
                 quality_grade,
                 contribution: 0.0,
             });
@@ -157,6 +146,259 @@ fn external_proxy_entity(indicator_id: &str) -> Option<&'static str> {
 pub struct ScoringOutput {
     pub snapshot: RiskSnapshot,
     pub indicator_risks: Vec<IndicatorRisk>,
+}
+
+#[derive(Debug, Clone)]
+struct SignalComputation {
+    score: f64,
+    percentile: Option<f64>,
+    score_basis: String,
+    score_input_value: Option<f64>,
+    score_input_unit: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SignalTransform {
+    Level,
+    ChangeDays { days: i64 },
+    PctChangeDays { days: i64, absolute: bool },
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SignalSpec {
+    transform: SignalTransform,
+    scoring_direction: RiskDirection,
+    activation: SignalActivation,
+    basis_label: &'static str,
+    unit_override: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SignalActivation {
+    Any,
+    PositiveOnly,
+    NegativeOnly,
+}
+
+fn compute_signal(
+    indicator: &Indicator,
+    history: &[&Observation],
+    latest: Option<&Observation>,
+) -> SignalComputation {
+    let Some(latest) = latest else {
+        return SignalComputation {
+            score: 0.0,
+            percentile: None,
+            score_basis: "缺少观测".to_string(),
+            score_input_value: None,
+            score_input_unit: None,
+        };
+    };
+
+    if matches!(indicator.risk_direction, RiskDirection::ManualRule) {
+        return SignalComputation {
+            score: score_manual_rule(&indicator.indicator_id, latest.value),
+            percentile: None,
+            score_basis: "人工规则".to_string(),
+            score_input_value: Some(latest.value),
+            score_input_unit: Some(indicator.unit.clone()),
+        };
+    }
+
+    let spec = signal_spec(indicator);
+    let signal_series = build_signal_series(history, spec.transform);
+    let signal_values = signal_series
+        .iter()
+        .filter_map(|(_, value)| value.is_finite().then_some(*value))
+        .collect::<Vec<_>>();
+    let current_signal_value = signal_series
+        .iter()
+        .rev()
+        .find(|(date, _)| *date == latest.as_of_date)
+        .map(|(_, value)| *value);
+    let percentile = current_signal_value.map(|value| percentile_rank(&signal_values, value));
+    let score = current_signal_value
+        .map(|value| {
+            if !signal_is_active(value, spec.activation) {
+                0.0
+            } else {
+                score_value(&signal_values, value, spec.scoring_direction).0
+            }
+        })
+        .unwrap_or(0.0);
+
+    SignalComputation {
+        score,
+        percentile,
+        score_basis: spec.basis_label.to_string(),
+        score_input_value: current_signal_value,
+        score_input_unit: Some(
+            spec.unit_override
+                .unwrap_or(indicator.unit.as_str())
+                .to_string(),
+        ),
+    }
+}
+
+fn signal_spec(indicator: &Indicator) -> SignalSpec {
+    match indicator.indicator_id.as_str() {
+        "us_real_estate_home_price" => SignalSpec {
+            transform: SignalTransform::PctChangeDays {
+                days: YOY_DAYS,
+                absolute: false,
+            },
+            scoring_direction: RiskDirection::TwoSided,
+            activation: SignalActivation::Any,
+            basis_label: "12m同比",
+            unit_override: Some("%"),
+        },
+        "us_real_estate_housing_starts" => SignalSpec {
+            transform: SignalTransform::PctChangeDays {
+                days: YOY_DAYS,
+                absolute: false,
+            },
+            scoring_direction: RiskDirection::LowerIsRiskier,
+            activation: SignalActivation::NegativeOnly,
+            basis_label: "12m同比",
+            unit_override: Some("%"),
+        },
+        "us_liquidity_money_supply_m2" => SignalSpec {
+            transform: SignalTransform::PctChangeDays {
+                days: YOY_DAYS,
+                absolute: false,
+            },
+            scoring_direction: RiskDirection::LowerIsRiskier,
+            activation: SignalActivation::NegativeOnly,
+            basis_label: "12m同比",
+            unit_override: Some("%"),
+        },
+        "us_external_usdjpy_level" => SignalSpec {
+            transform: SignalTransform::PctChangeDays {
+                days: 20,
+                absolute: true,
+            },
+            scoring_direction: RiskDirection::HigherIsRiskier,
+            activation: SignalActivation::Any,
+            basis_label: "20d振幅",
+            unit_override: Some("%"),
+        },
+        _ => match indicator.risk_direction {
+            RiskDirection::RisingFastIsRiskier => SignalSpec {
+                transform: SignalTransform::ChangeDays {
+                    days: default_change_window_days(indicator.frequency),
+                },
+                scoring_direction: RiskDirection::HigherIsRiskier,
+                activation: SignalActivation::PositiveOnly,
+                basis_label: "变化幅度",
+                unit_override: None,
+            },
+            RiskDirection::FallingFastIsRiskier => SignalSpec {
+                transform: SignalTransform::ChangeDays {
+                    days: default_change_window_days(indicator.frequency),
+                },
+                scoring_direction: RiskDirection::LowerIsRiskier,
+                activation: SignalActivation::NegativeOnly,
+                basis_label: "变化幅度",
+                unit_override: None,
+            },
+            other => SignalSpec {
+                transform: SignalTransform::Level,
+                scoring_direction: other,
+                activation: SignalActivation::Any,
+                basis_label: "原始水平",
+                unit_override: None,
+            },
+        },
+    }
+}
+
+fn signal_is_active(value: f64, activation: SignalActivation) -> bool {
+    match activation {
+        SignalActivation::Any => true,
+        SignalActivation::PositiveOnly => value > 0.0,
+        SignalActivation::NegativeOnly => value < 0.0,
+    }
+}
+
+fn default_change_window_days(frequency: Frequency) -> i64 {
+    match frequency {
+        Frequency::Daily => 30,
+        Frequency::Weekly => 84,
+        Frequency::Monthly => YOY_DAYS,
+        Frequency::Quarterly => YOY_DAYS * 2,
+        Frequency::Annual => YOY_DAYS * 3,
+        Frequency::Event => 30,
+    }
+}
+
+fn build_signal_series(
+    history: &[&Observation],
+    transform: SignalTransform,
+) -> Vec<(NaiveDate, f64)> {
+    match transform {
+        SignalTransform::Level => history
+            .iter()
+            .filter_map(|observation| {
+                observation
+                    .value
+                    .is_finite()
+                    .then_some((observation.as_of_date, observation.value))
+            })
+            .collect(),
+        SignalTransform::ChangeDays { days } => difference_series(history, days, false, false),
+        SignalTransform::PctChangeDays { days, absolute } => {
+            difference_series(history, days, true, absolute)
+        }
+    }
+}
+
+fn difference_series(
+    history: &[&Observation],
+    lookback_days: i64,
+    percent: bool,
+    absolute: bool,
+) -> Vec<(NaiveDate, f64)> {
+    let mut derived = Vec::new();
+    if history.is_empty() {
+        return derived;
+    }
+
+    let mut previous_index = 0_usize;
+    for current_index in 0..history.len() {
+        let current = history[current_index];
+        if !current.value.is_finite() {
+            continue;
+        }
+        let cutoff = current.as_of_date - chrono::Duration::days(lookback_days);
+        while previous_index + 1 < current_index && history[previous_index + 1].as_of_date <= cutoff
+        {
+            previous_index += 1;
+        }
+        let previous = history[previous_index];
+        if previous_index >= current_index
+            || previous.as_of_date > cutoff
+            || !previous.value.is_finite()
+        {
+            continue;
+        }
+
+        let mut value = if percent {
+            if previous.value.abs() <= f64::EPSILON {
+                continue;
+            }
+            (current.value - previous.value) / previous.value.abs() * 100.0
+        } else {
+            current.value - previous.value
+        };
+        if absolute {
+            value = value.abs();
+        }
+        if value.is_finite() {
+            derived.push((current.as_of_date, value));
+        }
+    }
+
+    derived
 }
 
 pub fn score_value(history: &[f64], value: f64, direction: RiskDirection) -> (f64, Option<f64>) {
@@ -402,10 +644,42 @@ fn build_level_reason(level: RiskLevel, contributors: &[RiskContributor]) -> Str
 }
 
 fn explain_indicator(risk: &IndicatorRisk) -> String {
-    format!(
-        "{} 当前风险分为 {:.1}，方向规则为 {:?}。",
-        risk.indicator.display_name, risk.score, risk.indicator.risk_direction
-    )
+    match (
+        risk.score_input_value,
+        risk.score_input_unit.as_deref(),
+        risk.percentile,
+    ) {
+        (Some(value), Some(unit), Some(percentile)) => format!(
+            "{} 按{}评分，当前信号 {}，历史分位 {:.1}，风险分 {:.1}。",
+            risk.indicator.display_name,
+            risk.score_basis,
+            format_signal_value(value, unit),
+            percentile,
+            risk.score
+        ),
+        (Some(value), Some(unit), None) => format!(
+            "{} 按{}评分，当前信号 {}，风险分 {:.1}。",
+            risk.indicator.display_name,
+            risk.score_basis,
+            format_signal_value(value, unit),
+            risk.score
+        ),
+        _ => format!(
+            "{} 当前风险分为 {:.1}，评分口径为 {}。",
+            risk.indicator.display_name, risk.score, risk.score_basis
+        ),
+    }
+}
+
+fn format_signal_value(value: f64, unit: &str) -> String {
+    match unit {
+        "%" | "percent" => format!("{value:.2}%"),
+        "index" | "jpy_per_usd" => format!("{value:.2}"),
+        "count" => format!("{value:.0}"),
+        "score" => format!("{value:.1}"),
+        "billions" | "thousands" => format!("{value:.1} {unit}"),
+        _ => format!("{value:.2} {unit}"),
+    }
 }
 
 fn round1(value: f64) -> f64 {
@@ -416,7 +690,10 @@ fn round1(value: f64) -> f64 {
 mod tests {
     use fc_domain::RiskDirection;
 
-    use super::score_value;
+    use chrono::{NaiveDate, Utc};
+    use fc_domain::{Frequency, Indicator, Observation, RiskDimension};
+
+    use super::{compute_signal, score_value};
 
     #[test]
     fn higher_is_riskier_uses_percentile() {
@@ -432,5 +709,75 @@ mod tests {
             score_value(&[1.0, 2.0, 3.0, 4.0], 1.0, RiskDirection::LowerIsRiskier);
         assert_eq!(score, 75.0);
         assert_eq!(percentile, Some(25.0));
+    }
+
+    #[test]
+    fn home_price_uses_yoy_signal_not_raw_level() {
+        let indicator = Indicator {
+            indicator_id: "us_real_estate_home_price".to_string(),
+            display_name: "Case-Shiller 房价指数".to_string(),
+            dimension: RiskDimension::RealEstate,
+            description: String::new(),
+            unit: "index".to_string(),
+            frequency: Frequency::Monthly,
+            risk_direction: RiskDirection::TwoSided,
+            default_source_id: "fred".to_string(),
+            quality_tier: "core".to_string(),
+        };
+        let history = vec![
+            observation("us_real_estate_home_price", 2024, 1, 1, 200.0),
+            observation("us_real_estate_home_price", 2025, 1, 1, 210.0),
+            observation("us_real_estate_home_price", 2026, 1, 1, 220.5),
+        ];
+        let refs = history.iter().collect::<Vec<_>>();
+        let signal = compute_signal(&indicator, &refs, history.last());
+        assert_eq!(signal.score_basis, "12m同比");
+        assert_eq!(signal.score_input_unit.as_deref(), Some("%"));
+        assert!(signal.score_input_value.is_some());
+        assert!(signal.score_input_value.unwrap() < 10.0);
+    }
+
+    #[test]
+    fn rising_fast_series_scores_off_change_not_level() {
+        let indicator = Indicator {
+            indicator_id: "us_liquidity_effr".to_string(),
+            display_name: "有效联邦基金利率".to_string(),
+            dimension: RiskDimension::LiquidityFunding,
+            description: String::new(),
+            unit: "percent".to_string(),
+            frequency: Frequency::Daily,
+            risk_direction: RiskDirection::RisingFastIsRiskier,
+            default_source_id: "fred".to_string(),
+            quality_tier: "core".to_string(),
+        };
+        let history = vec![
+            observation("us_liquidity_effr", 2026, 1, 1, 3.0),
+            observation("us_liquidity_effr", 2026, 1, 31, 3.1),
+            observation("us_liquidity_effr", 2026, 3, 2, 3.7),
+        ];
+        let refs = history.iter().collect::<Vec<_>>();
+        let signal = compute_signal(&indicator, &refs, history.last());
+        assert_eq!(signal.score_basis, "变化幅度");
+        assert_eq!(signal.score_input_unit.as_deref(), Some("percent"));
+        assert!(signal.score_input_value.unwrap() > 0.0);
+    }
+
+    fn observation(indicator_id: &str, year: i32, month: u32, day: u32, value: f64) -> Observation {
+        Observation {
+            indicator_id: indicator_id.to_string(),
+            entity_id: "us".to_string(),
+            as_of_date: NaiveDate::from_ymd_opt(year, month, day).unwrap(),
+            period_start: None,
+            period_end: None,
+            frequency: Frequency::Daily,
+            value,
+            unit: "source_unit".to_string(),
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            revision_time: None,
+            publication_time: Some(Utc::now()),
+            quality_score: 92.0,
+            quality_flags: Vec::new(),
+        }
     }
 }

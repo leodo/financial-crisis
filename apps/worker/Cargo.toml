@@ -11,6 +11,7 @@ fc-domain = { path = "../../crates/domain" }
 fc-ingestion = { path = "../../crates/ingestion" }
 fc-storage = { path = "../../crates/storage" }
 reqwest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true

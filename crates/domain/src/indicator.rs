@@ -101,6 +101,9 @@ pub struct IndicatorRisk {
     pub level: crate::RiskLevel,
     pub percentile: Option<f64>,
     pub change_30d: Option<f64>,
+    pub score_basis: String,
+    pub score_input_value: Option<f64>,
+    pub score_input_unit: Option<String>,
     pub quality_grade: crate::QualityGrade,
     pub contribution: f64,
 }

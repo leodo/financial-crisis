@@ -54,9 +54,11 @@ docs/
 - [危机窗口与标签设计](analytics/horizon-label-design.md)
 - [危机概率引擎设计](analytics/probability-engine-design.md)
 - [决策支持策略设计](analytics/decision-support-policy.md)
+- [持仓动作手册设计](analytics/portfolio-action-playbook.md)
 - [特征库设计](analytics/feature-store-design.md)
 - [概率校准设计](analytics/probability-calibration-design.md)
 - [真实回测执行设计](analytics/real-backtest-execution-design.md)
+- [模型发布与在线评分设计](analytics/model-release-and-serving-design.md)
 - [历史相似阶段设计](analytics/historical-analog-design.md)
 - [Posture 阈值调优设计](analytics/posture-threshold-tuning.md)
 

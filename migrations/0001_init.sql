@@ -256,6 +256,70 @@ CREATE TABLE IF NOT EXISTS alerts.event_history (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS audit.model_releases (
+    release_id TEXT PRIMARY KEY,
+    market_scope TEXT NOT NULL,
+    status TEXT NOT NULL,
+    probability_mode TEXT NOT NULL,
+    serving_status TEXT NOT NULL,
+    bundle_uri TEXT NOT NULL,
+    manifest_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    feature_set_version TEXT NOT NULL,
+    label_version TEXT NOT NULL,
+    prob_model_version TEXT NOT NULL,
+    calibration_version TEXT NOT NULL,
+    posture_policy_version TEXT NOT NULL,
+    action_playbook_version TEXT NOT NULL,
+    point_in_time_mode TEXT NOT NULL,
+    training_range_start DATE,
+    training_range_end DATE,
+    calibration_range_start DATE,
+    calibration_range_end DATE,
+    evaluation_range_start DATE,
+    evaluation_range_end DATE,
+    brier_score DOUBLE PRECISION,
+    log_loss DOUBLE PRECISION,
+    ece DOUBLE PRECISION,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    activated_at TIMESTAMPTZ,
+    retired_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS audit.active_model_pointers (
+    market_scope TEXT PRIMARY KEY,
+    release_id TEXT NOT NULL REFERENCES audit.model_releases(release_id) ON DELETE CASCADE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_by TEXT NOT NULL DEFAULT 'system'
+);
+
+CREATE TABLE IF NOT EXISTS audit.prediction_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    market_scope TEXT NOT NULL,
+    as_of_date DATE NOT NULL,
+    release_id TEXT REFERENCES audit.model_releases(release_id) ON DELETE SET NULL,
+    probability_mode TEXT NOT NULL,
+    release_status TEXT NOT NULL,
+    point_in_time_mode TEXT NOT NULL,
+    overall_score DOUBLE PRECISION NOT NULL,
+    external_shock_score DOUBLE PRECISION NOT NULL,
+    raw_p_5d DOUBLE PRECISION NOT NULL,
+    raw_p_20d DOUBLE PRECISION NOT NULL,
+    raw_p_60d DOUBLE PRECISION NOT NULL,
+    calibrated_p_5d DOUBLE PRECISION NOT NULL,
+    calibrated_p_20d DOUBLE PRECISION NOT NULL,
+    calibrated_p_60d DOUBLE PRECISION NOT NULL,
+    posture TEXT NOT NULL,
+    time_to_risk_bucket TEXT NOT NULL,
+    feature_set_version TEXT NOT NULL,
+    label_version TEXT NOT NULL,
+    coverage_score DOUBLE PRECISION NOT NULL,
+    freshness_status TEXT NOT NULL,
+    method_version TEXT NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS audit.config_changes (
     change_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     object_type TEXT NOT NULL,
@@ -281,3 +345,12 @@ CREATE INDEX IF NOT EXISTS idx_ingest_runs_status
 
 CREATE INDEX IF NOT EXISTS idx_alerts_events_status
     ON alerts.events (status, level, triggered_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_model_releases_scope_status
+    ON audit.model_releases (market_scope, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_prediction_snapshots_scope_date
+    ON audit.prediction_snapshots (market_scope, as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_prediction_snapshots_release_date
+    ON audit.prediction_snapshots (release_id, as_of_date DESC);

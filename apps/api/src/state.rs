@@ -1,7 +1,7 @@
 use fc_domain::{
     AlertEvent, AssessmentHistoryPoint, AssessmentSnapshot, BacktestScenarioSummary,
-    BacktestWindowPoint, DataMode, DataSource, IndicatorRisk, PostureGuidance, RiskSnapshot,
-    UserRiskPreferences,
+    BacktestWindowPoint, DataMode, DataSource, IndicatorRisk, PostureGuidance,
+    ProtectedStressWindowCatalog, RiskSnapshot, UserRiskPreferences,
 };
 use tokio::sync::RwLock;
 
@@ -20,6 +20,7 @@ pub struct AppData {
     pub assessment: AssessmentSnapshot,
     pub assessment_history: Vec<AssessmentHistoryPoint>,
     pub posture_guidance: PostureGuidance,
+    pub protected_stress_window_catalog: ProtectedStressWindowCatalog,
 }
 
 #[derive(Debug)]

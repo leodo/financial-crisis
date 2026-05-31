@@ -1,0 +1,56 @@
+{
+  "catalog_id": "us_protected_stress_windows_v1",
+  "market_scope": "us",
+  "note": "这些区间用于把应允许保护性减仓或对冲的系统压力阶段，与真正的纯误报区分开来。它们服务于滚动审计解释，不直接改变当前时点的 posture 结论。",
+  "windows": [
+    {
+      "window_id": "us_gfc_aftershock_2009",
+      "label": "2009 GFC 余震期",
+      "start_date": "2009-04-01",
+      "end_date": "2009-07-31",
+      "note": "危机已爆发，但信用与流动性修复并不稳定，保护性动作不应按纯误报处理。"
+    },
+    {
+      "window_id": "us_euro_flash_2010",
+      "label": "2010 欧债与闪崩压力",
+      "start_date": "2010-05-01",
+      "end_date": "2010-06-30",
+      "note": "这段时间的动作级信号更接近系统性风险演练，而不是普通噪声。"
+    },
+    {
+      "window_id": "us_downgrade_euro_2011",
+      "label": "2011 美债降级与欧债升级",
+      "start_date": "2011-08-01",
+      "end_date": "2011-10-31",
+      "note": "美国主权评级下调叠加欧债升级，风险资产曾出现广泛去杠杆。"
+    },
+    {
+      "window_id": "us_euro_second_wave_2012",
+      "label": "2012 欧债二次压力",
+      "start_date": "2012-05-01",
+      "end_date": "2012-06-30",
+      "note": "虽然未演变成美国金融危机，但属于应保留防守解释的压力阶段。"
+    },
+    {
+      "window_id": "us_dollar_liquidity_2015_2016",
+      "label": "2015-2016 汇率与美元流动性压力",
+      "start_date": "2015-08-10",
+      "end_date": "2016-02-29",
+      "note": "人民币贬值、能源信用与美元流动性收缩共同触发全球风险资产承压。"
+    },
+    {
+      "window_id": "us_rate_shock_2022",
+      "label": "2022 联储加息与流动性抽紧",
+      "start_date": "2022-03-01",
+      "end_date": "2022-10-31",
+      "note": "这是利率冲击主导的系统性压力窗口，应与纯误报分开统计。"
+    },
+    {
+      "window_id": "us_regional_bank_aftershock_2023",
+      "label": "2023 区域银行危机余震",
+      "start_date": "2023-05-02",
+      "end_date": "2023-06-30",
+      "note": "区域银行主危机后，融资和流动性压力仍有延续性。"
+    }
+  ]
+}

@@ -53,7 +53,7 @@ entity_id
 
 ### 3.6 `GET /api/assessment/method`
 
-返回方法版本和说明。
+返回方法版本、说明，以及当前滚动审计使用的受保护压力窗口目录。
 
 ### 3.7 `POST /api/system/reload`
 
@@ -139,12 +139,44 @@ entity_id
   },
   "backtest_summary": {
     "scenario_count": 3,
-    "timely_warning_rate": 1.0,
-    "missed_rate": 0.0,
-    "avg_lead_time_days": 27.0,
-    "median_lead_time_days": 21.0,
-    "total_false_positive_count": 4,
-    "summary": "当前内置场景回测覆盖 3 个危机样本，至少提前 7 天给出有效预警的比例约为 100%。"
+    "structural_warning_rate": 0.667,
+    "timely_warning_rate": 0.667,
+    "missed_rate": 0.333,
+    "avg_structural_lead_time_days": 41.5,
+    "avg_lead_time_days": 11.5,
+    "median_lead_time_days": 15.0,
+    "total_false_positive_count": 2,
+    "rolling_audit": {
+      "history_point_count": 4971,
+      "actionable_signal_count": 464,
+      "pre_crisis_signal_count": 9,
+      "in_crisis_signal_count": 331,
+      "stress_window_signal_count": 114,
+      "false_positive_signal_count": 10,
+      "false_positive_episode_count": 3,
+      "longest_false_positive_episode_days": 9,
+      "actionable_precision": 0.925,
+      "classified_episodes": [
+        {
+          "start_date": "2016-01-04",
+          "end_date": "2016-01-21",
+          "duration_days": 18,
+          "signal_count": 13,
+          "classification": "stress_window",
+          "note": "2015-2016 汇率与美元流动性压力：人民币贬值、能源信用与美元流动性收缩共同触发全球风险资产承压。"
+        },
+        {
+          "start_date": "2022-11-10",
+          "end_date": "2022-11-18",
+          "duration_days": 9,
+          "signal_count": 7,
+          "classification": "false_positive",
+          "note": "未落入危机前 20 日窗口，也不在受保护压力窗口内。"
+        }
+      ],
+      "summary": "全历史滚动审计覆盖 2007-05-03 到 2026-05-31；动作级信号共 464 个评估点，其中危机前 9 个、危机中 331 个、受保护压力窗口 114 个、纯误报 10 个，形成 3 段纯误报区间，动作信号精度约为 92%。"
+    },
+    "summary": "当前回测覆盖 3 个真实危机样本；结构性抬升至少提前 7 天出现的比例约为 67%，可执行预警至少提前 7 天出现的比例约为 67%。"
   },
   "user_preferences": {
     "profile": "neutral",
@@ -162,6 +194,38 @@ entity_id
     "feature_set_version": "feature_v1_20260530",
     "label_version": "label_v1_20260530",
     "posture_policy_version": "posture_v1_20260530"
+  }
+}
+```
+
+## 4.1 `method` 响应结构
+
+```json
+{
+  "method": {
+    "score_method_version": "scoring_v2_20260531",
+    "prob_model_version": "prob_v1_20260531",
+    "calibration_version": "calib_v1_20260531",
+    "feature_set_version": "feature_v2_20260531",
+    "label_version": "label_v1_20260530",
+    "posture_policy_version": "posture_v1_20260530"
+  },
+  "note": "assessment 概率、风险强度和 posture 为不同层的输出；当前版本为启发式 MVP，不是校准后的正式危机概率模型。页面应优先检查 data_mode、关键指标日期和 stale warning，再解释当前数值。",
+  "protected_stress_window_catalog": {
+    "catalog_id": "us_protected_stress_windows_v1",
+    "market_scope": "us",
+    "note": "这些区间用于把应允许保护性减仓或对冲的系统压力阶段，与真正的纯误报区分开来。它们服务于滚动审计解释，不直接改变当前时点的 posture 结论。",
+    "source": "embedded:config/protected_stress_windows.us.json",
+    "warning": null,
+    "windows": [
+      {
+        "window_id": "us_rate_shock_2022",
+        "label": "2022 联储加息与流动性抽紧",
+        "start_date": "2022-03-01",
+        "end_date": "2022-10-31",
+        "note": "这是利率冲击主导的系统性压力窗口，应与纯误报分开统计。"
+      }
+    ]
   }
 }
 ```
@@ -202,6 +266,7 @@ reference_phase
 note
 peak_score
 lead_time_days
+actionable_lead_time_days
 ```
 
 ### 5.5 DataTrust
@@ -312,15 +377,104 @@ recent_events[]
 
 ```text
 scenario_count
+structural_warning_rate
 timely_warning_rate
 missed_rate
+avg_structural_lead_time_days
 avg_lead_time_days
 median_lead_time_days
 total_false_positive_count
+rolling_audit
 summary
 ```
 
-### 5.12 UserRiskPreferences
+说明：
+
+- `lead_time_days`：结构性抬升提前量。
+- `actionable_lead_time_days`：可执行预警提前量。
+- `timely_warning_rate`：按可执行预警口径统计，不再把仅有结构性脆弱的样本算作动作级命中。
+- `total_false_positive_count` 仍表示场景内 `预警折返/动作信号回落次数`。
+- 真正的全样本滚动审计在 `rolling_audit` 中展示，并区分受保护压力窗口与纯误报。
+
+### 5.12 BacktestRollingAudit
+
+```text
+history_point_count
+actionable_signal_count
+pre_crisis_signal_count
+in_crisis_signal_count
+stress_window_signal_count
+false_positive_signal_count
+false_positive_episode_count
+longest_false_positive_episode_days
+actionable_precision
+classified_episodes[]
+summary
+```
+
+说明：
+
+- `stress_window_signal_count` 表示动作信号落在受保护压力窗口中的点数，例如 `2009` 余震、`2015-2016` 美元流动性压力、`2022` 联储加息冲击。
+- `false_positive_signal_count` 只统计真正的纯误报。
+- `actionable_precision` 当前按 `(危机前命中 + 受保护压力窗口) / (危机前命中 + 受保护压力窗口 + 纯误报)` 计算。
+- `classified_episodes` 只返回最长的若干段非危机动作区间，供前端解释最需要复盘的阶段。
+
+### 5.13 BacktestRollingAuditEpisode
+
+```text
+start_date
+end_date
+duration_days
+signal_count
+classification
+note
+```
+
+说明：
+
+- `classification` 当前取值：
+  - `stress_window`
+  - `false_positive`
+
+### 5.14 AssessmentMethodResponse
+
+```text
+method
+note
+protected_stress_window_catalog
+```
+
+说明：
+
+- `protected_stress_window_catalog` 用于解释滚动审计里哪些非危机动作区间被视为“可接受的系统压力防守”。
+
+### 5.15 ProtectedStressWindowCatalog
+
+```text
+catalog_id
+market_scope
+note
+source
+warning
+windows[]
+```
+
+说明：
+
+- 默认目录文件位于 `config/protected_stress_windows.us.json`。
+- 若设置 `FC_PROTECTED_STRESS_WINDOWS_PATH`，API 会优先读取外部文件；失败时回退到内置目录，并在 `warning` 中说明。
+
+### 5.16 ProtectedStressWindow
+
+```text
+window_id
+label
+start_date
+end_date
+note
+```
+
+### 5.17 UserRiskPreferences
 
 ```text
 profile
@@ -370,3 +524,30 @@ note
 - 当前概率仍是启发式 MVP，不是正式校准后的危机发生率
 - `position_guidance` 尚未经过完整历史回测验证
 - 新旧接口并存期间仍可能出现语义漂移
+
+## 10. 2026-05-31 新增研究审计接口
+
+为支撑 formal bundle 上线与日常复盘，当前实现新增：
+
+```text
+GET /api/research/audit
+```
+
+响应包含：
+
+- `supported`
+- `storage_mode`
+- `market_scope`
+- `active_release_id`
+- `runtime_probability_mode`
+- `runtime_release_status`
+- `latest_snapshot_date`
+- `note`
+- `releases[]`
+- `snapshots[]`
+
+用途：
+
+- 核对当前 API 实际在跑 `heuristic_mvp` 还是 `formal_bundle_v1`
+- 查看本地 release registry 中有哪些 candidate / approved / active 版本
+- 查看 `prediction snapshots` 是否跟 active release 对齐

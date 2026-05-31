@@ -96,19 +96,38 @@ config
 lead_time = crisis_start - first_alert_date
 ```
 
-分别统计：
+第二阶段起，需要显式区分两类提前量：
 
-- 第一次 L1。
-- 第一次 L2。
-- 第一次 L3。
+- `structural_lead_time`
+  - 第一次进入持续结构性抬升状态的时间。
+  - 含义是“系统开始看到脆弱性积累”，不等于已经应该立刻清仓。
+- `actionable_lead_time`
+  - 第一次进入持续可执行预警状态的时间。
+  - 含义是“系统已经给出足够强的动作级风险信号”，更接近是否要减仓、上保护、降杠杆。
+
+场景摘要仍保留：
+
+- `first_l1_date`
+- `first_l2_date`
+- `first_l3_date`
+
+其中建议语义：
+
+- `first_l2_date` 对应结构性抬升。
+- `first_l3_date` 对应可执行预警。
 
 ### 6.2 命中率
 
-在预警窗口内触发 L2/L3 即视为命中。
+在预警窗口内触发可执行预警即视为命中。
 
 ```text
 hit = alert_date in pre_warning_window
 ```
+
+如果只出现结构性抬升，但没有进入可执行预警，应单列为：
+
+- `structural_only_hit`
+- 不能直接计入动作级命中率。
 
 ### 6.3 误报率
 
@@ -150,6 +169,7 @@ scenario_summary
   max_level
   max_score
   lead_time_days
+  actionable_lead_time_days
   false_positive_count
   missed
   top_contributors
@@ -161,8 +181,22 @@ scenario_summary
 - 风险分时间序列。
 - 危机窗口阴影。
 - 预警触发点。
+- 结构性抬升提前量 vs 可执行预警提前量。
+- 全历史滚动审计：动作信号精度、危机前命中、受保护压力点、纯误报点、纯误报区间，以及最长的非危机动作区间列表。
 - Top contributors 随时间变化。
 - 数据质量事件。
+
+受保护压力窗口不再硬编码在页面或 API 内部，而是统一来自：
+
+```text
+config/protected_stress_windows.us.json
+```
+
+如果需要临时实验不同口径，可通过环境变量覆盖：
+
+```text
+FC_PROTECTED_STRESS_WINDOWS_PATH=<custom-json>
+```
 
 ## 8. 避免未来函数
 
@@ -213,4 +247,3 @@ docs/research/backtests/{scenario_id}-{method_version}.md
 - 指标表现。
 - 误报分析。
 - 需要调整的指标或权重。
-

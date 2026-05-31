@@ -88,6 +88,7 @@ pub struct HistoricalAnalog {
     pub note: String,
     pub peak_score: f64,
     pub lead_time_days: Option<i64>,
+    pub actionable_lead_time_days: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,6 +110,11 @@ pub struct AssessmentMethodVersions {
     pub feature_set_version: String,
     pub label_version: String,
     pub posture_policy_version: String,
+    pub action_playbook_version: String,
+    pub probability_mode: String,
+    pub release_status: String,
+    pub release_id: Option<String>,
+    pub point_in_time_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,6 +145,9 @@ pub struct PostureGuidance {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PositionGuidance {
+    pub action_playbook_version: String,
+    pub execution_urgency: String,
+    pub confidence_gate: String,
     pub target_equity_exposure_pct: f64,
     pub target_cash_pct: f64,
     pub hedge_ratio_pct: f64,
@@ -146,7 +155,10 @@ pub struct PositionGuidance {
     pub option_overlay_pct: f64,
     pub action_summary: String,
     pub actions: Vec<String>,
+    pub forbidden_actions: Vec<String>,
+    pub reentry_conditions: Vec<String>,
     pub guardrails: Vec<String>,
+    pub capital_preservation_overlay_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -197,17 +209,45 @@ pub struct EventAssessment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BacktestRollingAuditEpisode {
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub duration_days: u32,
+    pub signal_count: u32,
+    pub classification: String,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BacktestRollingAudit {
+    pub history_point_count: u32,
+    pub actionable_signal_count: u32,
+    pub pre_crisis_signal_count: u32,
+    pub in_crisis_signal_count: u32,
+    pub stress_window_signal_count: u32,
+    pub false_positive_signal_count: u32,
+    pub false_positive_episode_count: u32,
+    pub longest_false_positive_episode_days: u32,
+    pub actionable_precision: f64,
+    pub classified_episodes: Vec<BacktestRollingAuditEpisode>,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BacktestPerformanceSummary {
     pub scenario_count: u32,
     pub real_scenario_count: u32,
     pub fallback_scenario_count: u32,
+    pub structural_warning_rate: f64,
     pub timely_warning_rate: f64,
     pub missed_rate: f64,
+    pub avg_structural_lead_time_days: Option<f64>,
     pub avg_lead_time_days: Option<f64>,
     pub median_lead_time_days: Option<f64>,
     pub total_false_positive_count: u32,
     pub history_start: Option<NaiveDate>,
     pub history_end: Option<NaiveDate>,
+    pub rolling_audit: BacktestRollingAudit,
     pub summary: String,
 }
 

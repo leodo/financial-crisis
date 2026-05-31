@@ -41,6 +41,7 @@ pub struct BacktestScenarioSummary {
     pub max_level: RiskLevel,
     pub max_score: f64,
     pub lead_time_days: Option<i64>,
+    pub actionable_lead_time_days: Option<i64>,
     pub false_positive_count: u32,
     pub missed: bool,
     pub history_start: Option<NaiveDate>,

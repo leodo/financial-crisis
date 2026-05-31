@@ -91,6 +91,10 @@ pub fn router(state: Arc<AppState>) -> Router {
             axum::routing::get(handlers::assessment_method),
         )
         .route(
+            "/api/research/audit",
+            axum::routing::get(handlers::research_audit),
+        )
+        .route(
             "/api/system/reload",
             axum::routing::post(handlers::system_reload),
         )
@@ -211,6 +215,13 @@ mod tests {
         assert!(json["jpy_carry"]["us_short_rate"].is_number());
         assert!(json["jpy_carry"]["us_jp_short_rate_diff"].is_number());
         assert!(json["jpy_carry"]["funding_pressure_score"].is_number());
+        assert!(json["method"]["probability_mode"].is_string());
+        assert!(json["method"]["release_status"].is_string());
+        assert!(json["method"]["action_playbook_version"].is_string());
+        assert!(json["method"]["point_in_time_mode"].is_string());
+        assert!(json["position_guidance"]["action_playbook_version"].is_string());
+        assert!(json["position_guidance"]["execution_urgency"].is_string());
+        assert!(json["position_guidance"]["confidence_gate"].is_string());
         assert!(json["position_guidance"]["target_equity_exposure_pct"].is_number());
         assert!(json["position_guidance"]["target_cash_pct"].is_number());
         assert!(json["position_guidance"]["hedge_ratio_pct"].is_number());
@@ -218,7 +229,10 @@ mod tests {
         assert!(json["position_guidance"]["option_overlay_pct"].is_number());
         assert!(json["position_guidance"]["action_summary"].is_string());
         assert!(json["position_guidance"]["actions"].is_array());
+        assert!(json["position_guidance"]["forbidden_actions"].is_array());
+        assert!(json["position_guidance"]["reentry_conditions"].is_array());
         assert!(json["position_guidance"]["guardrails"].is_array());
+        assert!(json["position_guidance"]["capital_preservation_overlay_enabled"].is_boolean());
     }
 
     #[tokio::test]
@@ -238,6 +252,9 @@ mod tests {
         assert!(json["event_assessment"]["state"].is_string());
         assert!(json["event_assessment"]["confirmed_signals"].is_array());
         assert!(json["backtest_summary"]["timely_warning_rate"].is_number());
+        assert!(json["backtest_summary"]["rolling_audit"]["actionable_precision"].is_number());
+        assert!(json["backtest_summary"]["rolling_audit"]["classified_episodes"].is_array());
+        assert!(json["backtest_summary"]["rolling_audit"]["summary"].is_string());
         assert!(json["user_preferences"]["profile"].is_string());
     }
 
@@ -270,6 +287,17 @@ mod tests {
         let json = get_json("/api/assessment/history?limit=5").await;
         let points = json.as_array().unwrap();
         assert_eq!(points.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn research_audit_endpoint_returns_runtime_audit_shape() {
+        let json = get_json("/api/research/audit").await;
+        assert!(json["supported"].is_boolean());
+        assert!(json["storage_mode"].is_string());
+        assert!(json["runtime_probability_mode"].is_string());
+        assert!(json["runtime_release_status"].is_string());
+        assert!(json["releases"].is_array());
+        assert!(json["snapshots"].is_array());
     }
 
     #[tokio::test]
@@ -308,6 +336,19 @@ mod tests {
         assert!(json["reasons"].is_array());
         assert!(json["upgrade_condition"].is_string());
         assert!(json["downgrade_condition"].is_string());
+    }
+
+    #[tokio::test]
+    async fn assessment_method_endpoint_returns_protected_stress_window_catalog() {
+        let json = get_json("/api/assessment/method").await;
+        assert!(json["method"]["score_method_version"].is_string());
+        assert!(json["method"]["probability_mode"].is_string());
+        assert!(json["method"]["release_status"].is_string());
+        assert!(json["method"]["action_playbook_version"].is_string());
+        assert!(json["method"]["point_in_time_mode"].is_string());
+        assert!(json["note"].is_string());
+        assert!(json["protected_stress_window_catalog"]["catalog_id"].is_string());
+        assert!(json["protected_stress_window_catalog"]["windows"].is_array());
     }
 
     #[tokio::test]

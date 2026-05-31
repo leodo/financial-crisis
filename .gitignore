@@ -26,3 +26,9 @@ data/*.sqlite
 data/*.sqlite-*
 data/parquet/
 data/backtests/
+
+reports/rolling-audit/
+reports/snapshot-export.json
+reports/pipeline-dataset.json
+tmp_assessment_history.json
+tmp_assessment_history_full.json

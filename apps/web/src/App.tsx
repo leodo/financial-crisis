@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { api } from "./api";
 import {
+  auditEpisodeClass,
+  auditEpisodeLabel,
   formatDate,
   formatDateTime,
   dataModeLabel,
@@ -70,14 +72,27 @@ const BacktestsView = lazy(async () => {
   const module = await import("./lazyViews");
   return { default: module.BacktestsView };
 });
+const AuditView = lazy(async () => {
+  const module = await import("./lazyViews");
+  return { default: module.AuditView };
+});
 
-type View = "decision" | "drivers" | "events" | "backtests" | "indicators" | "sources" | "method";
+type View =
+  | "decision"
+  | "drivers"
+  | "events"
+  | "backtests"
+  | "audit"
+  | "indicators"
+  | "sources"
+  | "method";
 
 const navItems: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: "decision", label: "决策面板", icon: ShieldCheck },
   { id: "drivers", label: "风险驱动", icon: Layers3 },
   { id: "events", label: "事件确认", icon: Radar },
   { id: "backtests", label: "回测表现", icon: History },
+  { id: "audit", label: "发布审计", icon: GitCompareArrows },
   { id: "indicators", label: "指标细项", icon: Table2 },
   { id: "sources", label: "数据可信度", icon: Database },
   { id: "method", label: "方法说明", icon: BadgeInfo }
@@ -115,6 +130,11 @@ export default function App() {
     queryFn: api.assessmentMethod,
     ...liveQueryOptions
   });
+  const audit = useQuery({
+    queryKey: ["research-audit"],
+    queryFn: api.researchAudit,
+    ...liveQueryOptions
+  });
   const overview = useQuery({ queryKey: ["overview"], queryFn: api.overview, ...liveQueryOptions });
   const indicators = useQuery({
     queryKey: ["indicators"],
@@ -149,6 +169,7 @@ export default function App() {
     assessmentHistory.isLoading ||
     posture.isLoading ||
     method.isLoading ||
+    audit.isLoading ||
     overview.isLoading ||
     indicators.isLoading ||
     events.isLoading ||
@@ -160,6 +181,7 @@ export default function App() {
     assessmentHistory.error ??
     posture.error ??
     method.error ??
+    audit.error ??
     overview.error ??
     indicators.error ??
     events.error ??
@@ -246,6 +268,7 @@ export default function App() {
           assessmentHistory.data &&
           posture.data &&
           method.data &&
+          audit.data &&
           overview.data &&
           indicators.data &&
           events.data &&
@@ -279,6 +302,9 @@ export default function App() {
                     backtests={backtests.data}
                     timeline={backtestTimeline.data}
                   />
+                )}
+                {view === "audit" && (
+                  <AuditView assessment={assessment.data} audit={audit.data} />
                 )}
                 {view === "indicators" && <IndicatorsView indicators={indicators.data} />}
                 {view === "sources" && (
@@ -497,6 +523,37 @@ function DecisionView({
             <ChartColumnIncreasing size={18} />
           </div>
           <p className="body-copy">{assessment.position_guidance.action_summary}</p>
+          <div className="mini-metrics">
+            <Metric
+              label="概率模式"
+              value={assessment.method.probability_mode === "heuristic_mvp" ? "过渡版" : "正式版"}
+              hint={assessment.method.probability_mode}
+            />
+            <Metric
+              label="Release"
+              value={assessment.method.release_status === "degraded" ? "降级中" : "正式在线"}
+              hint={assessment.method.release_status}
+            />
+            <Metric
+              label="动作框架"
+              value={assessment.position_guidance.capital_preservation_overlay_enabled ? "资本保全" : "分层防守"}
+              hint={assessment.position_guidance.action_playbook_version}
+            />
+          </div>
+          <div className="rule-box">
+            <strong>执行节奏</strong>
+            <span>{assessment.position_guidance.execution_urgency}</span>
+          </div>
+          <div className="rule-box">
+            <strong>可信度门槛</strong>
+            <span>{assessment.position_guidance.confidence_gate}</span>
+          </div>
+          {assessment.position_guidance.capital_preservation_overlay_enabled ? (
+            <div className="rule-box">
+              <strong>资本保全叠加已打开</strong>
+              <span>当前已满足 defend + now + 高可信度 + 事件确认，不必默认清仓，但应把去杠杆、现金和核心保护放在收益追逐之前。</span>
+            </div>
+          ) : null}
           <div className="budget-stack">
             <BudgetBar
               label="风险资产上限"
@@ -536,6 +593,28 @@ function DecisionView({
                 <span>{action}</span>
               </div>
             ))}
+          </div>
+          <div className="rule-box">
+            <strong>当前先不要做什么</strong>
+            <div className="list-stack compact">
+              {assessment.position_guidance.forbidden_actions.map((action, index) => (
+                <div className="bullet-row" key={`${action}-${index}`}>
+                  <span className="bullet-dot" />
+                  <span>{action}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rule-box">
+            <strong>什么情况下再恢复仓位</strong>
+            <div className="list-stack compact">
+              {assessment.position_guidance.reentry_conditions.map((condition, index) => (
+                <div className="bullet-row" key={`${condition}-${index}`}>
+                  <span className="bullet-dot" />
+                  <span>{condition}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
       </section>
@@ -614,8 +693,9 @@ function DecisionView({
                 <div>
                   <strong>{analog.name}</strong>
                   <span>
-                    相似度 {formatNumber(analog.similarity_score)} · 历史样本提前{" "}
-                    {analog.lead_time_days ?? "—"} 天 · {analog.note}
+                    相似度 {formatNumber(analog.similarity_score)} · 结构抬升{" "}
+                    {analog.lead_time_days ?? "—"} 天 · 可执行预警{" "}
+                    {analog.actionable_lead_time_days ?? "—"} 天 · {analog.note}
                   </span>
                 </div>
                 <b>{formatNumber(analog.similarity_score)}</b>
@@ -693,9 +773,9 @@ function DecisionView({
             <ShieldCheck size={18} />
           </div>
           <p className="body-copy">
-            这些缓冲因素解释了为什么系统虽然进入高压 posture，但还没有把所有场景都推到最坏假设。
+            这些缓冲因素解释了为什么当前评估还没有被推到更高 posture，也提醒你不要只盯着单个高分指标。
           </p>
-          <DriverList rows={assessment.top_relief_drivers.slice(0, 3)} reverse />
+          <DriverList rows={assessment.top_relief_drivers.slice(0, 3)} />
           <div className="rule-box">
             <strong>降级条件</strong>
             <span>{posture.downgrade_condition}</span>
@@ -730,16 +810,24 @@ function DecisionView({
           </div>
           <div className="mini-metrics">
             <Metric
-              label="有效预警率"
+              label="结构抬升率"
+              value={formatPercent(assessment.backtest_summary.structural_warning_rate)}
+            />
+            <Metric
+              label="可执行预警率"
               value={formatPercent(assessment.backtest_summary.timely_warning_rate)}
             />
             <Metric label="漏报率" value={formatPercent(assessment.backtest_summary.missed_rate)} />
             <Metric
-              label="平均提前量"
+              label="平均结构提前量"
+              value={formatNumber(assessment.backtest_summary.avg_structural_lead_time_days, "d")}
+            />
+            <Metric
+              label="平均动作提前量"
               value={formatNumber(assessment.backtest_summary.avg_lead_time_days, "d")}
             />
             <Metric
-              label="误报次数"
+              label="预警折返"
               value={formatNumber(assessment.backtest_summary.total_false_positive_count)}
             />
             <Metric
@@ -755,6 +843,92 @@ function DecisionView({
               value={userProfileLabel(assessment.user_preferences.profile)}
             />
           </div>
+          <div className="rule-box">
+            <strong>全历史滚动审计</strong>
+            <span>{assessment.backtest_summary.rolling_audit.summary}</span>
+          </div>
+          <div className="mini-metrics">
+            <Metric
+              label="动作信号精度"
+              value={formatPercent(assessment.backtest_summary.rolling_audit.actionable_precision)}
+            />
+            <Metric
+              label="动作信号点"
+              value={formatNumber(assessment.backtest_summary.rolling_audit.actionable_signal_count)}
+            />
+            <Metric
+              label="危机前命中点"
+              value={formatNumber(assessment.backtest_summary.rolling_audit.pre_crisis_signal_count)}
+            />
+            <Metric
+              label="危机中信号点"
+              value={formatNumber(assessment.backtest_summary.rolling_audit.in_crisis_signal_count)}
+            />
+            <Metric
+              label="受保护压力点"
+              value={formatNumber(assessment.backtest_summary.rolling_audit.stress_window_signal_count)}
+            />
+            <Metric
+              label="纯误报点"
+              value={formatNumber(assessment.backtest_summary.rolling_audit.false_positive_signal_count)}
+            />
+            <Metric
+              label="误报区间"
+              value={formatNumber(assessment.backtest_summary.rolling_audit.false_positive_episode_count)}
+            />
+            <Metric
+              label="最长误报区间"
+              value={formatNumber(
+                assessment.backtest_summary.rolling_audit.longest_false_positive_episode_days,
+                "d"
+              )}
+            />
+          </div>
+          <div className="rule-box">
+            <strong>滚动审计口径</strong>
+            <span>
+              危机前命中表示系统在危机前 20 日内发出动作信号；受保护压力表示虽然没有落入定义危机，
+              但处在应允许保护性减仓或对冲的系统压力阶段；纯误报才是需要继续压缩的噪声。
+            </span>
+          </div>
+          {assessment.backtest_summary.rolling_audit.classified_episodes.length > 0 ? (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>类型</th>
+                    <th>区间</th>
+                    <th>持续</th>
+                    <th>信号点</th>
+                    <th>说明</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assessment.backtest_summary.rolling_audit.classified_episodes
+                    .slice(0, 5)
+                    .map((episode) => (
+                      <tr
+                        key={`${episode.classification}-${episode.start_date}-${episode.end_date}`}
+                      >
+                        <td>
+                          <span
+                            className={`state-pill ${auditEpisodeClass(episode.classification)}`}
+                          >
+                            {auditEpisodeLabel(episode.classification)}
+                          </span>
+                        </td>
+                        <td>
+                          {formatDate(episode.start_date)} - {formatDate(episode.end_date)}
+                        </td>
+                        <td>{formatNumber(episode.duration_days, "d")}</td>
+                        <td>{formatNumber(episode.signal_count)}</td>
+                        <td>{episode.note}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
           <div className="rule-box">
             <strong>历史覆盖</strong>
             <span>
@@ -865,11 +1039,9 @@ function Metric({
 }
 
 function DriverList({
-  rows,
-  reverse = false
+  rows
 }: {
   rows: AssessmentSnapshot["top_risk_drivers"];
-  reverse?: boolean;
 }) {
   return (
     <div className="list-stack">
@@ -879,7 +1051,7 @@ function DriverList({
             <strong>{row.display_name}</strong>
             <span>{row.explanation}</span>
           </div>
-          <b>{formatNumber(reverse ? 100 - row.score : row.score)}</b>
+          <b>{formatNumber(row.score)}</b>
         </div>
       ))}
     </div>
@@ -1032,11 +1204,19 @@ function describeAnalogWindow(
     return describeTimeBucket(bucket);
   }
 
-  if (analog.lead_time_days === null) {
+  if (analog.lead_time_days === null && analog.actionable_lead_time_days === null) {
     return `当前最接近 ${analog.name} 的压力阶段，但该历史样本没有可用提前量估计。`;
   }
 
-  return `当前最接近 ${analog.name} 的风险窗口，历史上大约提前 ${analog.lead_time_days} 天进入类似高压阶段。`;
+  if (analog.actionable_lead_time_days === null) {
+    return `当前最接近 ${analog.name} 的结构脆弱阶段，历史上大约提前 ${analog.lead_time_days} 天先出现类似压力，但危机前未形成足够强的可执行预警。`;
+  }
+
+  if (analog.lead_time_days === null) {
+    return `当前最接近 ${analog.name} 的风险窗口，历史上大约提前 ${analog.actionable_lead_time_days} 天进入可执行预警。`;
+  }
+
+  return `当前最接近 ${analog.name} 的风险窗口，历史上大约提前 ${analog.lead_time_days} 天进入结构抬升，并在约提前 ${analog.actionable_lead_time_days} 天进入可执行预警。`;
 }
 
 function buildProbabilityTrendOption(history: AssessmentHistoryPoint[]) {

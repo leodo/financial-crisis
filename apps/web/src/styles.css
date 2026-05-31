@@ -637,6 +637,16 @@ td span,
   color: #a73f31;
 }
 
+.state-pill.state-protected {
+  background: #fff0db;
+  color: #9a5c10;
+}
+
+.state-pill.state-false-positive {
+  background: #fde4df;
+  color: #9b3f33;
+}
+
 .body-copy {
   margin: 0 0 12px;
   font-size: 13px;
@@ -660,6 +670,10 @@ td span,
   color: #55636d;
   font-size: 13px;
   line-height: 1.55;
+}
+
+.rule-box .list-stack {
+  margin-top: 8px;
 }
 
 .posture-ladder,

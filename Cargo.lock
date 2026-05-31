@@ -462,6 +462,7 @@ dependencies = [
  "fc-ingestion",
  "fc-storage",
  "reqwest",
+ "serde",
  "serde_json",
  "tokio",
  "tracing",

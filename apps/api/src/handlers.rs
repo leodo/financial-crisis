@@ -6,19 +6,45 @@ use axum::{
     Json,
 };
 use chrono::NaiveDate;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
-    demo::{select_assessment_history, select_backtest_timeline, HistoryQueryWindow},
+    demo::{
+        select_assessment_history, select_backtest_timeline, AppDataSource, HistoryQueryWindow,
+    },
     AppState,
 };
+use fc_storage::SqliteStore;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct HistoryQuery {
     from: Option<String>,
     to: Option<String>,
     limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct ResearchAuditQuery {
+    market_scope: Option<String>,
+    release_id: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ResearchAuditResponse {
+    supported: bool,
+    storage_mode: String,
+    market_scope: String,
+    active_release_id: Option<String>,
+    runtime_probability_mode: String,
+    runtime_release_status: String,
+    latest_snapshot_date: Option<NaiveDate>,
+    note: String,
+    releases: Vec<fc_domain::ModelReleaseRecord>,
+    snapshots: Vec<fc_domain::PredictionSnapshotRecord>,
 }
 
 impl HistoryQuery {
@@ -137,10 +163,109 @@ pub async fn assessment_posture(State(state): State<Arc<AppState>>) -> Json<serd
 
 pub async fn assessment_method(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let data = state.data().await;
+    let method = &data.assessment.method;
+    let history_note = if matches!(
+        data.assessment.runtime.data_mode,
+        fc_domain::DataMode::Sqlite
+    ) {
+        "assessment/history 在 SQLite 模式下优先复用已落库的 prediction snapshots，仅在缺口日期补算。"
+    } else {
+        "assessment/history 当前仍由运行时即时构造。"
+    };
+    let note = format!(
+        "assessment 概率、风险强度和 posture 为不同层的输出；当前 probability_mode={}、release_status={}{}。{} 页面应先检查 data_mode、关键指标日期、stale warning 和 action playbook，再解释当前数值。",
+        method.probability_mode,
+        method.release_status,
+        method
+            .release_id
+            .as_ref()
+            .map(|release_id| format!("、release_id={release_id}"))
+            .unwrap_or_default(),
+        history_note
+    );
     Json(json!({
         "method": data.assessment.method,
-        "note": "assessment 概率、风险强度和 posture 为不同层的输出；当前版本为启发式 MVP，不是校准后的正式危机概率模型。页面应优先检查 data_mode、关键指标日期和 stale warning，再解释当前数值。"
+        "note": note,
+        "protected_stress_window_catalog": data.protected_stress_window_catalog,
     }))
+}
+
+pub async fn research_audit(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<ResearchAuditQuery>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let data = state.data().await;
+    let market_scope = query
+        .market_scope
+        .unwrap_or_else(|| "financial_system".to_string());
+    let from = parse_date(query.from)?;
+    let to = parse_date(query.to)?;
+    let limit = query.limit.unwrap_or(60);
+
+    let response = match state.source() {
+        AppDataSource::Sqlite { path } => {
+            let store = SqliteStore::connect(path)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            store
+                .migrate()
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let releases = store
+                .list_model_releases(Some(&market_scope))
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let snapshots = store
+                .list_prediction_snapshots(
+                    Some(&market_scope),
+                    query.release_id.as_deref(),
+                    from,
+                    to,
+                    Some(limit),
+                )
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let latest_snapshot_date = snapshots.iter().map(|snapshot| snapshot.as_of_date).max();
+            ResearchAuditResponse {
+                supported: true,
+                storage_mode: "sqlite".to_string(),
+                market_scope,
+                active_release_id: data.assessment.method.release_id.clone(),
+                runtime_probability_mode: data.assessment.method.probability_mode.clone(),
+                runtime_release_status: data.assessment.method.release_status.clone(),
+                latest_snapshot_date,
+                note: "当前页面展示的是 release registry 与 prediction snapshot 落库审计。若 runtime probability mode 与 release manifest 不一致，说明线上已自动降级回 heuristic。".to_string(),
+                releases,
+                snapshots,
+            }
+        }
+        AppDataSource::Demo => ResearchAuditResponse {
+            supported: false,
+            storage_mode: "demo".to_string(),
+            market_scope,
+            active_release_id: data.assessment.method.release_id.clone(),
+            runtime_probability_mode: data.assessment.method.probability_mode.clone(),
+            runtime_release_status: data.assessment.method.release_status.clone(),
+            latest_snapshot_date: None,
+            note: "当前运行在 demo 模式，release registry 和 prediction snapshot 审计不可用。切到 SQLite 后该页面会显示真实审计数据。".to_string(),
+            releases: Vec::new(),
+            snapshots: Vec::new(),
+        },
+        AppDataSource::Postgres { .. } => ResearchAuditResponse {
+            supported: false,
+            storage_mode: "postgres".to_string(),
+            market_scope,
+            active_release_id: data.assessment.method.release_id.clone(),
+            runtime_probability_mode: data.assessment.method.probability_mode.clone(),
+            runtime_release_status: data.assessment.method.release_status.clone(),
+            latest_snapshot_date: None,
+            note: "当前 Postgres 路径尚未接入本地 release registry 与 prediction snapshot 审计，建议先通过 SQLite 研究链路完成模型训练、发布与复盘。".to_string(),
+            releases: Vec::new(),
+            snapshots: Vec::new(),
+        },
+    };
+
+    Ok(Json(json!(response)))
 }
 
 pub async fn system_reload(

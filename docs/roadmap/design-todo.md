@@ -82,7 +82,9 @@
 - `docs/analytics/horizon-label-design.md`
 - `docs/analytics/probability-engine-design.md`
 - `docs/analytics/decision-support-policy.md`
+- `docs/analytics/portfolio-action-playbook.md`
 - `docs/data/us-centric-free-data-plan.md`
 - `docs/data/jpy-carry-risk-module-design.md`
+- `docs/analytics/model-release-and-serving-design.md`
 - `docs/product/decision-dashboard-design.md`
 - `docs/roadmap/crisis-probability-design-todo.md`

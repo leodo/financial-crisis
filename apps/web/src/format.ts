@@ -1,4 +1,5 @@
 import type {
+  BacktestRollingAuditEpisodeClassification,
   BacktestSignalSource,
   DataMode,
   DecisionPosture,
@@ -90,6 +91,18 @@ export function backtestSignalSourceLabel(source: BacktestSignalSource): string 
     fallback_template: "模板参考"
   };
   return labels[source];
+}
+
+export function auditEpisodeLabel(classification: BacktestRollingAuditEpisodeClassification): string {
+  const labels: Record<BacktestRollingAuditEpisodeClassification, string> = {
+    stress_window: "受保护压力",
+    false_positive: "纯误报"
+  };
+  return labels[classification];
+}
+
+export function auditEpisodeClass(classification: BacktestRollingAuditEpisodeClassification): string {
+  return classification === "stress_window" ? "state-protected" : "state-false-positive";
 }
 
 export function freshnessLabel(status: FreshnessStatus): string {

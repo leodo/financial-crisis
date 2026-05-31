@@ -1,21 +1,31 @@
-use std::env;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env, fs,
+};
 
 use anyhow::Context;
 use chrono::{Duration, NaiveDate, Utc};
 use fc_domain::{
-    AlertEvent, AlertStatus, AlertType, BacktestScenarioSummary, BacktestSignalSource,
-    BacktestWindowPoint, DataMode, DataSource, Frequency, Indicator, Observation, RiskContributor,
-    RiskDimension, RiskDirection, RiskLevel, SourceHealth, SourcePriority, SourceStatus,
-    UserRiskPreferences, UserRiskProfile,
+    load_protected_stress_window_catalog, AlertEvent, AlertStatus, AlertType, AssessmentSnapshot,
+    BacktestRollingAudit, BacktestRollingAuditEpisode, BacktestScenarioSummary,
+    BacktestSignalSource, BacktestWindowPoint, DataMode, DataSource, DecisionPosture, Frequency,
+    FreshnessStatus, Indicator, ModelReleaseRecord, Observation, PredictionSnapshotRecord,
+    ProbabilityBundle, ProtectedStressWindow, RiskContributor, RiskDimension, RiskDirection,
+    RiskLevel, SourceHealth, SourcePriority, SourceStatus, TimeToRiskBucket, UserRiskPreferences,
+    UserRiskProfile,
 };
 use fc_scoring::ScoringEngine;
 use fc_storage::{PostgresStore, SqliteStore};
 use uuid::Uuid;
 
-use crate::assessment::{build_assessment_history_point, build_assessment_snapshot};
+use crate::assessment::{build_assessment_snapshot, build_backtest_summary, ServingModelContext};
 use crate::AppData;
 
 const EVENT_LOOKBACK_DAYS: i64 = 30;
+const BACKTEST_SIGNAL_WINDOW: usize = 5;
+const BACKTEST_SIGNAL_MIN_HITS: usize = 3;
+const ACTIONABLE_AUDIT_HORIZON_DAYS: i64 = 20;
+const ROLLING_AUDIT_EPISODE_LIMIT: usize = 12;
 
 #[derive(Debug, Clone)]
 pub enum AppDataSource {
@@ -29,6 +39,18 @@ pub struct HistoryQueryWindow {
     pub from: Option<NaiveDate>,
     pub to: Option<NaiveDate>,
     pub limit: Option<usize>,
+}
+
+#[derive(Debug)]
+struct BuiltAppData {
+    app_data: AppData,
+    prediction_snapshots: Vec<PredictionSnapshotRecord>,
+}
+
+#[derive(Debug)]
+struct HistoricalAssessmentOutput {
+    history_points: Vec<fc_domain::AssessmentHistoryPoint>,
+    prediction_snapshots: Vec<PredictionSnapshotRecord>,
 }
 
 pub fn source_from_env() -> anyhow::Result<AppDataSource> {
@@ -57,23 +79,41 @@ pub async fn load_app_data(
     }
 }
 
-pub fn build_demo_data(max_history_points: usize) -> AppData {
+pub fn build_demo_data(_max_history_points: usize) -> AppData {
     let as_of_date = NaiveDate::from_ymd_opt(2026, 5, 30).expect("valid date");
     let indicators = indicators();
     let observations = observations(as_of_date);
+    let user_preferences = load_user_preferences();
+    let historical = build_assessment_history(
+        DataMode::Demo,
+        &ScoringEngine::default(),
+        &indicators,
+        &observations,
+        None,
+        None,
+        &user_preferences,
+        HistoryQueryWindow {
+            from: None,
+            to: None,
+            limit: None,
+        },
+    );
     build_app_data_from_inputs(
         DataMode::Demo,
         indicators,
         observations,
         None,
+        None,
         as_of_date,
-        max_history_points,
+        historical.history_points,
+        user_preferences,
     )
+    .app_data
 }
 
 async fn load_postgres_app_data(
     database_url: &str,
-    max_history_points: usize,
+    _max_history_points: usize,
 ) -> anyhow::Result<AppData> {
     let as_of_date = Utc::now().date_naive();
     let store = PostgresStore::connect(database_url).await?;
@@ -87,19 +127,37 @@ async fn load_postgres_app_data(
     if observations.is_empty() {
         anyhow::bail!("ts.indicator_observations has no rows for entity us");
     }
+    let user_preferences = load_user_preferences();
+    let historical = build_assessment_history(
+        DataMode::Postgres,
+        &ScoringEngine::default(),
+        &indicators,
+        &observations,
+        Some(&[]),
+        None,
+        &user_preferences,
+        HistoryQueryWindow {
+            from: None,
+            to: None,
+            limit: None,
+        },
+    );
     Ok(build_app_data_from_inputs(
         DataMode::Postgres,
         indicators,
         observations,
         Some(Vec::new()),
+        None,
         as_of_date,
-        max_history_points,
-    ))
+        historical.history_points,
+        user_preferences,
+    )
+    .app_data)
 }
 
 async fn load_sqlite_app_data(
     sqlite_path: &str,
-    max_history_points: usize,
+    _max_history_points: usize,
 ) -> anyhow::Result<AppData> {
     let as_of_date = Utc::now().date_naive();
     let store = SqliteStore::connect(sqlite_path).await?;
@@ -119,25 +177,127 @@ async fn load_sqlite_app_data(
     let alerts = store
         .load_alerts_recent(as_of_date - Duration::days(EVENT_LOOKBACK_DAYS), as_of_date)
         .await?;
-    Ok(build_app_data_from_inputs(
+    let serving_model = store
+        .load_active_model_release("financial_system")
+        .await?
+        .map(build_serving_model_context);
+    let user_preferences = load_user_preferences();
+    let assessment_history = load_sqlite_assessment_history(
+        &store,
+        &indicators,
+        &observations,
+        &alerts,
+        serving_model.as_ref(),
+        &user_preferences,
+        as_of_date,
+    )
+    .await?;
+    let built = build_app_data_from_inputs(
         DataMode::Sqlite,
         indicators,
         observations,
         Some(alerts),
+        serving_model,
         as_of_date,
-        max_history_points,
-    ))
+        assessment_history,
+        user_preferences,
+    );
+    if let Err(error) = store
+        .upsert_prediction_snapshots(&built.prediction_snapshots)
+        .await
+    {
+        tracing::warn!(
+            sqlite_path = sqlite_path,
+            error = %format!("{error:#}"),
+            "failed to persist assessment prediction snapshots"
+        );
+    }
+    Ok(built.app_data)
 }
 
+fn build_serving_model_context(release: ModelReleaseRecord) -> ServingModelContext {
+    if release.manifest.probability_mode == "heuristic_mvp" {
+        return ServingModelContext {
+            runtime_probability_mode: release.manifest.probability_mode.clone(),
+            runtime_release_status: release.manifest.serving_status.clone(),
+            probability_bundle: None,
+            release,
+        };
+    }
+
+    match load_probability_bundle(&release.manifest.bundle_uri) {
+        Ok(bundle)
+            if bundle.market_scope == release.manifest.market_scope
+                && bundle
+                    .horizons
+                    .iter()
+                    .any(|horizon| horizon.horizon_days == 5)
+                && bundle
+                    .horizons
+                    .iter()
+                    .any(|horizon| horizon.horizon_days == 20)
+                && bundle
+                    .horizons
+                    .iter()
+                    .any(|horizon| horizon.horizon_days == 60) =>
+        {
+            ServingModelContext {
+                runtime_probability_mode: bundle.probability_mode.clone(),
+                runtime_release_status: release.manifest.serving_status.clone(),
+                probability_bundle: Some(bundle),
+                release,
+            }
+        }
+        Ok(_) => {
+            tracing::warn!(
+                release_id = %release.manifest.release_id,
+                bundle_uri = %release.manifest.bundle_uri,
+                "active release bundle is missing required 5d/20d/60d horizons; falling back to heuristic probabilities"
+            );
+            ServingModelContext {
+                runtime_probability_mode: "heuristic_mvp".to_string(),
+                runtime_release_status: "degraded".to_string(),
+                probability_bundle: None,
+                release,
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                release_id = %release.manifest.release_id,
+                bundle_uri = %release.manifest.bundle_uri,
+                error = %error,
+                "failed to load active release bundle; falling back to heuristic probabilities"
+            );
+            ServingModelContext {
+                runtime_probability_mode: "heuristic_mvp".to_string(),
+                runtime_release_status: "degraded".to_string(),
+                probability_bundle: None,
+                release,
+            }
+        }
+    }
+}
+
+fn load_probability_bundle(bundle_uri: &str) -> anyhow::Result<ProbabilityBundle> {
+    let raw = fs::read_to_string(bundle_uri)
+        .with_context(|| format!("failed to read probability bundle from {bundle_uri}"))?;
+    serde_json::from_str(&raw)
+        .with_context(|| format!("failed to parse probability bundle at {bundle_uri}"))
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_app_data_from_inputs(
     data_mode: DataMode,
     indicators: Vec<Indicator>,
     observations: Vec<Observation>,
     stored_alerts: Option<Vec<AlertEvent>>,
+    serving_model: Option<ServingModelContext>,
     as_of_date: NaiveDate,
-    _max_history_points: usize,
-) -> AppData {
+    mut assessment_history: Vec<fc_domain::AssessmentHistoryPoint>,
+    user_preferences: UserRiskPreferences,
+) -> BuiltAppData {
     let scoring = ScoringEngine::default();
+    let protected_stress_window_catalog = load_protected_stress_window_catalog();
     let output = scoring.score(
         &indicators,
         &observations,
@@ -145,62 +305,74 @@ fn build_app_data_from_inputs(
         "us",
         "financial_system",
     );
-    let user_preferences = load_user_preferences();
-    let assessment_history = build_assessment_history(
-        data_mode,
-        &scoring,
-        &indicators,
-        &observations,
-        stored_alerts.as_deref(),
-        &user_preferences,
-        HistoryQueryWindow {
-            from: None,
-            to: None,
-            limit: None,
-        },
-    );
     let backtests = build_backtests(&output.snapshot, &assessment_history);
+    let rolling_audit = build_rolling_backtest_audit(
+        &assessment_history,
+        &protected_stress_window_catalog.windows,
+    );
     let alerts = stored_alerts
         .map(|alerts| select_recent_alerts_for_date(&alerts, as_of_date))
         .unwrap_or_else(|| build_alerts(&output.snapshot));
-    let (assessment, posture_guidance) = build_assessment_snapshot(
+    let backtest_summary = build_backtest_summary(&backtests, Some(&rolling_audit));
+    let (assessment, posture_guidance, probability_trace) = build_assessment_snapshot(
         data_mode,
         &output.snapshot,
         &output.indicator_risks,
         &observations,
         &alerts,
         &backtests,
+        Some(&rolling_audit),
+        serving_model.as_ref(),
         &user_preferences,
     );
+    let assessment = fc_domain::AssessmentSnapshot {
+        backtest_summary,
+        ..assessment
+    };
+    let current_history_point = assessment_history_point_from_assessment(&assessment);
+    match assessment_history.last_mut() {
+        Some(last) if last.as_of_date == current_history_point.as_of_date => {
+            *last = current_history_point;
+        }
+        _ => assessment_history.push(current_history_point),
+    }
     let backtest_timeline = build_backtest_timeline(&assessment_history);
-    AppData {
-        data_mode,
-        user_preferences,
-        overview: output.snapshot,
-        indicators: output.indicator_risks,
-        alerts,
-        sources: if matches!(data_mode, DataMode::Demo) {
-            sources_demo()
-        } else {
-            sources_runtime(&observations, as_of_date)
+    let current_prediction_snapshot =
+        prediction_snapshot_from_assessment(&assessment, &probability_trace);
+    BuiltAppData {
+        app_data: AppData {
+            data_mode,
+            user_preferences,
+            overview: output.snapshot,
+            indicators: output.indicator_risks,
+            alerts,
+            sources: if matches!(data_mode, DataMode::Demo) {
+                sources_demo()
+            } else {
+                sources_runtime(&observations, as_of_date)
+            },
+            backtests,
+            backtest_timeline,
+            assessment,
+            assessment_history,
+            posture_guidance,
+            protected_stress_window_catalog,
         },
-        backtests,
-        backtest_timeline,
-        assessment,
-        assessment_history,
-        posture_guidance,
+        prediction_snapshots: vec![current_prediction_snapshot],
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_assessment_history(
     data_mode: DataMode,
     scoring: &ScoringEngine,
     indicators: &[Indicator],
     observations: &[Observation],
     stored_alerts: Option<&[AlertEvent]>,
+    serving_model: Option<&ServingModelContext>,
     user_preferences: &UserRiskPreferences,
     window: HistoryQueryWindow,
-) -> Vec<fc_domain::AssessmentHistoryPoint> {
+) -> HistoricalAssessmentOutput {
     let mut dates = observations
         .iter()
         .filter(|observation| observation.entity_id == "us")
@@ -220,31 +392,272 @@ fn build_assessment_history(
         }
     }
 
-    dates
+    build_assessment_history_for_dates(
+        data_mode,
+        scoring,
+        indicators,
+        observations,
+        stored_alerts,
+        serving_model,
+        user_preferences,
+        &dates,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_assessment_history_for_dates(
+    data_mode: DataMode,
+    scoring: &ScoringEngine,
+    indicators: &[Indicator],
+    observations: &[Observation],
+    stored_alerts: Option<&[AlertEvent]>,
+    serving_model: Option<&ServingModelContext>,
+    user_preferences: &UserRiskPreferences,
+    dates: &[NaiveDate],
+) -> HistoricalAssessmentOutput {
+    let mut history_points = Vec::with_capacity(dates.len());
+    let mut prediction_snapshots = Vec::with_capacity(dates.len());
+    for as_of_date in dates.iter().copied() {
+        let output = scoring.score(
+            indicators,
+            observations,
+            as_of_date,
+            "us",
+            "financial_system",
+        );
+        let point_alerts = stored_alerts
+            .map(|alerts| select_recent_alerts_for_date(alerts, as_of_date))
+            .unwrap_or_else(|| build_alerts(&output.snapshot));
+        let point_backtests = build_backtests(&output.snapshot, &[]);
+        let (assessment, _, probability_trace) = build_assessment_snapshot(
+            data_mode,
+            &output.snapshot,
+            &output.indicator_risks,
+            observations,
+            &point_alerts,
+            &point_backtests,
+            None,
+            serving_model,
+            user_preferences,
+        );
+        history_points.push(assessment_history_point_from_assessment(&assessment));
+        prediction_snapshots.push(prediction_snapshot_from_assessment(
+            &assessment,
+            &probability_trace,
+        ));
+    }
+
+    HistoricalAssessmentOutput {
+        history_points,
+        prediction_snapshots,
+    }
+}
+
+async fn load_sqlite_assessment_history(
+    store: &SqliteStore,
+    indicators: &[Indicator],
+    observations: &[Observation],
+    alerts: &[AlertEvent],
+    serving_model: Option<&ServingModelContext>,
+    user_preferences: &UserRiskPreferences,
+    as_of_date: NaiveDate,
+) -> anyhow::Result<Vec<fc_domain::AssessmentHistoryPoint>> {
+    let release_filter = serving_model.map(|context| context.release.manifest.release_id.as_str());
+    let persisted_rows = store
+        .list_prediction_snapshots(Some("financial_system"), release_filter, None, None, None)
+        .await?;
+    let mut historical =
+        historical_output_from_prediction_snapshots(persisted_rows.clone(), release_filter);
+
+    let target_dates = observations
+        .iter()
+        .filter(|observation| observation.entity_id == "us")
+        .map(|observation| observation.as_of_date)
+        .chain(std::iter::once(as_of_date))
+        .collect::<BTreeSet<_>>();
+    let existing_dates = historical
+        .history_points
+        .iter()
+        .map(|point| point.as_of_date)
+        .collect::<BTreeSet<_>>();
+    let missing_dates = target_dates
+        .difference(&existing_dates)
+        .copied()
+        .collect::<Vec<_>>();
+
+    if !missing_dates.is_empty() {
+        let computed = build_assessment_history_for_dates(
+            DataMode::Sqlite,
+            &ScoringEngine::default(),
+            indicators,
+            observations,
+            Some(alerts),
+            serving_model,
+            user_preferences,
+            &missing_dates,
+        );
+        store
+            .upsert_prediction_snapshots(&computed.prediction_snapshots)
+            .await?;
+        let mut combined = persisted_rows;
+        combined.extend(computed.prediction_snapshots);
+        historical = historical_output_from_prediction_snapshots(combined, release_filter);
+    }
+
+    Ok(historical.history_points)
+}
+
+fn historical_output_from_prediction_snapshots(
+    snapshots: Vec<PredictionSnapshotRecord>,
+    release_filter: Option<&str>,
+) -> HistoricalAssessmentOutput {
+    let filtered = snapshots
         .into_iter()
-        .map(|as_of_date| {
-            let output = scoring.score(
-                indicators,
-                observations,
-                as_of_date,
-                "us",
-                "financial_system",
-            );
-            let point_alerts = stored_alerts
-                .map(|alerts| select_recent_alerts_for_date(alerts, as_of_date))
-                .unwrap_or_else(|| build_alerts(&output.snapshot));
-            let point_backtests = build_backtests(&output.snapshot, &[]);
-            build_assessment_history_point(
-                data_mode,
-                &output.snapshot,
-                &output.indicator_risks,
-                observations,
-                &point_alerts,
-                &point_backtests,
-                user_preferences,
-            )
+        .filter(|snapshot| match release_filter {
+            Some(release_id) => snapshot.release_id.as_deref() == Some(release_id),
+            None => snapshot.release_id.is_none(),
+        });
+
+    let mut latest_by_date = BTreeMap::<NaiveDate, PredictionSnapshotRecord>::new();
+    for snapshot in filtered {
+        match latest_by_date.get(&snapshot.as_of_date) {
+            Some(existing) if existing.recorded_at >= snapshot.recorded_at => {}
+            _ => {
+                latest_by_date.insert(snapshot.as_of_date, snapshot);
+            }
+        }
+    }
+
+    let prediction_snapshots = latest_by_date.into_values().collect::<Vec<_>>();
+    let history_points = prediction_snapshots
+        .iter()
+        .map(assessment_history_point_from_prediction_snapshot)
+        .collect::<Vec<_>>();
+
+    HistoricalAssessmentOutput {
+        history_points,
+        prediction_snapshots,
+    }
+}
+
+fn prediction_snapshot_from_assessment(
+    assessment: &AssessmentSnapshot,
+    probability_trace: &crate::assessment::ProbabilityComputationTrace,
+) -> PredictionSnapshotRecord {
+    PredictionSnapshotRecord {
+        as_of_date: assessment.as_of_date,
+        entity_id: assessment.entity_id.clone(),
+        market_scope: assessment.market_scope.clone(),
+        release_id: assessment.method.release_id.clone(),
+        probability_mode: assessment.method.probability_mode.clone(),
+        release_status: assessment.method.release_status.clone(),
+        point_in_time_mode: assessment.method.point_in_time_mode.clone(),
+        overall_score: assessment.scores.overall_score,
+        external_shock_score: assessment.scores.external_shock_score,
+        raw_p_5d: probability_trace.raw_probabilities.p_5d,
+        raw_p_20d: probability_trace.raw_probabilities.p_20d,
+        raw_p_60d: probability_trace.raw_probabilities.p_60d,
+        calibrated_p_5d: assessment.probabilities.p_5d,
+        calibrated_p_20d: assessment.probabilities.p_20d,
+        calibrated_p_60d: assessment.probabilities.p_60d,
+        posture: decision_posture_code(assessment.posture).to_string(),
+        time_to_risk_bucket: time_to_risk_bucket_code(assessment.time_to_risk_bucket).to_string(),
+        feature_set_version: assessment.method.feature_set_version.clone(),
+        label_version: assessment.method.label_version.clone(),
+        coverage_score: assessment.data_trust.coverage_score,
+        freshness_status: worst_freshness_status(&assessment.key_indicators).to_string(),
+        method_version: assessment.method.score_method_version.clone(),
+        recorded_at: assessment.runtime.generated_at,
+    }
+}
+
+fn assessment_history_point_from_assessment(
+    assessment: &AssessmentSnapshot,
+) -> fc_domain::AssessmentHistoryPoint {
+    fc_domain::AssessmentHistoryPoint {
+        as_of_date: assessment.as_of_date,
+        overall_score: assessment.scores.overall_score,
+        p_5d: assessment.probabilities.p_5d,
+        p_20d: assessment.probabilities.p_20d,
+        p_60d: assessment.probabilities.p_60d,
+        posture: assessment.posture,
+        time_to_risk_bucket: assessment.time_to_risk_bucket,
+        external_shock_score: assessment.scores.external_shock_score,
+    }
+}
+
+fn assessment_history_point_from_prediction_snapshot(
+    snapshot: &PredictionSnapshotRecord,
+) -> fc_domain::AssessmentHistoryPoint {
+    fc_domain::AssessmentHistoryPoint {
+        as_of_date: snapshot.as_of_date,
+        overall_score: snapshot.overall_score,
+        p_5d: snapshot.calibrated_p_5d,
+        p_20d: snapshot.calibrated_p_20d,
+        p_60d: snapshot.calibrated_p_60d,
+        posture: parse_decision_posture_code(&snapshot.posture),
+        time_to_risk_bucket: parse_time_to_risk_bucket_code(&snapshot.time_to_risk_bucket),
+        external_shock_score: snapshot.external_shock_score,
+    }
+}
+
+fn worst_freshness_status(key_indicators: &[fc_domain::KeyIndicatorStatus]) -> &'static str {
+    let status = key_indicators
+        .iter()
+        .map(|item| item.status)
+        .max_by_key(|status| match status {
+            FreshnessStatus::Fresh => 0,
+            FreshnessStatus::Delayed => 1,
+            FreshnessStatus::Stale => 2,
+            FreshnessStatus::Missing => 3,
         })
-        .collect()
+        .unwrap_or(FreshnessStatus::Missing);
+    freshness_status_code(status)
+}
+
+fn freshness_status_code(status: FreshnessStatus) -> &'static str {
+    match status {
+        FreshnessStatus::Fresh => "fresh",
+        FreshnessStatus::Delayed => "delayed",
+        FreshnessStatus::Stale => "stale",
+        FreshnessStatus::Missing => "missing",
+    }
+}
+
+fn decision_posture_code(posture: DecisionPosture) -> &'static str {
+    match posture {
+        DecisionPosture::Normal => "normal",
+        DecisionPosture::Prepare => "prepare",
+        DecisionPosture::Hedge => "hedge",
+        DecisionPosture::Defend => "defend",
+    }
+}
+
+fn parse_decision_posture_code(value: &str) -> DecisionPosture {
+    match value {
+        "prepare" => DecisionPosture::Prepare,
+        "hedge" => DecisionPosture::Hedge,
+        "defend" => DecisionPosture::Defend,
+        _ => DecisionPosture::Normal,
+    }
+}
+
+fn time_to_risk_bucket_code(bucket: TimeToRiskBucket) -> &'static str {
+    match bucket {
+        TimeToRiskBucket::Normal => "normal",
+        TimeToRiskBucket::Months => "months",
+        TimeToRiskBucket::Weeks => "weeks",
+        TimeToRiskBucket::Now => "now",
+    }
+}
+
+fn parse_time_to_risk_bucket_code(value: &str) -> TimeToRiskBucket {
+    match value {
+        "months" => TimeToRiskBucket::Months,
+        "weeks" => TimeToRiskBucket::Weeks,
+        "now" => TimeToRiskBucket::Now,
+        _ => TimeToRiskBucket::Normal,
+    }
 }
 
 pub(crate) fn select_assessment_history(
@@ -1121,6 +1534,15 @@ struct ScenarioDefinition {
     fallback_false_positive_count: u32,
 }
 
+#[derive(Debug, Clone)]
+struct RollingAuditEpisodeBuilder {
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+    signal_count: u32,
+    classification: &'static str,
+    note: String,
+}
+
 fn scenario_catalog() -> Vec<ScenarioDefinition> {
     vec![
         ScenarioDefinition {
@@ -1186,41 +1608,21 @@ fn scenario_summary_from_history(
     let warmup_points = history
         .iter()
         .filter(|point| {
-            point.as_of_date >= warmup_start && point.as_of_date <= scenario.crisis_start
+            point.as_of_date >= warmup_start && point.as_of_date < scenario.crisis_start
         })
         .cloned()
         .collect::<Vec<_>>();
 
-    let first_l2_date = warmup_points
-        .iter()
-        .find(|point| {
-            point.p_20d >= 0.35 || !matches!(point.posture, fc_domain::DecisionPosture::Normal)
-        })
-        .map(|point| point.as_of_date);
-    let first_l3_date = warmup_points
-        .iter()
-        .find(|point| {
-            point.p_5d >= 0.30
-                || matches!(
-                    point.posture,
-                    fc_domain::DecisionPosture::Hedge | fc_domain::DecisionPosture::Defend
-                )
-        })
-        .map(|point| point.as_of_date);
+    let first_l2_date = first_sustained_signal_date(&warmup_points, is_structural_warning_point);
+    let first_l3_date = first_sustained_signal_date(&warmup_points, is_actionable_warning_point);
 
     let max_point = crisis_points
         .iter()
         .max_by(|left, right| left.overall_score.total_cmp(&right.overall_score))
         .expect("crisis_points is not empty");
-    let earliest_signal = first_l3_date.or(first_l2_date);
-    let lead_time_days = earliest_signal
-        .map(|date| (scenario.crisis_start - date).num_days())
-        .filter(|days| *days >= 0);
-    let false_positive_count = warmup_points
-        .iter()
-        .filter(|point| point.as_of_date < scenario.crisis_start)
-        .filter(|point| point.p_5d >= 0.30 || point.p_20d >= 0.50)
-        .count() as u32;
+    let lead_time_days = lead_time_from_date(scenario.crisis_start, first_l2_date);
+    let actionable_lead_time_days = lead_time_from_date(scenario.crisis_start, first_l3_date);
+    let false_positive_count = count_false_positive_actionable_episodes(&warmup_points);
 
     Some(BacktestScenarioSummary {
         scenario_id: scenario.scenario_id.to_string(),
@@ -1234,14 +1636,16 @@ fn scenario_summary_from_history(
         max_level: RiskLevel::from_score(max_point.overall_score),
         max_score: max_point.overall_score,
         lead_time_days,
+        actionable_lead_time_days,
         false_positive_count,
-        missed: earliest_signal.is_none(),
+        missed: actionable_lead_time_days.is_none(),
         history_start: crisis_points.first().map(|point| point.as_of_date),
         history_end: crisis_points.last().map(|point| point.as_of_date),
         history_point_count: crisis_points.len() as u32,
-        note: format!(
-            "该场景来自本地历史库真实评估窗口，共使用 {} 个历史点。",
-            crisis_points.len()
+        note: build_real_history_backtest_note(
+            lead_time_days,
+            actionable_lead_time_days,
+            crisis_points.len(),
         ),
         top_contributors,
         method_version: snapshot.method_version.clone(),
@@ -1254,6 +1658,13 @@ fn fallback_backtest(
     history_start: Option<NaiveDate>,
     history_end: Option<NaiveDate>,
 ) -> BacktestScenarioSummary {
+    let structural_lead_time_days = scenario
+        .fallback_first_l2_date
+        .and_then(|date| lead_time_from_date(scenario.crisis_start, Some(date)))
+        .or(scenario.fallback_lead_time_days);
+    let actionable_lead_time_days = scenario
+        .fallback_first_l3_date
+        .and_then(|date| lead_time_from_date(scenario.crisis_start, Some(date)));
     BacktestScenarioSummary {
         scenario_id: scenario.scenario_id.to_string(),
         name: scenario.name.to_string(),
@@ -1265,9 +1676,10 @@ fn fallback_backtest(
         first_l3_date: scenario.fallback_first_l3_date,
         max_level: scenario.fallback_max_level,
         max_score: scenario.fallback_max_score,
-        lead_time_days: scenario.fallback_lead_time_days,
+        lead_time_days: structural_lead_time_days,
+        actionable_lead_time_days,
         false_positive_count: scenario.fallback_false_positive_count,
-        missed: false,
+        missed: actionable_lead_time_days.is_none(),
         history_start,
         history_end,
         history_point_count: 0,
@@ -1294,7 +1706,406 @@ fn build_backtest_timeline(
             p_20d: point.p_20d,
             p_60d: point.p_60d,
             posture: point.posture,
-            crisis_window_open: point.p_5d >= 0.30 || point.p_20d >= 0.50,
+            crisis_window_open: is_actionable_warning_point(point),
         })
         .collect()
+}
+
+fn build_rolling_backtest_audit(
+    history: &[fc_domain::AssessmentHistoryPoint],
+    stress_windows: &[ProtectedStressWindow],
+) -> BacktestRollingAudit {
+    let audit_window_start = scenario_catalog()
+        .iter()
+        .map(|scenario| scenario.crisis_start - Duration::days(90))
+        .min();
+    let filtered_history = history
+        .iter()
+        .filter(|point| audit_window_start.is_none_or(|start| point.as_of_date >= start))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if filtered_history.is_empty() {
+        return BacktestRollingAudit {
+            history_point_count: 0,
+            actionable_signal_count: 0,
+            pre_crisis_signal_count: 0,
+            in_crisis_signal_count: 0,
+            stress_window_signal_count: 0,
+            false_positive_signal_count: 0,
+            false_positive_episode_count: 0,
+            longest_false_positive_episode_days: 0,
+            actionable_precision: 0.0,
+            classified_episodes: Vec::new(),
+            summary: "当前没有历史评估序列，无法生成全历史滚动审计。".to_string(),
+        };
+    }
+
+    let scenarios = scenario_catalog();
+    let mut actionable_signal_count = 0_u32;
+    let mut pre_crisis_signal_count = 0_u32;
+    let mut in_crisis_signal_count = 0_u32;
+    let mut stress_window_signal_count = 0_u32;
+    let mut false_positive_signal_count = 0_u32;
+    let mut false_positive_episode_count = 0_u32;
+    let mut longest_false_positive_episode_days = 0_u32;
+    let mut classified_episodes = Vec::new();
+    let mut current_episode: Option<RollingAuditEpisodeBuilder> = None;
+
+    for point in &filtered_history {
+        let is_actionable = is_actionable_warning_point(point);
+        let in_crisis = scenarios.iter().any(|scenario| {
+            point.as_of_date >= scenario.crisis_start && point.as_of_date <= scenario.crisis_end
+        });
+        let next_crisis_lead_days = scenarios
+            .iter()
+            .filter_map(|scenario| {
+                (scenario.crisis_start >= point.as_of_date)
+                    .then_some((scenario.crisis_start - point.as_of_date).num_days())
+            })
+            .min();
+        let within_actionable_horizon = next_crisis_lead_days
+            .map(|days| days <= ACTIONABLE_AUDIT_HORIZON_DAYS)
+            .unwrap_or(false);
+
+        if is_actionable {
+            actionable_signal_count += 1;
+            if in_crisis {
+                in_crisis_signal_count += 1;
+            } else if within_actionable_horizon {
+                pre_crisis_signal_count += 1;
+            } else if let Some(window) = stress_windows.iter().find(|window| {
+                point.as_of_date >= window.start_date && point.as_of_date <= window.end_date
+            }) {
+                stress_window_signal_count += 1;
+                advance_classified_episode(
+                    &mut current_episode,
+                    Some((
+                        "stress_window",
+                        format!("{}：{}", window.label, window.note),
+                    )),
+                    point.as_of_date,
+                    &mut classified_episodes,
+                    &mut false_positive_episode_count,
+                    &mut longest_false_positive_episode_days,
+                );
+                continue;
+            } else {
+                false_positive_signal_count += 1;
+                advance_classified_episode(
+                    &mut current_episode,
+                    Some((
+                        "false_positive",
+                        format!(
+                            "未落入危机前 {ACTIONABLE_AUDIT_HORIZON_DAYS} 日窗口，也不在受保护压力窗口内。"
+                        ),
+                    )),
+                    point.as_of_date,
+                    &mut classified_episodes,
+                    &mut false_positive_episode_count,
+                    &mut longest_false_positive_episode_days,
+                );
+                continue;
+            }
+        }
+
+        advance_classified_episode(
+            &mut current_episode,
+            None,
+            point.as_of_date,
+            &mut classified_episodes,
+            &mut false_positive_episode_count,
+            &mut longest_false_positive_episode_days,
+        );
+    }
+
+    close_classified_episode(
+        &mut current_episode,
+        &mut classified_episodes,
+        &mut false_positive_episode_count,
+        &mut longest_false_positive_episode_days,
+    );
+
+    let actionable_precision_denominator =
+        pre_crisis_signal_count + stress_window_signal_count + false_positive_signal_count;
+    let actionable_precision = if actionable_precision_denominator == 0 {
+        0.0
+    } else {
+        ((pre_crisis_signal_count + stress_window_signal_count) as f64
+            / actionable_precision_denominator as f64)
+            .clamp(0.0, 1.0)
+    };
+    let history_start = filtered_history.first().map(|point| point.as_of_date);
+    let history_end = filtered_history.last().map(|point| point.as_of_date);
+    classified_episodes.sort_by(|left, right| {
+        right
+            .duration_days
+            .cmp(&left.duration_days)
+            .then_with(|| right.signal_count.cmp(&left.signal_count))
+            .then_with(|| right.start_date.cmp(&left.start_date))
+    });
+    classified_episodes.truncate(ROLLING_AUDIT_EPISODE_LIMIT);
+    let summary = format!(
+        "全历史滚动审计覆盖 {} 到 {}；动作级信号共 {} 个评估点，其中危机前 {} 个、危机中 {} 个、受保护压力窗口 {} 个、纯误报 {} 个，形成 {} 段纯误报区间，动作信号精度约为 {:.0}%。",
+        history_start
+            .map(|date| date.to_string())
+            .unwrap_or_else(|| "未知起点".to_string()),
+        history_end
+            .map(|date| date.to_string())
+            .unwrap_or_else(|| "未知终点".to_string()),
+        actionable_signal_count,
+        pre_crisis_signal_count,
+        in_crisis_signal_count,
+        stress_window_signal_count,
+        false_positive_signal_count,
+        false_positive_episode_count,
+        actionable_precision * 100.0
+    );
+
+    BacktestRollingAudit {
+        history_point_count: filtered_history.len() as u32,
+        actionable_signal_count,
+        pre_crisis_signal_count,
+        in_crisis_signal_count,
+        stress_window_signal_count,
+        false_positive_signal_count,
+        false_positive_episode_count,
+        longest_false_positive_episode_days,
+        actionable_precision: round3(actionable_precision),
+        classified_episodes,
+        summary,
+    }
+}
+
+fn advance_classified_episode(
+    current_episode: &mut Option<RollingAuditEpisodeBuilder>,
+    next_episode: Option<(&'static str, String)>,
+    as_of_date: NaiveDate,
+    classified_episodes: &mut Vec<BacktestRollingAuditEpisode>,
+    false_positive_episode_count: &mut u32,
+    longest_false_positive_episode_days: &mut u32,
+) {
+    match next_episode {
+        Some((classification, note)) => {
+            let continue_existing = current_episode.as_ref().is_some_and(|episode| {
+                episode.classification == classification && episode.note == note
+            });
+            if continue_existing {
+                if let Some(episode) = current_episode.as_mut() {
+                    episode.end_date = as_of_date;
+                    episode.signal_count += 1;
+                }
+            } else {
+                close_classified_episode(
+                    current_episode,
+                    classified_episodes,
+                    false_positive_episode_count,
+                    longest_false_positive_episode_days,
+                );
+                *current_episode = Some(RollingAuditEpisodeBuilder {
+                    start_date: as_of_date,
+                    end_date: as_of_date,
+                    signal_count: 1,
+                    classification,
+                    note,
+                });
+            }
+        }
+        None => close_classified_episode(
+            current_episode,
+            classified_episodes,
+            false_positive_episode_count,
+            longest_false_positive_episode_days,
+        ),
+    }
+}
+
+fn close_classified_episode(
+    current_episode: &mut Option<RollingAuditEpisodeBuilder>,
+    classified_episodes: &mut Vec<BacktestRollingAuditEpisode>,
+    false_positive_episode_count: &mut u32,
+    longest_false_positive_episode_days: &mut u32,
+) {
+    let Some(episode) = current_episode.take() else {
+        return;
+    };
+
+    let duration_days = (episode.end_date - episode.start_date).num_days().max(0) as u32 + 1;
+    if episode.classification == "false_positive" {
+        *false_positive_episode_count += 1;
+        *longest_false_positive_episode_days =
+            (*longest_false_positive_episode_days).max(duration_days);
+    }
+    classified_episodes.push(BacktestRollingAuditEpisode {
+        start_date: episode.start_date,
+        end_date: episode.end_date,
+        duration_days,
+        signal_count: episode.signal_count,
+        classification: episode.classification.to_string(),
+        note: episode.note,
+    });
+}
+
+fn first_sustained_signal_date(
+    points: &[fc_domain::AssessmentHistoryPoint],
+    predicate: fn(&fc_domain::AssessmentHistoryPoint) -> bool,
+) -> Option<NaiveDate> {
+    points.iter().enumerate().find_map(|(index, point)| {
+        if !predicate(point) {
+            return None;
+        }
+        let end = (index + BACKTEST_SIGNAL_WINDOW).min(points.len());
+        let window = &points[index..end];
+        let hit_count = window
+            .iter()
+            .filter(|candidate| predicate(candidate))
+            .count();
+        let required_hits = BACKTEST_SIGNAL_MIN_HITS.min(window.len());
+        (hit_count >= required_hits).then_some(point.as_of_date)
+    })
+}
+
+fn is_structural_warning_point(point: &fc_domain::AssessmentHistoryPoint) -> bool {
+    ((point.p_60d >= 0.35) || !matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal))
+        && point.overall_score >= 54.0
+        || (point.overall_score >= 54.0
+            && point.p_20d >= 0.12
+            && point.external_shock_score >= 42.0)
+}
+
+fn is_actionable_warning_point(point: &fc_domain::AssessmentHistoryPoint) -> bool {
+    matches!(
+        point.time_to_risk_bucket,
+        TimeToRiskBucket::Weeks | TimeToRiskBucket::Now
+    ) || matches!(
+        point.posture,
+        DecisionPosture::Hedge | DecisionPosture::Defend
+    ) || (matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && point.overall_score >= 56.0
+        && point.external_shock_score >= 44.0)
+        || (point.overall_score >= 60.0 && point.p_20d >= 0.20 && point.p_60d >= 0.50)
+}
+
+fn lead_time_from_date(crisis_start: NaiveDate, signal_date: Option<NaiveDate>) -> Option<i64> {
+    signal_date
+        .map(|date| (crisis_start - date).num_days())
+        .filter(|days| *days >= 0)
+}
+
+fn count_false_positive_actionable_episodes(points: &[fc_domain::AssessmentHistoryPoint]) -> u32 {
+    let actionable_flags = points
+        .iter()
+        .map(is_actionable_warning_point)
+        .collect::<Vec<_>>();
+    let mut episode_count = 0_u32;
+    let mut index = 0_usize;
+
+    while index < actionable_flags.len() {
+        if !actionable_flags[index] {
+            index += 1;
+            continue;
+        }
+
+        let start = index;
+        while index < actionable_flags.len() && actionable_flags[index] {
+            index += 1;
+        }
+
+        if start + 1 < actionable_flags.len() {
+            episode_count += 1;
+        }
+    }
+
+    episode_count.saturating_sub(1)
+}
+
+fn build_real_history_backtest_note(
+    structural_lead_time_days: Option<i64>,
+    actionable_lead_time_days: Option<i64>,
+    history_point_count: usize,
+) -> String {
+    match (structural_lead_time_days, actionable_lead_time_days) {
+        (Some(structural), Some(actionable)) => format!(
+            "本地真实历史共 {history_point_count} 个评估点；结构性抬升约提前 {structural} 天出现，可执行预警约提前 {actionable} 天形成。"
+        ),
+        (Some(structural), None) => format!(
+            "本地真实历史共 {history_point_count} 个评估点；结构性抬升约提前 {structural} 天出现，但危机开始前未形成足够强的可执行预警。"
+        ),
+        (None, Some(actionable)) => format!(
+            "本地真实历史共 {history_point_count} 个评估点；危机前未见稳定的结构抬升，但约提前 {actionable} 天进入可执行预警。"
+        ),
+        (None, None) => format!(
+            "本地真实历史共 {history_point_count} 个评估点；危机开始前未形成稳定的结构抬升或可执行预警。"
+        ),
+    }
+}
+
+fn round3(value: f64) -> f64 {
+    (value * 1000.0).round() / 1000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{NaiveDate, TimeZone, Utc};
+    use fc_domain::PredictionSnapshotRecord;
+
+    use super::historical_output_from_prediction_snapshots;
+
+    fn snapshot(
+        as_of_date: NaiveDate,
+        release_id: Option<&str>,
+        p_20d: f64,
+        posture: &str,
+        recorded_at_hour: u32,
+    ) -> PredictionSnapshotRecord {
+        PredictionSnapshotRecord {
+            as_of_date,
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            release_id: release_id.map(str::to_string),
+            probability_mode: "heuristic_mvp".to_string(),
+            release_status: "degraded".to_string(),
+            point_in_time_mode: "best_effort".to_string(),
+            overall_score: 42.0,
+            external_shock_score: 25.0,
+            raw_p_5d: 0.01,
+            raw_p_20d: p_20d,
+            raw_p_60d: 0.08,
+            calibrated_p_5d: 0.01,
+            calibrated_p_20d: p_20d,
+            calibrated_p_60d: 0.08,
+            posture: posture.to_string(),
+            time_to_risk_bucket: "weeks".to_string(),
+            feature_set_version: "feature_v2".to_string(),
+            label_version: "label_v1".to_string(),
+            coverage_score: 0.95,
+            freshness_status: "fresh".to_string(),
+            method_version: "score_v1".to_string(),
+            recorded_at: Utc
+                .with_ymd_and_hms(2026, 5, 31, recorded_at_hour, 0, 0)
+                .single()
+                .unwrap(),
+        }
+    }
+
+    #[test]
+    fn prediction_history_filters_by_release_and_keeps_latest_daily_snapshot() {
+        let as_of_date = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
+        let output = historical_output_from_prediction_snapshots(
+            vec![
+                snapshot(as_of_date, Some("release-a"), 0.12, "normal", 1),
+                snapshot(as_of_date, Some("release-a"), 0.27, "hedge", 3),
+                snapshot(as_of_date, Some("release-b"), 0.88, "defend", 4),
+            ],
+            Some("release-a"),
+        );
+
+        assert_eq!(output.history_points.len(), 1);
+        assert_eq!(output.prediction_snapshots.len(), 1);
+        assert_eq!(output.history_points[0].p_20d, 0.27);
+        assert_eq!(
+            output.history_points[0].posture,
+            fc_domain::DecisionPosture::Hedge
+        );
+    }
 }

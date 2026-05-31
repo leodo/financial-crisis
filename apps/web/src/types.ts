@@ -84,6 +84,9 @@ export interface IndicatorRisk {
   level: RiskLevel;
   percentile: number | null;
   change_30d: number | null;
+  score_basis: string;
+  score_input_value: number | null;
+  score_input_unit: string | null;
   quality_grade: QualityGrade;
   contribution: number;
 }
@@ -138,6 +141,7 @@ export interface BacktestScenarioSummary {
   max_level: RiskLevel;
   max_score: number;
   lead_time_days: number | null;
+  actionable_lead_time_days: number | null;
   false_positive_count: number;
   missed: boolean;
   history_start: string | null;
@@ -179,6 +183,7 @@ export interface HistoricalAnalog {
   note: string;
   peak_score: number;
   lead_time_days: number | null;
+  actionable_lead_time_days: number | null;
 }
 
 export interface DataTrust {
@@ -198,6 +203,11 @@ export interface AssessmentMethodVersions {
   feature_set_version: string;
   label_version: string;
   posture_policy_version: string;
+  action_playbook_version: string;
+  probability_mode: string;
+  release_status: string;
+  release_id: string | null;
+  point_in_time_mode: string;
 }
 
 export interface JpyCarrySnapshot {
@@ -217,6 +227,9 @@ export interface JpyCarrySnapshot {
 }
 
 export interface PositionGuidance {
+  action_playbook_version: string;
+  execution_urgency: string;
+  confidence_gate: string;
   target_equity_exposure_pct: number;
   target_cash_pct: number;
   hedge_ratio_pct: number;
@@ -224,7 +237,10 @@ export interface PositionGuidance {
   option_overlay_pct: number;
   action_summary: string;
   actions: string[];
+  forbidden_actions: string[];
+  reentry_conditions: string[];
   guardrails: string[];
+  capital_preservation_overlay_enabled: boolean;
 }
 
 export interface RuntimeMetadata {
@@ -274,13 +290,41 @@ export interface BacktestPerformanceSummary {
   scenario_count: number;
   real_scenario_count: number;
   fallback_scenario_count: number;
+  structural_warning_rate: number;
   timely_warning_rate: number;
   missed_rate: number;
+  avg_structural_lead_time_days: number | null;
   avg_lead_time_days: number | null;
   median_lead_time_days: number | null;
   total_false_positive_count: number;
   history_start: string | null;
   history_end: string | null;
+  rolling_audit: BacktestRollingAudit;
+  summary: string;
+}
+
+export type BacktestRollingAuditEpisodeClassification = "stress_window" | "false_positive";
+
+export interface BacktestRollingAuditEpisode {
+  start_date: string;
+  end_date: string;
+  duration_days: number;
+  signal_count: number;
+  classification: BacktestRollingAuditEpisodeClassification;
+  note: string;
+}
+
+export interface BacktestRollingAudit {
+  history_point_count: number;
+  actionable_signal_count: number;
+  pre_crisis_signal_count: number;
+  in_crisis_signal_count: number;
+  stress_window_signal_count: number;
+  false_positive_signal_count: number;
+  false_positive_episode_count: number;
+  longest_false_positive_episode_days: number;
+  actionable_precision: number;
+  classified_episodes: BacktestRollingAuditEpisode[];
   summary: string;
 }
 
@@ -338,7 +382,119 @@ export interface PostureGuidance {
   downgrade_condition: string;
 }
 
+export interface ProtectedStressWindow {
+  window_id: string;
+  label: string;
+  start_date: string;
+  end_date: string;
+  note: string;
+}
+
+export interface ProtectedStressWindowCatalog {
+  catalog_id: string;
+  market_scope: string;
+  note: string;
+  source: string;
+  warning: string | null;
+  windows: ProtectedStressWindow[];
+}
+
+export interface ModelReleaseManifest {
+  release_id: string;
+  market_scope: string;
+  status: string;
+  probability_mode: string;
+  serving_status: string;
+  bundle_uri: string;
+  feature_set_version: string;
+  label_version: string;
+  prob_model_version: string;
+  calibration_version: string;
+  posture_policy_version: string;
+  action_playbook_version: string;
+  point_in_time_mode: string;
+  training_range_start: string | null;
+  training_range_end: string | null;
+  calibration_range_start: string | null;
+  calibration_range_end: string | null;
+  evaluation_range_start: string | null;
+  evaluation_range_end: string | null;
+  brier_score: number | null;
+  log_loss: number | null;
+  ece: number | null;
+  note: string;
+}
+
+export interface ModelReleaseRecord {
+  created_at: string;
+  activated_at: string | null;
+  retired_at: string | null;
+  release_id: string;
+  market_scope: string;
+  status: string;
+  probability_mode: string;
+  serving_status: string;
+  bundle_uri: string;
+  feature_set_version: string;
+  label_version: string;
+  prob_model_version: string;
+  calibration_version: string;
+  posture_policy_version: string;
+  action_playbook_version: string;
+  point_in_time_mode: string;
+  training_range_start: string | null;
+  training_range_end: string | null;
+  calibration_range_start: string | null;
+  calibration_range_end: string | null;
+  evaluation_range_start: string | null;
+  evaluation_range_end: string | null;
+  brier_score: number | null;
+  log_loss: number | null;
+  ece: number | null;
+  note: string;
+}
+
+export interface PredictionSnapshotRecord {
+  as_of_date: string;
+  entity_id: string;
+  market_scope: string;
+  release_id: string | null;
+  probability_mode: string;
+  release_status: string;
+  point_in_time_mode: string;
+  overall_score: number;
+  external_shock_score: number;
+  raw_p_5d: number;
+  raw_p_20d: number;
+  raw_p_60d: number;
+  calibrated_p_5d: number;
+  calibrated_p_20d: number;
+  calibrated_p_60d: number;
+  posture: string;
+  time_to_risk_bucket: string;
+  feature_set_version: string;
+  label_version: string;
+  coverage_score: number;
+  freshness_status: string;
+  method_version: string;
+  recorded_at: string;
+}
+
 export interface AssessmentMethodResponse {
   method: AssessmentMethodVersions;
   note: string;
+  protected_stress_window_catalog: ProtectedStressWindowCatalog;
+}
+
+export interface ResearchAuditResponse {
+  supported: boolean;
+  storage_mode: string;
+  market_scope: string;
+  active_release_id: string | null;
+  runtime_probability_mode: string;
+  runtime_release_status: string;
+  latest_snapshot_date: string | null;
+  note: string;
+  releases: ModelReleaseRecord[];
+  snapshots: PredictionSnapshotRecord[];
 }

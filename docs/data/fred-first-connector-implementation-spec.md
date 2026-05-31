@@ -97,6 +97,7 @@ value
 - `transform != level` 的指标需要 feature builder，不应直接用原始值评分。
 - 如果某个 series 不存在或权限变化，连接器应将其标记为 `failed_terminal`，不影响其他 series。
 - 房价数据可能有授权说明，进入生产前需要单独检查 FRED/source note。
+- 当前本地验证中，免费图表 CSV 下的 `BAMLH0A0HYM2` 仅能稳定回填到 `2023-05-30` 以后；因此深历史免费回测不能只依赖它，至少要同时保留 `BAA10Y`、`T10Y2Y`、`VIXCLS` 等长历史代理。
 
 ## 5. 数据库写入
 

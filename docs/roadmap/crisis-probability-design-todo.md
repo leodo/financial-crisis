@@ -14,9 +14,11 @@
 - [x] `docs/analytics/horizon-label-design.md`
 - [x] `docs/analytics/probability-engine-design.md`
 - [x] `docs/analytics/decision-support-policy.md`
+- [x] `docs/analytics/portfolio-action-playbook.md`
 - [x] `docs/analytics/feature-store-design.md`
 - [x] `docs/analytics/probability-calibration-design.md`
 - [x] `docs/analytics/real-backtest-execution-design.md`
+- [x] `docs/analytics/model-release-and-serving-design.md`
 - [x] `docs/analytics/historical-analog-design.md`
 - [x] `docs/analytics/posture-threshold-tuning.md`
 - [x] `docs/data/us-centric-free-data-plan.md`
@@ -37,6 +39,8 @@
 - [x] `docs/analytics/feature-store-design.md`
 - [x] `docs/analytics/probability-calibration-design.md`
 - [x] `docs/analytics/real-backtest-execution-design.md`
+- [x] `docs/analytics/portfolio-action-playbook.md`
+- [x] `docs/analytics/model-release-and-serving-design.md`
 - [x] `docs/product/assessment-api-contract.md`
 
 ### P1
@@ -60,7 +64,9 @@
 
 - 危机标签定义稳定。
 - 三个 horizon 概率模型设计明确。
+- posture 到动作预算、保护和再入场规则明确。
 - 免费数据主线明确到连接器级别。
+- 模型发布、激活、回滚和在线评分链路明确。
 - 决策面板信息架构明确。
 - API contract 和回测执行设计补齐。
 
@@ -73,6 +79,7 @@
 1. `SEC EDGAR` 连接器
 2. `BOJ / USDJPY` 连接器
 3. feature store
-4. assessment API
-5. 真实回测链路
-6. 新决策面板
+4. 正式概率模型发布与在线评分链路
+5. assessment API
+6. 真实回测链路
+7. 持仓动作手册与新决策面板

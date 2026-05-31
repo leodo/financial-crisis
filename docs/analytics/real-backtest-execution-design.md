@@ -147,6 +147,18 @@ backtest run --from 2006-01-01 --to 2024-12-31
 backtest report --run-id <id>
 ```
 
+当前已经补了一个轻量级导出入口，用于先把当前运行态的审计结果沉淀下来：
+
+```text
+just audit-report
+cargo run -p fc-worker -- audit export-current [--api-base-url URL] [--output-dir DIR]
+```
+
+输出：
+
+- `reports/rolling-audit/<as_of_date>-rolling-audit.json`
+- `reports/rolling-audit/<as_of_date>-rolling-audit.md`
+
 ## 12. 与旧回测设计的关系
 
 - 旧文档说明“评估什么”
@@ -157,6 +169,37 @@ backtest report --run-id <id>
 1. 跑单场景
 2. 跑连续历史
 3. 输出前端摘要
+
+### 13.1 当前 MVP 已落地部分
+
+截至 `2026-05-31`，当前代码已经具备：
+
+- 基于本地 `assessment_history` 的连续历史重放。
+- 场景级 `结构性抬升提前量 / 可执行预警提前量` 摘要。
+- 全历史滚动审计摘要：
+  - `actionable_signal_count`
+  - `pre_crisis_signal_count`
+  - `stress_window_signal_count`
+  - `false_positive_signal_count`
+  - `false_positive_episode_count`
+  - `longest_false_positive_episode_days`
+  - `classified_episodes`
+  - `actionable_precision`
+
+当前 SQLite 历史样本（`2026-05-31`）的滚动审计结果已经说明：
+
+- 动作级信号共 `464` 个评估点。
+- 其中危机前 `9` 个、危机中 `331` 个、受保护压力窗口 `114` 个、纯误报 `10` 个。
+- 纯误报只形成 `3` 段区间，最长 `9` 天。
+- 最长的非危机动作区间会单列到 `classified_episodes`，供前端解释“这是可接受的压力防守，还是模型噪声”。 
+- 受保护压力窗口目录默认来自 `config/protected_stress_windows.us.json`，可通过 `FC_PROTECTED_STRESS_WINDOWS_PATH` 覆盖。
+
+但仍未具备：
+
+- 独立落库的 `backtest_run_id`
+- 多版本回测对比
+- 严格 point-in-time vintage 审计
+- out-of-sample 概率校准指标（Brier / calibration error）
 
 ## 14. 风险
 

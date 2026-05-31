@@ -1,21 +1,46 @@
+use std::collections::BTreeMap;
+
 use chrono::NaiveDate;
 use chrono::Utc;
 use fc_domain::{
-    AlertEvent, AssessmentHistoryPoint, AssessmentMethodVersions, AssessmentScores,
-    AssessmentSnapshot, BacktestPerformanceSummary, BacktestScenarioSummary, BacktestSignalSource,
-    DataMode, DataTrust, DecisionPosture, EventAssessment, EventConfirmationState,
-    EventSignalSummary, FreshnessStatus, HistoricalAnalog, IndicatorRisk, JpyCarrySnapshot,
-    JpyCarryState, KeyIndicatorStatus, Observation, PositionGuidance, PostureGuidance,
-    ProbabilityBlock, QualityGrade, RiskContributor, RiskDimension, RiskSnapshot, RuntimeMetadata,
-    TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
+    AlertEvent, AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot,
+    BacktestPerformanceSummary, BacktestRollingAudit, BacktestScenarioSummary,
+    BacktestSignalSource, DataMode, DataTrust, DecisionPosture, EventAssessment,
+    EventConfirmationState, EventSignalSummary, FreshnessStatus, HistoricalAnalog, IndicatorRisk,
+    JpyCarrySnapshot, JpyCarryState, KeyIndicatorStatus, LogisticProbabilityModel,
+    ModelReleaseRecord, Observation, PlattCalibrationArtifact, PositionGuidance, PostureGuidance,
+    ProbabilityBlock, ProbabilityBundle, QualityGrade, RiskContributor, RiskDimension,
+    RiskSnapshot, RuntimeMetadata, TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
+    FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER,
+    FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
+    FEATURE_FRESHNESS_STALE_OR_MISSING, FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D,
+    FEATURE_HEURISTIC_P_60D, FEATURE_OVERALL_SCORE,
 };
 
-const PROB_MODEL_VERSION: &str = "prob_v1_20260530";
-const CALIBRATION_VERSION: &str = "calib_v1_20260530";
-const FEATURE_SET_VERSION: &str = "feature_v1_20260530";
+const PROB_MODEL_VERSION: &str = "prob_v1_20260531";
+const CALIBRATION_VERSION: &str = "calib_v1_20260531";
+const FEATURE_SET_VERSION: &str = "feature_v2_20260531";
 const LABEL_VERSION: &str = "label_v1_20260530";
 const POSTURE_POLICY_VERSION: &str = "posture_v1_20260530";
+const ACTION_PLAYBOOK_VERSION: &str = "action_playbook_v1_20260531";
+const PROBABILITY_MODE: &str = "heuristic_mvp";
+const RELEASE_STATUS: &str = "degraded";
 
+#[derive(Debug, Clone)]
+pub struct ServingModelContext {
+    pub release: ModelReleaseRecord,
+    pub probability_bundle: Option<ProbabilityBundle>,
+    pub runtime_probability_mode: String,
+    pub runtime_release_status: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProbabilityComputationTrace {
+    pub raw_probabilities: ProbabilityBlock,
+    pub calibrated_probabilities: ProbabilityBlock,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn build_assessment_snapshot(
     data_mode: DataMode,
     snapshot: &RiskSnapshot,
@@ -23,8 +48,14 @@ pub fn build_assessment_snapshot(
     observations: &[Observation],
     alerts: &[AlertEvent],
     backtests: &[BacktestScenarioSummary],
+    rolling_audit: Option<&BacktestRollingAudit>,
+    serving_model: Option<&ServingModelContext>,
     user_preferences: &UserRiskPreferences,
-) -> (AssessmentSnapshot, PostureGuidance) {
+) -> (
+    AssessmentSnapshot,
+    PostureGuidance,
+    ProbabilityComputationTrace,
+) {
     let jpy_carry = build_jpy_carry_snapshot(snapshot, indicator_risks, observations);
     let external_dimension_score = snapshot
         .dimensions
@@ -45,7 +76,7 @@ pub fn build_assessment_snapshot(
     let data_trust = build_data_trust(snapshot, indicator_risks, jpy_carry.usdjpy_level.is_some());
     let breadth_score = high_risk_breadth(snapshot);
     let conviction_score = build_conviction_score(snapshot, &data_trust, breadth_score);
-    let probabilities = build_probabilities(
+    let heuristic_probabilities = build_probabilities(
         snapshot,
         external_shock_score,
         conviction_score,
@@ -53,6 +84,18 @@ pub fn build_assessment_snapshot(
         &data_trust,
         &jpy_carry,
     );
+    let runtime = build_runtime_metadata(data_mode, snapshot, observations);
+    let key_indicators = build_key_indicator_statuses(observations, snapshot.as_of_date, data_mode);
+    let probability_trace = build_probability_trace(
+        snapshot,
+        external_shock_score,
+        &data_trust,
+        &jpy_carry,
+        &heuristic_probabilities,
+        &key_indicators,
+        serving_model,
+    );
+    let probabilities = probability_trace.calibrated_probabilities.clone();
     let time_to_risk_bucket = build_time_to_risk_bucket(
         &probabilities,
         snapshot.trigger_score,
@@ -64,9 +107,8 @@ pub fn build_assessment_snapshot(
     let historical_analogs =
         build_historical_analogs(snapshot, &probabilities, external_shock_score, backtests);
     let event_assessment = build_event_assessment(snapshot, alerts);
-    let runtime = build_runtime_metadata(data_mode, snapshot, observations);
-    let key_indicators = build_key_indicator_statuses(observations, snapshot.as_of_date, data_mode);
-    let backtest_summary = build_backtest_summary(backtests);
+    let backtest_summary = build_backtest_summary(backtests, rolling_audit);
+    let active_release = serving_model.map(|context| &context.release);
     let posture_guidance = build_posture_guidance(
         snapshot,
         &probabilities,
@@ -82,17 +124,43 @@ pub fn build_assessment_snapshot(
     let position_guidance = build_position_guidance(
         &posture_guidance,
         &probabilities,
+        time_to_risk_bucket,
         &data_trust,
         &jpy_carry,
+        &event_assessment,
+        active_release,
         user_preferences,
     );
     let method = AssessmentMethodVersions {
         score_method_version: snapshot.method_version.clone(),
-        prob_model_version: PROB_MODEL_VERSION.to_string(),
-        calibration_version: CALIBRATION_VERSION.to_string(),
-        feature_set_version: FEATURE_SET_VERSION.to_string(),
-        label_version: LABEL_VERSION.to_string(),
-        posture_policy_version: POSTURE_POLICY_VERSION.to_string(),
+        prob_model_version: active_release
+            .map(|release| release.manifest.prob_model_version.clone())
+            .unwrap_or_else(|| PROB_MODEL_VERSION.to_string()),
+        calibration_version: active_release
+            .map(|release| release.manifest.calibration_version.clone())
+            .unwrap_or_else(|| CALIBRATION_VERSION.to_string()),
+        feature_set_version: active_release
+            .map(|release| release.manifest.feature_set_version.clone())
+            .unwrap_or_else(|| FEATURE_SET_VERSION.to_string()),
+        label_version: active_release
+            .map(|release| release.manifest.label_version.clone())
+            .unwrap_or_else(|| LABEL_VERSION.to_string()),
+        posture_policy_version: active_release
+            .map(|release| release.manifest.posture_policy_version.clone())
+            .unwrap_or_else(|| POSTURE_POLICY_VERSION.to_string()),
+        action_playbook_version: active_release
+            .map(|release| release.manifest.action_playbook_version.clone())
+            .unwrap_or_else(|| ACTION_PLAYBOOK_VERSION.to_string()),
+        probability_mode: serving_model
+            .map(|context| context.runtime_probability_mode.clone())
+            .unwrap_or_else(|| PROBABILITY_MODE.to_string()),
+        release_status: serving_model
+            .map(|context| context.runtime_release_status.clone())
+            .unwrap_or_else(|| RELEASE_STATUS.to_string()),
+        release_id: active_release.map(|release| release.manifest.release_id.clone()),
+        point_in_time_mode: active_release
+            .map(|release| release.manifest.point_in_time_mode.clone())
+            .unwrap_or_else(|| "best_effort".to_string()),
     };
     let summary = build_summary(
         snapshot,
@@ -132,37 +200,8 @@ pub fn build_assessment_snapshot(
             method,
         },
         posture_guidance,
+        probability_trace,
     )
-}
-
-pub fn build_assessment_history_point(
-    data_mode: DataMode,
-    snapshot: &RiskSnapshot,
-    indicator_risks: &[IndicatorRisk],
-    observations: &[Observation],
-    alerts: &[AlertEvent],
-    backtests: &[BacktestScenarioSummary],
-    user_preferences: &UserRiskPreferences,
-) -> AssessmentHistoryPoint {
-    let (assessment, _) = build_assessment_snapshot(
-        data_mode,
-        snapshot,
-        indicator_risks,
-        observations,
-        alerts,
-        backtests,
-        user_preferences,
-    );
-    AssessmentHistoryPoint {
-        as_of_date: assessment.as_of_date,
-        overall_score: assessment.scores.overall_score,
-        p_5d: assessment.probabilities.p_5d,
-        p_20d: assessment.probabilities.p_20d,
-        p_60d: assessment.probabilities.p_60d,
-        posture: assessment.posture,
-        time_to_risk_bucket: assessment.time_to_risk_bucket,
-        external_shock_score: assessment.scores.external_shock_score,
-    }
 }
 
 fn build_probabilities(
@@ -222,6 +261,209 @@ fn build_probabilities(
         p_5d: round3(p_5d),
         p_20d: round3(p_20d),
         p_60d: round3(p_60d),
+    }
+}
+
+fn build_probability_trace(
+    snapshot: &RiskSnapshot,
+    external_shock_score: f64,
+    data_trust: &DataTrust,
+    jpy_carry: &JpyCarrySnapshot,
+    heuristic_probabilities: &ProbabilityBlock,
+    key_indicators: &[KeyIndicatorStatus],
+    serving_model: Option<&ServingModelContext>,
+) -> ProbabilityComputationTrace {
+    let Some(serving_model) = serving_model else {
+        return ProbabilityComputationTrace {
+            raw_probabilities: heuristic_probabilities.clone(),
+            calibrated_probabilities: heuristic_probabilities.clone(),
+        };
+    };
+    let Some(bundle) = serving_model.probability_bundle.as_ref() else {
+        return ProbabilityComputationTrace {
+            raw_probabilities: heuristic_probabilities.clone(),
+            calibrated_probabilities: heuristic_probabilities.clone(),
+        };
+    };
+
+    let features = build_probability_feature_map(
+        snapshot,
+        external_shock_score,
+        data_trust,
+        jpy_carry,
+        heuristic_probabilities,
+        key_indicators,
+    );
+
+    let (raw_p_5d, calibrated_p_5d_raw) = score_bundle_horizon(bundle, 5, &features)
+        .unwrap_or((heuristic_probabilities.p_5d, heuristic_probabilities.p_5d));
+    let (raw_p_20d, calibrated_p_20d_raw) = score_bundle_horizon(bundle, 20, &features)
+        .unwrap_or((heuristic_probabilities.p_20d, heuristic_probabilities.p_20d));
+    let (raw_p_60d, calibrated_p_60d_raw) = score_bundle_horizon(bundle, 60, &features)
+        .unwrap_or((heuristic_probabilities.p_60d, heuristic_probabilities.p_60d));
+
+    let raw_probabilities = ProbabilityBlock {
+        p_5d: round3(raw_p_5d),
+        p_20d: round3(raw_p_20d),
+        p_60d: round3(raw_p_60d),
+    };
+
+    let min_gap_5_to_20 = bundle.monotonic_min_gap_5d_to_20d.max(0.0);
+    let min_gap_20_to_60 = bundle.monotonic_min_gap_20d_to_60d.max(0.0);
+    let calibrated_p_5d = calibrated_p_5d_raw;
+    let calibrated_p_20d =
+        clamp_probability(calibrated_p_20d_raw.max((calibrated_p_5d + min_gap_5_to_20).min(0.98)));
+    let calibrated_p_60d = clamp_probability(
+        calibrated_p_60d_raw.max((calibrated_p_20d + min_gap_20_to_60).min(0.99)),
+    );
+
+    ProbabilityComputationTrace {
+        raw_probabilities,
+        calibrated_probabilities: ProbabilityBlock {
+            p_5d: round3(calibrated_p_5d),
+            p_20d: round3(calibrated_p_20d),
+            p_60d: round3(calibrated_p_60d),
+        },
+    }
+}
+
+fn build_probability_feature_map(
+    snapshot: &RiskSnapshot,
+    external_shock_score: f64,
+    data_trust: &DataTrust,
+    jpy_carry: &JpyCarrySnapshot,
+    heuristic_probabilities: &ProbabilityBlock,
+    key_indicators: &[KeyIndicatorStatus],
+) -> BTreeMap<String, f64> {
+    let heuristic_bucket = build_time_to_risk_bucket(
+        heuristic_probabilities,
+        snapshot.trigger_score,
+        external_shock_score,
+        jpy_carry,
+    );
+    let freshness_status = worst_key_indicator_freshness(key_indicators);
+
+    BTreeMap::from([
+        (
+            FEATURE_OVERALL_SCORE.to_string(),
+            (snapshot.overall_score / 100.0).clamp(0.0, 1.0),
+        ),
+        (
+            FEATURE_EXTERNAL_SHOCK_SCORE.to_string(),
+            (external_shock_score / 100.0).clamp(0.0, 1.0),
+        ),
+        (
+            FEATURE_HEURISTIC_P_5D.to_string(),
+            clamp_probability(heuristic_probabilities.p_5d),
+        ),
+        (
+            FEATURE_HEURISTIC_P_20D.to_string(),
+            clamp_probability(heuristic_probabilities.p_20d),
+        ),
+        (
+            FEATURE_HEURISTIC_P_60D.to_string(),
+            clamp_probability(heuristic_probabilities.p_60d),
+        ),
+        (
+            FEATURE_COVERAGE_SCORE.to_string(),
+            data_trust.coverage_score.clamp(0.0, 1.0),
+        ),
+        (
+            FEATURE_BUCKET_MONTHS_OR_HIGHER.to_string(),
+            matches!(
+                heuristic_bucket,
+                TimeToRiskBucket::Months | TimeToRiskBucket::Weeks | TimeToRiskBucket::Now
+            ) as u8 as f64,
+        ),
+        (
+            FEATURE_BUCKET_WEEKS_OR_HIGHER.to_string(),
+            matches!(
+                heuristic_bucket,
+                TimeToRiskBucket::Weeks | TimeToRiskBucket::Now
+            ) as u8 as f64,
+        ),
+        (
+            FEATURE_BUCKET_NOW.to_string(),
+            matches!(heuristic_bucket, TimeToRiskBucket::Now) as u8 as f64,
+        ),
+        (
+            FEATURE_FRESHNESS_DELAYED_OR_WORSE.to_string(),
+            matches!(
+                freshness_status,
+                FreshnessStatus::Delayed | FreshnessStatus::Stale | FreshnessStatus::Missing
+            ) as u8 as f64,
+        ),
+        (
+            FEATURE_FRESHNESS_STALE_OR_MISSING.to_string(),
+            matches!(
+                freshness_status,
+                FreshnessStatus::Stale | FreshnessStatus::Missing
+            ) as u8 as f64,
+        ),
+    ])
+}
+
+fn score_bundle_horizon(
+    bundle: &ProbabilityBundle,
+    horizon_days: u32,
+    features: &BTreeMap<String, f64>,
+) -> Option<(f64, f64)> {
+    let horizon = bundle
+        .horizons
+        .iter()
+        .find(|horizon| horizon.horizon_days == horizon_days)?;
+    let raw_probability = score_logistic_model(&horizon.raw_model, features);
+    let calibrated_probability = match horizon.calibration.as_ref() {
+        Some(calibration) => apply_platt_calibration(raw_probability, calibration),
+        None => raw_probability,
+    };
+    Some((raw_probability, calibrated_probability))
+}
+
+fn score_logistic_model(model: &LogisticProbabilityModel, features: &BTreeMap<String, f64>) -> f64 {
+    let mut linear = model.intercept;
+    for coefficient in &model.coefficients {
+        let stat = model
+            .feature_stats
+            .iter()
+            .find(|stat| stat.name == coefficient.name);
+        let raw_value = features
+            .get(&coefficient.name)
+            .copied()
+            .or_else(|| stat.map(|stat| stat.fill_value))
+            .unwrap_or(0.0);
+        let normalized = stat.map_or(raw_value, |stat| {
+            let std_dev = if stat.std_dev.abs() < 1e-9 {
+                1.0
+            } else {
+                stat.std_dev
+            };
+            (raw_value - stat.mean) / std_dev
+        });
+        linear += normalized * coefficient.weight;
+    }
+    sigmoid(linear)
+}
+
+fn apply_platt_calibration(raw_probability: f64, calibration: &PlattCalibrationArtifact) -> f64 {
+    let clipped = raw_probability.clamp(calibration.min_input, calibration.max_input);
+    sigmoid(calibration.alpha * clipped + calibration.beta)
+}
+
+fn worst_key_indicator_freshness(key_indicators: &[KeyIndicatorStatus]) -> FreshnessStatus {
+    key_indicators
+        .iter()
+        .map(|indicator| indicator.status)
+        .max_by_key(|status| freshness_rank(*status))
+        .unwrap_or(FreshnessStatus::Missing)
+}
+
+fn freshness_rank(status: FreshnessStatus) -> u8 {
+    match status {
+        FreshnessStatus::Fresh => 0,
+        FreshnessStatus::Delayed => 1,
+        FreshnessStatus::Stale => 2,
+        FreshnessStatus::Missing => 3,
     }
 }
 
@@ -363,11 +605,15 @@ fn build_posture_guidance(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_position_guidance(
     posture: &PostureGuidance,
     probabilities: &ProbabilityBlock,
+    time_to_risk_bucket: TimeToRiskBucket,
     data_trust: &DataTrust,
     jpy_carry: &JpyCarrySnapshot,
+    event_assessment: &EventAssessment,
+    active_release: Option<&ModelReleaseRecord>,
     user_preferences: &UserRiskPreferences,
 ) -> PositionGuidance {
     let (
@@ -433,6 +679,53 @@ fn build_position_guidance(
         user_profile_label(user_preferences.profile)
     ));
 
+    let mut forbidden_actions = vec![
+        "不要把单个概率值当成一键清仓指令。".to_string(),
+        "不要只因单日反弹就撤掉全部保护。".to_string(),
+    ];
+    match posture.posture {
+        DecisionPosture::Normal => {
+            forbidden_actions.push("不要因为短期平静就盲目放大杠杆或追逐高 beta。".to_string());
+        }
+        DecisionPosture::Prepare => {
+            forbidden_actions
+                .push("不要等到流动性明显恶化后才开始腾挪现金和保护工具。".to_string());
+        }
+        DecisionPosture::Hedge => {
+            forbidden_actions.push("不要在尚未满足再入场条件前逆势放大组合净敞口。".to_string());
+        }
+        DecisionPosture::Defend => {
+            forbidden_actions
+                .push("不要在短期风险窗口已打开时新增复杂、流动性差的保护结构。".to_string());
+        }
+    }
+
+    let mut reentry_conditions = match posture.posture {
+        DecisionPosture::Normal => vec![
+            "当前无需系统性再入场动作，维持常规监控即可。".to_string(),
+            "若后续进入 prepare，再按 3-10 个交易日节奏分段调整。".to_string(),
+        ],
+        DecisionPosture::Prepare => vec![
+            "当 p_60d 回落到 0.25 以下，且 structural score 不再继续抬升时，再考虑恢复常态仓位。".to_string(),
+            "恢复仓位时仍应先回补高流动性核心仓位，再看高 beta 资产。".to_string(),
+        ],
+        DecisionPosture::Hedge => vec![
+            "当 p_20d 连续 5 个交易日回落到 0.25 以下，并且外部冲击与信用压力同步缓和时，再逐步恢复仓位。".to_string(),
+            "默认按 1/3、1/3、1/3 的分批节奏恢复，不做一次性满仓回补。".to_string(),
+        ],
+        DecisionPosture::Defend => vec![
+            "只有当 p_5d 连续 3 个交易日回落到 0.20 以下，且没有新的高等级事件确认时，才允许从 defend 降回 hedge。".to_string(),
+            "从 defend 撤回防守时先恢复核心流动性仓位，最后再恢复高弹性风险资产。".to_string(),
+        ],
+    };
+    if matches!(
+        event_assessment.state,
+        EventConfirmationState::Confirmed | EventConfirmationState::Escalating
+    ) {
+        reentry_conditions
+            .push("事件层仍有确认或升级信号时，不应仅凭价格反弹提前撤掉保护。".to_string());
+    }
+
     let mut guardrails = vec![
         "系统 posture 不是自动交易指令，不能替代你自己的风险预算。".to_string(),
         "不要仅凭单个概率值做全清仓动作，必须结合流动性、税务和执行条件。".to_string(),
@@ -445,6 +738,36 @@ fn build_position_guidance(
         guardrails.push("短期窗口已打开，更应优先考虑可快速执行的保护动作。".to_string());
     }
 
+    let execution_urgency = match time_to_risk_bucket {
+        TimeToRiskBucket::Normal => "观察为主；当前不需要系统性快速去风险。".to_string(),
+        TimeToRiskBucket::Months => {
+            "分阶段执行；建议在 3-10 个交易日内先降脆弱仓位、补现金和准备保护工具。".to_string()
+        }
+        TimeToRiskBucket::Weeks => {
+            "尽快执行；建议在 1-5 个交易日内完成主要减仓和第一层组合保护。".to_string()
+        }
+        TimeToRiskBucket::Now => {
+            "立即执行；当日到 2 个交易日内优先去杠杆、补现金并建立核心保护覆盖。".to_string()
+        }
+    };
+    let confidence_gate = match data_trust.quality_grade {
+        QualityGrade::A | QualityGrade::B if event_assessment.confirmation_score >= 0.55 => {
+            "当前数据可信度和事件确认度足以支持执行主要防守动作。".to_string()
+        }
+        QualityGrade::D | QualityGrade::F => {
+            "数据可信度偏低，先把系统输出当成减震和排查信号，不应直接做极端仓位动作。".to_string()
+        }
+        _ => "当前更适合先降低组合脆弱性，再结合事件确认和市场流动性决定是否加大保护。".to_string(),
+    };
+    let capital_preservation_overlay_enabled = matches!(posture.posture, DecisionPosture::Defend)
+        && matches!(time_to_risk_bucket, TimeToRiskBucket::Now)
+        && probabilities.p_5d >= 0.45
+        && matches!(data_trust.quality_grade, QualityGrade::A | QualityGrade::B)
+        && matches!(
+            event_assessment.state,
+            EventConfirmationState::Confirmed | EventConfirmationState::Escalating
+        );
+
     let action_summary = match posture.posture {
         DecisionPosture::Normal => "以观察为主，维持核心仓位，不建议主动大幅防守。".to_string(),
         DecisionPosture::Prepare => "先做减震，不急于极端防守，但要为快速切换做准备。".to_string(),
@@ -453,6 +776,11 @@ fn build_position_guidance(
     };
 
     PositionGuidance {
+        action_playbook_version: active_release
+            .map(|release| release.manifest.action_playbook_version.clone())
+            .unwrap_or_else(|| ACTION_PLAYBOOK_VERSION.to_string()),
+        execution_urgency,
+        confidence_gate,
         target_equity_exposure_pct: round1(target_equity_exposure_pct),
         target_cash_pct: round1(target_cash_pct),
         hedge_ratio_pct: round1(hedge_ratio_pct),
@@ -460,7 +788,10 @@ fn build_position_guidance(
         option_overlay_pct: round1(option_overlay_pct),
         action_summary,
         actions,
+        forbidden_actions,
+        reentry_conditions,
         guardrails,
+        capital_preservation_overlay_enabled,
     }
 }
 
@@ -667,19 +998,26 @@ fn build_event_assessment(snapshot: &RiskSnapshot, alerts: &[AlertEvent]) -> Eve
     }
 }
 
-fn build_backtest_summary(backtests: &[BacktestScenarioSummary]) -> BacktestPerformanceSummary {
+pub fn build_backtest_summary(
+    backtests: &[BacktestScenarioSummary],
+    rolling_audit: Option<&BacktestRollingAudit>,
+) -> BacktestPerformanceSummary {
+    let rolling_audit = rolling_audit.cloned().unwrap_or_else(empty_rolling_audit);
     if backtests.is_empty() {
         return BacktestPerformanceSummary {
             scenario_count: 0,
             real_scenario_count: 0,
             fallback_scenario_count: 0,
+            structural_warning_rate: 0.0,
             timely_warning_rate: 0.0,
             missed_rate: 1.0,
+            avg_structural_lead_time_days: None,
             avg_lead_time_days: None,
             median_lead_time_days: None,
             total_false_positive_count: 0,
             history_start: None,
             history_end: None,
+            rolling_audit,
             summary: "当前没有可用回测场景，不能据此评估 posture 的历史可靠性。".to_string(),
         };
     }
@@ -690,16 +1028,30 @@ fn build_backtest_summary(backtests: &[BacktestScenarioSummary]) -> BacktestPerf
         .filter(|scenario| scenario.signal_source == BacktestSignalSource::RealHistory)
         .count() as u32;
     let fallback_scenario_count = scenario_count.saturating_sub(real_scenario_count);
+    let structural_warning_count = backtests
+        .iter()
+        .filter(|scenario| scenario.lead_time_days.unwrap_or_default() >= 7)
+        .count() as u32;
     let timely_count = backtests
         .iter()
-        .filter(|scenario| !scenario.missed && scenario.lead_time_days.unwrap_or_default() >= 7)
+        .filter(|scenario| {
+            !scenario.missed && scenario.actionable_lead_time_days.unwrap_or_default() >= 7
+        })
         .count() as u32;
     let missed_count = backtests.iter().filter(|scenario| scenario.missed).count() as u32;
-    let mut lead_times = backtests
+    let mut structural_lead_times = backtests
         .iter()
         .filter_map(|scenario| scenario.lead_time_days.map(|days| days as f64))
         .collect::<Vec<_>>();
+    structural_lead_times.sort_by(|left, right| left.total_cmp(right));
+    let mut lead_times = backtests
+        .iter()
+        .filter_map(|scenario| scenario.actionable_lead_time_days.map(|days| days as f64))
+        .collect::<Vec<_>>();
     lead_times.sort_by(|left, right| left.total_cmp(right));
+    let avg_structural_lead_time_days = (!structural_lead_times.is_empty()).then(|| {
+        round1(structural_lead_times.iter().sum::<f64>() / structural_lead_times.len() as f64)
+    });
     let avg_lead_time_days = (!lead_times.is_empty())
         .then(|| round1(lead_times.iter().sum::<f64>() / lead_times.len() as f64));
     let median_lead_time_days = if lead_times.is_empty() {
@@ -711,6 +1063,7 @@ fn build_backtest_summary(backtests: &[BacktestScenarioSummary]) -> BacktestPerf
         .iter()
         .map(|scenario| scenario.false_positive_count)
         .sum();
+    let structural_warning_rate = round3(structural_warning_count as f64 / scenario_count as f64);
     let timely_warning_rate = round3(timely_count as f64 / scenario_count as f64);
     let missed_rate = round3(missed_count as f64 / scenario_count as f64);
     let history_start = backtests
@@ -723,16 +1076,18 @@ fn build_backtest_summary(backtests: &[BacktestScenarioSummary]) -> BacktestPerf
         .max();
     let summary = if fallback_scenario_count > 0 {
         format!(
-            "当前回测共列出 {} 个危机样本，其中 {} 个来自本地真实历史，{} 个仍是模板参考；至少提前 7 天给出有效预警的比例约为 {:.0}%。",
+            "当前回测共列出 {} 个危机样本，其中 {} 个来自本地真实历史，{} 个仍是模板参考；结构性抬升至少提前 7 天出现的比例约为 {:.0}%，可执行预警至少提前 7 天出现的比例约为 {:.0}%。",
             scenario_count,
             real_scenario_count,
             fallback_scenario_count,
+            structural_warning_rate * 100.0,
             timely_warning_rate * 100.0
         )
     } else {
         format!(
-            "当前回测覆盖 {} 个真实危机样本，至少提前 7 天给出有效预警的比例约为 {:.0}%。",
+            "当前回测覆盖 {} 个真实危机样本；结构性抬升至少提前 7 天出现的比例约为 {:.0}%，可执行预警至少提前 7 天出现的比例约为 {:.0}%。",
             scenario_count,
+            structural_warning_rate * 100.0,
             timely_warning_rate * 100.0
         )
     };
@@ -741,14 +1096,33 @@ fn build_backtest_summary(backtests: &[BacktestScenarioSummary]) -> BacktestPerf
         scenario_count,
         real_scenario_count,
         fallback_scenario_count,
+        structural_warning_rate,
         timely_warning_rate,
         missed_rate,
+        avg_structural_lead_time_days,
         avg_lead_time_days,
         median_lead_time_days,
         total_false_positive_count,
         history_start,
         history_end,
+        rolling_audit,
         summary,
+    }
+}
+
+fn empty_rolling_audit() -> BacktestRollingAudit {
+    BacktestRollingAudit {
+        history_point_count: 0,
+        actionable_signal_count: 0,
+        pre_crisis_signal_count: 0,
+        in_crisis_signal_count: 0,
+        stress_window_signal_count: 0,
+        false_positive_signal_count: 0,
+        false_positive_episode_count: 0,
+        longest_false_positive_episode_days: 0,
+        actionable_precision: 0.0,
+        classified_episodes: Vec::new(),
+        summary: "当前尚未生成全历史滚动审计结果。".to_string(),
     }
 }
 
@@ -829,8 +1203,14 @@ fn build_historical_analogs(
         .iter()
         .map(|scenario| {
             let score_distance = (snapshot.overall_score - scenario.max_score).abs();
+            let lead_reference = if probabilities.p_5d >= 0.3 || probabilities.p_20d >= 0.35 {
+                scenario.actionable_lead_time_days.or(scenario.lead_time_days)
+            } else {
+                scenario.lead_time_days.or(scenario.actionable_lead_time_days)
+            };
             let lead_distance = scenario
-                .lead_time_days
+                .actionable_lead_time_days
+                .or(lead_reference)
                 .map(|days| ((probabilities.p_20d * 100.0) - days as f64).abs())
                 .unwrap_or(35.0);
             let fallback_penalty = match scenario.signal_source {
@@ -853,17 +1233,34 @@ fn build_historical_analogs(
                     "fragile_build_up".to_string()
                 },
                 note: match scenario.signal_source {
-                    BacktestSignalSource::RealHistory => format!(
-                        "当前分数与 {} 的真实历史峰值/提前量较接近，但并不代表历史会线性重演。",
-                        scenario.name
-                    ),
-                    BacktestSignalSource::FallbackTemplate => format!(
-                        "当前分数与 {} 的参考模板较接近；该样本尚未由本地历史库完整覆盖。",
-                        scenario.name
-                    ),
+                    BacktestSignalSource::RealHistory => match (
+                        scenario.lead_time_days,
+                        scenario.actionable_lead_time_days,
+                    ) {
+                        (Some(structural), Some(actionable)) => format!(
+                            "{} 的真实历史里，结构性抬升约领先 {} 天，可执行预警约领先 {} 天。",
+                            scenario.name, structural, actionable
+                        ),
+                        (Some(structural), None) => format!(
+                            "{} 的真实历史里，结构性抬升约领先 {} 天，但危机前未形成足够强的可执行预警。",
+                            scenario.name, structural
+                        ),
+                        (None, Some(actionable)) => format!(
+                            "{} 的真实历史里，约领先 {} 天进入可执行预警，但没有更早的稳定结构抬升。",
+                            scenario.name, actionable
+                        ),
+                        (None, None) => format!(
+                            "{} 的真实历史里，危机前没有形成稳定的结构或动作级预警。",
+                            scenario.name
+                        ),
+                    },
+                    BacktestSignalSource::FallbackTemplate => {
+                        format!("当前分数与 {} 的参考模板较接近；该样本尚未由本地历史库完整覆盖。", scenario.name)
+                    }
                 },
                 peak_score: scenario.max_score,
                 lead_time_days: scenario.lead_time_days,
+                actionable_lead_time_days: scenario.actionable_lead_time_days,
             }
         })
         .collect::<Vec<_>>();
@@ -1184,6 +1581,10 @@ fn ratio(present: usize, total: usize) -> f64 {
 
 fn scaled_pressure(score: f64, center: f64, width: f64) -> f64 {
     ((score - center) / width).clamp(0.0, 1.0)
+}
+
+fn sigmoid(value: f64) -> f64 {
+    1.0 / (1.0 + (-value).exp())
 }
 
 fn clamp_probability(value: f64) -> f64 {

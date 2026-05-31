@@ -9,6 +9,7 @@ import type {
   DimensionScore,
   IndicatorRisk,
   PostureGuidance,
+  ResearchAuditResponse,
   RiskSnapshot
 } from "./types";
 
@@ -53,6 +54,7 @@ export const api = {
   assessmentHistory: () => getJson<AssessmentHistoryPoint[]>("/api/assessment/history"),
   assessmentPosture: () => getJson<PostureGuidance>("/api/assessment/posture"),
   assessmentMethod: () => getJson<AssessmentMethodResponse>("/api/assessment/method"),
+  researchAudit: () => getJson<ResearchAuditResponse>("/api/research/audit"),
   systemReload: () =>
     sendJson<{ status: string; data_mode: string; as_of_date: string; generated_at: string }>(
       "/api/system/reload",

@@ -28,6 +28,14 @@ function Get-ServiceStatus {
         Where-Object { $_ -and $_ -ne 0 }
     $Listening = [bool]$ListenerPids
 
+    if ($Listening -and $ListenerPids.Count -eq 1) {
+        $ProcessId = $ListenerPids[0]
+        $Alive = [bool](Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)
+        if ($Alive) {
+            Set-Content -LiteralPath $PidFile -Value $ProcessId
+        }
+    }
+
     [PSCustomObject]@{
         Name = $Name
         RecordedPid = if ($ProcessId) { $ProcessId } else { "-" }

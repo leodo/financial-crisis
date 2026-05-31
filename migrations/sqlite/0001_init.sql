@@ -187,6 +187,70 @@ CREATE TABLE IF NOT EXISTS analytics_backtest_scenario_summaries (
     PRIMARY KEY (run_id, scenario_id)
 );
 
+CREATE TABLE IF NOT EXISTS analytics_model_releases (
+    release_id TEXT PRIMARY KEY,
+    market_scope TEXT NOT NULL,
+    status TEXT NOT NULL,
+    probability_mode TEXT NOT NULL,
+    serving_status TEXT NOT NULL,
+    bundle_uri TEXT NOT NULL,
+    manifest_json TEXT NOT NULL,
+    feature_set_version TEXT NOT NULL,
+    label_version TEXT NOT NULL,
+    prob_model_version TEXT NOT NULL,
+    calibration_version TEXT NOT NULL,
+    posture_policy_version TEXT NOT NULL,
+    action_playbook_version TEXT NOT NULL,
+    point_in_time_mode TEXT NOT NULL,
+    training_range_start TEXT,
+    training_range_end TEXT,
+    calibration_range_start TEXT,
+    calibration_range_end TEXT,
+    evaluation_range_start TEXT,
+    evaluation_range_end TEXT,
+    brier_score REAL,
+    log_loss REAL,
+    ece REAL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    activated_at TEXT,
+    retired_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS analytics_active_model_pointers (
+    market_scope TEXT PRIMARY KEY,
+    release_id TEXT NOT NULL REFERENCES analytics_model_releases(release_id) ON DELETE CASCADE,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT NOT NULL DEFAULT 'system'
+);
+
+CREATE TABLE IF NOT EXISTS analytics_prediction_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    market_scope TEXT NOT NULL,
+    as_of_date TEXT NOT NULL,
+    release_id TEXT,
+    probability_mode TEXT NOT NULL,
+    release_status TEXT NOT NULL,
+    point_in_time_mode TEXT NOT NULL,
+    overall_score REAL NOT NULL,
+    external_shock_score REAL NOT NULL,
+    raw_p_5d REAL NOT NULL,
+    raw_p_20d REAL NOT NULL,
+    raw_p_60d REAL NOT NULL,
+    calibrated_p_5d REAL NOT NULL,
+    calibrated_p_20d REAL NOT NULL,
+    calibrated_p_60d REAL NOT NULL,
+    posture TEXT NOT NULL,
+    time_to_risk_bucket TEXT NOT NULL,
+    feature_set_version TEXT NOT NULL,
+    label_version TEXT NOT NULL,
+    coverage_score REAL NOT NULL,
+    freshness_status TEXT NOT NULL,
+    method_version TEXT NOT NULL,
+    recorded_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS alerts_events (
     alert_id TEXT PRIMARY KEY,
     event_type TEXT NOT NULL,
@@ -224,6 +288,15 @@ CREATE INDEX IF NOT EXISTS idx_analytics_snapshots_entity_date
 
 CREATE INDEX IF NOT EXISTS idx_analytics_backtest_runs_finished
     ON analytics_backtest_runs(finished_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_model_releases_scope_status
+    ON analytics_model_releases(market_scope, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_prediction_snapshots_scope_date
+    ON analytics_prediction_snapshots(market_scope, as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_prediction_snapshots_release_date
+    ON analytics_prediction_snapshots(release_id, as_of_date DESC);
 
 CREATE INDEX IF NOT EXISTS idx_alerts_events_status
     ON alerts_events(status, level, triggered_as_of_date DESC);

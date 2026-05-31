@@ -24,6 +24,45 @@ dev-sqlite:
 status:
     ./scripts/dev-status.ps1
 
+# 从正在运行的本地 API 导出一份滚动审计报告，默认写到 reports/rolling-audit。
+# 适合每次 refresh/backfill 后留存一份当前评估快照，便于复盘模型是否在“高压但未危机”的阶段过度频繁动作。
+audit-report:
+    cargo run -p fc-worker -- audit export-current
+
+# 查看本地 SQLite 中已经登记的 model release 列表。
+# 适合检查当前有哪些候选版、激活版和历史版。
+release-list:
+    cargo run -p fc-worker -- research release list
+
+# 用当前仓库自带的 heuristic bootstrap manifest 初始化一份 release，并激活到本地 API。
+# 这不会把系统伪装成正式概率模型；它只是把 method metadata 从硬编码迁到 release registry。
+release-bootstrap:
+    cargo run -p fc-worker -- research release publish --manifest config/model-releases/us-heuristic-bootstrap.json --activate --reload-api
+
+# 查看已经落库的 prediction snapshot 历史。
+# 适合确认 SQLite 中是否已经生成了 release-backed 的评估轨迹。
+snapshot-list:
+    cargo run -p fc-worker -- research snapshot list --market-scope financial_system
+
+# 导出 prediction snapshot 原始审计表，可选 --format csv。
+# 默认输出 JSON 到终端，也可以追加 `--output-path reports/snapshots.json`。
+snapshot-export:
+    cargo run -p fc-worker -- research snapshot export --market-scope financial_system
+
+# 导出用于 formal 概率研究流水线的特征+标签数据集。
+# 适合先检查样本质量，再决定是否训练新的正式概率 release。
+snapshot-dataset:
+    cargo run -p fc-worker -- research snapshot dataset --market-scope financial_system --output-path reports/pipeline-dataset.json
+
+# 基于当前 active release 的 prediction snapshot 历史训练一套 formal bundle，并写出 bundle / manifest / evaluation 三份文件。
+formal-train:
+    cargo run -p fc-worker -- research pipeline train-probability --market-scope financial_system
+
+# 一键训练、发布并激活 formal bundle，然后触发 API reload。
+# 这会把线上 probability_mode 从 heuristic 切到 formal_bundle_v1（若 bundle 可正常加载）。
+formal-bootstrap:
+    cargo run -p fc-worker -- research pipeline bootstrap-formal-release --market-scope financial_system
+
 # 停止 `just dev` 启动的 API 和 Web 服务。
 stop:
     ./scripts/dev-stop.ps1

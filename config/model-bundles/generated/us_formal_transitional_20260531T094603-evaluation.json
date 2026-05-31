@@ -1,0 +1,421 @@
+{
+  "release_id": "us_formal_transitional_20260531T094603",
+  "market_scope": "financial_system",
+  "training_samples": 3216,
+  "calibration_samples": 1072,
+  "evaluation_samples": 1073,
+  "horizons": [
+    {
+      "horizon_days": 5,
+      "raw_model": {
+        "intercept": -5.440212003281756,
+        "feature_stats": [
+          {
+            "name": "overall_score",
+            "mean": 0.49353762437810755,
+            "std_dev": 0.09915148005623199,
+            "fill_value": 0.49353762437810755
+          },
+          {
+            "name": "external_shock_score",
+            "mean": 0.3252223258706469,
+            "std_dev": 0.08767777256836853,
+            "fill_value": 0.3252223258706469
+          },
+          {
+            "name": "heuristic_p_5d",
+            "mean": 0.0031520522388059696,
+            "std_dev": 0.012055513262287232,
+            "fill_value": 0.0031520522388059696
+          },
+          {
+            "name": "heuristic_p_20d",
+            "mean": 0.11762717661691251,
+            "std_dev": 0.07299133132090882,
+            "fill_value": 0.11762717661691251
+          },
+          {
+            "name": "heuristic_p_60d",
+            "mean": 0.35893376865671023,
+            "std_dev": 0.15835428791626938,
+            "fill_value": 0.35893376865671023
+          },
+          {
+            "name": "coverage_score",
+            "mean": 0.6540407338308637,
+            "std_dev": 0.0654828403709235,
+            "fill_value": 0.6540407338308637
+          },
+          {
+            "name": "bucket_months_or_higher",
+            "mean": 0.5973258706467661,
+            "std_dev": 0.4904362088007446,
+            "fill_value": 0.5973258706467661
+          },
+          {
+            "name": "bucket_weeks_or_higher",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "bucket_now",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "freshness_delayed_or_worse",
+            "mean": 1.0,
+            "std_dev": 1e-6,
+            "fill_value": 1.0
+          },
+          {
+            "name": "freshness_stale_or_missing",
+            "mean": 1.0,
+            "std_dev": 1e-6,
+            "fill_value": 1.0
+          }
+        ],
+        "coefficients": [
+          {
+            "name": "overall_score",
+            "weight": 0.027997117472485948
+          },
+          {
+            "name": "external_shock_score",
+            "weight": 0.04567075419421579
+          },
+          {
+            "name": "heuristic_p_5d",
+            "weight": 0.2145955627310413
+          },
+          {
+            "name": "heuristic_p_20d",
+            "weight": 0.053817094592186206
+          },
+          {
+            "name": "heuristic_p_60d",
+            "weight": 0.01943711889501688
+          },
+          {
+            "name": "coverage_score",
+            "weight": -0.0037531008439830498
+          },
+          {
+            "name": "bucket_months_or_higher",
+            "weight": -0.0006338398316651414
+          },
+          {
+            "name": "bucket_weeks_or_higher",
+            "weight": 0.0
+          },
+          {
+            "name": "bucket_now",
+            "weight": 0.0
+          },
+          {
+            "name": "freshness_delayed_or_worse",
+            "weight": 0.0
+          },
+          {
+            "name": "freshness_stale_or_missing",
+            "weight": 0.0
+          }
+        ]
+      },
+      "calibration": {
+        "alpha": 0.9799483059719161,
+        "beta": -5.182962021148088,
+        "min_input": 0.0032439942529464277,
+        "max_input": 0.01100880131365568
+      },
+      "evaluation": {
+        "sample_count": 1073,
+        "positive_rate": 0.0027958993476234857,
+        "brier_score": 0.0027959616121581692,
+        "log_loss": 0.020098206234398956,
+        "ece": 0.0028069205726683555,
+        "precision_at_30pct": null,
+        "recall_at_30pct": 0.0
+      }
+    },
+    {
+      "horizon_days": 20,
+      "raw_model": {
+        "intercept": -5.1441452370915615,
+        "feature_stats": [
+          {
+            "name": "overall_score",
+            "mean": 0.49353762437810755,
+            "std_dev": 0.09915148005623199,
+            "fill_value": 0.49353762437810755
+          },
+          {
+            "name": "external_shock_score",
+            "mean": 0.3252223258706469,
+            "std_dev": 0.08767777256836853,
+            "fill_value": 0.3252223258706469
+          },
+          {
+            "name": "heuristic_p_5d",
+            "mean": 0.0031520522388059696,
+            "std_dev": 0.012055513262287232,
+            "fill_value": 0.0031520522388059696
+          },
+          {
+            "name": "heuristic_p_20d",
+            "mean": 0.11762717661691251,
+            "std_dev": 0.07299133132090882,
+            "fill_value": 0.11762717661691251
+          },
+          {
+            "name": "heuristic_p_60d",
+            "mean": 0.35893376865671023,
+            "std_dev": 0.15835428791626938,
+            "fill_value": 0.35893376865671023
+          },
+          {
+            "name": "coverage_score",
+            "mean": 0.6540407338308637,
+            "std_dev": 0.0654828403709235,
+            "fill_value": 0.6540407338308637
+          },
+          {
+            "name": "bucket_months_or_higher",
+            "mean": 0.5973258706467661,
+            "std_dev": 0.4904362088007446,
+            "fill_value": 0.5973258706467661
+          },
+          {
+            "name": "bucket_weeks_or_higher",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "bucket_now",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "freshness_delayed_or_worse",
+            "mean": 1.0,
+            "std_dev": 1e-6,
+            "fill_value": 1.0
+          },
+          {
+            "name": "freshness_stale_or_missing",
+            "mean": 1.0,
+            "std_dev": 1e-6,
+            "fill_value": 1.0
+          }
+        ],
+        "coefficients": [
+          {
+            "name": "overall_score",
+            "weight": 0.09420915165322377
+          },
+          {
+            "name": "external_shock_score",
+            "weight": 0.22107665075866964
+          },
+          {
+            "name": "heuristic_p_5d",
+            "weight": 0.19896436810510312
+          },
+          {
+            "name": "heuristic_p_20d",
+            "weight": 0.0848233345569353
+          },
+          {
+            "name": "heuristic_p_60d",
+            "weight": -0.001614021948323628
+          },
+          {
+            "name": "coverage_score",
+            "weight": 0.011429893171846598
+          },
+          {
+            "name": "bucket_months_or_higher",
+            "weight": -0.11894592130499686
+          },
+          {
+            "name": "bucket_weeks_or_higher",
+            "weight": 0.0
+          },
+          {
+            "name": "bucket_now",
+            "weight": 0.0
+          },
+          {
+            "name": "freshness_delayed_or_worse",
+            "weight": 0.0
+          },
+          {
+            "name": "freshness_stale_or_missing",
+            "weight": 0.0
+          }
+        ]
+      },
+      "calibration": {
+        "alpha": 0.975666197612082,
+        "beta": -4.352695636627656,
+        "min_input": 0.003345860638580724,
+        "max_input": 0.018372688107597162
+      },
+      "evaluation": {
+        "sample_count": 1073,
+        "positive_rate": 0.0130475302889096,
+        "brier_score": 0.012876274089259468,
+        "log_loss": 0.0695370421378292,
+        "ece": 0.00025568327299040246,
+        "precision_at_30pct": null,
+        "recall_at_30pct": 0.0
+      }
+    },
+    {
+      "horizon_days": 60,
+      "raw_model": {
+        "intercept": -4.486567826894041,
+        "feature_stats": [
+          {
+            "name": "overall_score",
+            "mean": 0.49353762437810755,
+            "std_dev": 0.09915148005623199,
+            "fill_value": 0.49353762437810755
+          },
+          {
+            "name": "external_shock_score",
+            "mean": 0.3252223258706469,
+            "std_dev": 0.08767777256836853,
+            "fill_value": 0.3252223258706469
+          },
+          {
+            "name": "heuristic_p_5d",
+            "mean": 0.0031520522388059696,
+            "std_dev": 0.012055513262287232,
+            "fill_value": 0.0031520522388059696
+          },
+          {
+            "name": "heuristic_p_20d",
+            "mean": 0.11762717661691251,
+            "std_dev": 0.07299133132090882,
+            "fill_value": 0.11762717661691251
+          },
+          {
+            "name": "heuristic_p_60d",
+            "mean": 0.35893376865671023,
+            "std_dev": 0.15835428791626938,
+            "fill_value": 0.35893376865671023
+          },
+          {
+            "name": "coverage_score",
+            "mean": 0.6540407338308637,
+            "std_dev": 0.0654828403709235,
+            "fill_value": 0.6540407338308637
+          },
+          {
+            "name": "bucket_months_or_higher",
+            "mean": 0.5973258706467661,
+            "std_dev": 0.4904362088007446,
+            "fill_value": 0.5973258706467661
+          },
+          {
+            "name": "bucket_weeks_or_higher",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "bucket_now",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "freshness_delayed_or_worse",
+            "mean": 1.0,
+            "std_dev": 1e-6,
+            "fill_value": 1.0
+          },
+          {
+            "name": "freshness_stale_or_missing",
+            "mean": 1.0,
+            "std_dev": 1e-6,
+            "fill_value": 1.0
+          }
+        ],
+        "coefficients": [
+          {
+            "name": "overall_score",
+            "weight": 0.32433676930560157
+          },
+          {
+            "name": "external_shock_score",
+            "weight": 0.5596281978594316
+          },
+          {
+            "name": "heuristic_p_5d",
+            "weight": 0.048822246438043754
+          },
+          {
+            "name": "heuristic_p_20d",
+            "weight": -0.04180924694239962
+          },
+          {
+            "name": "heuristic_p_60d",
+            "weight": -0.21950725407560637
+          },
+          {
+            "name": "coverage_score",
+            "weight": 0.06896025084300228
+          },
+          {
+            "name": "bucket_months_or_higher",
+            "weight": -0.5350840044661397
+          },
+          {
+            "name": "bucket_weeks_or_higher",
+            "weight": 0.0
+          },
+          {
+            "name": "bucket_now",
+            "weight": 0.0
+          },
+          {
+            "name": "freshness_delayed_or_worse",
+            "weight": 0.0
+          },
+          {
+            "name": "freshness_stale_or_missing",
+            "weight": 0.0
+          }
+        ]
+      },
+      "calibration": {
+        "alpha": 0.9496710312631567,
+        "beta": -3.2379553402190813,
+        "min_input": 0.0038371670474707763,
+        "max_input": 0.05197563518112414
+      },
+      "evaluation": {
+        "sample_count": 1073,
+        "positive_rate": 0.0391425908667288,
+        "brier_score": 0.03759039734467207,
+        "log_loss": 0.1649420640893172,
+        "ece": 0.00035617640075881474,
+        "precision_at_30pct": null,
+        "recall_at_30pct": 0.0
+      }
+    }
+  ],
+  "summary": {
+    "sample_count": 3219,
+    "brier_score": 0.017754211015363234,
+    "log_loss": 0.08485910415384847,
+    "ece": 0.0011395934154725242,
+    "note": "Weighted average across 5d / 20d / 60d evaluation slices."
+  }
+}
