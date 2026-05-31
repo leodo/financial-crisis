@@ -1,5 +1,3 @@
-$ErrorActionPreference = "Stop"
-
 param(
     [string]$CoreStart = "2006-01-01",
     [string]$End = $(Get-Date -Format "yyyy-MM-dd"),
@@ -7,16 +5,18 @@ param(
     [switch]$IncludeGdelt
 )
 
+$ErrorActionPreference = "Stop"
+
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 
 function Invoke-Worker {
-    param([string[]]$Args)
+    param([string[]]$CommandArgs)
 
     Write-Host ""
-    Write-Host ("==> cargo run -p fc-worker -- {0}" -f ($Args -join " "))
+    Write-Host ("==> cargo run -p fc-worker -- {0}" -f ($CommandArgs -join " "))
     Push-Location $Root
     try {
-        cargo run -p fc-worker -- @Args
+        cargo run -p fc-worker -- $CommandArgs
     } finally {
         Pop-Location
     }
