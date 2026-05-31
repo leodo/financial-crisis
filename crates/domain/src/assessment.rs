@@ -199,11 +199,15 @@ pub struct EventAssessment {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BacktestPerformanceSummary {
     pub scenario_count: u32,
+    pub real_scenario_count: u32,
+    pub fallback_scenario_count: u32,
     pub timely_warning_rate: f64,
     pub missed_rate: f64,
     pub avg_lead_time_days: Option<f64>,
     pub median_lead_time_days: Option<f64>,
     pub total_false_positive_count: u32,
+    pub history_start: Option<NaiveDate>,
+    pub history_end: Option<NaiveDate>,
     pub summary: String,
 }
 

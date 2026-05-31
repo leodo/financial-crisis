@@ -3,6 +3,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{DataMode, RiskContributor, RiskLevel};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BacktestSignalSource {
+    RealHistory,
+    FallbackTemplate,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BacktestRunRecord {
     pub run_id: String,
@@ -26,6 +33,7 @@ pub struct BacktestScenarioSummary {
     pub scenario_id: String,
     pub name: String,
     pub region: String,
+    pub signal_source: BacktestSignalSource,
     pub crisis_start: NaiveDate,
     pub crisis_end: NaiveDate,
     pub first_l2_date: Option<NaiveDate>,
@@ -35,6 +43,10 @@ pub struct BacktestScenarioSummary {
     pub lead_time_days: Option<i64>,
     pub false_positive_count: u32,
     pub missed: bool,
+    pub history_start: Option<NaiveDate>,
+    pub history_end: Option<NaiveDate>,
+    pub history_point_count: u32,
+    pub note: String,
     pub top_contributors: Vec<RiskContributor>,
     pub method_version: String,
 }

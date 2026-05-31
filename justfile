@@ -67,6 +67,12 @@ refresh-latest:
     cargo run -p fc-worker -- refresh latest-free
     ./scripts/dev-status.ps1
 
+# 在日常刷新基础上追加 GDELT prototype 事件源。
+# 适合想把新闻压力序列也一并拉进当前面板的场景。
+refresh-latest-full:
+    cargo run -p fc-worker -- refresh latest-free --include-gdelt
+    ./scripts/dev-status.ps1
+
 # 无需 API key，使用 FRED 图表 CSV 回填历史数据到本地 SQLite。
 backfill-fred:
     cargo run -p fc-worker -- backfill fred
@@ -145,6 +151,15 @@ backfill-boj-money-market-range start end:
 bootstrap-sqlite:
     cargo run -p fc-worker -- db init
     cargo run -p fc-worker -- db seed
+
+# 为“真实历史回测”准备长区间免费历史库。
+# 默认会从 2006 年开始回填 FRED / Treasury / BOJ / World Bank，并补近年的 SEC EDGAR。
+backfill-backtest-history:
+    ./scripts/backfill-backtest-history.ps1
+
+# 指定日期范围构建长区间历史库，便于跑真实历史回测。
+backfill-backtest-history-range start end:
+    ./scripts/backfill-backtest-history.ps1 -CoreStart {{start}} -End {{end}}
 
 # 安装前端依赖。首次运行前端前需要执行一次。
 web-install:

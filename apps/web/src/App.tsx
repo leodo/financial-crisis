@@ -743,9 +743,25 @@ function DecisionView({
               value={formatNumber(assessment.backtest_summary.total_false_positive_count)}
             />
             <Metric
+              label="真实样本"
+              value={formatNumber(assessment.backtest_summary.real_scenario_count)}
+            />
+            <Metric
+              label="模板样本"
+              value={formatNumber(assessment.backtest_summary.fallback_scenario_count)}
+            />
+            <Metric
               label="用户风险档位"
               value={userProfileLabel(assessment.user_preferences.profile)}
             />
+          </div>
+          <div className="rule-box">
+            <strong>历史覆盖</strong>
+            <span>
+              {assessment.backtest_summary.history_start && assessment.backtest_summary.history_end
+                ? `${formatDate(assessment.backtest_summary.history_start)} - ${formatDate(assessment.backtest_summary.history_end)}`
+                : "当前没有可用历史区间。"}
+            </span>
           </div>
           <div className="rule-box">
             <strong>用户约束</strong>

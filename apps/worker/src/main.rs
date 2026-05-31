@@ -618,6 +618,18 @@ async fn refresh_latest_free(args: &[String]) -> anyhow::Result<()> {
         .await?;
     }
 
+    if options.include_gdelt {
+        backfill_gdelt_with_options(BackfillOptions {
+            start: fast_start,
+            end: today,
+            chunk_days: None,
+            indicator_filter: None,
+            external_code_filter: None,
+            watermark_overlap_days: Some(7),
+        })
+        .await?;
+    }
+
     db_check().await?;
 
     if options.reload_api {
@@ -1016,6 +1028,7 @@ struct RefreshLatestOptions {
     slow_lookback_years: i64,
     fred_chunk_days: i64,
     skip_world_bank: bool,
+    include_gdelt: bool,
     reload_api: bool,
     api_reload_url: String,
 }
@@ -1026,6 +1039,7 @@ impl RefreshLatestOptions {
         let mut slow_lookback_years = 15_i64;
         let mut fred_chunk_days = 45_i64;
         let mut skip_world_bank = false;
+        let mut include_gdelt = false;
         let mut reload_api = true;
         let mut api_reload_url = DEFAULT_API_RELOAD_URL.to_string();
         let mut index = 0;
@@ -1049,6 +1063,9 @@ impl RefreshLatestOptions {
                 "--skip-world-bank" => {
                     skip_world_bank = true;
                 }
+                "--include-gdelt" => {
+                    include_gdelt = true;
+                }
                 "--no-reload-api" => {
                     reload_api = false;
                 }
@@ -1069,6 +1086,7 @@ impl RefreshLatestOptions {
             slow_lookback_years,
             fred_chunk_days,
             skip_world_bank,
+            include_gdelt,
             reload_api,
             api_reload_url,
         })
@@ -1178,7 +1196,7 @@ fn print_help() {
   cargo run -p fc-worker -- db check
       Check whether key SQLite indicators are fresh enough for the dashboard.
 
-  cargo run -p fc-worker -- refresh latest-free [--fast-lookback-days N] [--slow-lookback-years N] [--fred-chunk-days N] [--skip-world-bank] [--no-reload-api] [--api-reload-url URL]
+  cargo run -p fc-worker -- refresh latest-free [--fast-lookback-days N] [--slow-lookback-years N] [--fred-chunk-days N] [--skip-world-bank] [--include-gdelt] [--no-reload-api] [--api-reload-url URL]
       Refresh the latest free-source data set for the dashboard, then optionally POST /api/system/reload.
 
   cargo run -p fc-worker -- backfill fred [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--chunk-days N] [--indicator ID] [--external-code CODE]
@@ -1222,6 +1240,7 @@ mod tests {
         assert_eq!(options.slow_lookback_years, 15);
         assert_eq!(options.fred_chunk_days, 45);
         assert!(!options.skip_world_bank);
+        assert!(!options.include_gdelt);
         assert!(options.reload_api);
     }
 
@@ -1231,11 +1250,13 @@ mod tests {
             "--fast-lookback-days".to_string(),
             "90".to_string(),
             "--skip-world-bank".to_string(),
+            "--include-gdelt".to_string(),
             "--no-reload-api".to_string(),
         ];
         let options = RefreshLatestOptions::parse(&args).unwrap();
         assert_eq!(options.fast_lookback_days, 90);
         assert!(options.skip_world_bank);
+        assert!(options.include_gdelt);
         assert!(!options.reload_api);
     }
 }

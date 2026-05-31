@@ -1,4 +1,5 @@
 import type {
+  BacktestSignalSource,
   DataMode,
   DecisionPosture,
   EventConfirmationState,
@@ -81,6 +82,14 @@ export function dataModeLabel(mode: DataMode): string {
     postgres: "Postgres"
   };
   return labels[mode];
+}
+
+export function backtestSignalSourceLabel(source: BacktestSignalSource): string {
+  const labels: Record<BacktestSignalSource, string> = {
+    real_history: "真实历史",
+    fallback_template: "模板参考"
+  };
+  return labels[source];
 }
 
 export function freshnessLabel(status: FreshnessStatus): string {

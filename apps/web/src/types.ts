@@ -5,6 +5,7 @@ export type TimeToRiskBucket = "normal" | "months" | "weeks" | "now";
 export type JpyCarryState = "quiet" | "building" | "stress" | "unwind";
 export type DataMode = "demo" | "sqlite" | "postgres";
 export type FreshnessStatus = "fresh" | "delayed" | "stale" | "missing";
+export type BacktestSignalSource = "real_history" | "fallback_template";
 export type EventConfirmationState = "quiet" | "watching" | "confirmed" | "escalating";
 export type UserRiskProfile = "conservative" | "neutral" | "aggressive";
 
@@ -129,6 +130,7 @@ export interface BacktestScenarioSummary {
   scenario_id: string;
   name: string;
   region: string;
+  signal_source: BacktestSignalSource;
   crisis_start: string;
   crisis_end: string;
   first_l2_date: string | null;
@@ -138,6 +140,10 @@ export interface BacktestScenarioSummary {
   lead_time_days: number | null;
   false_positive_count: number;
   missed: boolean;
+  history_start: string | null;
+  history_end: string | null;
+  history_point_count: number;
+  note: string;
   top_contributors: RiskContributor[];
   method_version: string;
 }
@@ -266,11 +272,15 @@ export interface EventAssessment {
 
 export interface BacktestPerformanceSummary {
   scenario_count: number;
+  real_scenario_count: number;
+  fallback_scenario_count: number;
   timely_warning_rate: number;
   missed_rate: number;
   avg_lead_time_days: number | null;
   median_lead_time_days: number | null;
   total_false_positive_count: number;
+  history_start: string | null;
+  history_end: string | null;
   summary: string;
 }
 

@@ -22,6 +22,7 @@ import type {
   RiskSnapshot
 } from "./types";
 import {
+  backtestSignalSourceLabel,
   eventStateLabel,
   formatDate,
   formatNumber,
@@ -217,7 +218,7 @@ export function SourcesView({
               ["World Bank", "年频慢变量补充结构脆弱性。"],
               ["BOJ + JPY carry", "BOJ 官方 USDJPY 和日本隔夜拆借利率已接入，用于免费跟踪套息融资环境。"],
               ["SEC EDGAR", "已接入官方 submissions JSON，并聚合为银行公告事件特征与告警。"],
-              ["GDELT", "仍处于 prototype，新闻事件链路和本地事件存储尚未接入当前运行链路。"]
+              ["GDELT", "已支持可选回填和运行时展示，但默认仍按 prototype 辅助信号处理。"]
             ]}
           />
         </section>
@@ -483,6 +484,16 @@ export function BacktestsView({
             <Metric label="漏报率" value={formatPercent(assessment.backtest_summary.missed_rate)} />
             <Metric label="平均提前量" value={formatNumber(assessment.backtest_summary.avg_lead_time_days, "d")} />
             <Metric label="误报次数" value={formatNumber(assessment.backtest_summary.total_false_positive_count)} />
+            <Metric label="真实样本" value={formatNumber(assessment.backtest_summary.real_scenario_count)} />
+            <Metric label="模板样本" value={formatNumber(assessment.backtest_summary.fallback_scenario_count)} />
+          </div>
+          <div className="rule-box">
+            <strong>历史覆盖</strong>
+            <span>
+              {assessment.backtest_summary.history_start && assessment.backtest_summary.history_end
+                ? `${formatDate(assessment.backtest_summary.history_start)} - ${formatDate(assessment.backtest_summary.history_end)}`
+                : "当前没有可用历史区间。"}
+            </span>
           </div>
         </section>
 
@@ -520,22 +531,26 @@ export function BacktestsView({
             <thead>
               <tr>
                 <th>场景</th>
+                <th>样本来源</th>
                 <th>危机区间</th>
                 <th>提前量</th>
                 <th>峰值</th>
                 <th>误报</th>
+                <th>说明</th>
               </tr>
             </thead>
             <tbody>
               {backtests.map((scenario) => (
                 <tr key={scenario.scenario_id}>
                   <td>{scenario.name}</td>
+                  <td>{backtestSignalSourceLabel(scenario.signal_source)}</td>
                   <td>
                     {formatDate(scenario.crisis_start)} - {formatDate(scenario.crisis_end)}
                   </td>
                   <td>{scenario.lead_time_days ?? "—"}d</td>
                   <td>{formatNumber(scenario.max_score)}</td>
                   <td>{formatNumber(scenario.false_positive_count)}</td>
+                  <td>{scenario.note}</td>
                 </tr>
               ))}
             </tbody>

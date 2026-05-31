@@ -3,9 +3,10 @@ use std::env;
 use anyhow::Context;
 use chrono::{Duration, NaiveDate, Utc};
 use fc_domain::{
-    AlertEvent, AlertStatus, AlertType, BacktestScenarioSummary, BacktestWindowPoint, DataMode,
-    DataSource, Frequency, Indicator, Observation, RiskContributor, RiskDimension, RiskDirection,
-    RiskLevel, SourceHealth, SourcePriority, SourceStatus, UserRiskPreferences, UserRiskProfile,
+    AlertEvent, AlertStatus, AlertType, BacktestScenarioSummary, BacktestSignalSource,
+    BacktestWindowPoint, DataMode, DataSource, Frequency, Indicator, Observation, RiskContributor,
+    RiskDimension, RiskDirection, RiskLevel, SourceHealth, SourcePriority, SourceStatus,
+    UserRiskPreferences, UserRiskProfile,
 };
 use fc_scoring::ScoringEngine;
 use fc_storage::{PostgresStore, SqliteStore};
@@ -134,7 +135,7 @@ fn build_app_data_from_inputs(
     observations: Vec<Observation>,
     stored_alerts: Option<Vec<AlertEvent>>,
     as_of_date: NaiveDate,
-    max_history_points: usize,
+    _max_history_points: usize,
 ) -> AppData {
     let scoring = ScoringEngine::default();
     let output = scoring.score(
@@ -155,7 +156,7 @@ fn build_app_data_from_inputs(
         HistoryQueryWindow {
             from: None,
             to: None,
-            limit: Some(max_history_points),
+            limit: None,
         },
     );
     let backtests = build_backtests(&output.snapshot, &assessment_history);
@@ -745,7 +746,7 @@ fn sources_demo() -> Vec<DataSource> {
             SourceStatus::Prototype,
             72.0,
             false,
-            "Official SEC JSON APIs. Design is complete, but the runtime connector is not wired into the local assessment flow yet.",
+            "Official SEC JSON APIs. Runtime connector is available in SQLite mode; this demo source only marks the capability shape.",
         ),
         source(
             "world_bank",
@@ -775,7 +776,7 @@ fn sources_demo() -> Vec<DataSource> {
             SourceStatus::Prototype,
             66.0,
             false,
-            "News-event prototype source. Noise filtering and local event storage are not wired into the live dashboard yet.",
+            "News-event prototype source. Optional runtime backfill is available, but noise filtering and production validation are still pending.",
         ),
         source(
             "yfinance",
@@ -791,6 +792,9 @@ fn sources_demo() -> Vec<DataSource> {
 }
 
 fn sources_runtime(observations: &[Observation], as_of_date: NaiveDate) -> Vec<DataSource> {
+    let gdelt_has_data = observations
+        .iter()
+        .any(|observation| observation.source_id == "gdelt");
     vec![
         live_source(
             observations,
@@ -852,16 +856,31 @@ fn sources_runtime(observations: &[Observation], as_of_date: NaiveDate) -> Vec<D
             true,
             "Official BOJ FX and money-market endpoints are used for the JPY carry monitor.",
         ),
-        source(
-            "gdelt",
-            "GDELT",
-            "news_events",
-            SourcePriority::P1,
-            SourceStatus::Prototype,
-            66.0,
-            false,
-            "News-event prototype source. Local event storage and rate-limit handling are still pending.",
-        ),
+        if gdelt_has_data {
+            live_source(
+                observations,
+                as_of_date,
+                "gdelt",
+                "GDELT",
+                "news_events",
+                SourcePriority::P1,
+                3,
+                66.0,
+                false,
+                "GDELT 聚合新闻压力序列已支持本地回填和运行时展示，但仍属于 prototype 辅助信号。",
+            )
+        } else {
+            source(
+                "gdelt",
+                "GDELT",
+                "news_events",
+                SourcePriority::P1,
+                SourceStatus::Prototype,
+                66.0,
+                false,
+                "GDELT 聚合新闻压力序列可选接入；当前本地库尚未回填该源。",
+            )
+        },
         source(
             "yfinance",
             "yfinance",
@@ -1071,6 +1090,8 @@ fn build_backtests(
     snapshot: &fc_domain::RiskSnapshot,
     history: &[fc_domain::AssessmentHistoryPoint],
 ) -> Vec<BacktestScenarioSummary> {
+    let history_start = history.first().map(|point| point.as_of_date);
+    let history_end = history.last().map(|point| point.as_of_date);
     scenario_catalog()
         .into_iter()
         .map(|scenario| {
@@ -1080,7 +1101,7 @@ fn build_backtests(
                 &scenario,
                 snapshot.top_contributors.iter().take(3).cloned().collect(),
             )
-            .unwrap_or_else(|| fallback_backtest(snapshot, &scenario))
+            .unwrap_or_else(|| fallback_backtest(snapshot, &scenario, history_start, history_end))
         })
         .collect()
 }
@@ -1205,6 +1226,7 @@ fn scenario_summary_from_history(
         scenario_id: scenario.scenario_id.to_string(),
         name: scenario.name.to_string(),
         region: scenario.region.to_string(),
+        signal_source: BacktestSignalSource::RealHistory,
         crisis_start: scenario.crisis_start,
         crisis_end: scenario.crisis_end,
         first_l2_date,
@@ -1214,6 +1236,13 @@ fn scenario_summary_from_history(
         lead_time_days,
         false_positive_count,
         missed: earliest_signal.is_none(),
+        history_start: crisis_points.first().map(|point| point.as_of_date),
+        history_end: crisis_points.last().map(|point| point.as_of_date),
+        history_point_count: crisis_points.len() as u32,
+        note: format!(
+            "该场景来自本地历史库真实评估窗口，共使用 {} 个历史点。",
+            crisis_points.len()
+        ),
         top_contributors,
         method_version: snapshot.method_version.clone(),
     })
@@ -1222,11 +1251,14 @@ fn scenario_summary_from_history(
 fn fallback_backtest(
     snapshot: &fc_domain::RiskSnapshot,
     scenario: &ScenarioDefinition,
+    history_start: Option<NaiveDate>,
+    history_end: Option<NaiveDate>,
 ) -> BacktestScenarioSummary {
     BacktestScenarioSummary {
         scenario_id: scenario.scenario_id.to_string(),
         name: scenario.name.to_string(),
         region: scenario.region.to_string(),
+        signal_source: BacktestSignalSource::FallbackTemplate,
         crisis_start: scenario.crisis_start,
         crisis_end: scenario.crisis_end,
         first_l2_date: scenario.fallback_first_l2_date,
@@ -1236,6 +1268,15 @@ fn fallback_backtest(
         lead_time_days: scenario.fallback_lead_time_days,
         false_positive_count: scenario.fallback_false_positive_count,
         missed: false,
+        history_start,
+        history_end,
+        history_point_count: 0,
+        note: match (history_start, history_end) {
+            (Some(start), Some(end)) => format!(
+                "本地历史库当前只覆盖 {start} 到 {end}，尚未覆盖该危机窗口，当前结果来自内置参考模板。"
+            ),
+            _ => "本地历史库尚未覆盖该危机窗口，当前结果来自内置参考模板。".to_string(),
+        },
         top_contributors: snapshot.top_contributors.iter().take(3).cloned().collect(),
         method_version: snapshot.method_version.clone(),
     }
