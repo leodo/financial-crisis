@@ -50,7 +50,7 @@
 
 ## 4. 标签层级
 
-系统保留两套标签。
+系统保留三层标签。
 
 ### 4.1 场景标签
 
@@ -68,7 +68,7 @@ pre_warning_end
 source_note
 ```
 
-### 4.2 样本标签
+### 4.2 前瞻危机标签
 
 由模型直接使用：
 
@@ -84,6 +84,28 @@ label_60d
 label_H = 1
 当且仅当从评估日 t 往后 H 个交易日内，首次进入定义好的 crisis_start 或 acute_start
 ```
+
+### 4.3 动作窗口标签
+
+用于研究“是否已经进入可以开始减仓 / 对冲 / 防守的窗口”：
+
+```text
+action_label_5d
+action_label_20d
+action_label_60d
+```
+
+第一版 bounded action window 规则：
+
+- `5d`：围绕 `acute_start` 或 `crisis_start`，窗口约为 `[-10d, +7d]`
+- `20d`：围绕 `crisis_start`，窗口约为 `[-35d, +20d]`
+- `60d`：围绕 `crisis_start`，窗口约为 `[-90d, +30d]`
+
+补充规则：
+
+- 若场景与该 horizon 不完全对齐，也保留 fallback 动作窗口，避免时间切分后整段 split 没有正样本；
+- 但训练时会通过 `scenario role` 权重把这些 fallback 正样本降权；
+- `action_label_*` 不等于“危机已经发生”，而是“动作级预警窗口已经打开或刚被验证”。 
 
 ## 5. 时间窗口定义
 
@@ -225,3 +247,5 @@ research_label_generation_runs
 - 再把场景规则程序化。
 - 样本生成必须支持 point-in-time 数据视角。
 - 标签文档一旦调整，必须提升版本号并重跑回测。
+- 当前已经验证：单独把 formal 主模型整体切到 `action_label_*` 仍不足以通过 runtime guard。
+- 下一步应进入 `separate actionability head / episode objective / dual-head fusion`，而不是继续只改同一套单头概率标签。

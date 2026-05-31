@@ -377,6 +377,9 @@ CREATE TABLE IF NOT EXISTS audit.formal_dataset_rows (
     label_5d SMALLINT NOT NULL,
     label_20d SMALLINT NOT NULL,
     label_60d SMALLINT NOT NULL,
+    action_label_5d SMALLINT NOT NULL DEFAULT 0,
+    action_label_20d SMALLINT NOT NULL DEFAULT 0,
+    action_label_60d SMALLINT NOT NULL DEFAULT 0,
     features_json JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

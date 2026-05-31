@@ -1,4 +1,4 @@
-use std::{fs, path::Path, str::FromStr};
+use std::{collections::HashSet, fs, path::Path, str::FromStr};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use fc_domain::{
@@ -100,6 +100,38 @@ impl SqliteStore {
                 sqlx::query(statement).execute(&self.pool).await?;
             }
         }
+        self.ensure_formal_dataset_action_label_columns().await?;
+        Ok(())
+    }
+
+    async fn ensure_formal_dataset_action_label_columns(&self) -> Result<(), StorageError> {
+        let columns = sqlx::query("PRAGMA table_info(analytics_formal_dataset_rows)")
+            .fetch_all(&self.pool)
+            .await?;
+        let column_names = columns
+            .into_iter()
+            .map(|row| row.try_get::<String, _>("name"))
+            .collect::<Result<HashSet<_>, _>>()?;
+
+        for (column_name, alter_sql) in [
+            (
+                "action_label_5d",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN action_label_5d INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
+                "action_label_20d",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN action_label_20d INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
+                "action_label_60d",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN action_label_60d INTEGER NOT NULL DEFAULT 0",
+            ),
+        ] {
+            if !column_names.contains(column_name) {
+                sqlx::query(alter_sql).execute(&self.pool).await?;
+            }
+        }
+
         Ok(())
     }
 
@@ -1948,12 +1980,15 @@ impl SqliteStore {
                     label_5d,
                     label_20d,
                     label_60d,
+                    action_label_5d,
+                    action_label_20d,
+                    action_label_60d,
                     features_json,
                     created_at
                 )
                 VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                    ?18, ?19, ?20
+                    ?18, ?19, ?20, ?21, ?22, ?23
                 )
                 "#,
             )
@@ -1975,6 +2010,9 @@ impl SqliteStore {
             .bind(row.label_5d as i64)
             .bind(row.label_20d as i64)
             .bind(row.label_60d as i64)
+            .bind(row.action_label_5d as i64)
+            .bind(row.action_label_20d as i64)
+            .bind(row.action_label_60d as i64)
             .bind(features_json)
             .bind(format_datetime(row.created_at))
             .execute(&mut *transaction)
@@ -2011,6 +2049,9 @@ impl SqliteStore {
                 label_5d,
                 label_20d,
                 label_60d,
+                action_label_5d,
+                action_label_20d,
+                action_label_60d,
                 features_json,
                 created_at
             FROM analytics_formal_dataset_rows
@@ -3170,6 +3211,9 @@ fn map_formal_dataset_row_record(row: SqliteRow) -> Result<FormalDatasetRowRecor
         label_5d: row.try_get::<i64, _>("label_5d")? as u8,
         label_20d: row.try_get::<i64, _>("label_20d")? as u8,
         label_60d: row.try_get::<i64, _>("label_60d")? as u8,
+        action_label_5d: row.try_get::<i64, _>("action_label_5d")? as u8,
+        action_label_20d: row.try_get::<i64, _>("action_label_20d")? as u8,
+        action_label_60d: row.try_get::<i64, _>("action_label_60d")? as u8,
         features,
         created_at: parse_required_datetime(row.try_get::<String, _>("created_at")?.as_str())?,
     })
@@ -3617,6 +3661,9 @@ mod tests {
             label_5d: 0,
             label_20d: 0,
             label_60d: 0,
+            action_label_5d: 0,
+            action_label_20d: 0,
+            action_label_60d: 0,
             features: snapshot.features.clone(),
             created_at,
         };

@@ -275,16 +275,56 @@ No-Go for active_experimental default serving
 - 新数据集在动作级护栏上至少不劣于当前 transitional baseline；
 - 前端也能清楚解释“概率低但系统仍可能偏脆弱”的语义。
 
+### 7.3 2026-06-01 动作窗口标签复核结果
+
+本轮又补做了两版 `action-oriented label` 实验：
+
+1. `us_formal_pit_actionwin_20260531T192253`
+2. `us_formal_pit_actionwinv2_20260531T193705`
+
+对应数据集：
+
+1. `formal_v1_main_1990_daily:20260601Tactionwindow`
+2. `formal_v1_main_1990_daily:20260601Tactionwindowv2`
+
+两者差别：
+
+- 第一版把动作标签延续到整个 `crisis_end`，结果误报拖得过长；
+- 第二版改为 bounded action window，只保留“前置缓冲 + 危机起点后有限验证窗口”，并保留跨角色 fallback 样本但训练降权。
+
+结果：
+
+- `actionwin`：
+  - `timely_warning_rate`: `37.5% -> 12.5%`
+  - `actionable_precision`: `29.6% -> 10.2%`
+  - `longest_false_positive_episode_days`: `9 -> 84`
+- `actionwinv2`：
+  - `timely_warning_rate`: `37.5% -> 12.5%`
+  - `actionable_precision`: `29.6% -> 20.6%`
+  - `longest_false_positive_episode_days`: `9 -> 18`
+
+解释：
+
+- bounded action window 明显比“全危机持续为正例”更合理；
+- 它把 `actionable_precision` 和误报持续天数从失控状态拉回来了；
+- 但 `timely_warning_rate` 仍停在 `12.5%`，说明单头概率模型还是没学到“危机前可执行离场”这件事。
+
+因此本轮结论进一步收敛为：
+
+- 不能再把“改标签”理解成只要换掉 `label_*` 就能解决；
+- formal 主线已经证明：`forward label only` 不够，`full action window` 也不够，`bounded action window` 仍不够；
+- 下一步应该进入 `dual-head / separate actionability layer / episode objective`，而不是继续在同一单头逻辑回归里拧权重和阈值。
+
 ## 8. 准入清单
 
 发布前至少勾选：
 
-- [ ] 数据集来自 `raw observations -> PIT features -> labels`
+- [x] 数据集来自 `raw observations -> PIT features -> labels`
 - [ ] `feature coverage matrix` 已落实到代码和 manifest
 - [x] `scenario catalog` 已配置化
 - [x] `best_effort point-in-time visibility` 已实现到 dataset builder
 - [ ] `strict point-in-time visibility` 已具备足够官方时间戳覆盖
-- [ ] `formal dataset spec` 已生成真实数据集
+- [x] `formal dataset spec` 已生成真实数据集
 - [ ] `candidate release` 的离线指标达标
 - [ ] `rolling audit` 未明显恶化
 - [ ] `rolling audit` 已不再依赖 persisted snapshot bridge

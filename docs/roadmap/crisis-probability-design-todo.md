@@ -142,11 +142,23 @@
 
 新的候选版 `us_formal_pit_scenweight_20260531T184905` 仍未通过护栏。
 
+接着又补做了两轮 `action window` 标签实验：
+
+- `us_formal_pit_actionwin_20260531T192253`
+- `us_formal_pit_actionwinv2_20260531T193705`
+
+其中：
+
+- 第一版把动作窗口持续到整个 `crisis_end`，导致 `actionable_precision` 掉到 `10.2%`、最长纯误报段拉到 `84` 天；
+- 第二版收紧到 bounded action window 后，`actionable_precision` 恢复到 `20.6%`、最长纯误报段降到 `18` 天；
+- 但两版的 `timely_warning_rate` 都仍然只有 `12.5%`，没有解决“危机前可执行提前量不足”的核心问题。
+
 因此可以把当前判断再收敛一步：
 
 - “formal 主线失败” 不再主要是缓存问题；
 - 也不再主要是简单类别失衡问题；
-- 下一个必须做的方向，应是 `action-oriented labels / episode objective / actionability layer`。
+- 也不再主要是“把整套标签直接改成 action window”就能解决的问题；
+- 下一个必须做的方向，应是 `action-oriented labels / episode objective / actionability layer / dual-head fusion`。
 
 因此当前工程状态应理解为：
 

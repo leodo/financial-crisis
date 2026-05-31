@@ -308,6 +308,9 @@ CREATE TABLE IF NOT EXISTS analytics_formal_dataset_rows (
     label_5d INTEGER NOT NULL,
     label_20d INTEGER NOT NULL,
     label_60d INTEGER NOT NULL,
+    action_label_5d INTEGER NOT NULL DEFAULT 0,
+    action_label_20d INTEGER NOT NULL DEFAULT 0,
+    action_label_60d INTEGER NOT NULL DEFAULT 0,
     features_json TEXT NOT NULL,
     created_at TEXT NOT NULL
 );

@@ -1224,8 +1224,10 @@ impl FormalDatasetSummaryOptions {
 struct CrisisScenario {
     scenario_id: String,
     family: String,
+    pre_warning_start: NaiveDate,
     crisis_start: NaiveDate,
     acute_start: Option<NaiveDate>,
+    crisis_end: NaiveDate,
     default_horizon_roles: Vec<u32>,
 }
 
@@ -1338,6 +1340,12 @@ struct FormalDatasetSplitSummary {
     positive_20d_rate: f64,
     positive_60d_count: usize,
     positive_60d_rate: f64,
+    action_positive_5d_count: usize,
+    action_positive_5d_rate: f64,
+    action_positive_20d_count: usize,
+    action_positive_20d_rate: f64,
+    action_positive_60d_count: usize,
+    action_positive_60d_rate: f64,
     avg_coverage_score: f64,
     avg_core_feature_coverage: f64,
     avg_trigger_feature_coverage: f64,
@@ -2127,7 +2135,7 @@ async fn research_formal_dataset_build_main(args: &[String]) -> anyhow::Result<(
                 .find(|row| row.split_name == "evaluation")
                 .map(|row| row.as_of_date),
             row_count: rows.len(),
-            note: "Built from raw observations and point-in-time feature snapshots; replaces the transitional snapshot-only dataset path for formal_v1 mainline work.".to_string(),
+            note: "Built from raw observations and point-in-time feature snapshots; persists both forward crisis labels and action-window labels so formal training can optimize for earlier executable warnings without losing the original crisis-start reference.".to_string(),
         },
         created_at: generated_at,
     };
@@ -2575,7 +2583,7 @@ fn build_main_formal_dataset_rows_with_catalog(
         .filter(|snapshot| snapshot.external_feature_coverage >= 0.70)
         .filter(|snapshot| has_main_dataset_core_features(&snapshot.features))
         .map(|snapshot| {
-            let primary_scenario = forward_scenario(snapshot.as_of_date, &scenarios, 60);
+            let primary_scenario = primary_scenario_for_date(snapshot.as_of_date, &scenarios);
             FormalDatasetRowRecord {
                 dataset_key: dataset_key.to_string(),
                 split_name: String::new(),
@@ -2596,6 +2604,9 @@ fn build_main_formal_dataset_rows_with_catalog(
                 label_5d: forward_crisis_label(snapshot.as_of_date, &scenarios, 5),
                 label_20d: forward_crisis_label(snapshot.as_of_date, &scenarios, 20),
                 label_60d: forward_crisis_label(snapshot.as_of_date, &scenarios, 60),
+                action_label_5d: action_window_label(snapshot.as_of_date, &scenarios, 5),
+                action_label_20d: action_window_label(snapshot.as_of_date, &scenarios, 20),
+                action_label_60d: action_window_label(snapshot.as_of_date, &scenarios, 60),
                 features: snapshot.features.clone(),
                 created_at: Utc::now(),
             }
@@ -2984,8 +2995,10 @@ fn load_label_set_crisis_scenarios(
         .map(|scenario| CrisisScenario {
             scenario_id: scenario.scenario_id.clone(),
             family: scenario_family_code(scenario.family).to_string(),
+            pre_warning_start: scenario.pre_warning_start,
             crisis_start: scenario.crisis_start,
             acute_start: scenario.acute_start,
+            crisis_end: scenario.crisis_end,
             default_horizon_roles: scenario.default_horizon_roles.clone(),
         })
         .collect())
@@ -3016,6 +3029,79 @@ fn label_anchor_date(scenario: &CrisisScenario, horizon_days: u32) -> NaiveDate 
     } else {
         scenario.crisis_start
     }
+}
+
+fn action_window_lead_days(horizon_days: u32) -> i64 {
+    match horizon_days {
+        5 => 10,
+        20 => 35,
+        60 => 90,
+        _ => horizon_days as i64,
+    }
+}
+
+fn action_window_start_date(scenario: &CrisisScenario, horizon_days: u32) -> NaiveDate {
+    let anchor_date = label_anchor_date(scenario, horizon_days);
+    let buffered_start = anchor_date
+        .checked_sub_signed(Duration::days(action_window_lead_days(horizon_days)))
+        .unwrap_or(anchor_date);
+    scenario.pre_warning_start.max(buffered_start)
+}
+
+fn action_window_end_days(horizon_days: u32) -> i64 {
+    match horizon_days {
+        5 => 7,
+        20 => 20,
+        60 => 30,
+        _ => horizon_days as i64,
+    }
+}
+
+fn action_window_end_date(scenario: &CrisisScenario, horizon_days: u32) -> NaiveDate {
+    let anchor_date = label_anchor_date(scenario, horizon_days);
+    let buffered_end = anchor_date
+        .checked_add_signed(Duration::days(action_window_end_days(horizon_days)))
+        .unwrap_or(scenario.crisis_end);
+    scenario.crisis_end.min(buffered_end)
+}
+
+fn action_window_label(
+    as_of_date: NaiveDate,
+    scenarios: &[CrisisScenario],
+    horizon_days: i64,
+) -> u8 {
+    let horizon_days_u32 = horizon_days as u32;
+    scenarios.iter().any(|scenario| {
+        as_of_date >= action_window_start_date(scenario, horizon_days_u32)
+            && as_of_date <= action_window_end_date(scenario, horizon_days_u32)
+    }) as u8
+}
+
+fn scenario_has_action_window(scenario: &CrisisScenario, as_of_date: NaiveDate) -> bool {
+    scenario.default_horizon_roles.iter().any(|horizon_days| {
+        as_of_date >= action_window_start_date(scenario, *horizon_days)
+            && as_of_date <= action_window_end_date(scenario, *horizon_days)
+    })
+}
+
+fn primary_scenario_for_date(
+    as_of_date: NaiveDate,
+    scenarios: &[CrisisScenario],
+) -> Option<CrisisScenario> {
+    scenarios
+        .iter()
+        .filter(|scenario| scenario_has_action_window(scenario, as_of_date))
+        .min_by_key(|scenario| {
+            let distance = (scenario.crisis_start - as_of_date).num_days().abs();
+            let in_crisis_penalty = if as_of_date > scenario.crisis_start {
+                10_000
+            } else {
+                0
+            };
+            in_crisis_penalty + distance
+        })
+        .cloned()
+        .or_else(|| forward_scenario(as_of_date, scenarios, 60))
 }
 
 fn forward_scenario(
@@ -3066,14 +3152,36 @@ struct ProbabilityTrainingRow {
     label_5d: u8,
     label_20d: u8,
     label_60d: u8,
+    action_label_5d: u8,
+    action_label_20d: u8,
+    action_label_60d: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ProbabilityTargetLabelMode {
+    ForwardCrisis,
+    ActionWindow,
+}
+
+impl ProbabilityTargetLabelMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ForwardCrisis => "forward_crisis",
+            Self::ActionWindow => "action_window",
+        }
+    }
 }
 
 impl ProbabilityTrainingRow {
-    fn label_for_horizon(&self, horizon_days: u32) -> f64 {
-        match horizon_days {
-            5 => self.label_5d as f64,
-            20 => self.label_20d as f64,
-            60 => self.label_60d as f64,
+    fn label_for_horizon(&self, label_mode: ProbabilityTargetLabelMode, horizon_days: u32) -> f64 {
+        match (label_mode, horizon_days) {
+            (ProbabilityTargetLabelMode::ForwardCrisis, 5) => self.label_5d as f64,
+            (ProbabilityTargetLabelMode::ForwardCrisis, 20) => self.label_20d as f64,
+            (ProbabilityTargetLabelMode::ForwardCrisis, 60) => self.label_60d as f64,
+            (ProbabilityTargetLabelMode::ActionWindow, 5) => self.action_label_5d as f64,
+            (ProbabilityTargetLabelMode::ActionWindow, 20) => self.action_label_20d as f64,
+            (ProbabilityTargetLabelMode::ActionWindow, 60) => self.action_label_60d as f64,
             _ => 0.0,
         }
     }
@@ -3098,6 +3206,7 @@ struct ProbabilityTrainingInput {
     point_in_time_mode: String,
     feature_set_version: String,
     label_version: String,
+    target_label_mode: ProbabilityTargetLabelMode,
     feature_names: Vec<String>,
     train_rows: Vec<ProbabilityTrainingRow>,
     calibration_rows: Vec<ProbabilityTrainingRow>,
@@ -3120,6 +3229,7 @@ struct PipelineEvaluationReport {
     release_id: String,
     dataset_source: String,
     dataset_label: String,
+    target_label_mode: ProbabilityTargetLabelMode,
     market_scope: String,
     feature_names: Vec<String>,
     training_samples: usize,
@@ -3315,6 +3425,9 @@ async fn load_formal_training_dataset(
             label_5d: row.label_5d,
             label_20d: row.label_20d,
             label_60d: row.label_60d,
+            action_label_5d: row.action_label_5d,
+            action_label_20d: row.action_label_20d,
+            action_label_60d: row.action_label_60d,
         }
     };
 
@@ -3343,6 +3456,17 @@ async fn load_formal_training_dataset(
         );
     }
 
+    let target_label_mode = if training_rows_support_label_mode(
+        &train_rows,
+        &calibration_rows,
+        &evaluation_rows,
+        ProbabilityTargetLabelMode::ActionWindow,
+    ) {
+        ProbabilityTargetLabelMode::ActionWindow
+    } else {
+        ProbabilityTargetLabelMode::ForwardCrisis
+    };
+
     Ok(ProbabilityTrainingInput {
         dataset_source: PipelineDatasetSource::Formal,
         dataset_label: dataset_key,
@@ -3350,6 +3474,7 @@ async fn load_formal_training_dataset(
         point_in_time_mode: dataset.manifest.point_in_time_mode.clone(),
         feature_set_version: dataset.manifest.feature_set_version.clone(),
         label_version: dataset.manifest.label_version.clone(),
+        target_label_mode,
         feature_names: formal_feature_names(),
         train_rows,
         calibration_rows,
@@ -3387,6 +3512,7 @@ async fn load_snapshot_training_dataset(
         point_in_time_mode: "best_effort".to_string(),
         feature_set_version: "feature_prob_meta_v1".to_string(),
         label_version: "label_forward_crisis_v1".to_string(),
+        target_label_mode: ProbabilityTargetLabelMode::ForwardCrisis,
         feature_names: transitional_feature_names(),
         train_rows,
         calibration_rows,
@@ -3479,7 +3605,7 @@ fn render_snapshot_csv(snapshots: &[PredictionSnapshotRecord]) -> String {
 
 fn render_dataset_csv(dataset: &[ProbabilityTrainingRow], feature_names: &[String]) -> String {
     let mut header = String::from(
-        "as_of_date,market_scope,release_id,probability_mode,freshness_status,time_to_risk_bucket,split_name,label_5d,label_20d,label_60d",
+        "as_of_date,market_scope,release_id,probability_mode,freshness_status,time_to_risk_bucket,split_name,label_5d,label_20d,label_60d,action_label_5d,action_label_20d,action_label_60d",
     );
     for feature in feature_names {
         header.push(',');
@@ -3491,7 +3617,7 @@ fn render_dataset_csv(dataset: &[ProbabilityTrainingRow], feature_names: &[Strin
     for row in dataset {
         let _ = write!(
             csv,
-            "{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{}",
             row.as_of_date,
             row.market_scope,
             row.release_id.as_deref().unwrap_or(""),
@@ -3501,7 +3627,10 @@ fn render_dataset_csv(dataset: &[ProbabilityTrainingRow], feature_names: &[Strin
             row.split_name.as_deref().unwrap_or(""),
             row.label_5d,
             row.label_20d,
-            row.label_60d
+            row.label_60d,
+            row.action_label_5d,
+            row.action_label_20d,
+            row.action_label_60d
         );
         for feature in feature_names {
             let value = row.features.get(feature).copied().unwrap_or_default();
@@ -3527,6 +3656,7 @@ async fn train_probability_pipeline(
                 &training.evaluation_rows,
                 &training.feature_names,
                 horizon,
+                training.target_label_mode,
             )
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
@@ -3534,10 +3664,14 @@ async fn train_probability_pipeline(
     let aggregate_evaluation = summarize_bundle_evaluation(&horizons);
     let release_suffix = generated_at.format("%Y%m%dT%H%M%S").to_string();
     let release_id = format!("{}_{}", options.release_prefix, release_suffix);
+    let label_mode_note = match training.target_label_mode {
+        ProbabilityTargetLabelMode::ForwardCrisis => "forward-crisis labels",
+        ProbabilityTargetLabelMode::ActionWindow => "action-window labels",
+    };
     let bundle_note = match training.dataset_source {
         PipelineDatasetSource::Formal => format!(
-            "Formal bundle trained from persisted formal dataset {} built from raw observations -> feature snapshots -> forward crisis labels, with positive-class and scenario-aware weighting to favor earlier actionable warnings under severe class imbalance.",
-            training.dataset_label
+            "Formal bundle trained from persisted formal dataset {} built from raw observations -> feature snapshots -> scenario labels; training target uses {} with positive-class and scenario-aware weighting to favor earlier actionable warnings under severe class imbalance.",
+            training.dataset_label, label_mode_note
         ),
         PipelineDatasetSource::Snapshot => {
             "Transitional formal bundle trained from persisted heuristic prediction snapshots, calibrated with chronological holdout slices, and reweighted toward positive warning windows under severe class imbalance.".to_string()
@@ -3607,6 +3741,7 @@ async fn train_probability_pipeline(
         release_id: release_id.clone(),
         dataset_source: training.dataset_source.as_str().to_string(),
         dataset_label: training.dataset_label.clone(),
+        target_label_mode: training.target_label_mode,
         market_scope: release.manifest.market_scope.clone(),
         feature_names: training.feature_names.clone(),
         training_samples: training.train_rows.len(),
@@ -3649,6 +3784,7 @@ fn build_pipeline_dataset_rows(
         .iter()
         .map(|snapshot| {
             let features = pipeline_features_from_snapshot(snapshot);
+            let primary_scenario = primary_scenario_for_date(snapshot.as_of_date, &scenarios);
             ProbabilityTrainingRow {
                 as_of_date: snapshot.as_of_date,
                 market_scope: snapshot.market_scope.clone(),
@@ -3658,15 +3794,30 @@ fn build_pipeline_dataset_rows(
                 time_to_risk_bucket: Some(snapshot.time_to_risk_bucket.clone()),
                 split_name: None,
                 features,
-                primary_scenario_id: None,
-                scenario_family: None,
-                days_to_primary_crisis_start: None,
-                primary_scenario_supports_5d: false,
-                primary_scenario_supports_20d: false,
-                primary_scenario_supports_60d: false,
+                primary_scenario_id: primary_scenario
+                    .as_ref()
+                    .map(|scenario| scenario.scenario_id.clone()),
+                scenario_family: primary_scenario
+                    .as_ref()
+                    .map(|scenario| scenario.family.clone()),
+                days_to_primary_crisis_start: primary_scenario
+                    .as_ref()
+                    .map(|scenario| (scenario.crisis_start - snapshot.as_of_date).num_days()),
+                primary_scenario_supports_5d: primary_scenario
+                    .as_ref()
+                    .is_some_and(|scenario| scenario_supports_horizon(scenario, 5)),
+                primary_scenario_supports_20d: primary_scenario
+                    .as_ref()
+                    .is_some_and(|scenario| scenario_supports_horizon(scenario, 20)),
+                primary_scenario_supports_60d: primary_scenario
+                    .as_ref()
+                    .is_some_and(|scenario| scenario_supports_horizon(scenario, 60)),
                 label_5d: forward_crisis_label(snapshot.as_of_date, &scenarios, 5),
                 label_20d: forward_crisis_label(snapshot.as_of_date, &scenarios, 20),
                 label_60d: forward_crisis_label(snapshot.as_of_date, &scenarios, 60),
+                action_label_5d: action_window_label(snapshot.as_of_date, &scenarios, 5),
+                action_label_20d: action_window_label(snapshot.as_of_date, &scenarios, 20),
+                action_label_60d: action_window_label(snapshot.as_of_date, &scenarios, 60),
             }
         })
         .collect::<Vec<_>>();
@@ -3777,25 +3928,45 @@ fn chronological_split_bounds(dataset_len: usize) -> anyhow::Result<(usize, usiz
     Ok((train_end, calibration_end))
 }
 
+fn training_rows_support_label_mode(
+    train_rows: &[ProbabilityTrainingRow],
+    calibration_rows: &[ProbabilityTrainingRow],
+    evaluation_rows: &[ProbabilityTrainingRow],
+    label_mode: ProbabilityTargetLabelMode,
+) -> bool {
+    [5_u32, 20_u32, 60_u32].into_iter().all(|horizon_days| {
+        train_rows
+            .iter()
+            .any(|row| row.label_for_horizon(label_mode, horizon_days) > 0.0)
+            && calibration_rows
+                .iter()
+                .any(|row| row.label_for_horizon(label_mode, horizon_days) > 0.0)
+            && evaluation_rows
+                .iter()
+                .any(|row| row.label_for_horizon(label_mode, horizon_days) > 0.0)
+    })
+}
+
 fn train_horizon_bundle(
     train_rows: &[ProbabilityTrainingRow],
     calibration_rows: &[ProbabilityTrainingRow],
     evaluation_rows: &[ProbabilityTrainingRow],
     feature_names: &[String],
     horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
 ) -> anyhow::Result<ProbabilityHorizonBundle> {
-    ensure_positive_labels(train_rows, horizon_days, "train")?;
-    ensure_positive_labels(calibration_rows, horizon_days, "calibration")?;
-    ensure_positive_labels(evaluation_rows, horizon_days, "evaluation")?;
+    ensure_positive_labels(train_rows, horizon_days, "train", label_mode)?;
+    ensure_positive_labels(calibration_rows, horizon_days, "calibration", label_mode)?;
+    ensure_positive_labels(evaluation_rows, horizon_days, "evaluation", label_mode)?;
 
-    let raw_model = fit_logistic_model(train_rows, feature_names, horizon_days);
+    let raw_model = fit_logistic_model(train_rows, feature_names, horizon_days, label_mode);
     let calibration_inputs = calibration_rows
         .iter()
         .map(|row| score_logistic_model_for_dataset(&raw_model, row))
         .collect::<Vec<_>>();
     let calibration_labels = calibration_rows
         .iter()
-        .map(|row| row.label_for_horizon(horizon_days))
+        .map(|row| row.label_for_horizon(label_mode, horizon_days))
         .collect::<Vec<_>>();
     let calibration = fit_platt_calibration(&calibration_inputs, &calibration_labels);
     let evaluation_probabilities = evaluation_rows
@@ -3807,7 +3978,7 @@ fn train_horizon_bundle(
         .collect::<Vec<_>>();
     let evaluation_labels = evaluation_rows
         .iter()
-        .map(|row| row.label_for_horizon(horizon_days))
+        .map(|row| row.label_for_horizon(label_mode, horizon_days))
         .collect::<Vec<_>>();
     let evaluation = evaluate_probabilities(&evaluation_probabilities, &evaluation_labels);
 
@@ -3823,13 +3994,17 @@ fn ensure_positive_labels(
     rows: &[ProbabilityTrainingRow],
     horizon_days: u32,
     split_name: &str,
+    label_mode: ProbabilityTargetLabelMode,
 ) -> anyhow::Result<()> {
     let positives = rows
         .iter()
-        .filter(|row| row.label_for_horizon(horizon_days) > 0.0)
+        .filter(|row| row.label_for_horizon(label_mode, horizon_days) > 0.0)
         .count();
     if positives == 0 {
-        bail!("no positive {horizon_days}d labels found in the {split_name} split");
+        bail!(
+            "no positive {horizon_days}d {} labels found in the {split_name} split",
+            label_mode.as_str()
+        );
     }
     Ok(())
 }
@@ -3838,19 +4013,20 @@ fn fit_logistic_model(
     rows: &[ProbabilityTrainingRow],
     feature_names: &[String],
     horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
 ) -> LogisticProbabilityModel {
     let feature_stats = feature_names
         .iter()
         .map(|feature| build_feature_stat(rows, feature))
         .collect::<Vec<_>>();
-    let positive_class_weight = horizon_positive_class_weight(rows, horizon_days);
-    let mut intercept = initial_intercept(rows, horizon_days, positive_class_weight);
+    let positive_class_weight = horizon_positive_class_weight(rows, horizon_days, label_mode);
+    let mut intercept = initial_intercept(rows, horizon_days, positive_class_weight, label_mode);
     let mut weights = vec![0.0; feature_names.len()];
     let learning_rate = 0.25;
     let l2 = 0.01;
     let sample_weight_sum = rows
         .iter()
-        .map(|row| logistic_sample_weight(row, horizon_days, positive_class_weight))
+        .map(|row| logistic_sample_weight(row, horizon_days, positive_class_weight, label_mode))
         .sum::<f64>()
         .max(1.0);
 
@@ -3860,8 +4036,9 @@ fn fit_logistic_model(
         for row in rows {
             let normalized = normalized_features(row, &feature_stats);
             let prediction = sigmoid(intercept + dot(&weights, &normalized));
-            let label = row.label_for_horizon(horizon_days);
-            let sample_weight = logistic_sample_weight(row, horizon_days, positive_class_weight);
+            let label = row.label_for_horizon(label_mode, horizon_days);
+            let sample_weight =
+                logistic_sample_weight(row, horizon_days, positive_class_weight, label_mode);
             let error = (prediction - label) * sample_weight;
             intercept_gradient += error;
             for (index, value) in normalized.iter().enumerate() {
@@ -3918,17 +4095,18 @@ fn initial_intercept(
     rows: &[ProbabilityTrainingRow],
     horizon_days: u32,
     positive_class_weight: f64,
+    label_mode: ProbabilityTargetLabelMode,
 ) -> f64 {
     let weighted_positive = rows
         .iter()
         .map(|row| {
-            let label = row.label_for_horizon(horizon_days);
-            logistic_sample_weight(row, horizon_days, positive_class_weight) * label
+            let label = row.label_for_horizon(label_mode, horizon_days);
+            logistic_sample_weight(row, horizon_days, positive_class_weight, label_mode) * label
         })
         .sum::<f64>();
     let weighted_total = rows
         .iter()
-        .map(|row| logistic_sample_weight(row, horizon_days, positive_class_weight))
+        .map(|row| logistic_sample_weight(row, horizon_days, positive_class_weight, label_mode))
         .sum::<f64>()
         .max(1.0);
     let positive_rate = weighted_positive / weighted_total;
@@ -3936,10 +4114,14 @@ fn initial_intercept(
     (clipped / (1.0 - clipped)).ln()
 }
 
-fn horizon_positive_class_weight(rows: &[ProbabilityTrainingRow], horizon_days: u32) -> f64 {
+fn horizon_positive_class_weight(
+    rows: &[ProbabilityTrainingRow],
+    horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
+) -> f64 {
     let positive_count = rows
         .iter()
-        .filter(|row| row.label_for_horizon(horizon_days) > 0.0)
+        .filter(|row| row.label_for_horizon(label_mode, horizon_days) > 0.0)
         .count();
     let negative_count = rows.len().saturating_sub(positive_count);
     if positive_count == 0 || negative_count == 0 {
@@ -3960,8 +4142,9 @@ fn logistic_sample_weight(
     row: &ProbabilityTrainingRow,
     horizon_days: u32,
     positive_class_weight: f64,
+    label_mode: ProbabilityTargetLabelMode,
 ) -> f64 {
-    let label = row.label_for_horizon(horizon_days);
+    let label = row.label_for_horizon(label_mode, horizon_days);
     if label > 0.0 {
         (positive_class_weight * positive_sample_action_weight(row, horizon_days)).clamp(1.0, 36.0)
     } else {
@@ -5505,11 +5688,26 @@ fn summarize_formal_dataset_splits(
                 split_name: split_name.to_string(),
                 row_count: split_rows.len(),
                 positive_5d_count: split_rows.iter().filter(|row| row.label_5d > 0).count(),
-                positive_5d_rate: round6(label_rate(&split_rows, 5)),
+                positive_5d_rate: round6(forward_label_rate(&split_rows, 5)),
                 positive_20d_count: split_rows.iter().filter(|row| row.label_20d > 0).count(),
-                positive_20d_rate: round6(label_rate(&split_rows, 20)),
+                positive_20d_rate: round6(forward_label_rate(&split_rows, 20)),
                 positive_60d_count: split_rows.iter().filter(|row| row.label_60d > 0).count(),
-                positive_60d_rate: round6(label_rate(&split_rows, 60)),
+                positive_60d_rate: round6(forward_label_rate(&split_rows, 60)),
+                action_positive_5d_count: split_rows
+                    .iter()
+                    .filter(|row| row.action_label_5d > 0)
+                    .count(),
+                action_positive_5d_rate: round6(action_label_rate(&split_rows, 5)),
+                action_positive_20d_count: split_rows
+                    .iter()
+                    .filter(|row| row.action_label_20d > 0)
+                    .count(),
+                action_positive_20d_rate: round6(action_label_rate(&split_rows, 20)),
+                action_positive_60d_count: split_rows
+                    .iter()
+                    .filter(|row| row.action_label_60d > 0)
+                    .count(),
+                action_positive_60d_rate: round6(action_label_rate(&split_rows, 60)),
                 avg_coverage_score: round3(avg_metric(&split_rows, |row| row.coverage_score)),
                 avg_core_feature_coverage: round3(avg_metric(&split_rows, |row| {
                     row.core_feature_coverage
@@ -5613,8 +5811,8 @@ fn build_formal_dataset_recommendation(
         return "样本量仍偏小，先继续补历史数据，再用这版数据集训练正式候选版。".to_string();
     }
     if let Some(evaluation) = evaluation {
-        if evaluation.positive_20d_count < 10 || evaluation.positive_60d_count < 10 {
-            return "evaluation 正样本仍偏少，当前更适合作研究版比较，不适合直接给正式模型做上线判断。".to_string();
+        if evaluation.action_positive_20d_count < 10 || evaluation.action_positive_60d_count < 10 {
+            return "evaluation 的 action-window 正样本仍偏少，当前更适合作研究版比较，不适合直接给正式模型做上线判断。".to_string();
         }
         if evaluation.avg_coverage_score < 0.85 {
             return "evaluation 覆盖率偏低，应先补可见性/覆盖率，再看训练结果。".to_string();
@@ -5623,13 +5821,26 @@ fn build_formal_dataset_recommendation(
     "样本量、split 和覆盖率已具备基础研究条件，可以进入正式训练与 release review。".to_string()
 }
 
-fn label_rate(rows: &[&FormalDatasetRowRecord], horizon_days: u32) -> f64 {
+fn forward_label_rate(rows: &[&FormalDatasetRowRecord], horizon_days: u32) -> f64 {
     let positives = rows
         .iter()
         .filter(|row| match horizon_days {
             5 => row.label_5d > 0,
             20 => row.label_20d > 0,
             60 => row.label_60d > 0,
+            _ => false,
+        })
+        .count();
+    positives as f64 / rows.len() as f64
+}
+
+fn action_label_rate(rows: &[&FormalDatasetRowRecord], horizon_days: u32) -> f64 {
+    let positives = rows
+        .iter()
+        .filter(|row| match horizon_days {
+            5 => row.action_label_5d > 0,
+            20 => row.action_label_20d > 0,
+            60 => row.action_label_60d > 0,
             _ => false,
         })
         .count();
@@ -5697,15 +5908,18 @@ fn render_formal_dataset_summary_markdown(summary: &FormalDatasetSummaryEnvelope
     let _ = writeln!(markdown);
     let _ = writeln!(markdown, "## Split Summary");
     let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "| Split | Rows | 5d+ | 20d+ | 60d+ | Avg Coverage | Core | Trigger | External | Scenarios |");
     let _ = writeln!(
         markdown,
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+        "| Split | Rows | Forward 5d+ | Forward 20d+ | Forward 60d+ | Action 5d+ | Action 20d+ | Action 60d+ | Avg Coverage | Core | Trigger | External | Scenarios |"
+    );
+    let _ = writeln!(
+        markdown,
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
     );
     for split in &summary.split_summaries {
         let _ = writeln!(
             markdown,
-            "| {} | {} | {} ({}) | {} ({}) | {} ({}) | {:.1}% | {:.1}% | {:.1}% | {:.1}% | {} |",
+            "| {} | {} | {} ({}) | {} ({}) | {} ({}) | {} ({}) | {} ({}) | {} ({}) | {:.1}% | {:.1}% | {:.1}% | {:.1}% | {} |",
             split.split_name,
             split.row_count,
             split.positive_5d_count,
@@ -5714,6 +5928,12 @@ fn render_formal_dataset_summary_markdown(summary: &FormalDatasetSummaryEnvelope
             format_pct(split.positive_20d_rate),
             split.positive_60d_count,
             format_pct(split.positive_60d_rate),
+            split.action_positive_5d_count,
+            format_pct(split.action_positive_5d_rate),
+            split.action_positive_20d_count,
+            format_pct(split.action_positive_20d_rate),
+            split.action_positive_60d_count,
+            format_pct(split.action_positive_60d_rate),
             split.avg_coverage_score * 100.0,
             split.avg_core_feature_coverage * 100.0,
             split.avg_trigger_feature_coverage * 100.0,
@@ -5765,7 +5985,7 @@ fn print_formal_dataset_summary(summary: &FormalDatasetSummaryEnvelope) {
     );
     for split in &summary.split_summaries {
         println!(
-            "  split={} rows={} 5d+={}({}) 20d+={}({}) 60d+={}({}) avg_coverage={:.1}%",
+            "  split={} rows={} forward[5d={}({}) 20d={}({}) 60d={}({})] action[5d={}({}) 20d={}({}) 60d={}({})] avg_coverage={:.1}%",
             split.split_name,
             split.row_count,
             split.positive_5d_count,
@@ -5774,6 +5994,12 @@ fn print_formal_dataset_summary(summary: &FormalDatasetSummaryEnvelope) {
             format_pct(split.positive_20d_rate),
             split.positive_60d_count,
             format_pct(split.positive_60d_rate),
+            split.action_positive_5d_count,
+            format_pct(split.action_positive_5d_rate),
+            split.action_positive_20d_count,
+            format_pct(split.action_positive_20d_rate),
+            split.action_positive_60d_count,
+            format_pct(split.action_positive_60d_rate),
             split.avg_coverage_score * 100.0
         );
     }
@@ -6261,9 +6487,10 @@ mod tests {
     use fc_domain::{Frequency, Observation};
 
     use super::{
-        forward_crisis_label, observation_is_visible_for_date, positive_sample_action_weight,
-        AuditExportOptions, CrisisScenario, FeatureSnapshotBuildOptions, FormalDatasetBuildOptions,
-        FormalDatasetSummaryOptions, PipelineDatasetSource, PipelineTrainOptions, PointInTimeMode,
+        action_window_label, forward_crisis_label, observation_is_visible_for_date,
+        positive_sample_action_weight, AuditExportOptions, CrisisScenario,
+        FeatureSnapshotBuildOptions, FormalDatasetBuildOptions, FormalDatasetSummaryOptions,
+        PipelineDatasetSource, PipelineTrainOptions, PointInTimeMode,
         PredictionSnapshotQueryOptions, ProbabilityTrainingRow, RefreshLatestOptions,
         ReleasePublishOptions, ReleaseReviewOptions, ReleaseSwitchOptions,
     };
@@ -6560,15 +6787,19 @@ mod tests {
         let acute_only = CrisisScenario {
             scenario_id: "acute".to_string(),
             family: "acute_market_liquidity_crash".to_string(),
+            pre_warning_start: NaiveDate::from_ymd_opt(2020, 1, 24).unwrap(),
             crisis_start: NaiveDate::from_ymd_opt(2020, 2, 24).unwrap(),
             acute_start: Some(NaiveDate::from_ymd_opt(2020, 3, 9).unwrap()),
+            crisis_end: NaiveDate::from_ymd_opt(2020, 4, 30).unwrap(),
             default_horizon_roles: vec![5, 20],
         };
         let systemic_only = CrisisScenario {
             scenario_id: "systemic".to_string(),
             family: "systemic_credit_banking_crisis".to_string(),
+            pre_warning_start: NaiveDate::from_ymd_opt(2023, 2, 1).unwrap(),
             crisis_start: NaiveDate::from_ymd_opt(2023, 3, 8).unwrap(),
             acute_start: Some(NaiveDate::from_ymd_opt(2023, 3, 10).unwrap()),
+            crisis_end: NaiveDate::from_ymd_opt(2023, 5, 15).unwrap(),
             default_horizon_roles: vec![20, 60],
         };
 
@@ -6607,6 +6838,61 @@ mod tests {
     }
 
     #[test]
+    fn action_window_label_extends_before_crisis_start_and_stays_near_onset() {
+        let systemic = CrisisScenario {
+            scenario_id: "systemic".to_string(),
+            family: "systemic_credit_banking_crisis".to_string(),
+            pre_warning_start: NaiveDate::from_ymd_opt(2007, 2, 27).unwrap(),
+            crisis_start: NaiveDate::from_ymd_opt(2007, 8, 1).unwrap(),
+            acute_start: Some(NaiveDate::from_ymd_opt(2008, 9, 15).unwrap()),
+            crisis_end: NaiveDate::from_ymd_opt(2009, 6, 30).unwrap(),
+            default_horizon_roles: vec![20, 60],
+        };
+        let acute = CrisisScenario {
+            scenario_id: "acute".to_string(),
+            family: "acute_market_liquidity_crash".to_string(),
+            pre_warning_start: NaiveDate::from_ymd_opt(2020, 1, 24).unwrap(),
+            crisis_start: NaiveDate::from_ymd_opt(2020, 2, 24).unwrap(),
+            acute_start: Some(NaiveDate::from_ymd_opt(2020, 3, 9).unwrap()),
+            crisis_end: NaiveDate::from_ymd_opt(2020, 4, 30).unwrap(),
+            default_horizon_roles: vec![5, 20],
+        };
+
+        assert_eq!(
+            action_window_label(
+                NaiveDate::from_ymd_opt(2007, 5, 10).unwrap(),
+                std::slice::from_ref(&systemic),
+                60,
+            ),
+            1
+        );
+        assert_eq!(
+            action_window_label(
+                NaiveDate::from_ymd_opt(2020, 2, 28).unwrap(),
+                std::slice::from_ref(&acute),
+                5,
+            ),
+            1
+        );
+        assert_eq!(
+            action_window_label(
+                NaiveDate::from_ymd_opt(2007, 8, 15).unwrap(),
+                std::slice::from_ref(&systemic),
+                20,
+            ),
+            1
+        );
+        assert_eq!(
+            action_window_label(
+                NaiveDate::from_ymd_opt(2007, 9, 15).unwrap(),
+                std::slice::from_ref(&systemic),
+                20,
+            ),
+            0
+        );
+    }
+
+    #[test]
     fn positive_sample_action_weight_prefers_early_role_aligned_systemic_samples_for_60d() {
         let aligned = ProbabilityTrainingRow {
             as_of_date: NaiveDate::from_ymd_opt(2007, 6, 5).unwrap(),
@@ -6626,6 +6912,9 @@ mod tests {
             label_5d: 0,
             label_20d: 0,
             label_60d: 1,
+            action_label_5d: 0,
+            action_label_20d: 1,
+            action_label_60d: 1,
         };
         let misaligned = ProbabilityTrainingRow {
             as_of_date: NaiveDate::from_ymd_opt(2020, 2, 20).unwrap(),
@@ -6645,6 +6934,9 @@ mod tests {
             label_5d: 1,
             label_20d: 1,
             label_60d: 1,
+            action_label_5d: 1,
+            action_label_20d: 1,
+            action_label_60d: 0,
         };
 
         assert!(

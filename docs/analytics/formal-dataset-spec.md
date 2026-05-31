@@ -47,6 +47,9 @@ as_of_date = 每个交易日一行
 label_5d
 label_20d
 label_60d
+action_label_5d
+action_label_20d
+action_label_60d
 ```
 
 ## 5. 元数据列
@@ -115,6 +118,9 @@ historical_analog_distance_top1
 label_5d
 label_20d
 label_60d
+action_label_5d
+action_label_20d
+action_label_60d
 primary_scenario_id nullable
 scenario_family nullable
 ```
@@ -124,6 +130,9 @@ scenario_family nullable
 - 标签来自 [危机场景目录](scenario-catalog.md)
 - 默认 `label_set = formal_label_v1_main`
 - 若构建扩展包，使用 `label_set = formal_label_v1_ext_acute`
+- `label_*` 继续保留“未来 H 日进入危机起点”的前瞻口径，供审计和历史对照使用
+- `action_label_*` 用 bounded action window 口径，供 formal 主线研究“提前动作”目标使用
+- 当前研究版已验证：把整套 formal bundle 直接切到 `action_label_*` 仍不足以替代线上 transitional baseline，因此这组标签要继续保留，但不能直接视为最终答案
 
 ## 8. 样本纳入规则
 
