@@ -295,6 +295,12 @@ pub struct AssessmentHistoryPoint {
     pub p_5d: f64,
     pub p_20d: f64,
     pub p_60d: f64,
+    #[serde(default)]
+    pub raw_p_5d: Option<f64>,
+    #[serde(default)]
+    pub raw_p_20d: Option<f64>,
+    #[serde(default)]
+    pub raw_p_60d: Option<f64>,
     pub posture: DecisionPosture,
     pub time_to_risk_bucket: TimeToRiskBucket,
     pub external_shock_score: f64,

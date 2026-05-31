@@ -270,11 +270,18 @@
 - 概率层：见 [危机概率引擎设计](../analytics/probability-engine-design.md)
 - 发布链路：见 [模型发布与在线评分设计](../analytics/model-release-and-serving-design.md)
 
-## 12. 还需要补什么
+## 12. 设计补齐后的下一步
 
-在进入下一轮 formal 模型开发前，建议再补两类实现级文档或清单：
+截至 `2026-05-31`，阻塞正式模型主线的设计文档已经补到以下几份：
 
-1. `feature coverage matrix`
-   - 每个核心特征的最早日期、频率、point-in-time 能力、是否可用于 `1987`
-2. `scenario catalog`
-   - 明确 `1987 / 1998 / 2000 / 2011 / 2022` 的标签归类、窗口定义和证据来源
+1. [特征覆盖矩阵](../analytics/feature-coverage-matrix.md)
+2. [危机场景目录](../analytics/scenario-catalog.md)
+3. [Point-in-Time 可见性规范](../data/point-in-time-visibility-spec.md)
+4. [正式训练数据集规格](../analytics/formal-dataset-spec.md)
+5. [正式模型准入与 Go/No-Go](../analytics/model-go-no-go.md)
+
+这意味着：
+
+- 外围工程可以继续做；
+- 正式模型主线也可以进入实现；
+- 但实现时必须严格按这些设计落库、回测和发布，不能再回到“先写代码再补定义”的方式。

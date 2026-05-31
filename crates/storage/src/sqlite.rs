@@ -2,7 +2,8 @@ use std::{fs, path::Path, str::FromStr};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use fc_domain::{
-    ActiveModelPointer, AlertEvent, AlertStatus, AlertType, Frequency, Indicator,
+    ActiveModelPointer, AlertEvent, AlertStatus, AlertType, FeatureSnapshotRecord,
+    FormalDatasetManifest, FormalDatasetRecord, FormalDatasetRowRecord, Frequency, Indicator,
     ModelReleaseManifest, ModelReleaseRecord, Observation, PredictionSnapshotRecord, RiskDimension,
     RiskDirection, RiskLevel,
 };
@@ -778,7 +779,7 @@ impl SqliteStore {
         for seed in fred_indicator_seeds() {
             let indicator = seed.indicator();
             self.upsert_indicator(&indicator).await?;
-            self.upsert_fred_mapping(&indicator.indicator_id, seed.external_code)
+            self.upsert_fred_mapping(&indicator.indicator_id, seed.external_code, seed.priority)
                 .await?;
         }
         for seed in boj_indicator_seeds() {
@@ -1528,6 +1529,518 @@ impl SqliteStore {
         rows.into_iter().map(map_prediction_snapshot_row).collect()
     }
 
+    pub async fn upsert_feature_snapshots(
+        &self,
+        snapshots: &[FeatureSnapshotRecord],
+    ) -> Result<(), StorageError> {
+        let mut transaction = self.pool.begin().await?;
+        for snapshot in snapshots {
+            let snapshot_id = feature_snapshot_id(
+                &snapshot.entity_id,
+                &snapshot.market_scope,
+                snapshot.as_of_date,
+                &snapshot.feature_set_version,
+                &snapshot.point_in_time_mode,
+            );
+            let features_json = serde_json::to_string(&snapshot.features)
+                .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+            sqlx::query(
+                r#"
+                INSERT INTO analytics_feature_snapshots (
+                    snapshot_id,
+                    entity_id,
+                    market_scope,
+                    as_of_date,
+                    feature_set_version,
+                    point_in_time_mode,
+                    visibility_status,
+                    latest_visible_at,
+                    coverage_score,
+                    core_feature_coverage,
+                    trigger_feature_coverage,
+                    external_feature_coverage,
+                    feature_count,
+                    features_json,
+                    created_at
+                )
+                VALUES (
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15
+                )
+                ON CONFLICT(snapshot_id) DO UPDATE SET
+                    visibility_status = excluded.visibility_status,
+                    latest_visible_at = excluded.latest_visible_at,
+                    coverage_score = excluded.coverage_score,
+                    core_feature_coverage = excluded.core_feature_coverage,
+                    trigger_feature_coverage = excluded.trigger_feature_coverage,
+                    external_feature_coverage = excluded.external_feature_coverage,
+                    feature_count = excluded.feature_count,
+                    features_json = excluded.features_json,
+                    created_at = excluded.created_at
+                "#,
+            )
+            .bind(snapshot_id)
+            .bind(&snapshot.entity_id)
+            .bind(&snapshot.market_scope)
+            .bind(snapshot.as_of_date.to_string())
+            .bind(&snapshot.feature_set_version)
+            .bind(&snapshot.point_in_time_mode)
+            .bind(&snapshot.visibility_status)
+            .bind(snapshot.latest_visible_at.map(format_datetime))
+            .bind(snapshot.coverage_score)
+            .bind(snapshot.core_feature_coverage)
+            .bind(snapshot.trigger_feature_coverage)
+            .bind(snapshot.external_feature_coverage)
+            .bind(snapshot.feature_count as i64)
+            .bind(features_json)
+            .bind(format_datetime(snapshot.created_at))
+            .execute(&mut *transaction)
+            .await?;
+        }
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn list_feature_snapshots(
+        &self,
+        market_scope: Option<&str>,
+        feature_set_version: Option<&str>,
+        from: Option<NaiveDate>,
+        to: Option<NaiveDate>,
+        limit: Option<usize>,
+    ) -> Result<Vec<FeatureSnapshotRecord>, StorageError> {
+        let mut query = String::from(
+            r#"
+            SELECT
+                entity_id,
+                market_scope,
+                as_of_date,
+                feature_set_version,
+                point_in_time_mode,
+                visibility_status,
+                latest_visible_at,
+                coverage_score,
+                core_feature_coverage,
+                trigger_feature_coverage,
+                external_feature_coverage,
+                feature_count,
+                features_json,
+                created_at
+            FROM analytics_feature_snapshots
+            WHERE 1 = 1
+            "#,
+        );
+        let mut param_index = 1;
+        if market_scope.is_some() {
+            query.push_str(&format!(" AND market_scope = ?{param_index}"));
+            param_index += 1;
+        }
+        if feature_set_version.is_some() {
+            query.push_str(&format!(" AND feature_set_version = ?{param_index}"));
+            param_index += 1;
+        }
+        if from.is_some() {
+            query.push_str(&format!(" AND as_of_date >= ?{param_index}"));
+            param_index += 1;
+        }
+        if to.is_some() {
+            query.push_str(&format!(" AND as_of_date <= ?{param_index}"));
+            param_index += 1;
+        }
+        query.push_str(" ORDER BY as_of_date DESC, created_at DESC");
+        if limit.is_some() {
+            query.push_str(&format!(" LIMIT ?{param_index}"));
+        }
+
+        let mut statement = sqlx::query(&query);
+        if let Some(scope) = market_scope {
+            statement = statement.bind(scope);
+        }
+        if let Some(version) = feature_set_version {
+            statement = statement.bind(version);
+        }
+        if let Some(start_date) = from {
+            statement = statement.bind(start_date.to_string());
+        }
+        if let Some(end_date) = to {
+            statement = statement.bind(end_date.to_string());
+        }
+        if let Some(limit) = limit {
+            statement = statement.bind(limit as i64);
+        }
+
+        let rows = statement.fetch_all(&self.pool).await?;
+        rows.into_iter().map(map_feature_snapshot_row).collect()
+    }
+
+    pub async fn list_feature_snapshots_for_mode(
+        &self,
+        market_scope: &str,
+        feature_set_version: &str,
+        point_in_time_mode: &str,
+        from: Option<NaiveDate>,
+        to: Option<NaiveDate>,
+    ) -> Result<Vec<FeatureSnapshotRecord>, StorageError> {
+        let mut query = String::from(
+            r#"
+            SELECT
+                entity_id,
+                market_scope,
+                as_of_date,
+                feature_set_version,
+                point_in_time_mode,
+                visibility_status,
+                latest_visible_at,
+                coverage_score,
+                core_feature_coverage,
+                trigger_feature_coverage,
+                external_feature_coverage,
+                feature_count,
+                features_json,
+                created_at
+            FROM analytics_feature_snapshots
+            WHERE market_scope = ?1
+              AND feature_set_version = ?2
+              AND point_in_time_mode = ?3
+            "#,
+        );
+        let mut param_index = 4;
+        if from.is_some() {
+            query.push_str(&format!(" AND as_of_date >= ?{param_index}"));
+            param_index += 1;
+        }
+        if to.is_some() {
+            query.push_str(&format!(" AND as_of_date <= ?{param_index}"));
+        }
+        query.push_str(" ORDER BY as_of_date ASC, created_at DESC");
+
+        let mut statement = sqlx::query(&query)
+            .bind(market_scope)
+            .bind(feature_set_version)
+            .bind(point_in_time_mode);
+        if let Some(start_date) = from {
+            statement = statement.bind(start_date.to_string());
+        }
+        if let Some(end_date) = to {
+            statement = statement.bind(end_date.to_string());
+        }
+
+        let rows = statement.fetch_all(&self.pool).await?;
+        rows.into_iter().map(map_feature_snapshot_row).collect()
+    }
+
+    pub async fn upsert_formal_dataset(
+        &self,
+        dataset: &FormalDatasetRecord,
+    ) -> Result<(), StorageError> {
+        let dataset_key = formal_dataset_key(
+            &dataset.manifest.dataset_id,
+            &dataset.manifest.dataset_version,
+        );
+        let manifest_json = serde_json::to_string(&dataset.manifest)
+            .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+        sqlx::query(
+            r#"
+            INSERT INTO analytics_formal_datasets (
+                dataset_key,
+                dataset_id,
+                dataset_version,
+                market_scope,
+                feature_set_version,
+                label_version,
+                scenario_set_version,
+                point_in_time_mode,
+                from_date,
+                to_date,
+                train_end_date,
+                calibration_end_date,
+                evaluation_start_date,
+                row_count,
+                note,
+                manifest_json,
+                created_at
+            )
+            VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17
+            )
+            ON CONFLICT(dataset_key) DO UPDATE SET
+                feature_set_version = excluded.feature_set_version,
+                label_version = excluded.label_version,
+                scenario_set_version = excluded.scenario_set_version,
+                point_in_time_mode = excluded.point_in_time_mode,
+                from_date = excluded.from_date,
+                to_date = excluded.to_date,
+                train_end_date = excluded.train_end_date,
+                calibration_end_date = excluded.calibration_end_date,
+                evaluation_start_date = excluded.evaluation_start_date,
+                row_count = excluded.row_count,
+                note = excluded.note,
+                manifest_json = excluded.manifest_json,
+                created_at = excluded.created_at
+            "#,
+        )
+        .bind(&dataset_key)
+        .bind(&dataset.manifest.dataset_id)
+        .bind(&dataset.manifest.dataset_version)
+        .bind(&dataset.manifest.market_scope)
+        .bind(&dataset.manifest.feature_set_version)
+        .bind(&dataset.manifest.label_version)
+        .bind(&dataset.manifest.scenario_set_version)
+        .bind(&dataset.manifest.point_in_time_mode)
+        .bind(dataset.manifest.from_date.map(|value| value.to_string()))
+        .bind(dataset.manifest.to_date.map(|value| value.to_string()))
+        .bind(
+            dataset
+                .manifest
+                .train_end_date
+                .map(|value| value.to_string()),
+        )
+        .bind(
+            dataset
+                .manifest
+                .calibration_end_date
+                .map(|value| value.to_string()),
+        )
+        .bind(
+            dataset
+                .manifest
+                .evaluation_start_date
+                .map(|value| value.to_string()),
+        )
+        .bind(dataset.manifest.row_count as i64)
+        .bind(&dataset.manifest.note)
+        .bind(manifest_json)
+        .bind(format_datetime(dataset.created_at))
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn load_formal_dataset(
+        &self,
+        dataset_key: &str,
+    ) -> Result<Option<FormalDatasetRecord>, StorageError> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                dataset_id,
+                dataset_version,
+                market_scope,
+                feature_set_version,
+                label_version,
+                scenario_set_version,
+                point_in_time_mode,
+                from_date,
+                to_date,
+                train_end_date,
+                calibration_end_date,
+                evaluation_start_date,
+                row_count,
+                note,
+                manifest_json,
+                created_at
+            FROM analytics_formal_datasets
+            WHERE dataset_key = ?1
+            "#,
+        )
+        .bind(dataset_key)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(map_formal_dataset_row).transpose()
+    }
+
+    pub async fn list_formal_datasets(
+        &self,
+        market_scope: Option<&str>,
+        dataset_id: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<FormalDatasetRecord>, StorageError> {
+        let mut query = String::from(
+            r#"
+            SELECT
+                dataset_id,
+                dataset_version,
+                market_scope,
+                feature_set_version,
+                label_version,
+                scenario_set_version,
+                point_in_time_mode,
+                from_date,
+                to_date,
+                train_end_date,
+                calibration_end_date,
+                evaluation_start_date,
+                row_count,
+                note,
+                manifest_json,
+                created_at
+            FROM analytics_formal_datasets
+            WHERE 1 = 1
+            "#,
+        );
+        let mut param_index = 1;
+        if market_scope.is_some() {
+            query.push_str(&format!(" AND market_scope = ?{param_index}"));
+            param_index += 1;
+        }
+        if dataset_id.is_some() {
+            query.push_str(&format!(" AND dataset_id = ?{param_index}"));
+            param_index += 1;
+        }
+        query.push_str(" ORDER BY created_at DESC");
+        if limit.is_some() {
+            query.push_str(&format!(" LIMIT ?{param_index}"));
+        }
+
+        let mut statement = sqlx::query(&query);
+        if let Some(scope) = market_scope {
+            statement = statement.bind(scope);
+        }
+        if let Some(dataset_id) = dataset_id {
+            statement = statement.bind(dataset_id);
+        }
+        if let Some(limit) = limit {
+            statement = statement.bind(limit as i64);
+        }
+
+        let rows = statement.fetch_all(&self.pool).await?;
+        rows.into_iter().map(map_formal_dataset_row).collect()
+    }
+
+    pub async fn replace_formal_dataset_rows(
+        &self,
+        dataset_key: &str,
+        rows: &[FormalDatasetRowRecord],
+    ) -> Result<(), StorageError> {
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query(
+            r#"
+            DELETE FROM analytics_formal_dataset_rows
+            WHERE dataset_key = ?1
+            "#,
+        )
+        .bind(dataset_key)
+        .execute(&mut *transaction)
+        .await?;
+
+        for row in rows {
+            let row_id = formal_dataset_row_id(dataset_key, row.as_of_date, &row.split_name);
+            let features_json = serde_json::to_string(&row.features)
+                .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+            sqlx::query(
+                r#"
+                INSERT INTO analytics_formal_dataset_rows (
+                    row_id,
+                    dataset_key,
+                    split_name,
+                    entity_id,
+                    market_scope,
+                    as_of_date,
+                    point_in_time_mode,
+                    latest_visible_at,
+                    coverage_score,
+                    core_feature_coverage,
+                    trigger_feature_coverage,
+                    external_feature_coverage,
+                    sample_quality_grade,
+                    primary_scenario_id,
+                    scenario_family,
+                    label_5d,
+                    label_20d,
+                    label_60d,
+                    features_json,
+                    created_at
+                )
+                VALUES (
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                    ?18, ?19, ?20
+                )
+                "#,
+            )
+            .bind(row_id)
+            .bind(dataset_key)
+            .bind(&row.split_name)
+            .bind(&row.entity_id)
+            .bind(&row.market_scope)
+            .bind(row.as_of_date.to_string())
+            .bind(&row.point_in_time_mode)
+            .bind(row.latest_visible_at.map(format_datetime))
+            .bind(row.coverage_score)
+            .bind(row.core_feature_coverage)
+            .bind(row.trigger_feature_coverage)
+            .bind(row.external_feature_coverage)
+            .bind(&row.sample_quality_grade)
+            .bind(row.primary_scenario_id.as_deref())
+            .bind(row.scenario_family.as_deref())
+            .bind(row.label_5d as i64)
+            .bind(row.label_20d as i64)
+            .bind(row.label_60d as i64)
+            .bind(features_json)
+            .bind(format_datetime(row.created_at))
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn list_formal_dataset_rows(
+        &self,
+        dataset_key: &str,
+        split_name: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<FormalDatasetRowRecord>, StorageError> {
+        let mut query = String::from(
+            r#"
+            SELECT
+                dataset_key,
+                split_name,
+                entity_id,
+                market_scope,
+                as_of_date,
+                point_in_time_mode,
+                latest_visible_at,
+                coverage_score,
+                core_feature_coverage,
+                trigger_feature_coverage,
+                external_feature_coverage,
+                sample_quality_grade,
+                primary_scenario_id,
+                scenario_family,
+                label_5d,
+                label_20d,
+                label_60d,
+                features_json,
+                created_at
+            FROM analytics_formal_dataset_rows
+            WHERE dataset_key = ?1
+            "#,
+        );
+        let mut param_index = 2;
+        if split_name.is_some() {
+            query.push_str(&format!(" AND split_name = ?{param_index}"));
+            param_index += 1;
+        }
+        query.push_str(" ORDER BY as_of_date ASC");
+        if limit.is_some() {
+            query.push_str(&format!(" LIMIT ?{param_index}"));
+        }
+
+        let mut statement = sqlx::query(&query).bind(dataset_key);
+        if let Some(split_name) = split_name {
+            statement = statement.bind(split_name);
+        }
+        if let Some(limit) = limit {
+            statement = statement.bind(limit as i64);
+        }
+
+        let rows = statement.fetch_all(&self.pool).await?;
+        rows.into_iter()
+            .map(map_formal_dataset_row_record)
+            .collect()
+    }
+
     pub async fn load_watermark_date(
         &self,
         source_id: &str,
@@ -1990,9 +2503,16 @@ impl SqliteStore {
         &self,
         indicator_id: &str,
         external_code: &str,
+        priority: i64,
     ) -> Result<(), StorageError> {
-        self.upsert_external_mapping(indicator_id, "fred", FRED_DATASET_ID, external_code, 100)
-            .await
+        self.upsert_external_mapping(
+            indicator_id,
+            "fred",
+            FRED_DATASET_ID,
+            external_code,
+            priority,
+        )
+        .await
     }
 
     async fn upsert_external_mapping(
@@ -2064,6 +2584,7 @@ struct FredIndicatorSeed {
     frequency: Frequency,
     risk_direction: RiskDirection,
     external_code: &'static str,
+    priority: i64,
 }
 
 struct BojIndicatorSeed {
@@ -2279,6 +2800,7 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Daily,
             risk_direction: RiskDirection::TwoSided,
             external_code: "DEXJPUS",
+            priority: 100,
         },
         FredIndicatorSeed {
             indicator_id: "us_market_vix_close",
@@ -2289,6 +2811,7 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Daily,
             risk_direction: RiskDirection::HigherIsRiskier,
             external_code: "VIXCLS",
+            priority: 100,
         },
         FredIndicatorSeed {
             indicator_id: "us_credit_high_yield_oas",
@@ -2299,6 +2822,7 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Daily,
             risk_direction: RiskDirection::HigherIsRiskier,
             external_code: "BAMLH0A0HYM2",
+            priority: 100,
         },
         FredIndicatorSeed {
             indicator_id: "us_credit_baa_10y_spread",
@@ -2309,6 +2833,7 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Daily,
             risk_direction: RiskDirection::HigherIsRiskier,
             external_code: "BAA10Y",
+            priority: 100,
         },
         FredIndicatorSeed {
             indicator_id: "us_rates_yield_curve_10y2y",
@@ -2319,6 +2844,7 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Daily,
             risk_direction: RiskDirection::LowerIsRiskier,
             external_code: "T10Y2Y",
+            priority: 100,
         },
         FredIndicatorSeed {
             indicator_id: "us_liquidity_financial_stress_stl",
@@ -2329,6 +2855,7 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Weekly,
             risk_direction: RiskDirection::HigherIsRiskier,
             external_code: "STLFSI4",
+            priority: 100,
         },
         FredIndicatorSeed {
             indicator_id: "us_liquidity_national_financial_conditions",
@@ -2339,6 +2866,7 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Weekly,
             risk_direction: RiskDirection::HigherIsRiskier,
             external_code: "NFCI",
+            priority: 100,
         },
         FredIndicatorSeed {
             indicator_id: "us_macro_unemployment_rate",
@@ -2349,6 +2877,7 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Monthly,
             risk_direction: RiskDirection::HigherIsRiskier,
             external_code: "UNRATE",
+            priority: 100,
         },
         FredIndicatorSeed {
             indicator_id: "us_liquidity_sofr",
@@ -2359,6 +2888,19 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Daily,
             risk_direction: RiskDirection::RisingFastIsRiskier,
             external_code: "SOFR",
+            priority: 100,
+        },
+        FredIndicatorSeed {
+            indicator_id: "us_liquidity_effr",
+            display_name: "有效联邦基金利率",
+            dimension: RiskDimension::LiquidityFunding,
+            description:
+                "Daily Effective Federal Funds Rate (legacy DFF fallback for pre-EFFR history).",
+            unit: "percent",
+            frequency: Frequency::Daily,
+            risk_direction: RiskDirection::RisingFastIsRiskier,
+            external_code: "DFF",
+            priority: 80,
         },
         FredIndicatorSeed {
             indicator_id: "us_liquidity_effr",
@@ -2369,6 +2911,7 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Daily,
             risk_direction: RiskDirection::RisingFastIsRiskier,
             external_code: "EFFR",
+            priority: 100,
         },
         FredIndicatorSeed {
             indicator_id: "us_real_estate_housing_starts",
@@ -2379,6 +2922,7 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Monthly,
             risk_direction: RiskDirection::LowerIsRiskier,
             external_code: "HOUST",
+            priority: 100,
         },
         FredIndicatorSeed {
             indicator_id: "us_real_estate_home_price",
@@ -2389,6 +2933,7 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Monthly,
             risk_direction: RiskDirection::TwoSided,
             external_code: "CSUSHPISA",
+            priority: 100,
         },
         FredIndicatorSeed {
             indicator_id: "us_liquidity_money_supply_m2",
@@ -2399,6 +2944,7 @@ fn fred_indicator_seeds() -> Vec<FredIndicatorSeed> {
             frequency: Frequency::Monthly,
             risk_direction: RiskDirection::FallingFastIsRiskier,
             external_code: "M2SL",
+            priority: 100,
         },
     ]
 }
@@ -2549,6 +3095,86 @@ fn map_prediction_snapshot_row(row: SqliteRow) -> Result<PredictionSnapshotRecor
     })
 }
 
+fn map_feature_snapshot_row(row: SqliteRow) -> Result<FeatureSnapshotRecord, StorageError> {
+    let features_json: String = row.try_get("features_json")?;
+    let features = serde_json::from_str(&features_json)
+        .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+    Ok(FeatureSnapshotRecord {
+        as_of_date: parse_date(row.try_get::<String, _>("as_of_date")?.as_str())?,
+        entity_id: row.try_get("entity_id")?,
+        market_scope: row.try_get("market_scope")?,
+        feature_set_version: row.try_get("feature_set_version")?,
+        point_in_time_mode: row.try_get("point_in_time_mode")?,
+        visibility_status: row.try_get("visibility_status")?,
+        latest_visible_at: parse_optional_datetime(
+            row.try_get::<Option<String>, _>("latest_visible_at")?,
+        )?,
+        coverage_score: row.try_get("coverage_score")?,
+        core_feature_coverage: row.try_get("core_feature_coverage")?,
+        trigger_feature_coverage: row.try_get("trigger_feature_coverage")?,
+        external_feature_coverage: row.try_get("external_feature_coverage")?,
+        feature_count: row.try_get::<i64, _>("feature_count")? as usize,
+        features,
+        created_at: parse_required_datetime(row.try_get::<String, _>("created_at")?.as_str())?,
+    })
+}
+
+fn map_formal_dataset_row(row: SqliteRow) -> Result<FormalDatasetRecord, StorageError> {
+    let manifest_json: String = row.try_get("manifest_json")?;
+    let mut manifest = serde_json::from_str::<FormalDatasetManifest>(&manifest_json)
+        .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+    manifest.dataset_id = row.try_get("dataset_id")?;
+    manifest.dataset_version = row.try_get("dataset_version")?;
+    manifest.market_scope = row.try_get("market_scope")?;
+    manifest.feature_set_version = row.try_get("feature_set_version")?;
+    manifest.label_version = row.try_get("label_version")?;
+    manifest.scenario_set_version = row.try_get("scenario_set_version")?;
+    manifest.point_in_time_mode = row.try_get("point_in_time_mode")?;
+    manifest.from_date = parse_optional_date(row.try_get::<Option<String>, _>("from_date")?)?;
+    manifest.to_date = parse_optional_date(row.try_get::<Option<String>, _>("to_date")?)?;
+    manifest.train_end_date =
+        parse_optional_date(row.try_get::<Option<String>, _>("train_end_date")?)?;
+    manifest.calibration_end_date =
+        parse_optional_date(row.try_get::<Option<String>, _>("calibration_end_date")?)?;
+    manifest.evaluation_start_date =
+        parse_optional_date(row.try_get::<Option<String>, _>("evaluation_start_date")?)?;
+    manifest.row_count = row.try_get::<i64, _>("row_count")? as usize;
+    manifest.note = row.try_get("note")?;
+    Ok(FormalDatasetRecord {
+        manifest,
+        created_at: parse_required_datetime(row.try_get::<String, _>("created_at")?.as_str())?,
+    })
+}
+
+fn map_formal_dataset_row_record(row: SqliteRow) -> Result<FormalDatasetRowRecord, StorageError> {
+    let features_json: String = row.try_get("features_json")?;
+    let features = serde_json::from_str(&features_json)
+        .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+    Ok(FormalDatasetRowRecord {
+        dataset_key: row.try_get("dataset_key")?,
+        split_name: row.try_get("split_name")?,
+        entity_id: row.try_get("entity_id")?,
+        market_scope: row.try_get("market_scope")?,
+        as_of_date: parse_date(row.try_get::<String, _>("as_of_date")?.as_str())?,
+        point_in_time_mode: row.try_get("point_in_time_mode")?,
+        latest_visible_at: parse_optional_datetime(
+            row.try_get::<Option<String>, _>("latest_visible_at")?,
+        )?,
+        coverage_score: row.try_get("coverage_score")?,
+        core_feature_coverage: row.try_get("core_feature_coverage")?,
+        trigger_feature_coverage: row.try_get("trigger_feature_coverage")?,
+        external_feature_coverage: row.try_get("external_feature_coverage")?,
+        sample_quality_grade: row.try_get("sample_quality_grade")?,
+        primary_scenario_id: row.try_get("primary_scenario_id")?,
+        scenario_family: row.try_get("scenario_family")?,
+        label_5d: row.try_get::<i64, _>("label_5d")? as u8,
+        label_20d: row.try_get::<i64, _>("label_20d")? as u8,
+        label_60d: row.try_get::<i64, _>("label_60d")? as u8,
+        features,
+        created_at: parse_required_datetime(row.try_get::<String, _>("created_at")?.as_str())?,
+    })
+}
+
 fn prediction_snapshot_id(
     entity_id: &str,
     market_scope: &str,
@@ -2564,6 +3190,24 @@ fn prediction_snapshot_id(
         release_id.unwrap_or("inline"),
         point_in_time_mode
     )
+}
+
+fn feature_snapshot_id(
+    entity_id: &str,
+    market_scope: &str,
+    as_of_date: NaiveDate,
+    feature_set_version: &str,
+    point_in_time_mode: &str,
+) -> String {
+    format!("{market_scope}:{entity_id}:{as_of_date}:{feature_set_version}:{point_in_time_mode}")
+}
+
+fn formal_dataset_key(dataset_id: &str, dataset_version: &str) -> String {
+    format!("{dataset_id}:{dataset_version}")
+}
+
+fn formal_dataset_row_id(dataset_key: &str, as_of_date: NaiveDate, split_name: &str) -> String {
+    format!("{dataset_key}:{split_name}:{as_of_date}")
 }
 
 fn parse_risk_level(value: &str) -> Result<RiskLevel, StorageError> {
@@ -2639,7 +3283,8 @@ fn format_alert_status(value: AlertStatus) -> &'static str {
 mod tests {
     use chrono::{NaiveDate, Utc};
     use fc_domain::{
-        AlertEvent, AlertStatus, AlertType, ModelReleaseManifest, ModelReleaseRecord,
+        AlertEvent, AlertStatus, AlertType, FeatureSnapshotRecord, FormalDatasetManifest,
+        FormalDatasetRecord, FormalDatasetRowRecord, ModelReleaseManifest, ModelReleaseRecord,
         PredictionSnapshotRecord, RiskContributor, RiskDimension, RiskLevel,
     };
     use uuid::Uuid;
@@ -2866,5 +3511,138 @@ mod tests {
         );
         assert_eq!(rows[0].time_to_risk_bucket, "weeks");
         assert_eq!(rows[0].freshness_status, "fresh");
+    }
+
+    #[tokio::test]
+    async fn sqlite_store_round_trips_feature_snapshots_and_formal_datasets() {
+        let store = SqliteStore::connect_url("sqlite::memory:").await.unwrap();
+        store.migrate().await.unwrap();
+        let created_at = Utc::now();
+
+        let snapshot = FeatureSnapshotRecord {
+            as_of_date: NaiveDate::from_ymd_opt(2026, 5, 30).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            feature_set_version: "feature_formal_v1".to_string(),
+            point_in_time_mode: "best_effort".to_string(),
+            visibility_status: "best_effort".to_string(),
+            latest_visible_at: Some(created_at),
+            coverage_score: 0.91,
+            core_feature_coverage: 0.94,
+            trigger_feature_coverage: 0.88,
+            external_feature_coverage: 0.81,
+            feature_count: 4,
+            features: [
+                ("us_vix_level".to_string(), 22.4),
+                ("us_curve_10y2y_level".to_string(), -0.42),
+                ("structural_score".to_string(), 0.61),
+                ("trigger_score".to_string(), 0.64),
+            ]
+            .into_iter()
+            .collect(),
+            created_at,
+        };
+
+        store
+            .upsert_feature_snapshots(std::slice::from_ref(&snapshot))
+            .await
+            .unwrap();
+
+        let snapshots = store
+            .list_feature_snapshots(
+                Some("financial_system"),
+                Some("feature_formal_v1"),
+                Some(NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
+                Some(NaiveDate::from_ymd_opt(2026, 5, 31).unwrap()),
+                Some(10),
+            )
+            .await
+            .unwrap();
+        assert_eq!(snapshots.len(), 1);
+        assert_eq!(snapshots[0].feature_count, 4);
+        assert!(snapshots[0].features.contains_key("us_vix_level"));
+
+        let exact_snapshots = store
+            .list_feature_snapshots_for_mode(
+                "financial_system",
+                "feature_formal_v1",
+                "best_effort",
+                Some(NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
+                Some(NaiveDate::from_ymd_opt(2026, 5, 31).unwrap()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(exact_snapshots.len(), 1);
+        assert_eq!(exact_snapshots[0].point_in_time_mode, "best_effort");
+
+        let dataset = FormalDatasetRecord {
+            manifest: FormalDatasetManifest {
+                dataset_id: "formal_v1_main_1990_daily".to_string(),
+                dataset_version: "20260531T120000".to_string(),
+                market_scope: "financial_system".to_string(),
+                feature_set_version: "feature_formal_v1".to_string(),
+                label_version: "formal_label_v1_main".to_string(),
+                scenario_set_version: "scenario_v1".to_string(),
+                point_in_time_mode: "best_effort".to_string(),
+                from_date: Some(NaiveDate::from_ymd_opt(1990, 1, 2).unwrap()),
+                to_date: Some(NaiveDate::from_ymd_opt(2026, 5, 30).unwrap()),
+                train_end_date: Some(NaiveDate::from_ymd_opt(2014, 12, 31).unwrap()),
+                calibration_end_date: Some(NaiveDate::from_ymd_opt(2019, 12, 31).unwrap()),
+                evaluation_start_date: Some(NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()),
+                row_count: 1,
+                note: "unit test dataset".to_string(),
+            },
+            created_at,
+        };
+        store.upsert_formal_dataset(&dataset).await.unwrap();
+        let dataset_key = super::formal_dataset_key(
+            &dataset.manifest.dataset_id,
+            &dataset.manifest.dataset_version,
+        );
+        let row = FormalDatasetRowRecord {
+            dataset_key: dataset_key.clone(),
+            split_name: "evaluation".to_string(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            as_of_date: NaiveDate::from_ymd_opt(2026, 5, 30).unwrap(),
+            point_in_time_mode: "best_effort".to_string(),
+            latest_visible_at: Some(created_at),
+            coverage_score: 0.91,
+            core_feature_coverage: 0.94,
+            trigger_feature_coverage: 0.88,
+            external_feature_coverage: 0.81,
+            sample_quality_grade: "a".to_string(),
+            primary_scenario_id: None,
+            scenario_family: None,
+            label_5d: 0,
+            label_20d: 0,
+            label_60d: 0,
+            features: snapshot.features.clone(),
+            created_at,
+        };
+        store
+            .replace_formal_dataset_rows(&dataset_key, &[row.clone()])
+            .await
+            .unwrap();
+
+        let loaded_dataset = store
+            .load_formal_dataset(&dataset_key)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded_dataset.manifest.row_count, 1);
+        assert_eq!(
+            loaded_dataset.manifest.dataset_id,
+            "formal_v1_main_1990_daily"
+        );
+
+        let rows = store
+            .list_formal_dataset_rows(&dataset_key, Some("evaluation"), Some(10))
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].split_name, "evaluation");
+        assert_eq!(rows[0].dataset_key, dataset_key);
+        assert_eq!(rows[0].features["us_vix_level"], 22.4);
     }
 }

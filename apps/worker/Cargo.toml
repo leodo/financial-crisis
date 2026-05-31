@@ -9,6 +9,7 @@ anyhow.workspace = true
 chrono.workspace = true
 fc-domain = { path = "../../crates/domain" }
 fc-ingestion = { path = "../../crates/ingestion" }
+fc-scoring = { path = "../../crates/scoring" }
 fc-storage = { path = "../../crates/storage" }
 reqwest.workspace = true
 serde.workspace = true

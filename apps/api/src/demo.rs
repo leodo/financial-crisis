@@ -6,13 +6,13 @@ use std::{
 use anyhow::Context;
 use chrono::{Duration, NaiveDate, Utc};
 use fc_domain::{
-    load_protected_stress_window_catalog, AlertEvent, AlertStatus, AlertType, AssessmentSnapshot,
-    BacktestRollingAudit, BacktestRollingAuditEpisode, BacktestScenarioSummary,
-    BacktestSignalSource, BacktestWindowPoint, DataMode, DataSource, DecisionPosture, Frequency,
-    FreshnessStatus, Indicator, ModelReleaseRecord, Observation, PredictionSnapshotRecord,
-    ProbabilityBundle, ProtectedStressWindow, RiskContributor, RiskDimension, RiskDirection,
-    RiskLevel, SourceHealth, SourcePriority, SourceStatus, TimeToRiskBucket, UserRiskPreferences,
-    UserRiskProfile,
+    load_crisis_scenario_catalog, load_protected_stress_window_catalog, AlertEvent, AlertStatus,
+    AlertType, AssessmentSnapshot, BacktestRollingAudit, BacktestRollingAuditEpisode,
+    BacktestScenarioSummary, BacktestSignalSource, BacktestWindowPoint, DataMode, DataSource,
+    DecisionPosture, Frequency, FreshnessStatus, Indicator, ModelReleaseRecord, Observation,
+    PredictionSnapshotRecord, ProbabilityBundle, ProtectedStressWindow, RiskContributor,
+    RiskDimension, RiskDirection, RiskLevel, SourceHealth, SourcePriority, SourceStatus,
+    TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
 };
 use fc_scoring::ScoringEngine;
 use fc_storage::{PostgresStore, SqliteStore};
@@ -26,6 +26,10 @@ const BACKTEST_SIGNAL_WINDOW: usize = 5;
 const BACKTEST_SIGNAL_MIN_HITS: usize = 3;
 const ACTIONABLE_AUDIT_HORIZON_DAYS: i64 = 20;
 const ROLLING_AUDIT_EPISODE_LIMIT: usize = 12;
+const ROLLING_AUDIT_MIN_DATE: (i32, u32, u32) = (1990, 1, 2);
+const PREDICTION_SNAPSHOT_CACHE_VERSION: &str = "history_cache_v2_20260601";
+const FORMAL_MAIN_FEATURE_SET_VERSION: &str = "feature_formal_v1_main_20260531";
+const FORMAL_MAIN_LABEL_VERSION: &str = "formal_label_v1_main";
 
 #[derive(Debug, Clone)]
 pub enum AppDataSource {
@@ -157,7 +161,7 @@ async fn load_postgres_app_data(
 
 async fn load_sqlite_app_data(
     sqlite_path: &str,
-    _max_history_points: usize,
+    max_history_points: usize,
 ) -> anyhow::Result<AppData> {
     let as_of_date = Utc::now().date_naive();
     let store = SqliteStore::connect(sqlite_path).await?;
@@ -190,6 +194,7 @@ async fn load_sqlite_app_data(
         serving_model.as_ref(),
         &user_preferences,
         as_of_date,
+        max_history_points,
     )
     .await?;
     let built = build_app_data_from_inputs(
@@ -329,7 +334,8 @@ fn build_app_data_from_inputs(
         backtest_summary,
         ..assessment
     };
-    let current_history_point = assessment_history_point_from_assessment(&assessment);
+    let current_history_point =
+        assessment_history_point_from_assessment(&assessment, &probability_trace);
     match assessment_history.last_mut() {
         Some(last) if last.as_of_date == current_history_point.as_of_date => {
             *last = current_history_point;
@@ -440,7 +446,10 @@ fn build_assessment_history_for_dates(
             serving_model,
             user_preferences,
         );
-        history_points.push(assessment_history_point_from_assessment(&assessment));
+        history_points.push(assessment_history_point_from_assessment(
+            &assessment,
+            &probability_trace,
+        ));
         prediction_snapshots.push(prediction_snapshot_from_assessment(
             &assessment,
             &probability_trace,
@@ -453,6 +462,7 @@ fn build_assessment_history_for_dates(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn load_sqlite_assessment_history(
     store: &SqliteStore,
     indicators: &[Indicator],
@@ -461,29 +471,57 @@ async fn load_sqlite_assessment_history(
     serving_model: Option<&ServingModelContext>,
     user_preferences: &UserRiskPreferences,
     as_of_date: NaiveDate,
+    max_history_points: usize,
 ) -> anyhow::Result<Vec<fc_domain::AssessmentHistoryPoint>> {
     let release_filter = serving_model.map(|context| context.release.manifest.release_id.as_str());
     let persisted_rows = store
         .list_prediction_snapshots(Some("financial_system"), release_filter, None, None, None)
         .await?;
-    let mut historical =
-        historical_output_from_prediction_snapshots(persisted_rows.clone(), release_filter);
-
     let target_dates = observations
         .iter()
         .filter(|observation| observation.entity_id == "us")
         .map(|observation| observation.as_of_date)
         .chain(std::iter::once(as_of_date))
         .collect::<BTreeSet<_>>();
-    let existing_dates = historical
-        .history_points
+    let existing_dates = persisted_rows
         .iter()
-        .map(|point| point.as_of_date)
+        .map(|snapshot| snapshot.as_of_date)
         .collect::<BTreeSet<_>>();
     let missing_dates = target_dates
         .difference(&existing_dates)
         .copied()
         .collect::<Vec<_>>();
+    let full_formal_refresh = should_refresh_full_formal_history(
+        serving_model,
+        &persisted_rows,
+        !missing_dates.is_empty(),
+    );
+
+    if full_formal_refresh {
+        let rebuild_dates = target_dates.into_iter().collect::<Vec<_>>();
+        tracing::info!(
+            release_id = release_filter.unwrap_or("heuristic"),
+            rebuild_dates = rebuild_dates.len(),
+            "rebuilding full formal history from raw observations because cached prediction snapshots are stale or incomplete"
+        );
+        let rebuilt = build_assessment_history_for_dates(
+            DataMode::Sqlite,
+            &ScoringEngine::default(),
+            indicators,
+            observations,
+            Some(alerts),
+            serving_model,
+            user_preferences,
+            &rebuild_dates,
+        );
+        store
+            .upsert_prediction_snapshots(&rebuilt.prediction_snapshots)
+            .await?;
+        return Ok(rebuilt.history_points);
+    }
+
+    let mut historical =
+        historical_output_from_prediction_snapshots(persisted_rows.clone(), release_filter);
 
     if !missing_dates.is_empty() {
         let computed = build_assessment_history_for_dates(
@@ -501,6 +539,38 @@ async fn load_sqlite_assessment_history(
             .await?;
         let mut combined = persisted_rows;
         combined.extend(computed.prediction_snapshots);
+        historical = historical_output_from_prediction_snapshots(combined, release_filter);
+    }
+
+    let should_refresh_recent_formal_history = serving_model
+        .and_then(|context| context.probability_bundle.as_ref())
+        .is_some()
+        && max_history_points > 0;
+    if should_refresh_recent_formal_history {
+        let recent_dates = target_dates
+            .iter()
+            .copied()
+            .rev()
+            .take(max_history_points)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>();
+        let recomputed = build_assessment_history_for_dates(
+            DataMode::Sqlite,
+            &ScoringEngine::default(),
+            indicators,
+            observations,
+            Some(alerts),
+            serving_model,
+            user_preferences,
+            &recent_dates,
+        );
+        store
+            .upsert_prediction_snapshots(&recomputed.prediction_snapshots)
+            .await?;
+        let mut combined = historical.prediction_snapshots;
+        combined.extend(recomputed.prediction_snapshots);
         historical = historical_output_from_prediction_snapshots(combined, release_filter);
     }
 
@@ -566,13 +636,103 @@ fn prediction_snapshot_from_assessment(
         label_version: assessment.method.label_version.clone(),
         coverage_score: assessment.data_trust.coverage_score,
         freshness_status: worst_freshness_status(&assessment.key_indicators).to_string(),
-        method_version: assessment.method.score_method_version.clone(),
+        method_version: prediction_snapshot_method_version(&assessment.method),
         recorded_at: assessment.runtime.generated_at,
     }
 }
 
+fn prediction_snapshot_method_version(method: &fc_domain::AssessmentMethodVersions) -> String {
+    history_cache_key(
+        method.release_id.as_deref(),
+        &method.probability_mode,
+        &method.feature_set_version,
+        &method.label_version,
+        &method.prob_model_version,
+        &method.calibration_version,
+        &method.posture_policy_version,
+        &method.action_playbook_version,
+        &method.point_in_time_mode,
+    )
+}
+
+fn expected_prediction_snapshot_method_version(
+    serving_model: Option<&ServingModelContext>,
+) -> String {
+    let Some(serving_model) = serving_model else {
+        return history_cache_key(
+            None,
+            "heuristic_mvp",
+            "feature_v2_20260531",
+            "label_v1_20260530",
+            "prob_v1_20260531",
+            "calib_v1_20260531",
+            "posture_v1_20260530",
+            "action_playbook_v1_20260531",
+            "best_effort",
+        );
+    };
+
+    history_cache_key(
+        Some(serving_model.release.manifest.release_id.as_str()),
+        &serving_model.runtime_probability_mode,
+        &serving_model.release.manifest.feature_set_version,
+        &serving_model.release.manifest.label_version,
+        &serving_model.release.manifest.prob_model_version,
+        &serving_model.release.manifest.calibration_version,
+        &serving_model.release.manifest.posture_policy_version,
+        &serving_model.release.manifest.action_playbook_version,
+        &serving_model.release.manifest.point_in_time_mode,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn history_cache_key(
+    release_id: Option<&str>,
+    probability_mode: &str,
+    feature_set_version: &str,
+    label_version: &str,
+    prob_model_version: &str,
+    calibration_version: &str,
+    posture_policy_version: &str,
+    action_playbook_version: &str,
+    point_in_time_mode: &str,
+) -> String {
+    format!(
+        "{PREDICTION_SNAPSHOT_CACHE_VERSION}|release={}|probability_mode={probability_mode}|feature={feature_set_version}|label={label_version}|prob={prob_model_version}|calib={calibration_version}|posture={posture_policy_version}|action={action_playbook_version}|pit={point_in_time_mode}",
+        release_id.unwrap_or("heuristic")
+    )
+}
+
+fn should_refresh_full_formal_history(
+    serving_model: Option<&ServingModelContext>,
+    persisted_rows: &[PredictionSnapshotRecord],
+    has_missing_dates: bool,
+) -> bool {
+    if !is_formal_main_release(serving_model) {
+        return false;
+    }
+
+    if persisted_rows.is_empty() || has_missing_dates {
+        return true;
+    }
+
+    let expected_method_version = expected_prediction_snapshot_method_version(serving_model);
+    persisted_rows
+        .iter()
+        .any(|snapshot| snapshot.method_version != expected_method_version)
+}
+
+fn is_formal_main_release(serving_model: Option<&ServingModelContext>) -> bool {
+    serving_model.is_some_and(|context| {
+        context.release.manifest.feature_set_version == FORMAL_MAIN_FEATURE_SET_VERSION
+            && context.release.manifest.label_version == FORMAL_MAIN_LABEL_VERSION
+            && context.probability_bundle.is_some()
+    })
+}
+
 fn assessment_history_point_from_assessment(
     assessment: &AssessmentSnapshot,
+    probability_trace: &crate::assessment::ProbabilityComputationTrace,
 ) -> fc_domain::AssessmentHistoryPoint {
     fc_domain::AssessmentHistoryPoint {
         as_of_date: assessment.as_of_date,
@@ -580,6 +740,9 @@ fn assessment_history_point_from_assessment(
         p_5d: assessment.probabilities.p_5d,
         p_20d: assessment.probabilities.p_20d,
         p_60d: assessment.probabilities.p_60d,
+        raw_p_5d: Some(probability_trace.raw_probabilities.p_5d),
+        raw_p_20d: Some(probability_trace.raw_probabilities.p_20d),
+        raw_p_60d: Some(probability_trace.raw_probabilities.p_60d),
         posture: assessment.posture,
         time_to_risk_bucket: assessment.time_to_risk_bucket,
         external_shock_score: assessment.scores.external_shock_score,
@@ -595,6 +758,9 @@ fn assessment_history_point_from_prediction_snapshot(
         p_5d: snapshot.calibrated_p_5d,
         p_20d: snapshot.calibrated_p_20d,
         p_60d: snapshot.calibrated_p_60d,
+        raw_p_5d: Some(snapshot.raw_p_5d),
+        raw_p_20d: Some(snapshot.raw_p_20d),
+        raw_p_60d: Some(snapshot.raw_p_60d),
         posture: parse_decision_posture_code(&snapshot.posture),
         time_to_risk_bucket: parse_time_to_risk_bucket_code(&snapshot.time_to_risk_bucket),
         external_shock_score: snapshot.external_shock_score,
@@ -1521,11 +1687,23 @@ fn build_backtests(
 
 #[derive(Debug, Clone)]
 struct ScenarioDefinition {
-    scenario_id: &'static str,
-    name: &'static str,
-    region: &'static str,
+    scenario_id: String,
+    name: String,
+    region: String,
+    pre_warning_start: NaiveDate,
     crisis_start: NaiveDate,
     crisis_end: NaiveDate,
+    protected_window: bool,
+    fallback_first_l2_date: Option<NaiveDate>,
+    fallback_first_l3_date: Option<NaiveDate>,
+    fallback_max_level: RiskLevel,
+    fallback_max_score: f64,
+    fallback_lead_time_days: Option<i64>,
+    fallback_false_positive_count: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ScenarioFallbackProfile {
     fallback_first_l2_date: Option<NaiveDate>,
     fallback_first_l3_date: Option<NaiveDate>,
     fallback_max_level: RiskLevel,
@@ -1544,13 +1722,60 @@ struct RollingAuditEpisodeBuilder {
 }
 
 fn scenario_catalog() -> Vec<ScenarioDefinition> {
-    vec![
-        ScenarioDefinition {
-            scenario_id: "us_gfc_2008",
-            name: "2007-2009 全球金融危机",
-            region: "US",
-            crisis_start: NaiveDate::from_ymd_opt(2007, 8, 1).expect("valid date"),
-            crisis_end: NaiveDate::from_ymd_opt(2009, 3, 31).expect("valid date"),
+    let catalog = load_crisis_scenario_catalog();
+    catalog
+        .scenarios
+        .into_iter()
+        .map(|scenario| {
+            let fallback = scenario_fallback_profile(&scenario.scenario_id);
+            ScenarioDefinition {
+                scenario_id: scenario.scenario_id,
+                name: scenario.label,
+                region: "US".to_string(),
+                pre_warning_start: scenario.pre_warning_start,
+                crisis_start: scenario.crisis_start,
+                crisis_end: scenario.crisis_end,
+                protected_window: scenario.protected_window,
+                fallback_first_l2_date: fallback.fallback_first_l2_date,
+                fallback_first_l3_date: fallback.fallback_first_l3_date,
+                fallback_max_level: fallback.fallback_max_level,
+                fallback_max_score: fallback.fallback_max_score,
+                fallback_lead_time_days: fallback.fallback_lead_time_days,
+                fallback_false_positive_count: fallback.fallback_false_positive_count,
+            }
+        })
+        .collect()
+}
+
+fn scenario_fallback_profile(scenario_id: &str) -> ScenarioFallbackProfile {
+    match scenario_id {
+        "us_black_monday_1987" => ScenarioFallbackProfile {
+            fallback_first_l2_date: Some(NaiveDate::from_ymd_opt(1987, 10, 8).expect("valid date")),
+            fallback_first_l3_date: Some(
+                NaiveDate::from_ymd_opt(1987, 10, 16).expect("valid date"),
+            ),
+            fallback_max_level: RiskLevel::Crisis,
+            fallback_max_score: 95.0,
+            fallback_lead_time_days: Some(6),
+            fallback_false_positive_count: 0,
+        },
+        "us_ltcm_1998" => ScenarioFallbackProfile {
+            fallback_first_l2_date: Some(NaiveDate::from_ymd_opt(1998, 8, 10).expect("valid date")),
+            fallback_first_l3_date: Some(NaiveDate::from_ymd_opt(1998, 8, 27).expect("valid date")),
+            fallback_max_level: RiskLevel::Crisis,
+            fallback_max_score: 84.0,
+            fallback_lead_time_days: Some(7),
+            fallback_false_positive_count: 1,
+        },
+        "us_dotcom_unwind_2000" => ScenarioFallbackProfile {
+            fallback_first_l2_date: Some(NaiveDate::from_ymd_opt(2000, 2, 10).expect("valid date")),
+            fallback_first_l3_date: None,
+            fallback_max_level: RiskLevel::Warning,
+            fallback_max_score: 68.0,
+            fallback_lead_time_days: Some(29),
+            fallback_false_positive_count: 1,
+        },
+        "us_gfc_2008" => ScenarioFallbackProfile {
             fallback_first_l2_date: Some(NaiveDate::from_ymd_opt(2007, 6, 15).expect("valid date")),
             fallback_first_l3_date: Some(NaiveDate::from_ymd_opt(2007, 8, 9).expect("valid date")),
             fallback_max_level: RiskLevel::Crisis,
@@ -1558,12 +1783,15 @@ fn scenario_catalog() -> Vec<ScenarioDefinition> {
             fallback_lead_time_days: Some(47),
             fallback_false_positive_count: 2,
         },
-        ScenarioDefinition {
-            scenario_id: "us_covid_liquidity_2020",
-            name: "2020 疫情流动性冲击",
-            region: "US",
-            crisis_start: NaiveDate::from_ymd_opt(2020, 2, 24).expect("valid date"),
-            crisis_end: NaiveDate::from_ymd_opt(2020, 4, 30).expect("valid date"),
+        "us_funding_stress_2011" => ScenarioFallbackProfile {
+            fallback_first_l2_date: Some(NaiveDate::from_ymd_opt(2011, 7, 18).expect("valid date")),
+            fallback_first_l3_date: None,
+            fallback_max_level: RiskLevel::Warning,
+            fallback_max_score: 71.0,
+            fallback_lead_time_days: Some(11),
+            fallback_false_positive_count: 1,
+        },
+        "us_covid_liquidity_2020" => ScenarioFallbackProfile {
             fallback_first_l2_date: Some(NaiveDate::from_ymd_opt(2020, 2, 25).expect("valid date")),
             fallback_first_l3_date: Some(NaiveDate::from_ymd_opt(2020, 3, 9).expect("valid date")),
             fallback_max_level: RiskLevel::Crisis,
@@ -1571,12 +1799,15 @@ fn scenario_catalog() -> Vec<ScenarioDefinition> {
             fallback_lead_time_days: Some(13),
             fallback_false_positive_count: 1,
         },
-        ScenarioDefinition {
-            scenario_id: "us_regional_banks_2023",
-            name: "2023 美国区域银行危机",
-            region: "US",
-            crisis_start: NaiveDate::from_ymd_opt(2023, 3, 8).expect("valid date"),
-            crisis_end: NaiveDate::from_ymd_opt(2023, 5, 1).expect("valid date"),
+        "us_rate_shock_2022" => ScenarioFallbackProfile {
+            fallback_first_l2_date: Some(NaiveDate::from_ymd_opt(2022, 4, 29).expect("valid date")),
+            fallback_first_l3_date: Some(NaiveDate::from_ymd_opt(2022, 6, 13).expect("valid date")),
+            fallback_max_level: RiskLevel::Warning,
+            fallback_max_score: 74.0,
+            fallback_lead_time_days: Some(35),
+            fallback_false_positive_count: 1,
+        },
+        "us_regional_banks_2023" => ScenarioFallbackProfile {
             fallback_first_l2_date: Some(NaiveDate::from_ymd_opt(2023, 2, 15).expect("valid date")),
             fallback_first_l3_date: Some(NaiveDate::from_ymd_opt(2023, 3, 10).expect("valid date")),
             fallback_max_level: RiskLevel::Warning,
@@ -1584,7 +1815,15 @@ fn scenario_catalog() -> Vec<ScenarioDefinition> {
             fallback_lead_time_days: Some(21),
             fallback_false_positive_count: 1,
         },
-    ]
+        _ => ScenarioFallbackProfile {
+            fallback_first_l2_date: None,
+            fallback_first_l3_date: None,
+            fallback_max_level: RiskLevel::Watch,
+            fallback_max_score: 60.0,
+            fallback_lead_time_days: None,
+            fallback_false_positive_count: 0,
+        },
+    }
 }
 
 fn scenario_summary_from_history(
@@ -1625,9 +1864,9 @@ fn scenario_summary_from_history(
     let false_positive_count = count_false_positive_actionable_episodes(&warmup_points);
 
     Some(BacktestScenarioSummary {
-        scenario_id: scenario.scenario_id.to_string(),
-        name: scenario.name.to_string(),
-        region: scenario.region.to_string(),
+        scenario_id: scenario.scenario_id.clone(),
+        name: scenario.name.clone(),
+        region: scenario.region.clone(),
         signal_source: BacktestSignalSource::RealHistory,
         crisis_start: scenario.crisis_start,
         crisis_end: scenario.crisis_end,
@@ -1666,9 +1905,9 @@ fn fallback_backtest(
         .fallback_first_l3_date
         .and_then(|date| lead_time_from_date(scenario.crisis_start, Some(date)));
     BacktestScenarioSummary {
-        scenario_id: scenario.scenario_id.to_string(),
-        name: scenario.name.to_string(),
-        region: scenario.region.to_string(),
+        scenario_id: scenario.scenario_id.clone(),
+        name: scenario.name.clone(),
+        region: scenario.region.clone(),
         signal_source: BacktestSignalSource::FallbackTemplate,
         crisis_start: scenario.crisis_start,
         crisis_end: scenario.crisis_end,
@@ -1715,10 +1954,21 @@ fn build_rolling_backtest_audit(
     history: &[fc_domain::AssessmentHistoryPoint],
     stress_windows: &[ProtectedStressWindow],
 ) -> BacktestRollingAudit {
-    let audit_window_start = scenario_catalog()
+    let catalog_window_start = scenario_catalog()
         .iter()
         .map(|scenario| scenario.crisis_start - Duration::days(90))
         .min();
+    let min_supported_date = NaiveDate::from_ymd_opt(
+        ROLLING_AUDIT_MIN_DATE.0,
+        ROLLING_AUDIT_MIN_DATE.1,
+        ROLLING_AUDIT_MIN_DATE.2,
+    )
+    .expect("valid rolling audit min date");
+    let audit_window_start = Some(
+        catalog_window_start
+            .map(|date| date.max(min_supported_date))
+            .unwrap_or(min_supported_date),
+    );
     let filtered_history = history
         .iter()
         .filter(|point| audit_window_start.is_none_or(|start| point.as_of_date >= start))
@@ -1774,16 +2024,13 @@ fn build_rolling_backtest_audit(
                 in_crisis_signal_count += 1;
             } else if within_actionable_horizon {
                 pre_crisis_signal_count += 1;
-            } else if let Some(window) = stress_windows.iter().find(|window| {
-                point.as_of_date >= window.start_date && point.as_of_date <= window.end_date
-            }) {
+            } else if let Some(note) =
+                protected_stress_window_note(point.as_of_date, stress_windows, &scenarios)
+            {
                 stress_window_signal_count += 1;
                 advance_classified_episode(
                     &mut current_episode,
-                    Some((
-                        "stress_window",
-                        format!("{}：{}", window.label, window.note),
-                    )),
+                    Some(("stress_window", note)),
                     point.as_of_date,
                     &mut classified_episodes,
                     &mut false_positive_episode_count,
@@ -1974,16 +2221,73 @@ fn is_structural_warning_point(point: &fc_domain::AssessmentHistoryPoint) -> boo
 }
 
 fn is_actionable_warning_point(point: &fc_domain::AssessmentHistoryPoint) -> bool {
-    matches!(
-        point.time_to_risk_bucket,
-        TimeToRiskBucket::Weeks | TimeToRiskBucket::Now
-    ) || matches!(
-        point.posture,
-        DecisionPosture::Hedge | DecisionPosture::Defend
-    ) || (matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
-        && point.overall_score >= 56.0
-        && point.external_shock_score >= 44.0)
-        || (point.overall_score >= 60.0 && point.p_20d >= 0.20 && point.p_60d >= 0.50)
+    let strict_short_horizon_signal =
+        matches!(
+            point.posture,
+            DecisionPosture::Hedge | DecisionPosture::Defend
+        ) || (matches!(point.time_to_risk_bucket, TimeToRiskBucket::Now)
+            && point.overall_score >= 60.0
+            && point.p_5d >= 0.18)
+            || (matches!(point.time_to_risk_bucket, TimeToRiskBucket::Weeks)
+                && point.overall_score >= 58.0
+                && point.p_20d >= 0.25
+                && point.external_shock_score >= 44.0);
+
+    let high_probability_prepare_signal = matches!(point.posture, DecisionPosture::Prepare)
+        && point.overall_score >= 60.0
+        && point.p_20d >= 0.18
+        && point.p_60d >= 0.45
+        && point.external_shock_score >= 46.0;
+    let high_probability_months_signal =
+        matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+            && point.overall_score >= 62.0
+            && point.p_20d >= 0.18
+            && point.p_60d >= 0.45
+            && point.external_shock_score >= 48.0;
+
+    // Persisted historical snapshots still carry a transitional posture/bucket view:
+    // probabilities are often floor-bound, while overall/external stress capture the
+    // elevated state. Until the raw point-in-time feature store replaces that archive,
+    // rolling audit needs a bridge rule for strong prepare/months phases.
+    let prepare_bridge_signal = matches!(point.posture, DecisionPosture::Prepare)
+        && point.overall_score >= 58.0
+        && point.external_shock_score >= 46.0;
+    let months_bridge_signal = matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && point.overall_score >= 58.0
+        && point.external_shock_score >= 42.0;
+
+    strict_short_horizon_signal
+        || high_probability_prepare_signal
+        || high_probability_months_signal
+        || prepare_bridge_signal
+        || months_bridge_signal
+}
+
+fn protected_stress_window_note(
+    as_of_date: NaiveDate,
+    explicit_windows: &[ProtectedStressWindow],
+    scenarios: &[ScenarioDefinition],
+) -> Option<String> {
+    if let Some(window) = explicit_windows
+        .iter()
+        .find(|window| as_of_date >= window.start_date && as_of_date <= window.end_date)
+    {
+        return Some(format!("{}：{}", window.label, window.note));
+    }
+
+    scenarios
+        .iter()
+        .find(|scenario| {
+            scenario.protected_window
+                && as_of_date >= scenario.pre_warning_start
+                && as_of_date <= scenario.crisis_end
+        })
+        .map(|scenario| {
+            format!(
+                "{}：场景目录将该阶段标记为受保护压力窗口，用于 posture 审计而不是主正例。",
+                scenario.name
+            )
+        })
 }
 
 fn lead_time_from_date(crisis_start: NaiveDate, signal_date: Option<NaiveDate>) -> Option<i64> {
@@ -2047,9 +2351,38 @@ fn round3(value: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use chrono::{NaiveDate, TimeZone, Utc};
-    use fc_domain::PredictionSnapshotRecord;
+    use fc_domain::{
+        DecisionPosture, ModelReleaseManifest, ModelReleaseRecord, PredictionSnapshotRecord,
+        ProbabilityBundle, TimeToRiskBucket,
+    };
 
-    use super::historical_output_from_prediction_snapshots;
+    use super::{
+        build_rolling_backtest_audit, expected_prediction_snapshot_method_version,
+        historical_output_from_prediction_snapshots, is_actionable_warning_point,
+        should_refresh_full_formal_history, ServingModelContext,
+    };
+
+    fn history_point(
+        as_of_date: NaiveDate,
+        overall_score: f64,
+        posture: DecisionPosture,
+        time_to_risk_bucket: TimeToRiskBucket,
+        external_shock_score: f64,
+    ) -> fc_domain::AssessmentHistoryPoint {
+        fc_domain::AssessmentHistoryPoint {
+            as_of_date,
+            overall_score,
+            p_5d: 0.026,
+            p_20d: 0.026,
+            p_60d: 0.056,
+            raw_p_5d: Some(0.012),
+            raw_p_20d: Some(0.028),
+            raw_p_60d: Some(0.081),
+            posture,
+            time_to_risk_bucket,
+            external_shock_score,
+        }
+    }
 
     fn snapshot(
         as_of_date: NaiveDate,
@@ -2088,6 +2421,55 @@ mod tests {
         }
     }
 
+    fn formal_serving_model_context() -> ServingModelContext {
+        ServingModelContext {
+            release: ModelReleaseRecord {
+                manifest: ModelReleaseManifest {
+                    release_id: "formal-release".to_string(),
+                    market_scope: "financial_system".to_string(),
+                    status: "active".to_string(),
+                    probability_mode: "formal_bundle_v1".to_string(),
+                    serving_status: "healthy".to_string(),
+                    bundle_uri: "bundle.json".to_string(),
+                    feature_set_version: super::FORMAL_MAIN_FEATURE_SET_VERSION.to_string(),
+                    label_version: super::FORMAL_MAIN_LABEL_VERSION.to_string(),
+                    prob_model_version: "prob_bundle_test".to_string(),
+                    calibration_version: "platt_test".to_string(),
+                    posture_policy_version: "posture_test".to_string(),
+                    action_playbook_version: "action_test".to_string(),
+                    point_in_time_mode: "best_effort".to_string(),
+                    training_range_start: None,
+                    training_range_end: None,
+                    calibration_range_start: None,
+                    calibration_range_end: None,
+                    evaluation_range_start: None,
+                    evaluation_range_end: None,
+                    brier_score: None,
+                    log_loss: None,
+                    ece: None,
+                    note: String::new(),
+                },
+                created_at: Utc::now(),
+                activated_at: None,
+                retired_at: None,
+            },
+            probability_bundle: Some(ProbabilityBundle {
+                bundle_id: "bundle".to_string(),
+                market_scope: "financial_system".to_string(),
+                probability_mode: "formal_bundle_v1".to_string(),
+                created_at: Utc::now(),
+                feature_names: Vec::new(),
+                monotonic_min_gap_5d_to_20d: 0.0,
+                monotonic_min_gap_20d_to_60d: 0.0,
+                note: String::new(),
+                horizons: Vec::new(),
+                evaluation: None,
+            }),
+            runtime_probability_mode: "formal_bundle_v1".to_string(),
+            runtime_release_status: "healthy".to_string(),
+        }
+    }
+
     #[test]
     fn prediction_history_filters_by_release_and_keeps_latest_daily_snapshot() {
         let as_of_date = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
@@ -2107,5 +2489,90 @@ mod tests {
             output.history_points[0].posture,
             fc_domain::DecisionPosture::Hedge
         );
+    }
+
+    #[test]
+    fn actionable_warning_point_accepts_prepare_bridge_for_persisted_snapshots() {
+        let point = history_point(
+            NaiveDate::from_ymd_opt(2008, 7, 25).unwrap(),
+            58.0,
+            DecisionPosture::Prepare,
+            TimeToRiskBucket::Normal,
+            46.0,
+        );
+
+        assert!(is_actionable_warning_point(&point));
+    }
+
+    #[test]
+    fn actionable_warning_point_rejects_weak_prepare_bridge() {
+        let point = history_point(
+            NaiveDate::from_ymd_opt(2008, 7, 25).unwrap(),
+            57.9,
+            DecisionPosture::Prepare,
+            TimeToRiskBucket::Normal,
+            45.9,
+        );
+
+        assert!(!is_actionable_warning_point(&point));
+    }
+
+    #[test]
+    fn rolling_audit_counts_catalog_protected_windows_as_stress() {
+        let history = vec![history_point(
+            NaiveDate::from_ymd_opt(2000, 2, 1).unwrap(),
+            60.0,
+            DecisionPosture::Prepare,
+            TimeToRiskBucket::Months,
+            46.0,
+        )];
+
+        let audit = build_rolling_backtest_audit(&history, &[]);
+
+        assert_eq!(audit.actionable_signal_count, 1);
+        assert_eq!(audit.stress_window_signal_count, 1);
+        assert_eq!(audit.false_positive_signal_count, 0);
+        assert_eq!(audit.classified_episodes.len(), 1);
+        assert_eq!(audit.classified_episodes[0].classification, "stress_window");
+    }
+
+    #[test]
+    fn formal_main_history_refreshes_when_cached_method_version_is_stale() {
+        let serving_model = formal_serving_model_context();
+        let mut persisted = vec![snapshot(
+            NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            Some("formal-release"),
+            0.27,
+            "hedge",
+            3,
+        )];
+        persisted[0].method_version = "legacy-cache".to_string();
+
+        assert!(should_refresh_full_formal_history(
+            Some(&serving_model),
+            &persisted,
+            false,
+        ));
+    }
+
+    #[test]
+    fn formal_main_history_keeps_cache_when_method_version_matches() {
+        let serving_model = formal_serving_model_context();
+        let expected_method_version =
+            expected_prediction_snapshot_method_version(Some(&serving_model));
+        let mut persisted = vec![snapshot(
+            NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            Some("formal-release"),
+            0.27,
+            "hedge",
+            3,
+        )];
+        persisted[0].method_version = expected_method_version;
+
+        assert!(!should_refresh_full_formal_history(
+            Some(&serving_model),
+            &persisted,
+            false,
+        ));
     }
 }

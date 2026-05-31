@@ -168,7 +168,7 @@ pub async fn assessment_method(State(state): State<Arc<AppState>>) -> Json<serde
         data.assessment.runtime.data_mode,
         fc_domain::DataMode::Sqlite
     ) {
-        "assessment/history 在 SQLite 模式下优先复用已落库的 prediction snapshots，仅在缺口日期补算。"
+        "assessment/history 在 SQLite 模式下会复用已落库的 prediction snapshots；若 active release 是 formal main 且缓存版本失配，会改为基于原始观测全量重建该 release 的历史。"
     } else {
         "assessment/history 当前仍由运行时即时构造。"
     };

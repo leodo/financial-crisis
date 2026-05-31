@@ -369,6 +369,9 @@ export interface AssessmentHistoryPoint {
   p_5d: number;
   p_20d: number;
   p_60d: number;
+  raw_p_5d?: number;
+  raw_p_20d?: number;
+  raw_p_60d?: number;
   posture: DecisionPosture;
   time_to_risk_bucket: TimeToRiskBucket;
   external_shock_score: number;

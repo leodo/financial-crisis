@@ -251,6 +251,67 @@ CREATE TABLE IF NOT EXISTS analytics_prediction_snapshots (
     recorded_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS analytics_feature_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    market_scope TEXT NOT NULL,
+    as_of_date TEXT NOT NULL,
+    feature_set_version TEXT NOT NULL,
+    point_in_time_mode TEXT NOT NULL,
+    visibility_status TEXT NOT NULL,
+    latest_visible_at TEXT,
+    coverage_score REAL NOT NULL,
+    core_feature_coverage REAL NOT NULL,
+    trigger_feature_coverage REAL NOT NULL,
+    external_feature_coverage REAL NOT NULL,
+    feature_count INTEGER NOT NULL,
+    features_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS analytics_formal_datasets (
+    dataset_key TEXT PRIMARY KEY,
+    dataset_id TEXT NOT NULL,
+    dataset_version TEXT NOT NULL,
+    market_scope TEXT NOT NULL,
+    feature_set_version TEXT NOT NULL,
+    label_version TEXT NOT NULL,
+    scenario_set_version TEXT NOT NULL,
+    point_in_time_mode TEXT NOT NULL,
+    from_date TEXT,
+    to_date TEXT,
+    train_end_date TEXT,
+    calibration_end_date TEXT,
+    evaluation_start_date TEXT,
+    row_count INTEGER NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    manifest_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS analytics_formal_dataset_rows (
+    row_id TEXT PRIMARY KEY,
+    dataset_key TEXT NOT NULL REFERENCES analytics_formal_datasets(dataset_key) ON DELETE CASCADE,
+    split_name TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    market_scope TEXT NOT NULL,
+    as_of_date TEXT NOT NULL,
+    point_in_time_mode TEXT NOT NULL,
+    latest_visible_at TEXT,
+    coverage_score REAL NOT NULL,
+    core_feature_coverage REAL NOT NULL,
+    trigger_feature_coverage REAL NOT NULL,
+    external_feature_coverage REAL NOT NULL,
+    sample_quality_grade TEXT NOT NULL,
+    primary_scenario_id TEXT,
+    scenario_family TEXT,
+    label_5d INTEGER NOT NULL,
+    label_20d INTEGER NOT NULL,
+    label_60d INTEGER NOT NULL,
+    features_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS alerts_events (
     alert_id TEXT PRIMARY KEY,
     event_type TEXT NOT NULL,
@@ -297,6 +358,15 @@ CREATE INDEX IF NOT EXISTS idx_analytics_prediction_snapshots_scope_date
 
 CREATE INDEX IF NOT EXISTS idx_analytics_prediction_snapshots_release_date
     ON analytics_prediction_snapshots(release_id, as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_feature_snapshots_scope_version_date
+    ON analytics_feature_snapshots(market_scope, feature_set_version, as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_formal_datasets_scope_version
+    ON analytics_formal_datasets(market_scope, dataset_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_formal_dataset_rows_dataset_split_date
+    ON analytics_formal_dataset_rows(dataset_key, split_name, as_of_date DESC);
 
 CREATE INDEX IF NOT EXISTS idx_alerts_events_status
     ON alerts_events(status, level, triggered_as_of_date DESC);

@@ -1,0 +1,149 @@
+{
+  "catalog_id": "scenario_v1_main",
+  "market_scope": "financial_system",
+  "note": "美国主线金融危机场景目录。它统一服务正式标签、历史类比和受保护压力窗口解释，避免危机起点继续散落在代码常量里。",
+  "label_sets": [
+    {
+      "label_set_id": "formal_label_v1_main",
+      "scenario_ids": [
+        "us_gfc_2008",
+        "us_covid_liquidity_2020",
+        "us_regional_banks_2023"
+      ],
+      "note": "1990+ 正式主训练集使用的第一版主标签集。"
+    },
+    {
+      "label_set_id": "formal_label_v1_ext_acute",
+      "scenario_ids": [
+        "us_black_monday_1987",
+        "us_ltcm_1998"
+      ],
+      "note": "急性冲击扩展标签集，用于 5d/20d 研究和历史类比校验。"
+    }
+  ],
+  "window_sets": [
+    {
+      "window_set_id": "protected_stress_windows_v1",
+      "scenario_ids": [
+        "us_dotcom_unwind_2000",
+        "us_funding_stress_2011",
+        "us_rate_shock_2022"
+      ],
+      "note": "这些场景更多用于 posture 审计和受保护压力窗口解释，而不是主正例。"
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "us_black_monday_1987",
+      "family": "acute_market_liquidity_crash",
+      "label": "1987 黑色星期一",
+      "pre_warning_start": "1987-09-01",
+      "crisis_start": "1987-10-14",
+      "acute_start": "1987-10-19",
+      "crisis_peak": "1987-10-19",
+      "crisis_end": "1987-11-20",
+      "default_horizon_roles": [5, 20],
+      "training_role": "extension_only",
+      "protected_window": false,
+      "evidence_basis": "单日极端暴跌与流动性冲击主导，适合作为急性市场崩盘类比，而不是银行信用危机主样本。"
+    },
+    {
+      "scenario_id": "us_ltcm_1998",
+      "family": "acute_market_liquidity_crash",
+      "label": "1998 LTCM 与俄罗斯违约冲击",
+      "pre_warning_start": "1998-07-01",
+      "crisis_start": "1998-08-17",
+      "acute_start": "1998-08-31",
+      "crisis_peak": "1998-09-23",
+      "crisis_end": "1998-10-15",
+      "default_horizon_roles": [5, 20],
+      "training_role": "extension_only",
+      "protected_window": false,
+      "evidence_basis": "俄罗斯违约外溢、杠杆去化和融资条件收缩共同推动的急性风险样本。"
+    },
+    {
+      "scenario_id": "us_dotcom_unwind_2000",
+      "family": "mixed_systemic_stress",
+      "label": "2000-2001 科网泡沫出清",
+      "pre_warning_start": "1999-12-01",
+      "crisis_start": "2000-03-10",
+      "acute_start": "2000-04-14",
+      "crisis_peak": "2000-04-14",
+      "crisis_end": "2001-04-04",
+      "default_horizon_roles": [20, 60],
+      "training_role": "candidate_optional",
+      "protected_window": true,
+      "evidence_basis": "资产泡沫出清与风险偏好塌缩主导，更适合 posture 和 protected stress 审计。"
+    },
+    {
+      "scenario_id": "us_gfc_2008",
+      "family": "systemic_credit_banking_crisis",
+      "label": "2007-2009 全球金融危机",
+      "pre_warning_start": "2007-02-27",
+      "crisis_start": "2007-08-01",
+      "acute_start": "2008-09-15",
+      "crisis_peak": "2008-09-15",
+      "crisis_end": "2009-06-30",
+      "default_horizon_roles": [20, 60],
+      "training_role": "mandatory",
+      "protected_window": false,
+      "evidence_basis": "信用、地产、银行和融资链条持续恶化，是 20d/60d 主线最关键的系统性危机样本。"
+    },
+    {
+      "scenario_id": "us_funding_stress_2011",
+      "family": "mixed_systemic_stress",
+      "label": "2011 美欧融资压力",
+      "pre_warning_start": "2011-06-01",
+      "crisis_start": "2011-07-29",
+      "acute_start": "2011-08-08",
+      "crisis_peak": "2011-08-08",
+      "crisis_end": "2011-10-31",
+      "default_horizon_roles": [20, 60],
+      "training_role": "extension_only",
+      "protected_window": true,
+      "evidence_basis": "美国主权评级下调与欧债融资压力叠加，更适合受保护压力窗口和历史类比。"
+    },
+    {
+      "scenario_id": "us_covid_liquidity_2020",
+      "family": "acute_market_liquidity_crash",
+      "label": "2020 疫情流动性冲击",
+      "pre_warning_start": "2020-01-24",
+      "crisis_start": "2020-02-24",
+      "acute_start": "2020-03-09",
+      "crisis_peak": "2020-03-16",
+      "crisis_end": "2020-04-30",
+      "default_horizon_roles": [5, 20],
+      "training_role": "mandatory",
+      "protected_window": false,
+      "evidence_basis": "市场与流动性在极短时间内同步失稳，是 5d/20d 急性冲击主样本。"
+    },
+    {
+      "scenario_id": "us_rate_shock_2022",
+      "family": "rate_shock_or_policy_dislocation",
+      "label": "2022 联储加息与久期冲击",
+      "pre_warning_start": "2021-11-01",
+      "crisis_start": "2022-01-03",
+      "acute_start": "2022-06-10",
+      "crisis_peak": "2022-06-16",
+      "crisis_end": "2022-10-31",
+      "default_horizon_roles": [20, 60],
+      "training_role": "no_positive_main",
+      "protected_window": true,
+      "evidence_basis": "利率、政策和久期冲击主导，不应直接充当银行信用危机正例，但必须进入 posture 审计。"
+    },
+    {
+      "scenario_id": "us_regional_banks_2023",
+      "family": "systemic_credit_banking_crisis",
+      "label": "2023 美国区域银行危机",
+      "pre_warning_start": "2023-02-01",
+      "crisis_start": "2023-03-08",
+      "acute_start": "2023-03-10",
+      "crisis_peak": "2023-03-13",
+      "crisis_end": "2023-05-15",
+      "default_horizon_roles": [20, 60],
+      "training_role": "mandatory",
+      "protected_window": false,
+      "evidence_basis": "银行、存款与融资信心压力快速放大，是当前美国主线银行危机样本。"
+    }
+  ]
+}

@@ -12,9 +12,14 @@ use fc_domain::{
     ProbabilityBlock, ProbabilityBundle, QualityGrade, RiskContributor, RiskDimension,
     RiskSnapshot, RuntimeMetadata, TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
     FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER,
-    FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
-    FEATURE_FRESHNESS_STALE_OR_MISSING, FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D,
-    FEATURE_HEURISTIC_P_60D, FEATURE_OVERALL_SCORE,
+    FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_DIMENSION_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE,
+    FEATURE_FRESHNESS_DELAYED_OR_WORSE, FEATURE_FRESHNESS_STALE_OR_MISSING,
+    FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D, FEATURE_HEURISTIC_P_60D,
+    FEATURE_OVERALL_SCORE, FEATURE_STRUCTURAL_SCORE, FEATURE_TRIGGER_SCORE,
+    FEATURE_US_BAA_10Y_SPREAD_LEVEL, FEATURE_US_CURVE_10Y2Y_LEVEL, FEATURE_US_FED_FUNDS_LEVEL,
+    FEATURE_US_HOUSING_STARTS_LEVEL, FEATURE_US_NFCI_LEVEL, FEATURE_US_STLFSI_LEVEL,
+    FEATURE_US_UNEMPLOYMENT_LEVEL, FEATURE_US_USDJPY_CHANGE_20D, FEATURE_US_USDJPY_LEVEL,
+    FEATURE_US_VIX_CHANGE_5D, FEATURE_US_VIX_LEVEL,
 };
 
 const PROB_MODEL_VERSION: &str = "prob_v1_20260531";
@@ -25,6 +30,69 @@ const POSTURE_POLICY_VERSION: &str = "posture_v1_20260530";
 const ACTION_PLAYBOOK_VERSION: &str = "action_playbook_v1_20260531";
 const PROBABILITY_MODE: &str = "heuristic_mvp";
 const RELEASE_STATUS: &str = "degraded";
+const PREPARE_P60D_THRESHOLD: f64 = 0.35;
+const HEDGE_P20D_THRESHOLD: f64 = 0.30;
+const DEFEND_P5D_THRESHOLD: f64 = 0.30;
+const FORMAL_MAIN_PREPARE_P60D_THRESHOLD: f64 = 0.10;
+const FORMAL_MAIN_HEDGE_P20D_THRESHOLD: f64 = 0.07;
+const FORMAL_MAIN_DEFEND_P5D_THRESHOLD: f64 = 0.03;
+
+#[derive(Debug, Clone, Copy)]
+struct ProbabilityActionThresholds {
+    prepare_p60d: f64,
+    hedge_p20d: f64,
+    defend_p5d: f64,
+}
+
+impl ProbabilityActionThresholds {
+    fn legacy() -> Self {
+        Self {
+            prepare_p60d: PREPARE_P60D_THRESHOLD,
+            hedge_p20d: HEDGE_P20D_THRESHOLD,
+            defend_p5d: DEFEND_P5D_THRESHOLD,
+        }
+    }
+
+    fn formal_main() -> Self {
+        Self {
+            prepare_p60d: FORMAL_MAIN_PREPARE_P60D_THRESHOLD,
+            hedge_p20d: FORMAL_MAIN_HEDGE_P20D_THRESHOLD,
+            defend_p5d: FORMAL_MAIN_DEFEND_P5D_THRESHOLD,
+        }
+    }
+
+    fn severe_now_p20d(self) -> f64 {
+        (self.hedge_p20d + 0.20).max(self.hedge_p20d * 2.0)
+    }
+
+    fn elevated_weeks_p60d(self) -> f64 {
+        (self.prepare_p60d + 0.10).max(self.prepare_p60d * 1.6)
+    }
+
+    fn external_prepare_p20d(self) -> f64 {
+        (self.hedge_p20d * 0.7).max(0.04)
+    }
+
+    fn carry_prepare_p60d(self) -> f64 {
+        (self.prepare_p60d * 0.8).max(0.05)
+    }
+
+    fn downgrade_prepare_p60d(self) -> f64 {
+        (self.prepare_p60d * 0.75).max(0.05)
+    }
+
+    fn downgrade_hedge_p20d(self) -> f64 {
+        (self.hedge_p20d * 0.75).max(0.04)
+    }
+
+    fn downgrade_defend_p5d(self) -> f64 {
+        (self.defend_p5d * 0.67).max(0.02)
+    }
+
+    fn capital_preservation_p5d(self) -> f64 {
+        (self.defend_p5d * 1.5).max(self.defend_p5d + 0.02)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ServingModelContext {
@@ -32,6 +100,22 @@ pub struct ServingModelContext {
     pub probability_bundle: Option<ProbabilityBundle>,
     pub runtime_probability_mode: String,
     pub runtime_release_status: String,
+}
+
+fn probability_action_thresholds(
+    active_release: Option<&ModelReleaseRecord>,
+) -> ProbabilityActionThresholds {
+    let Some(active_release) = active_release else {
+        return ProbabilityActionThresholds::legacy();
+    };
+
+    if active_release.manifest.feature_set_version == "feature_formal_v1_main_20260531"
+        && active_release.manifest.label_version == "formal_label_v1_main"
+    {
+        ProbabilityActionThresholds::formal_main()
+    } else {
+        ProbabilityActionThresholds::legacy()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +172,7 @@ pub fn build_assessment_snapshot(
     let key_indicators = build_key_indicator_statuses(observations, snapshot.as_of_date, data_mode);
     let probability_trace = build_probability_trace(
         snapshot,
+        observations,
         external_shock_score,
         &data_trust,
         &jpy_carry,
@@ -96,19 +181,28 @@ pub fn build_assessment_snapshot(
         serving_model,
     );
     let probabilities = probability_trace.calibrated_probabilities.clone();
+    let active_release = serving_model.map(|context| &context.release);
+    let action_thresholds = probability_action_thresholds(active_release);
     let time_to_risk_bucket = build_time_to_risk_bucket(
         &probabilities,
+        snapshot.structural_score,
         snapshot.trigger_score,
         external_shock_score,
+        breadth_score,
         &jpy_carry,
+        action_thresholds,
     );
     let top_risk_drivers = snapshot.top_contributors.clone();
     let top_relief_drivers = build_relief_drivers(indicator_risks);
-    let historical_analogs =
-        build_historical_analogs(snapshot, &probabilities, external_shock_score, backtests);
+    let historical_analogs = build_historical_analogs(
+        snapshot,
+        &probabilities,
+        external_shock_score,
+        backtests,
+        action_thresholds,
+    );
     let event_assessment = build_event_assessment(snapshot, alerts);
     let backtest_summary = build_backtest_summary(backtests, rolling_audit);
-    let active_release = serving_model.map(|context| &context.release);
     let posture_guidance = build_posture_guidance(
         snapshot,
         &probabilities,
@@ -120,6 +214,7 @@ pub fn build_assessment_snapshot(
         &jpy_carry,
         &event_assessment,
         user_preferences,
+        action_thresholds,
     );
     let position_guidance = build_position_guidance(
         &posture_guidance,
@@ -130,6 +225,7 @@ pub fn build_assessment_snapshot(
         &event_assessment,
         active_release,
         user_preferences,
+        action_thresholds,
     );
     let method = AssessmentMethodVersions {
         score_method_version: snapshot.method_version.clone(),
@@ -264,8 +360,10 @@ fn build_probabilities(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_probability_trace(
     snapshot: &RiskSnapshot,
+    observations: &[Observation],
     external_shock_score: f64,
     data_trust: &DataTrust,
     jpy_carry: &JpyCarrySnapshot,
@@ -288,6 +386,7 @@ fn build_probability_trace(
 
     let features = build_probability_feature_map(
         snapshot,
+        observations,
         external_shock_score,
         data_trust,
         jpy_carry,
@@ -329,6 +428,7 @@ fn build_probability_trace(
 
 fn build_probability_feature_map(
     snapshot: &RiskSnapshot,
+    observations: &[Observation],
     external_shock_score: f64,
     data_trust: &DataTrust,
     jpy_carry: &JpyCarrySnapshot,
@@ -337,13 +437,15 @@ fn build_probability_feature_map(
 ) -> BTreeMap<String, f64> {
     let heuristic_bucket = build_time_to_risk_bucket(
         heuristic_probabilities,
+        snapshot.structural_score,
         snapshot.trigger_score,
         external_shock_score,
+        high_risk_breadth(snapshot),
         jpy_carry,
+        ProbabilityActionThresholds::legacy(),
     );
     let freshness_status = worst_key_indicator_freshness(key_indicators);
-
-    BTreeMap::from([
+    let mut features = BTreeMap::from([
         (
             FEATURE_OVERALL_SCORE.to_string(),
             (snapshot.overall_score / 100.0).clamp(0.0, 1.0),
@@ -400,7 +502,186 @@ fn build_probability_feature_map(
                 FreshnessStatus::Stale | FreshnessStatus::Missing
             ) as u8 as f64,
         ),
-    ])
+    ]);
+    features.extend(build_formal_probability_feature_map(
+        snapshot,
+        observations,
+        data_trust,
+    ));
+    features
+}
+
+fn build_formal_probability_feature_map(
+    snapshot: &RiskSnapshot,
+    observations: &[Observation],
+    data_trust: &DataTrust,
+) -> BTreeMap<String, f64> {
+    let mut features = BTreeMap::from([
+        (
+            FEATURE_STRUCTURAL_SCORE.to_string(),
+            round6((snapshot.structural_score / 100.0).clamp(0.0, 1.0)),
+        ),
+        (
+            FEATURE_TRIGGER_SCORE.to_string(),
+            round6((snapshot.trigger_score / 100.0).clamp(0.0, 1.0)),
+        ),
+        (
+            FEATURE_EXTERNAL_DIMENSION_SCORE.to_string(),
+            round6(
+                (dimension_score(snapshot, RiskDimension::ExternalSector) / 100.0).clamp(0.0, 1.0),
+            ),
+        ),
+        (
+            FEATURE_COVERAGE_SCORE.to_string(),
+            data_trust.coverage_score.clamp(0.0, 1.0),
+        ),
+    ]);
+    let as_of_date = snapshot.as_of_date;
+
+    insert_formal_latest_feature(
+        &mut features,
+        FEATURE_US_VIX_LEVEL,
+        observations,
+        "us_market_vix_close",
+        as_of_date,
+    );
+    insert_formal_derived_feature(
+        &mut features,
+        FEATURE_US_VIX_CHANGE_5D,
+        observation_difference_from_tail(observations, "us_market_vix_close", as_of_date, 5),
+    );
+    insert_formal_latest_feature(
+        &mut features,
+        FEATURE_US_CURVE_10Y2Y_LEVEL,
+        observations,
+        "us_rates_yield_curve_10y2y",
+        as_of_date,
+    );
+    insert_formal_latest_feature(
+        &mut features,
+        FEATURE_US_BAA_10Y_SPREAD_LEVEL,
+        observations,
+        "us_credit_baa_10y_spread",
+        as_of_date,
+    );
+    insert_formal_latest_feature(
+        &mut features,
+        FEATURE_US_FED_FUNDS_LEVEL,
+        observations,
+        "us_liquidity_effr",
+        as_of_date,
+    );
+    insert_formal_latest_feature(
+        &mut features,
+        FEATURE_US_NFCI_LEVEL,
+        observations,
+        "us_liquidity_national_financial_conditions",
+        as_of_date,
+    );
+    insert_formal_latest_feature(
+        &mut features,
+        FEATURE_US_STLFSI_LEVEL,
+        observations,
+        "us_liquidity_financial_stress_stl",
+        as_of_date,
+    );
+    insert_formal_latest_feature(
+        &mut features,
+        FEATURE_US_UNEMPLOYMENT_LEVEL,
+        observations,
+        "us_macro_unemployment_rate",
+        as_of_date,
+    );
+    insert_formal_latest_feature(
+        &mut features,
+        FEATURE_US_HOUSING_STARTS_LEVEL,
+        observations,
+        "us_real_estate_housing_starts",
+        as_of_date,
+    );
+    insert_formal_latest_feature(
+        &mut features,
+        FEATURE_US_USDJPY_LEVEL,
+        observations,
+        "us_external_usdjpy_level",
+        as_of_date,
+    );
+    insert_formal_derived_feature(
+        &mut features,
+        FEATURE_US_USDJPY_CHANGE_20D,
+        observation_difference_from_tail(observations, "us_external_usdjpy_level", as_of_date, 20),
+    );
+
+    features
+}
+
+fn dimension_score(snapshot: &RiskSnapshot, dimension: RiskDimension) -> f64 {
+    snapshot
+        .dimensions
+        .iter()
+        .find(|score| score.dimension == dimension)
+        .map(|score| score.score)
+        .unwrap_or(0.0)
+}
+
+fn insert_formal_latest_feature(
+    features: &mut BTreeMap<String, f64>,
+    feature_name: &str,
+    observations: &[Observation],
+    indicator_id: &str,
+    as_of_date: NaiveDate,
+) {
+    if let Some(value) = latest_observation_value(observations, indicator_id, as_of_date) {
+        features.insert(feature_name.to_string(), round6(value));
+    }
+}
+
+fn insert_formal_derived_feature(
+    features: &mut BTreeMap<String, f64>,
+    feature_name: &str,
+    value: Option<f64>,
+) {
+    if let Some(value) = value {
+        features.insert(feature_name.to_string(), round6(value));
+    }
+}
+
+fn latest_observation_value(
+    observations: &[Observation],
+    indicator_id: &str,
+    as_of_date: NaiveDate,
+) -> Option<f64> {
+    observation_history(observations, indicator_id, as_of_date)
+        .last()
+        .map(|observation| observation.value)
+}
+
+fn observation_difference_from_tail(
+    observations: &[Observation],
+    indicator_id: &str,
+    as_of_date: NaiveDate,
+    lookback: usize,
+) -> Option<f64> {
+    let history = observation_history(observations, indicator_id, as_of_date);
+    let latest = history.last()?;
+    let previous_index = history.len().checked_sub(lookback + 1)?;
+    let previous = history.get(previous_index)?;
+    Some(latest.value - previous.value)
+}
+
+fn observation_history<'a>(
+    observations: &'a [Observation],
+    indicator_id: &str,
+    as_of_date: NaiveDate,
+) -> Vec<&'a Observation> {
+    let mut history = observations
+        .iter()
+        .filter(|observation| {
+            observation.indicator_id == indicator_id && observation.as_of_date <= as_of_date
+        })
+        .collect::<Vec<_>>();
+    history.sort_by_key(|observation| observation.as_of_date);
+    history
 }
 
 fn score_bundle_horizon(
@@ -469,21 +750,41 @@ fn freshness_rank(status: FreshnessStatus) -> u8 {
 
 fn build_time_to_risk_bucket(
     probabilities: &ProbabilityBlock,
+    structural_score: f64,
     trigger_score: f64,
     external_shock_score: f64,
+    breadth_score: f64,
     jpy_carry: &JpyCarrySnapshot,
+    thresholds: ProbabilityActionThresholds,
 ) -> TimeToRiskBucket {
-    if probabilities.p_5d >= 0.3
-        || (probabilities.p_20d >= 0.55 && trigger_score >= 70.0)
-        || (jpy_carry.score >= 70.0 && jpy_carry.funding_pressure_score >= 55.0)
+    let severe_carry = jpy_carry.score >= 70.0 && jpy_carry.funding_pressure_score >= 55.0;
+    let stressed_carry = jpy_carry.score >= 58.0 && jpy_carry.funding_pressure_score >= 48.0;
+
+    if (probabilities.p_5d >= thresholds.defend_p5d
+        && trigger_score >= 62.0
+        && breadth_score >= 48.0)
+        || (probabilities.p_20d >= thresholds.severe_now_p20d()
+            && trigger_score >= 68.0
+            && external_shock_score >= 55.0
+            && breadth_score >= 45.0)
+        || (severe_carry && external_shock_score >= 55.0 && trigger_score >= 50.0)
     {
         TimeToRiskBucket::Now
-    } else if probabilities.p_20d >= 0.35
-        || external_shock_score >= 60.0
-        || jpy_carry.funding_pressure_score >= 50.0
+    } else if (probabilities.p_20d >= thresholds.hedge_p20d
+        && (trigger_score >= 50.0 || external_shock_score >= 50.0)
+        && breadth_score >= 38.0)
+        || (probabilities.p_60d >= thresholds.elevated_weeks_p60d()
+            && structural_score >= 55.0
+            && trigger_score >= 55.0
+            && breadth_score >= 40.0)
+        || (stressed_carry && external_shock_score >= 50.0 && structural_score >= 50.0)
     {
         TimeToRiskBucket::Weeks
-    } else if probabilities.p_60d >= 0.35 || trigger_score >= 45.0 {
+    } else if (probabilities.p_60d >= thresholds.prepare_p60d && structural_score >= 55.0)
+        || (structural_score >= 62.0 && trigger_score >= 42.0)
+        || (external_shock_score >= 55.0
+            && probabilities.p_20d >= thresholds.external_prepare_p20d())
+    {
         TimeToRiskBucket::Months
     } else {
         TimeToRiskBucket::Normal
@@ -502,23 +803,51 @@ fn build_posture_guidance(
     jpy_carry: &JpyCarrySnapshot,
     event_assessment: &EventAssessment,
     user_preferences: &UserRiskPreferences,
+    thresholds: ProbabilityActionThresholds,
 ) -> PostureGuidance {
-    let low_quality_block = matches!(data_trust.quality_grade, QualityGrade::D | QualityGrade::F);
-    let base_posture = if !low_quality_block
-        && probabilities.p_5d >= 0.3
-        && conviction_score >= 0.6
-        && breadth_score >= 45.0
-    {
+    let severe_quality_block =
+        matches!(data_trust.quality_grade, QualityGrade::D | QualityGrade::F);
+    let defend_quality_gate = matches!(data_trust.quality_grade, QualityGrade::A | QualityGrade::B);
+    let confirmation_count = posture_confirmation_count(
+        snapshot.trigger_score,
+        external_shock_score,
+        event_assessment.confirmation_score,
+    );
+    let severe_carry = jpy_carry.score >= 70.0 && jpy_carry.funding_pressure_score >= 55.0;
+    let stressed_carry = jpy_carry.score >= 58.0 && jpy_carry.funding_pressure_score >= 48.0;
+
+    let defend_signal = defend_quality_gate
+        && confirmation_count >= 2
+        && conviction_score >= 0.62
+        && breadth_score >= 48.0
+        && ((probabilities.p_5d >= thresholds.defend_p5d && snapshot.trigger_score >= 60.0)
+            || (severe_carry && snapshot.trigger_score >= 55.0 && external_shock_score >= 55.0));
+    let hedge_signal = (probabilities.p_20d >= thresholds.hedge_p20d
+        && (snapshot.trigger_score >= 50.0
+            || external_shock_score >= 50.0
+            || breadth_score >= 40.0
+            || event_assessment.confirmation_score >= 40.0))
+        || (probabilities.p_60d >= thresholds.elevated_weeks_p60d()
+            && snapshot.structural_score >= 55.0
+            && snapshot.trigger_score >= 54.0
+            && external_shock_score >= 48.0)
+        || (stressed_carry
+            && external_shock_score >= 50.0
+            && snapshot.structural_score >= 50.0
+            && snapshot.trigger_score >= 45.0);
+    let prepare_signal = (probabilities.p_60d >= thresholds.prepare_p60d
+        && snapshot.structural_score >= 55.0)
+        || snapshot.structural_score >= 62.0
+        || (external_shock_score >= 55.0 && snapshot.structural_score >= 52.0)
+        || (jpy_carry.funding_pressure_score >= 45.0
+            && snapshot.structural_score >= 50.0
+            && probabilities.p_60d >= thresholds.carry_prepare_p60d());
+
+    let base_posture = if defend_signal {
         DecisionPosture::Defend
-    } else if probabilities.p_20d >= 0.35
-        || (jpy_carry.score >= 58.0 && jpy_carry.funding_pressure_score >= 48.0)
-        || (probabilities.p_60d >= 0.5 && snapshot.trigger_score >= 60.0)
-    {
+    } else if !severe_quality_block && hedge_signal {
         DecisionPosture::Hedge
-    } else if probabilities.p_60d >= 0.35
-        || snapshot.structural_score >= 58.0
-        || external_shock_score >= 50.0
-    {
+    } else if prepare_signal {
         DecisionPosture::Prepare
     } else {
         DecisionPosture::Normal
@@ -571,14 +900,22 @@ fn build_posture_guidance(
 
     let upgrade_condition = match posture {
         DecisionPosture::Normal => {
-            "若 p_60d 持续升至 0.35 以上，或 trigger score 快速抬升，则升级为 prepare。".to_string()
+            format!(
+                "若 p_60d 升至 {} 以上且 structural score 抬升，或外部冲击与结构脆弱性同步恶化，则升级为 prepare。",
+                format_probability_threshold(thresholds.prepare_p60d)
+            )
         }
         DecisionPosture::Prepare => {
-            "若 p_20d 升至 0.35 以上，或 trigger score 与外部冲击同步恶化，则升级为 hedge。"
-                .to_string()
+            format!(
+                "若 p_20d 升至 {} 以上，且 trigger、external、breadth 至少一项同步恶化，则升级为 hedge。",
+                format_probability_threshold(thresholds.hedge_p20d)
+            )
         }
         DecisionPosture::Hedge => {
-            "若 p_5d 升至 0.30 以上，且信号可信度足够，则升级为 defend。".to_string()
+            format!(
+                "若 p_5d 升至 {} 以上、数据质量不低于 B，且 trigger / external / event 至少两类确认，则升级为 defend。",
+                format_probability_threshold(thresholds.defend_p5d)
+            )
         }
         DecisionPosture::Defend => "除非 p_5d 明显回落且触发层缓解，否则保持 defend。".to_string(),
     };
@@ -586,13 +923,22 @@ fn build_posture_guidance(
     let downgrade_condition = match posture {
         DecisionPosture::Normal => "维持 normal，直到结构与触发层重新抬升。".to_string(),
         DecisionPosture::Prepare => {
-            "若 p_60d 回落到 0.35 以下且结构脆弱性缓解，则降回 normal。".to_string()
+            format!(
+                "若 p_60d 回落到 {} 以下且 structural score 不再继续抬升，则降回 normal。",
+                format_probability_threshold(thresholds.downgrade_prepare_p60d())
+            )
         }
         DecisionPosture::Hedge => {
-            "若 p_20d 回落、外部冲击降温且 trigger score 下降，则降回 prepare。".to_string()
+            format!(
+                "若 p_20d 连续回落到 {} 以下、外部冲击降温且 trigger score 下降，则降回 prepare。",
+                format_probability_threshold(thresholds.downgrade_hedge_p20d())
+            )
         }
         DecisionPosture::Defend => {
-            "若 p_5d 回落到 0.20 以下并且触发层连续缓和，可先降回 hedge。".to_string()
+            format!(
+                "若 p_5d 连续回落到 {} 以下、触发层缓和且没有新的高等级事件确认，可先降回 hedge。",
+                format_probability_threshold(thresholds.downgrade_defend_p5d())
+            )
         }
     };
 
@@ -605,6 +951,21 @@ fn build_posture_guidance(
     }
 }
 
+fn posture_confirmation_count(
+    trigger_score: f64,
+    external_shock_score: f64,
+    event_confirmation_score: f64,
+) -> u8 {
+    [
+        trigger_score >= 60.0,
+        external_shock_score >= 55.0,
+        event_confirmation_score >= 55.0,
+    ]
+    .into_iter()
+    .filter(|flag| *flag)
+    .count() as u8
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_position_guidance(
     posture: &PostureGuidance,
@@ -615,6 +976,7 @@ fn build_position_guidance(
     event_assessment: &EventAssessment,
     active_release: Option<&ModelReleaseRecord>,
     user_preferences: &UserRiskPreferences,
+    thresholds: ProbabilityActionThresholds,
 ) -> PositionGuidance {
     let (
         mut target_equity_exposure_pct,
@@ -706,15 +1068,24 @@ fn build_position_guidance(
             "若后续进入 prepare，再按 3-10 个交易日节奏分段调整。".to_string(),
         ],
         DecisionPosture::Prepare => vec![
-            "当 p_60d 回落到 0.25 以下，且 structural score 不再继续抬升时，再考虑恢复常态仓位。".to_string(),
+            format!(
+                "当 p_60d 回落到 {} 以下，且 structural score 不再继续抬升时，再考虑恢复常态仓位。",
+                format_probability_threshold(thresholds.downgrade_prepare_p60d())
+            ),
             "恢复仓位时仍应先回补高流动性核心仓位，再看高 beta 资产。".to_string(),
         ],
         DecisionPosture::Hedge => vec![
-            "当 p_20d 连续 5 个交易日回落到 0.25 以下，并且外部冲击与信用压力同步缓和时，再逐步恢复仓位。".to_string(),
+            format!(
+                "当 p_20d 连续 5 个交易日回落到 {} 以下，并且外部冲击与信用压力同步缓和时，再逐步恢复仓位。",
+                format_probability_threshold(thresholds.downgrade_hedge_p20d())
+            ),
             "默认按 1/3、1/3、1/3 的分批节奏恢复，不做一次性满仓回补。".to_string(),
         ],
         DecisionPosture::Defend => vec![
-            "只有当 p_5d 连续 3 个交易日回落到 0.20 以下，且没有新的高等级事件确认时，才允许从 defend 降回 hedge。".to_string(),
+            format!(
+                "只有当 p_5d 连续 3 个交易日回落到 {} 以下，且没有新的高等级事件确认时，才允许从 defend 降回 hedge。",
+                format_probability_threshold(thresholds.downgrade_defend_p5d())
+            ),
             "从 defend 撤回防守时先恢复核心流动性仓位，最后再恢复高弹性风险资产。".to_string(),
         ],
     };
@@ -734,7 +1105,7 @@ fn build_position_guidance(
         guardrails
             .push("当前数据可信度尚可，但事件层仍有原型源，建议保留人工二次确认。".to_string());
     }
-    if probabilities.p_5d >= 0.3 {
+    if probabilities.p_5d >= thresholds.defend_p5d {
         guardrails.push("短期窗口已打开，更应优先考虑可快速执行的保护动作。".to_string());
     }
 
@@ -751,7 +1122,7 @@ fn build_position_guidance(
         }
     };
     let confidence_gate = match data_trust.quality_grade {
-        QualityGrade::A | QualityGrade::B if event_assessment.confirmation_score >= 0.55 => {
+        QualityGrade::A | QualityGrade::B if event_assessment.confirmation_score >= 55.0 => {
             "当前数据可信度和事件确认度足以支持执行主要防守动作。".to_string()
         }
         QualityGrade::D | QualityGrade::F => {
@@ -761,7 +1132,7 @@ fn build_position_guidance(
     };
     let capital_preservation_overlay_enabled = matches!(posture.posture, DecisionPosture::Defend)
         && matches!(time_to_risk_bucket, TimeToRiskBucket::Now)
-        && probabilities.p_5d >= 0.45
+        && probabilities.p_5d >= thresholds.capital_preservation_p5d()
         && matches!(data_trust.quality_grade, QualityGrade::A | QualityGrade::B)
         && matches!(
             event_assessment.state,
@@ -1198,12 +1569,15 @@ fn build_historical_analogs(
     probabilities: &ProbabilityBlock,
     external_shock_score: f64,
     backtests: &[BacktestScenarioSummary],
+    thresholds: ProbabilityActionThresholds,
 ) -> Vec<HistoricalAnalog> {
     let mut analogs = backtests
         .iter()
         .map(|scenario| {
             let score_distance = (snapshot.overall_score - scenario.max_score).abs();
-            let lead_reference = if probabilities.p_5d >= 0.3 || probabilities.p_20d >= 0.35 {
+            let lead_reference = if probabilities.p_5d >= thresholds.defend_p5d
+                || probabilities.p_20d >= thresholds.hedge_p20d
+            {
                 scenario.actionable_lead_time_days.or(scenario.lead_time_days)
             } else {
                 scenario.lead_time_days.or(scenario.actionable_lead_time_days)
@@ -1225,9 +1599,9 @@ fn build_historical_analogs(
                 scenario_id: scenario.scenario_id.clone(),
                 name: scenario.name.clone(),
                 similarity_score: round1(similarity_score),
-                reference_phase: if probabilities.p_5d >= 0.3 {
+                reference_phase: if probabilities.p_5d >= thresholds.defend_p5d {
                     "acute_window".to_string()
-                } else if probabilities.p_20d >= 0.35 {
+                } else if probabilities.p_20d >= thresholds.hedge_p20d {
                     "pre_break".to_string()
                 } else {
                     "fragile_build_up".to_string()
@@ -1606,6 +1980,14 @@ fn round1(value: f64) -> f64 {
 
 fn round3(value: f64) -> f64 {
     (value * 1000.0).round() / 1000.0
+}
+
+fn format_probability_threshold(value: f64) -> String {
+    format!("{value:.2}")
+}
+
+fn round6(value: f64) -> f64 {
+    (value * 1_000_000.0).round() / 1_000_000.0
 }
 
 fn round_option(value: Option<f64>, decimals: i32) -> Option<f64> {

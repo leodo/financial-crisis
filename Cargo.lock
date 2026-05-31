@@ -460,6 +460,7 @@ dependencies = [
  "chrono",
  "fc-domain",
  "fc-ingestion",
+ "fc-scoring",
  "fc-storage",
  "reqwest",
  "serde",

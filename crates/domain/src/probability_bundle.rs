@@ -12,8 +12,22 @@ pub const FEATURE_BUCKET_WEEKS_OR_HIGHER: &str = "bucket_weeks_or_higher";
 pub const FEATURE_BUCKET_NOW: &str = "bucket_now";
 pub const FEATURE_FRESHNESS_DELAYED_OR_WORSE: &str = "freshness_delayed_or_worse";
 pub const FEATURE_FRESHNESS_STALE_OR_MISSING: &str = "freshness_stale_or_missing";
+pub const FEATURE_STRUCTURAL_SCORE: &str = "structural_score";
+pub const FEATURE_TRIGGER_SCORE: &str = "trigger_score";
+pub const FEATURE_EXTERNAL_DIMENSION_SCORE: &str = "external_dimension_score";
+pub const FEATURE_US_VIX_LEVEL: &str = "us_vix_level";
+pub const FEATURE_US_VIX_CHANGE_5D: &str = "us_vix_change_5d";
+pub const FEATURE_US_CURVE_10Y2Y_LEVEL: &str = "us_curve_10y2y_level";
+pub const FEATURE_US_BAA_10Y_SPREAD_LEVEL: &str = "us_baa_10y_spread_level";
+pub const FEATURE_US_FED_FUNDS_LEVEL: &str = "us_fed_funds_level";
+pub const FEATURE_US_NFCI_LEVEL: &str = "us_nfci_level";
+pub const FEATURE_US_STLFSI_LEVEL: &str = "us_stlfsi_level";
+pub const FEATURE_US_UNEMPLOYMENT_LEVEL: &str = "us_unemployment_level";
+pub const FEATURE_US_HOUSING_STARTS_LEVEL: &str = "us_housing_starts_level";
+pub const FEATURE_US_USDJPY_LEVEL: &str = "us_usdjpy_level";
+pub const FEATURE_US_USDJPY_CHANGE_20D: &str = "us_usdjpy_change_20d";
 
-pub const PROBABILITY_BUNDLE_FEATURES: &[&str] = &[
+pub const TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES: &[&str] = &[
     FEATURE_OVERALL_SCORE,
     FEATURE_EXTERNAL_SHOCK_SCORE,
     FEATURE_HEURISTIC_P_5D,
@@ -26,6 +40,27 @@ pub const PROBABILITY_BUNDLE_FEATURES: &[&str] = &[
     FEATURE_FRESHNESS_DELAYED_OR_WORSE,
     FEATURE_FRESHNESS_STALE_OR_MISSING,
 ];
+
+pub const FORMAL_PROBABILITY_BUNDLE_FEATURES: &[&str] = &[
+    FEATURE_OVERALL_SCORE,
+    FEATURE_STRUCTURAL_SCORE,
+    FEATURE_TRIGGER_SCORE,
+    FEATURE_EXTERNAL_DIMENSION_SCORE,
+    FEATURE_COVERAGE_SCORE,
+    FEATURE_US_VIX_LEVEL,
+    FEATURE_US_VIX_CHANGE_5D,
+    FEATURE_US_CURVE_10Y2Y_LEVEL,
+    FEATURE_US_BAA_10Y_SPREAD_LEVEL,
+    FEATURE_US_FED_FUNDS_LEVEL,
+    FEATURE_US_NFCI_LEVEL,
+    FEATURE_US_STLFSI_LEVEL,
+    FEATURE_US_UNEMPLOYMENT_LEVEL,
+    FEATURE_US_HOUSING_STARTS_LEVEL,
+    FEATURE_US_USDJPY_LEVEL,
+    FEATURE_US_USDJPY_CHANGE_20D,
+];
+
+pub const PROBABILITY_BUNDLE_FEATURES: &[&str] = TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProbabilityBundle {

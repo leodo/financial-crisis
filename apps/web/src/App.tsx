@@ -338,10 +338,7 @@ function DecisionView({
   overview: RiskSnapshot;
   backtests: BacktestScenarioSummary[];
 }) {
-  const probabilityTrendOption = useMemo(
-    () => buildProbabilityTrendOption(history),
-    [history]
-  );
+  const probabilityTrend = useMemo(() => buildProbabilityTrendModel(history), [history]);
   const layerScoreOption = useMemo(() => buildLayerScoreOption(assessment), [assessment]);
   const analogOption = useMemo(
     () => buildAnalogOption(assessment, backtests),
@@ -526,13 +523,13 @@ function DecisionView({
           <div className="mini-metrics">
             <Metric
               label="概率模式"
-              value={assessment.method.probability_mode === "heuristic_mvp" ? "过渡版" : "正式版"}
-              hint={assessment.method.probability_mode}
+              value={describeProbabilityMode(assessment.method).label}
+              hint={describeProbabilityMode(assessment.method).hint}
             />
             <Metric
-              label="Release"
-              value={assessment.method.release_status === "degraded" ? "降级中" : "正式在线"}
-              hint={assessment.method.release_status}
+              label="运行状态"
+              value={describeReleaseHealth(assessment.method.release_status)}
+              hint={assessment.method.release_id ?? assessment.method.release_status}
             />
             <Metric
               label="动作框架"
@@ -678,7 +675,8 @@ function DecisionView({
             <h2>概率轨迹</h2>
             <History size={18} />
           </div>
-          <ReactECharts option={probabilityTrendOption} style={{ height: 300 }} notMerge />
+          <ReactECharts option={probabilityTrend.option} style={{ height: 320 }} notMerge />
+          <div className="legend-note">{probabilityTrend.note}</div>
         </section>
 
         <section className="surface">
@@ -686,7 +684,7 @@ function DecisionView({
             <h2>历史类比</h2>
             <GitCompareArrows size={18} />
           </div>
-          <ReactECharts option={analogOption} style={{ height: 260 }} notMerge />
+          <ReactECharts option={analogOption} style={{ height: 300 }} notMerge />
           <div className="list-stack">
             {assessment.historical_analogs.map((analog) => (
               <div className="list-row" key={analog.scenario_id}>
@@ -890,6 +888,10 @@ function DecisionView({
               危机前命中表示系统在危机前 20 日内发出动作信号；受保护压力表示虽然没有落入定义危机，
               但处在应允许保护性减仓或对冲的系统压力阶段；纯误报才是需要继续压缩的噪声。
             </span>
+          </div>
+          <div className="rule-box">
+            <strong>结果边界</strong>
+            <span>{describeRollingAuditBoundary(assessment.method)}</span>
           </div>
           {assessment.backtest_summary.rolling_audit.classified_episodes.length > 0 ? (
             <div className="table-wrap">
@@ -1103,6 +1105,50 @@ function BudgetBar({
   );
 }
 
+function describeProbabilityMode(method: AssessmentSnapshot["method"]) {
+  if (method.probability_mode === "heuristic_mvp") {
+    return {
+      label: "启发式过渡",
+      hint: `${method.probability_mode} / ${method.point_in_time_mode}`
+    };
+  }
+
+  if (method.probability_mode.startsWith("formal_bundle")) {
+    const label = method.point_in_time_mode === "strict" ? "Formal 候选" : "Formal 过渡";
+    return {
+      label,
+      hint: `${method.probability_mode} / ${method.point_in_time_mode}`
+    };
+  }
+
+  return {
+    label: "研究模式",
+    hint: `${method.probability_mode} / ${method.point_in_time_mode}`
+  };
+}
+
+function describeReleaseHealth(status: string) {
+  if (status === "healthy") {
+    return "运行正常";
+  }
+  if (status === "degraded") {
+    return "降级中";
+  }
+  return status;
+}
+
+function describeRollingAuditBoundary(method: AssessmentSnapshot["method"]) {
+  if (method.probability_mode.startsWith("formal_bundle") && method.point_in_time_mode !== "strict") {
+    return "当前长历史动作审计仍需兼容 persisted snapshots 的桥接规则，因为旧快照里的概率常被校准下限压平。它适合比较风险阶段和误报收缩情况，但还不是最终 raw point-in-time 正式模型命中率。";
+  }
+
+  if (method.probability_mode === "heuristic_mvp") {
+    return "当前滚动审计主要用于解释启发式动作层在历史上的表现，不能把它当成正式概率模型命中率。";
+  }
+
+  return "当前滚动审计可用于比较模型在不同历史阶段的动作稳定性，但仍需结合数据覆盖和 point-in-time 能力一起解释。";
+}
+
 const POSTURE_STEPS: Array<{
   id: AssessmentSnapshot["posture"];
   label: string;
@@ -1219,26 +1265,114 @@ function describeAnalogWindow(
   return `当前最接近 ${analog.name} 的风险窗口，历史上大约提前 ${analog.lead_time_days} 天进入结构抬升，并在约提前 ${analog.actionable_lead_time_days} 天进入可执行预警。`;
 }
 
-function buildProbabilityTrendOption(history: AssessmentHistoryPoint[]) {
+type ProbabilityTrendMode = "calibrated" | "raw";
+
+function buildProbabilityTrendModel(history: AssessmentHistoryPoint[]) {
+  const mode = selectProbabilityTrendMode(history);
+  const note =
+    mode === "raw"
+      ? "当前发布版正式概率被校准下限压得很平，这里改为展示原始概率轨迹，用来看风险是在升温还是降温；上方当前评估卡片仍以正式概率为准。"
+      : "这里展示的是发布版正式概率轨迹；若三条线长期贴平，通常表示当前仍在低风险区，或正式概率暂时受校准下限约束。";
+
+  return {
+    option: buildProbabilityTrendOption(history, mode),
+    note
+  };
+}
+
+function selectProbabilityTrendMode(history: AssessmentHistoryPoint[]): ProbabilityTrendMode {
+  const hasRawProbability = history.every(
+    (point) =>
+      point.raw_p_5d !== undefined &&
+      point.raw_p_20d !== undefined &&
+      point.raw_p_60d !== undefined
+  );
+  if (!hasRawProbability || history.length < 2) {
+    return "calibrated";
+  }
+
+  const calibratedSpread = Math.max(
+    probabilitySpread(history.map((point) => point.p_5d)),
+    probabilitySpread(history.map((point) => point.p_20d)),
+    probabilitySpread(history.map((point) => point.p_60d))
+  );
+  const rawSpread = Math.max(
+    probabilitySpread(history.map((point) => point.raw_p_5d ?? point.p_5d)),
+    probabilitySpread(history.map((point) => point.raw_p_20d ?? point.p_20d)),
+    probabilitySpread(history.map((point) => point.raw_p_60d ?? point.p_60d))
+  );
+
+  return calibratedSpread <= 0.001 && rawSpread >= 0.004 ? "raw" : "calibrated";
+}
+
+function probabilitySpread(values: number[]) {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  return Math.max(...values) - Math.min(...values);
+}
+
+function probabilityValue(
+  point: AssessmentHistoryPoint,
+  horizon: 5 | 20 | 60,
+  mode: ProbabilityTrendMode
+) {
+  if (mode === "raw") {
+    if (horizon === 5) {
+      return point.raw_p_5d ?? point.p_5d;
+    }
+    if (horizon === 20) {
+      return point.raw_p_20d ?? point.p_20d;
+    }
+    return point.raw_p_60d ?? point.p_60d;
+  }
+
+  if (horizon === 5) {
+    return point.p_5d;
+  }
+  if (horizon === 20) {
+    return point.p_20d;
+  }
+  return point.p_60d;
+}
+
+function buildProbabilityTrendOption(
+  history: AssessmentHistoryPoint[],
+  mode: ProbabilityTrendMode
+) {
+  const probabilityValues = history.flatMap((point) => [
+    probabilityValue(point, 5, mode),
+    probabilityValue(point, 20, mode),
+    probabilityValue(point, 60, mode)
+  ]);
+  const probabilityMax = probabilityValues.length > 0 ? Math.max(...probabilityValues) : 0;
+  const yAxisMax = Math.min(
+    1,
+    Math.max(0.08, Math.ceil((probabilityMax * 1.35) / 0.02) * 0.02)
+  );
+
   return {
     animation: false,
-    grid: { left: 42, right: 18, top: 24, bottom: 36 },
+    grid: { left: 42, right: 18, top: 24, bottom: 64 },
     legend: {
-      bottom: 0,
+      bottom: 8,
       textStyle: { color: "#5d6972" }
     },
     tooltip: {
-      trigger: "axis"
+      trigger: "axis",
+      valueFormatter: (value: number) => `${(value * 100).toFixed(1)}%`
     },
     xAxis: {
       type: "category",
       data: history.map((point) => formatDate(point.as_of_date)),
       axisLine: { lineStyle: { color: "#cfd7dc" } },
-      axisLabel: { color: "#5d6972" }
+      axisLabel: { color: "#5d6972", margin: 12 }
     },
     yAxis: {
       type: "value",
-      max: 1,
+      min: 0,
+      max: yAxisMax,
       axisLabel: {
         color: "#5d6972",
         formatter: (value: number) => `${Math.round(value * 100)}%`
@@ -1247,29 +1381,29 @@ function buildProbabilityTrendOption(history: AssessmentHistoryPoint[]) {
     },
     series: [
       {
-        name: "5d",
+        name: mode === "raw" ? "5日原始" : "5日",
         type: "line",
         smooth: true,
         symbol: "none",
         lineStyle: { width: 3, color: "#b45309" },
-        data: history.map((point) => point.p_5d)
+        data: history.map((point) => probabilityValue(point, 5, mode))
       },
       {
-        name: "20d",
+        name: mode === "raw" ? "20日原始" : "20日",
         type: "line",
         smooth: true,
         symbol: "none",
         lineStyle: { width: 3, color: "#2563eb" },
-        data: history.map((point) => point.p_20d)
+        data: history.map((point) => probabilityValue(point, 20, mode))
       },
       {
-        name: "60d",
+        name: mode === "raw" ? "60日原始" : "60日",
         type: "line",
         smooth: true,
         symbol: "none",
         areaStyle: { color: "rgba(17, 94, 89, 0.08)" },
         lineStyle: { width: 3, color: "#115e59" },
-        data: history.map((point) => point.p_60d)
+        data: history.map((point) => probabilityValue(point, 60, mode))
       }
     ]
   };
@@ -1322,14 +1456,20 @@ function buildAnalogOption(
 
   return {
     animation: false,
-    grid: { left: 42, right: 16, top: 20, bottom: 30 },
+    grid: { left: 42, right: 16, top: 20, bottom: 82 },
     legend: {
-      bottom: 0,
+      bottom: 12,
       textStyle: { color: "#5d6972" }
     },
     xAxis: {
       type: "category",
-      axisLabel: { color: "#5d6972" },
+      axisLabel: {
+        color: "#5d6972",
+        interval: 0,
+        lineHeight: 16,
+        margin: 14,
+        formatter: (value: string) => value.replace(/^(\d{4}(?:-\d{4})?)/, "$1\n")
+      },
       data: analogNames
     },
     yAxis: {

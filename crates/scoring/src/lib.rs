@@ -36,6 +36,28 @@ impl ScoringEngine {
         entity_id: &str,
         market_scope: &str,
     ) -> ScoringOutput {
+        self.score_with_observation_filter(
+            indicators,
+            observations,
+            as_of_date,
+            entity_id,
+            market_scope,
+            |_| true,
+        )
+    }
+
+    pub fn score_with_observation_filter<F>(
+        &self,
+        indicators: &[Indicator],
+        observations: &[Observation],
+        as_of_date: NaiveDate,
+        entity_id: &str,
+        market_scope: &str,
+        observation_filter: F,
+    ) -> ScoringOutput
+    where
+        F: Fn(&Observation) -> bool,
+    {
         let mut by_indicator: BTreeMap<&str, Vec<&Observation>> = BTreeMap::new();
         for observation in observations
             .iter()
@@ -45,6 +67,7 @@ impl ScoringEngine {
                         == Some(observation.entity_id.as_str())
             })
             .filter(|observation| observation.as_of_date <= as_of_date)
+            .filter(|observation| observation_filter(observation))
         {
             by_indicator
                 .entry(observation.indicator_id.as_str())

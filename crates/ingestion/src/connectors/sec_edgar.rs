@@ -541,7 +541,7 @@ fn build_observations(daily: &[DailyAggregate], fetched_at: DateTime<Utc>) -> Ve
             aggregate.as_of_date,
             aggregate.bank_8k_count as f64,
             "count",
-            fetched_at,
+            aggregate.latest_acceptance_time.unwrap_or(fetched_at),
             &flags,
         ));
         observations.push(build_observation(
@@ -549,7 +549,7 @@ fn build_observations(daily: &[DailyAggregate], fetched_at: DateTime<Utc>) -> Ve
             aggregate.as_of_date,
             aggregate.rule_hit_count as f64,
             "count",
-            fetched_at,
+            aggregate.latest_acceptance_time.unwrap_or(fetched_at),
             &flags,
         ));
         observations.push(build_observation(
@@ -557,7 +557,7 @@ fn build_observations(daily: &[DailyAggregate], fetched_at: DateTime<Utc>) -> Ve
             aggregate.as_of_date,
             aggregate.stress_count as f64,
             "count",
-            fetched_at,
+            aggregate.latest_acceptance_time.unwrap_or(fetched_at),
             &flags,
         ));
         observations.push(build_observation(
@@ -565,7 +565,7 @@ fn build_observations(daily: &[DailyAggregate], fetched_at: DateTime<Utc>) -> Ve
             aggregate.as_of_date,
             aggregate.severity_index,
             "score",
-            fetched_at,
+            aggregate.latest_acceptance_time.unwrap_or(fetched_at),
             &flags,
         ));
     }

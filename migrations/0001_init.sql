@@ -320,6 +320,67 @@ CREATE TABLE IF NOT EXISTS audit.prediction_snapshots (
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS audit.feature_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    market_scope TEXT NOT NULL,
+    as_of_date DATE NOT NULL,
+    feature_set_version TEXT NOT NULL,
+    point_in_time_mode TEXT NOT NULL,
+    visibility_status TEXT NOT NULL,
+    latest_visible_at TIMESTAMPTZ,
+    coverage_score DOUBLE PRECISION NOT NULL,
+    core_feature_coverage DOUBLE PRECISION NOT NULL,
+    trigger_feature_coverage DOUBLE PRECISION NOT NULL,
+    external_feature_coverage DOUBLE PRECISION NOT NULL,
+    feature_count INTEGER NOT NULL,
+    features_json JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS audit.formal_datasets (
+    dataset_key TEXT PRIMARY KEY,
+    dataset_id TEXT NOT NULL,
+    dataset_version TEXT NOT NULL,
+    market_scope TEXT NOT NULL,
+    feature_set_version TEXT NOT NULL,
+    label_version TEXT NOT NULL,
+    scenario_set_version TEXT NOT NULL,
+    point_in_time_mode TEXT NOT NULL,
+    from_date DATE,
+    to_date DATE,
+    train_end_date DATE,
+    calibration_end_date DATE,
+    evaluation_start_date DATE,
+    row_count INTEGER NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    manifest_json JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS audit.formal_dataset_rows (
+    row_id TEXT PRIMARY KEY,
+    dataset_key TEXT NOT NULL REFERENCES audit.formal_datasets(dataset_key) ON DELETE CASCADE,
+    split_name TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    market_scope TEXT NOT NULL,
+    as_of_date DATE NOT NULL,
+    point_in_time_mode TEXT NOT NULL,
+    latest_visible_at TIMESTAMPTZ,
+    coverage_score DOUBLE PRECISION NOT NULL,
+    core_feature_coverage DOUBLE PRECISION NOT NULL,
+    trigger_feature_coverage DOUBLE PRECISION NOT NULL,
+    external_feature_coverage DOUBLE PRECISION NOT NULL,
+    sample_quality_grade TEXT NOT NULL,
+    primary_scenario_id TEXT,
+    scenario_family TEXT,
+    label_5d SMALLINT NOT NULL,
+    label_20d SMALLINT NOT NULL,
+    label_60d SMALLINT NOT NULL,
+    features_json JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS audit.config_changes (
     change_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     object_type TEXT NOT NULL,
@@ -354,3 +415,12 @@ CREATE INDEX IF NOT EXISTS idx_prediction_snapshots_scope_date
 
 CREATE INDEX IF NOT EXISTS idx_prediction_snapshots_release_date
     ON audit.prediction_snapshots (release_id, as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_feature_snapshots_scope_version_date
+    ON audit.feature_snapshots (market_scope, feature_set_version, as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_formal_datasets_scope_version
+    ON audit.formal_datasets (market_scope, dataset_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_formal_dataset_rows_dataset_split_date
+    ON audit.formal_dataset_rows (dataset_key, split_name, as_of_date DESC);
