@@ -165,3 +165,36 @@
 - 设计文档已经够用；
 - 系统代码已经具备继续开发条件；
 - 但正式概率模型主线还处于研究候选阶段，当前默认线上版仍应保持 `us_formal_transitional_20260531T094603`。
+
+### 6.2 2026-06-01 dual-head 工程已落地，但模型结论仍是 No-Go
+
+本轮又把 `actionability layer / dual-head fusion` 的第一版工程实现补齐了：
+
+- worker 可以训练并导出 `crisis-prior + actionability` 双头 bundle；
+- domain / release manifest / API response 已支持 `actionability` 及其方法版本字段；
+- web 面板已能显示 `prepare / hedge / defend` 三类动作概率，并区分“独立动作头”还是“旧逻辑回推”；
+- release review 链路已经能自动对比 dual-head 候选和当前 active baseline。
+
+对应候选版：
+
+- `us_formal_pit_dualhead_20260601T003145`
+
+但 review 结论仍然失败：
+
+- `timely_warning_rate`: `37.5% -> 12.5%`
+- `actionable_precision`: `29.6% -> 20.6%`
+- `longest_false_positive_episode_days`: `9 -> 18`
+
+这说明当前还不能把“已经有 dual-head 代码”误解成“正式模型已经接近可上线”。当前更准确的工程判断是：
+
+1. 设计文档足够继续开发；
+2. 系统代码也足够继续做 formal 研究；
+3. 但模型层下一步必须改训练目标和样本治理，而不是继续围绕 serving 阈值做微调。
+
+因此，接下来应优先推进以下剩余工作：
+
+- [ ] 定义 `prepare / hedge / defend` 独立 episode 目标，而不是继续复用 `60d / 20d / 5d proxy`
+- [ ] 补 `actionability` 专属评估口径，区分“提前准备命中”“保护命中”“过晚确认”
+- [ ] 把 formal history 审计链继续往 `raw point-in-time feature store` 收口，减少对 persisted snapshots 的过渡依赖
+- [ ] 扩展美国历史压力样本，尽量覆盖 `1987 / 1994 / 2000 / 2001 / 2008 / 2011 / 2020 / 2023` 中免费可回补的区间
+- [ ] 把方法页和面板解释继续补强，让用户能看懂“危机先验”和“动作概率”不是同一个东西

@@ -2464,6 +2464,7 @@ mod tests {
                 note: String::new(),
                 horizons: Vec::new(),
                 evaluation: None,
+                actionability: None,
             }),
             runtime_probability_mode: "formal_bundle_v1".to_string(),
             runtime_release_status: "healthy".to_string(),

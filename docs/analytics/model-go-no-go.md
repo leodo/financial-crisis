@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-05-31
+最后更新：2026-06-01
 
 ## 1. 目标
 
@@ -314,6 +314,58 @@ No-Go for active_experimental default serving
 - 不能再把“改标签”理解成只要换掉 `label_*` 就能解决；
 - formal 主线已经证明：`forward label only` 不够，`full action window` 也不够，`bounded action window` 仍不够；
 - 下一步应该进入 `dual-head / separate actionability layer / episode objective`，而不是继续在同一单头逻辑回归里拧权重和阈值。
+
+### 7.4 2026-06-01 dual-head actionability 首轮复核结果
+
+本轮已经把 `separate actionability layer` 的第一版工程链路打通：
+
+- `ProbabilityBundle` 新增独立 `actionability` bundle；
+- API `assessment/current` 新增 `actionability.prepare / hedge / defend`；
+- `method` metadata 新增 `actionability_model_version / actionability_calibration_version / fusion_policy_version / actionability_enabled`；
+- runtime 允许在新 release 上启用动作头与 posture / time bucket 的诊断融合。
+
+对应候选版：
+
+- `us_formal_pit_dualhead_20260601T003145`
+
+它的离线校准指标并不差：
+
+- `brier=0.0134`
+- `log_loss=0.0695`
+- `ece=0.0040`
+
+但 release review 结果仍然没有通过：
+
+- `timely_warning_rate`: `37.5% -> 12.5%`
+- `actionable_precision`: `29.6% -> 20.6%`
+- `longest_false_positive_episode_days`: `9 -> 18`
+
+这次结果有三个重要含义：
+
+1. 现在已经可以确认，问题不在“API 没暴露动作头”或“线上没有融合逻辑”；
+2. 当前这版 dual-head 本质上仍是 `bounded action window` 的 `60d / 20d / 5d proxy`，还不是独立定义的 `prepare / hedge / defend` 训练目标；
+3. 简单把动作头接到 serving 侧，不会自动制造出模型原本没有学到的“提前一周可执行离场能力”。
+
+因此这轮结论应进一步收敛为：
+
+- `dual-head plumbing` 值得保留，因为它把后续实验入口和前端解释层打通了；
+- 但 `proxy actionability head + serving fusion` 还不能替代当前 active release；
+- 下一步不该继续围绕阈值和融合细节小修小补，而应进入：
+  - `episode-native actionability labels`
+  - `prepare / hedge / defend` 独立目标设计
+  - `raw PIT history` 审计链补全
+  - 场景样本治理与更早历史覆盖扩充
+
+结论：
+
+```text
+No-Go for active_default
+No-Go for replacing transitional baseline
+```
+
+当前默认线上版仍应保持：
+
+- `us_formal_transitional_20260531T094603`
 
 ## 8. 准入清单
 

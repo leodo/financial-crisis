@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-05-31
+最后更新：2026-06-01
 
 ## 1. 目标
 
@@ -71,6 +71,11 @@ entity_id
     "p_20d": 0.549,
     "p_60d": 0.599
   },
+  "actionability": {
+    "prepare": 0.611,
+    "hedge": 0.536,
+    "defend": 0.382
+  },
   "time_to_risk_bucket": "now",
   "posture": "defend",
   "conviction_score": 0.95,
@@ -96,7 +101,7 @@ entity_id
   "jpy_carry": {
     "state": "quiet",
     "score": 33.9,
-    "usdjpy_level": 148.0,
+    "usdjpy_level": 159.2,
     "jp_call_rate": 0.48,
     "us_short_rate": 5.12,
     "us_jp_short_rate_diff": 4.64,
@@ -191,9 +196,18 @@ entity_id
     "score_method_version": "scoring_v1_20260530",
     "prob_model_version": "prob_v1_20260530",
     "calibration_version": "calib_v1_20260530",
+    "actionability_model_version": "actionability_bundle_20260601T003145",
+    "actionability_calibration_version": "actionability_platt_20260601T003145",
     "feature_set_version": "feature_v1_20260530",
     "label_version": "label_v1_20260530",
-    "posture_policy_version": "posture_v1_20260530"
+    "posture_policy_version": "posture_v1_20260530",
+    "action_playbook_version": "action_playbook_v1_20260531",
+    "fusion_policy_version": "fusion_policy_v1_actionability_diag_20260601",
+    "actionability_enabled": true,
+    "probability_mode": "formal_bundle_v1",
+    "release_status": "approved",
+    "release_id": "us_formal_pit_dualhead_20260601T003145",
+    "point_in_time_mode": "best_effort"
   }
 }
 ```
@@ -206,9 +220,18 @@ entity_id
     "score_method_version": "scoring_v2_20260531",
     "prob_model_version": "prob_v1_20260531",
     "calibration_version": "calib_v1_20260531",
+    "actionability_model_version": "actionability_bundle_20260601T003145",
+    "actionability_calibration_version": "actionability_platt_20260601T003145",
     "feature_set_version": "feature_v2_20260531",
     "label_version": "label_v1_20260530",
-    "posture_policy_version": "posture_v1_20260530"
+    "posture_policy_version": "posture_v1_20260530",
+    "action_playbook_version": "action_playbook_v1_20260531",
+    "fusion_policy_version": "fusion_policy_v1_actionability_diag_20260601",
+    "actionability_enabled": true,
+    "probability_mode": "formal_bundle_v1",
+    "release_status": "approved",
+    "release_id": "us_formal_pit_dualhead_20260601T003145",
+    "point_in_time_mode": "best_effort"
   },
   "note": "assessment 概率、风险强度和 posture 为不同层的输出；当前版本为启发式 MVP，不是校准后的正式危机概率模型。页面应优先检查 data_mode、关键指标日期和 stale warning，再解释当前数值。",
   "protected_stress_window_catalog": {
@@ -230,9 +253,33 @@ entity_id
 }
 ```
 
+补充约定：
+
+- `actionability_enabled=true` 表示当前 release 内置独立动作头，前端可以直接展示 `prepare / hedge / defend`；
+- `actionability_enabled=false` 表示当前仍由旧逻辑根据危机先验概率和评分诊断映射动作概率，前端需要明确标注为过渡解释；
+- `fusion_policy_version` 只说明 serving 端如何把动作头并入 `time_to_risk_bucket / posture`，不代表该模型已经通过正式准入护栏。
+
 ## 5. 类型定义
 
-### 5.1 ProbabilityBlock
+### 5.1 ActionabilityBlock
+
+```text
+prepare: number
+hedge: number
+defend: number
+```
+
+范围：
+
+- `0.0` 到 `1.0`
+
+含义：
+
+- `prepare`：数月到数周级的预备动作概率
+- `hedge`：未来几周应主动增加保护的动作概率
+- `defend`：近端风险窗口已经打开、需要资本保全的动作概率
+
+### 5.2 ProbabilityBlock
 
 ```text
 p_5d: number
@@ -244,19 +291,19 @@ p_60d: number
 
 - `0.0` 到 `1.0`
 
-### 5.2 TimeToRiskBucket
+### 5.3 TimeToRiskBucket
 
 ```text
 normal | months | weeks | now
 ```
 
-### 5.3 Posture
+### 5.4 Posture
 
 ```text
 normal | prepare | hedge | defend
 ```
 
-### 5.4 HistoricalAnalog
+### 5.5 HistoricalAnalog
 
 ```text
 scenario_id
@@ -269,7 +316,7 @@ lead_time_days
 actionable_lead_time_days
 ```
 
-### 5.5 DataTrust
+### 5.6 DataTrust
 
 ```text
 coverage_score
@@ -281,7 +328,7 @@ data_quality_summary
 warnings[]
 ```
 
-### 5.6 JpyCarrySnapshot
+### 5.7 JpyCarrySnapshot
 
 ```text
 state
@@ -304,7 +351,7 @@ reason
 - 当前重点是看日元融资环境是否会放大美国风险资产的同步回撤。
 - `funding_pressure_score` 和 `us_jp_short_rate_diff` 已进入概率与 posture 映射。
 
-### 5.7 PositionGuidance
+### 5.8 PositionGuidance
 
 ```text
 target_equity_exposure_pct
@@ -322,7 +369,7 @@ guardrails[]
 - 这是系统级仓位预算和保护建议。
 - 不能当成用户个性化投资建议或自动交易指令。
 
-### 5.8 RuntimeMetadata
+### 5.9 RuntimeMetadata
 
 ```text
 data_mode
@@ -339,7 +386,7 @@ stale_warning
 - `data_mode` 必须区分 `demo / sqlite / postgres`
 - `demo_mode=true` 时，页面必须明确提示当前不是实时市场值
 
-### 5.9 KeyIndicatorStatus
+### 5.10 KeyIndicatorStatus
 
 ```text
 indicator_id
@@ -361,7 +408,7 @@ note
 - 关键指标 freshness 至少覆盖 `USDJPY`、日本隔夜拆借利率、`EFFR`、`VIX`
 - 用于解释“为什么页面现在显示的值可能与真实市场有偏差”
 
-### 5.10 EventAssessment
+### 5.11 EventAssessment
 
 ```text
 state
@@ -373,7 +420,7 @@ pending_gaps[]
 recent_events[]
 ```
 
-### 5.11 BacktestPerformanceSummary
+### 5.12 BacktestPerformanceSummary
 
 ```text
 scenario_count
@@ -396,7 +443,7 @@ summary
 - `total_false_positive_count` 仍表示场景内 `预警折返/动作信号回落次数`。
 - 真正的全样本滚动审计在 `rolling_audit` 中展示，并区分受保护压力窗口与纯误报。
 
-### 5.12 BacktestRollingAudit
+### 5.13 BacktestRollingAudit
 
 ```text
 history_point_count
@@ -419,7 +466,7 @@ summary
 - `actionable_precision` 当前按 `(危机前命中 + 受保护压力窗口) / (危机前命中 + 受保护压力窗口 + 纯误报)` 计算。
 - `classified_episodes` 只返回最长的若干段非危机动作区间，供前端解释最需要复盘的阶段。
 
-### 5.13 BacktestRollingAuditEpisode
+### 5.14 BacktestRollingAuditEpisode
 
 ```text
 start_date
@@ -436,7 +483,7 @@ note
   - `stress_window`
   - `false_positive`
 
-### 5.14 AssessmentMethodResponse
+### 5.15 AssessmentMethodResponse
 
 ```text
 method
@@ -448,7 +495,7 @@ protected_stress_window_catalog
 
 - `protected_stress_window_catalog` 用于解释滚动审计里哪些非危机动作区间被视为“可接受的系统压力防守”。
 
-### 5.15 ProtectedStressWindowCatalog
+### 5.16 ProtectedStressWindowCatalog
 
 ```text
 catalog_id
@@ -464,7 +511,7 @@ windows[]
 - 默认目录文件位于 `config/protected_stress_windows.us.json`。
 - 若设置 `FC_PROTECTED_STRESS_WINDOWS_PATH`，API 会优先读取外部文件；失败时回退到内置目录，并在 `warning` 中说明。
 
-### 5.16 ProtectedStressWindow
+### 5.17 ProtectedStressWindow
 
 ```text
 window_id
@@ -474,7 +521,7 @@ end_date
 note
 ```
 
-### 5.17 UserRiskPreferences
+### 5.18 UserRiskPreferences
 
 ```text
 profile

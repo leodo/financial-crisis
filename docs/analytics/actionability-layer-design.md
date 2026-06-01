@@ -15,11 +15,12 @@
 
 ## 2. 为什么需要单独设计
 
-截至 2026-06-01，已经验证过三条路：
+截至 2026-06-01，已经验证过四条路：
 
 1. `forward_crisis` 单头概率
 2. `scenario-aware weighting` 单头概率
 3. `action_window` 单头概率
+4. `dual-head proxy actionability`（动作头接入 serving 诊断融合）
 
 结论一致：
 
@@ -128,4 +129,30 @@ action_phase_score
 
 - action label 是必要的；
 - 但 action label 单独替换掉原有概率标签还不够；
-- 后续开发应该进入 `separate actionability layer`，而不是继续在单头 bundle 上做小修小补。
+- `separate actionability layer` 的工程链路已经打通，但第一版 `proxy actionability head` 仍没有解决动作级提前量不足；
+- 后续开发应该进入 `episode-native actionability target`，而不是继续在单头 bundle 或 proxy dual-head 上做小修小补。
+
+### 6.1 2026-06-01 实施检查点
+
+本轮已经完成：
+
+1. 双头 bundle 导出
+2. API `actionability` 字段与方法元数据补充
+3. web 面板动作概率展示
+4. runtime posture / time bucket 的诊断性融合
+
+对应候选版：
+
+- `us_formal_pit_dualhead_20260601T003145`
+
+但首轮 review 结果仍然是：
+
+- `timely_warning_rate`: `37.5% -> 12.5%`
+- `actionable_precision`: `29.6% -> 20.6%`
+- `longest_false_positive_episode_days`: `9 -> 18`
+
+因此这份设计文档的当前结论要再往前收敛一步：
+
+- `dual-head plumbing` 不是问题；
+- 当前失败点主要在于动作头标签仍然只是 `bounded action window` 的 horizon proxy；
+- 下一轮不应优先改融合阈值，而应先改 `prepare / hedge / defend` 的目标定义、样本构造和 episode 评估口径。

@@ -74,11 +74,40 @@ pub struct ProbabilityBundle {
     pub note: String,
     pub horizons: Vec<ProbabilityHorizonBundle>,
     pub evaluation: Option<ProbabilityBundleEvaluation>,
+    #[serde(default)]
+    pub actionability: Option<ActionabilityBundle>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProbabilityHorizonBundle {
     pub horizon_days: u32,
+    pub raw_model: LogisticProbabilityModel,
+    pub calibration: Option<PlattCalibrationArtifact>,
+    pub evaluation: HorizonEvaluationSummary,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionabilityLevel {
+    Prepare,
+    Hedge,
+    Defend,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionabilityBundle {
+    pub model_version: String,
+    pub calibration_version: String,
+    pub fusion_policy_version: String,
+    pub note: String,
+    pub levels: Vec<ActionabilityLevelBundle>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionabilityLevelBundle {
+    pub level: ActionabilityLevel,
+    pub proxy_horizon_days: u32,
+    pub target_label_mode: String,
     pub raw_model: LogisticProbabilityModel,
     pub calibration: Option<PlattCalibrationArtifact>,
     pub evaluation: HorizonEvaluationSummary,

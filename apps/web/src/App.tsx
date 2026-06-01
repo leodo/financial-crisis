@@ -459,6 +459,32 @@ function DecisionView({
           <div className="legend-note">
             `5d` 看急性冲击，`20d` 看未来几周是否需要离场和保护，`60d` 看数月级脆弱性。
           </div>
+          <div className="mini-metrics">
+            <Metric
+              label="准备动作"
+              value={formatPercent(assessment.actionability.prepare)}
+              hint="更偏向数月到数周的预备性收缩，不等于立刻离场。"
+            />
+            <Metric
+              label="对冲动作"
+              value={formatPercent(assessment.actionability.hedge)}
+              hint="更偏向未来几周是否应主动加保护。"
+            />
+            <Metric
+              label="防守动作"
+              value={formatPercent(assessment.actionability.defend)}
+              hint="更偏向近端风险窗口是否已经打开。"
+            />
+            <Metric
+              label="动作头来源"
+              value={assessment.method.actionability_enabled ? "双头诊断" : "旧逻辑回推"}
+              hint={
+                assessment.method.actionability_enabled
+                  ? `${assessment.method.actionability_model_version ?? "actionability"} / ${assessment.method.fusion_policy_version ?? "fusion"}`
+                  : "当前 active release 尚未内置独立动作头，先用概率与评分做诊断映射。"
+              }
+            />
+          </div>
           <div className="rule-box">
             <strong>时距判断</strong>
             <span>{describeTimeBucket(assessment.time_to_risk_bucket)}</span>
@@ -1114,7 +1140,13 @@ function describeProbabilityMode(method: AssessmentSnapshot["method"]) {
   }
 
   if (method.probability_mode.startsWith("formal_bundle")) {
-    const label = method.point_in_time_mode === "strict" ? "Formal 候选" : "Formal 过渡";
+    const label = method.actionability_enabled
+      ? method.point_in_time_mode === "strict"
+        ? "Formal 双头候选"
+        : "Formal 双头过渡"
+      : method.point_in_time_mode === "strict"
+        ? "Formal 候选"
+        : "Formal 过渡";
     return {
       label,
       hint: `${method.probability_mode} / ${method.point_in_time_mode}`

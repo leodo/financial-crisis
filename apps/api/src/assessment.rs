@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use chrono::NaiveDate;
 use chrono::Utc;
 use fc_domain::{
-    AlertEvent, AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot,
-    BacktestPerformanceSummary, BacktestRollingAudit, BacktestScenarioSummary,
+    ActionabilityBlock, ActionabilityLevel, AlertEvent, AssessmentMethodVersions, AssessmentScores,
+    AssessmentSnapshot, BacktestPerformanceSummary, BacktestRollingAudit, BacktestScenarioSummary,
     BacktestSignalSource, DataMode, DataTrust, DecisionPosture, EventAssessment,
     EventConfirmationState, EventSignalSummary, FreshnessStatus, HistoricalAnalog, IndicatorRisk,
     JpyCarrySnapshot, JpyCarryState, KeyIndicatorStatus, LogisticProbabilityModel,
@@ -122,6 +122,11 @@ fn probability_action_thresholds(
 pub struct ProbabilityComputationTrace {
     pub raw_probabilities: ProbabilityBlock,
     pub calibrated_probabilities: ProbabilityBlock,
+    pub actionability: ActionabilityBlock,
+    pub actionability_enabled: bool,
+    pub actionability_model_version: Option<String>,
+    pub actionability_calibration_version: Option<String>,
+    pub fusion_policy_version: Option<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -181,10 +186,15 @@ pub fn build_assessment_snapshot(
         serving_model,
     );
     let probabilities = probability_trace.calibrated_probabilities.clone();
+    let actionability = probability_trace.actionability.clone();
+    let actionability_fusion = probability_trace
+        .actionability_enabled
+        .then_some(&actionability);
     let active_release = serving_model.map(|context| &context.release);
     let action_thresholds = probability_action_thresholds(active_release);
     let time_to_risk_bucket = build_time_to_risk_bucket(
         &probabilities,
+        actionability_fusion,
         snapshot.structural_score,
         snapshot.trigger_score,
         external_shock_score,
@@ -206,6 +216,7 @@ pub fn build_assessment_snapshot(
     let posture_guidance = build_posture_guidance(
         snapshot,
         &probabilities,
+        actionability_fusion,
         conviction_score,
         &data_trust,
         external_shock_score,
@@ -235,6 +246,10 @@ pub fn build_assessment_snapshot(
         calibration_version: active_release
             .map(|release| release.manifest.calibration_version.clone())
             .unwrap_or_else(|| CALIBRATION_VERSION.to_string()),
+        actionability_model_version: probability_trace.actionability_model_version.clone(),
+        actionability_calibration_version: probability_trace
+            .actionability_calibration_version
+            .clone(),
         feature_set_version: active_release
             .map(|release| release.manifest.feature_set_version.clone())
             .unwrap_or_else(|| FEATURE_SET_VERSION.to_string()),
@@ -247,6 +262,8 @@ pub fn build_assessment_snapshot(
         action_playbook_version: active_release
             .map(|release| release.manifest.action_playbook_version.clone())
             .unwrap_or_else(|| ACTION_PLAYBOOK_VERSION.to_string()),
+        fusion_policy_version: probability_trace.fusion_policy_version.clone(),
+        actionability_enabled: probability_trace.actionability_enabled,
         probability_mode: serving_model
             .map(|context| context.runtime_probability_mode.clone())
             .unwrap_or_else(|| PROBABILITY_MODE.to_string()),
@@ -271,6 +288,7 @@ pub fn build_assessment_snapshot(
             entity_id: snapshot.entity_id.clone(),
             market_scope: snapshot.market_scope.clone(),
             probabilities,
+            actionability,
             time_to_risk_bucket,
             posture: posture_guidance.posture,
             conviction_score,
@@ -360,6 +378,42 @@ fn build_probabilities(
     }
 }
 
+fn heuristic_actionability_block(
+    snapshot: &RiskSnapshot,
+    external_shock_score: f64,
+    probabilities: &ProbabilityBlock,
+    data_trust: &DataTrust,
+    jpy_carry: &JpyCarrySnapshot,
+) -> ActionabilityBlock {
+    let quality_penalty = (1.0 - data_trust.coverage_score).clamp(0.0, 1.0) * 0.12;
+    let prepare = clamp_probability(
+        probabilities.p_60d * 0.72
+            + scaled_pressure(snapshot.structural_score, 55.0, 18.0) * 0.22
+            + scaled_pressure(external_shock_score, 48.0, 18.0) * 0.08
+            - quality_penalty,
+    );
+    let hedge = clamp_probability(
+        probabilities.p_20d * 0.74
+            + scaled_pressure(snapshot.trigger_score, 52.0, 20.0) * 0.22
+            + scaled_pressure(external_shock_score, 50.0, 18.0) * 0.10
+            + scaled_pressure(jpy_carry.score, 58.0, 18.0) * 0.06
+            - quality_penalty,
+    );
+    let defend = clamp_probability(
+        probabilities.p_5d * 0.78
+            + scaled_pressure(snapshot.trigger_score, 60.0, 18.0) * 0.18
+            + scaled_pressure(external_shock_score, 55.0, 18.0) * 0.10
+            + scaled_pressure(jpy_carry.funding_pressure_score, 55.0, 16.0) * 0.08
+            - quality_penalty,
+    );
+
+    ActionabilityBlock {
+        prepare: round3(prepare),
+        hedge: round3(hedge.max((defend + 0.02).min(0.97))),
+        defend: round3(defend),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_probability_trace(
     snapshot: &RiskSnapshot,
@@ -371,16 +425,33 @@ fn build_probability_trace(
     key_indicators: &[KeyIndicatorStatus],
     serving_model: Option<&ServingModelContext>,
 ) -> ProbabilityComputationTrace {
+    let heuristic_actionability = heuristic_actionability_block(
+        snapshot,
+        external_shock_score,
+        heuristic_probabilities,
+        data_trust,
+        jpy_carry,
+    );
     let Some(serving_model) = serving_model else {
         return ProbabilityComputationTrace {
             raw_probabilities: heuristic_probabilities.clone(),
             calibrated_probabilities: heuristic_probabilities.clone(),
+            actionability: heuristic_actionability,
+            actionability_enabled: false,
+            actionability_model_version: None,
+            actionability_calibration_version: None,
+            fusion_policy_version: None,
         };
     };
     let Some(bundle) = serving_model.probability_bundle.as_ref() else {
         return ProbabilityComputationTrace {
             raw_probabilities: heuristic_probabilities.clone(),
             calibrated_probabilities: heuristic_probabilities.clone(),
+            actionability: heuristic_actionability,
+            actionability_enabled: false,
+            actionability_model_version: None,
+            actionability_calibration_version: None,
+            fusion_policy_version: None,
         };
     };
 
@@ -416,6 +487,40 @@ fn build_probability_trace(
         calibrated_p_60d_raw.max((calibrated_p_20d + min_gap_20_to_60).min(0.99)),
     );
 
+    let actionability = bundle
+        .actionability
+        .as_ref()
+        .map(|actionability_bundle| ActionabilityBlock {
+            prepare: round3(
+                score_actionability_level(
+                    actionability_bundle,
+                    ActionabilityLevel::Prepare,
+                    &features,
+                )
+                .map(|(_, calibrated)| calibrated)
+                .unwrap_or(heuristic_actionability.prepare),
+            ),
+            hedge: round3(
+                score_actionability_level(
+                    actionability_bundle,
+                    ActionabilityLevel::Hedge,
+                    &features,
+                )
+                .map(|(_, calibrated)| calibrated)
+                .unwrap_or(heuristic_actionability.hedge),
+            ),
+            defend: round3(
+                score_actionability_level(
+                    actionability_bundle,
+                    ActionabilityLevel::Defend,
+                    &features,
+                )
+                .map(|(_, calibrated)| calibrated)
+                .unwrap_or(heuristic_actionability.defend),
+            ),
+        })
+        .unwrap_or_else(|| heuristic_actionability.clone());
+
     ProbabilityComputationTrace {
         raw_probabilities,
         calibrated_probabilities: ProbabilityBlock {
@@ -423,6 +528,20 @@ fn build_probability_trace(
             p_20d: round3(calibrated_p_20d),
             p_60d: round3(calibrated_p_60d),
         },
+        actionability,
+        actionability_enabled: bundle.actionability.is_some(),
+        actionability_model_version: bundle
+            .actionability
+            .as_ref()
+            .map(|bundle| bundle.model_version.clone()),
+        actionability_calibration_version: bundle
+            .actionability
+            .as_ref()
+            .map(|bundle| bundle.calibration_version.clone()),
+        fusion_policy_version: bundle
+            .actionability
+            .as_ref()
+            .map(|bundle| bundle.fusion_policy_version.clone()),
     }
 }
 
@@ -437,6 +556,7 @@ fn build_probability_feature_map(
 ) -> BTreeMap<String, f64> {
     let heuristic_bucket = build_time_to_risk_bucket(
         heuristic_probabilities,
+        None,
         snapshot.structural_score,
         snapshot.trigger_score,
         external_shock_score,
@@ -701,6 +821,23 @@ fn score_bundle_horizon(
     Some((raw_probability, calibrated_probability))
 }
 
+fn score_actionability_level(
+    bundle: &fc_domain::ActionabilityBundle,
+    level: ActionabilityLevel,
+    features: &BTreeMap<String, f64>,
+) -> Option<(f64, f64)> {
+    let level_bundle = bundle
+        .levels
+        .iter()
+        .find(|candidate| candidate.level == level)?;
+    let raw_probability = score_logistic_model(&level_bundle.raw_model, features);
+    let calibrated_probability = match level_bundle.calibration.as_ref() {
+        Some(calibration) => apply_platt_calibration(raw_probability, calibration),
+        None => raw_probability,
+    };
+    Some((raw_probability, calibrated_probability))
+}
+
 fn score_logistic_model(model: &LogisticProbabilityModel, features: &BTreeMap<String, f64>) -> f64 {
     let mut linear = model.intercept;
     for coefficient in &model.coefficients {
@@ -748,8 +885,10 @@ fn freshness_rank(status: FreshnessStatus) -> u8 {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_time_to_risk_bucket(
     probabilities: &ProbabilityBlock,
+    actionability: Option<&ActionabilityBlock>,
     structural_score: f64,
     trigger_score: f64,
     external_shock_score: f64,
@@ -759,6 +898,18 @@ fn build_time_to_risk_bucket(
 ) -> TimeToRiskBucket {
     let severe_carry = jpy_carry.score >= 70.0 && jpy_carry.funding_pressure_score >= 55.0;
     let stressed_carry = jpy_carry.score >= 58.0 && jpy_carry.funding_pressure_score >= 48.0;
+    let defend_head_now = actionability.is_some_and(|scores| {
+        scores.defend >= 0.33
+            && (trigger_score >= 55.0 || external_shock_score >= 55.0 || breadth_score >= 44.0)
+    });
+    let hedge_head_weeks = actionability.is_some_and(|scores| {
+        scores.hedge >= 0.34
+            && (trigger_score >= 48.0 || external_shock_score >= 48.0 || breadth_score >= 38.0)
+    });
+    let prepare_head_months = actionability.is_some_and(|scores| {
+        scores.prepare >= 0.36
+            && (structural_score >= 52.0 || external_shock_score >= 50.0 || breadth_score >= 36.0)
+    });
 
     if (probabilities.p_5d >= thresholds.defend_p5d
         && trigger_score >= 62.0
@@ -768,6 +919,7 @@ fn build_time_to_risk_bucket(
             && external_shock_score >= 55.0
             && breadth_score >= 45.0)
         || (severe_carry && external_shock_score >= 55.0 && trigger_score >= 50.0)
+        || defend_head_now
     {
         TimeToRiskBucket::Now
     } else if (probabilities.p_20d >= thresholds.hedge_p20d
@@ -778,12 +930,14 @@ fn build_time_to_risk_bucket(
             && trigger_score >= 55.0
             && breadth_score >= 40.0)
         || (stressed_carry && external_shock_score >= 50.0 && structural_score >= 50.0)
+        || hedge_head_weeks
     {
         TimeToRiskBucket::Weeks
     } else if (probabilities.p_60d >= thresholds.prepare_p60d && structural_score >= 55.0)
         || (structural_score >= 62.0 && trigger_score >= 42.0)
         || (external_shock_score >= 55.0
             && probabilities.p_20d >= thresholds.external_prepare_p20d())
+        || prepare_head_months
     {
         TimeToRiskBucket::Months
     } else {
@@ -795,6 +949,7 @@ fn build_time_to_risk_bucket(
 fn build_posture_guidance(
     snapshot: &RiskSnapshot,
     probabilities: &ProbabilityBlock,
+    actionability: Option<&ActionabilityBlock>,
     conviction_score: f64,
     data_trust: &DataTrust,
     external_shock_score: f64,
@@ -821,7 +976,11 @@ fn build_posture_guidance(
         && conviction_score >= 0.62
         && breadth_score >= 48.0
         && ((probabilities.p_5d >= thresholds.defend_p5d && snapshot.trigger_score >= 60.0)
-            || (severe_carry && snapshot.trigger_score >= 55.0 && external_shock_score >= 55.0));
+            || (severe_carry && snapshot.trigger_score >= 55.0 && external_shock_score >= 55.0)
+            || actionability.is_some_and(|scores| {
+                scores.defend >= 0.36
+                    && (snapshot.trigger_score >= 55.0 || external_shock_score >= 55.0)
+            }));
     let hedge_signal = (probabilities.p_20d >= thresholds.hedge_p20d
         && (snapshot.trigger_score >= 50.0
             || external_shock_score >= 50.0
@@ -834,14 +993,24 @@ fn build_posture_guidance(
         || (stressed_carry
             && external_shock_score >= 50.0
             && snapshot.structural_score >= 50.0
-            && snapshot.trigger_score >= 45.0);
+            && snapshot.trigger_score >= 45.0)
+        || actionability.is_some_and(|scores| {
+            scores.hedge >= 0.36
+                && (snapshot.trigger_score >= 46.0
+                    || external_shock_score >= 48.0
+                    || event_assessment.confirmation_score >= 35.0)
+        });
     let prepare_signal = (probabilities.p_60d >= thresholds.prepare_p60d
         && snapshot.structural_score >= 55.0)
         || snapshot.structural_score >= 62.0
         || (external_shock_score >= 55.0 && snapshot.structural_score >= 52.0)
         || (jpy_carry.funding_pressure_score >= 45.0
             && snapshot.structural_score >= 50.0
-            && probabilities.p_60d >= thresholds.carry_prepare_p60d());
+            && probabilities.p_60d >= thresholds.carry_prepare_p60d())
+        || actionability.is_some_and(|scores| {
+            scores.prepare >= 0.38
+                && (snapshot.structural_score >= 50.0 || external_shock_score >= 50.0)
+        });
 
     let base_posture = if defend_signal {
         DecisionPosture::Defend

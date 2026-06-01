@@ -168,6 +168,12 @@ export interface ProbabilityBlock {
   p_60d: number;
 }
 
+export interface ActionabilityBlock {
+  prepare: number;
+  hedge: number;
+  defend: number;
+}
+
 export interface AssessmentScores {
   overall_score: number;
   structural_score: number;
@@ -200,10 +206,14 @@ export interface AssessmentMethodVersions {
   score_method_version: string;
   prob_model_version: string;
   calibration_version: string;
+  actionability_model_version: string | null;
+  actionability_calibration_version: string | null;
   feature_set_version: string;
   label_version: string;
   posture_policy_version: string;
   action_playbook_version: string;
+  fusion_policy_version: string | null;
+  actionability_enabled: boolean;
   probability_mode: string;
   release_status: string;
   release_id: string | null;
@@ -343,6 +353,7 @@ export interface AssessmentSnapshot {
   entity_id: string;
   market_scope: string;
   probabilities: ProbabilityBlock;
+  actionability: ActionabilityBlock;
   time_to_risk_bucket: TimeToRiskBucket;
   posture: DecisionPosture;
   conviction_score: number;

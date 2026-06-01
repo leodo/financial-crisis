@@ -72,6 +72,13 @@ pub struct ProbabilityBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionabilityBlock {
+    pub prepare: f64,
+    pub hedge: f64,
+    pub defend: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssessmentScores {
     pub overall_score: f64,
     pub structural_score: f64,
@@ -107,10 +114,14 @@ pub struct AssessmentMethodVersions {
     pub score_method_version: String,
     pub prob_model_version: String,
     pub calibration_version: String,
+    pub actionability_model_version: Option<String>,
+    pub actionability_calibration_version: Option<String>,
     pub feature_set_version: String,
     pub label_version: String,
     pub posture_policy_version: String,
     pub action_playbook_version: String,
+    pub fusion_policy_version: Option<String>,
+    pub actionability_enabled: bool,
     pub probability_mode: String,
     pub release_status: String,
     pub release_id: Option<String>,
@@ -268,6 +279,7 @@ pub struct AssessmentSnapshot {
     pub entity_id: String,
     pub market_scope: String,
     pub probabilities: ProbabilityBlock,
+    pub actionability: ActionabilityBlock,
     pub time_to_risk_bucket: TimeToRiskBucket,
     pub posture: DecisionPosture,
     pub conviction_score: f64,

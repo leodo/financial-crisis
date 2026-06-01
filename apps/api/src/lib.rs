@@ -251,6 +251,10 @@ mod tests {
         }));
         assert!(json["event_assessment"]["state"].is_string());
         assert!(json["event_assessment"]["confirmed_signals"].is_array());
+        assert!(json["actionability"]["prepare"].is_number());
+        assert!(json["actionability"]["hedge"].is_number());
+        assert!(json["actionability"]["defend"].is_number());
+        assert!(json["method"]["actionability_enabled"].is_boolean());
         assert!(json["backtest_summary"]["timely_warning_rate"].is_number());
         assert!(json["backtest_summary"]["rolling_audit"]["actionable_precision"].is_number());
         assert!(json["backtest_summary"]["rolling_audit"]["classified_episodes"].is_array());

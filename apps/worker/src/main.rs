@@ -9,16 +9,16 @@ use std::{
 use anyhow::{bail, Context};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
 use fc_domain::{
-    embedded_protected_stress_window_catalog, load_crisis_scenario_catalog,
-    AssessmentMethodVersions, AssessmentSnapshot, BacktestScenarioSummary, FeatureSnapshotRecord,
-    FormalDatasetManifest, FormalDatasetRecord, FormalDatasetRowRecord, Frequency,
-    HorizonEvaluationSummary, Indicator, IndicatorRisk, LogisticProbabilityModel,
-    ModelReleaseManifest, ModelReleaseRecord, Observation, PlattCalibrationArtifact,
-    PredictionSnapshotRecord, ProbabilityBundle, ProbabilityBundleEvaluation,
-    ProbabilityCoefficient, ProbabilityFeatureStat, ProbabilityHorizonBundle,
-    ProtectedStressWindowCatalog, RiskDimension, FEATURE_BUCKET_MONTHS_OR_HIGHER,
-    FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER, FEATURE_COVERAGE_SCORE,
-    FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
+    embedded_protected_stress_window_catalog, load_crisis_scenario_catalog, ActionabilityBundle,
+    ActionabilityLevel, ActionabilityLevelBundle, AssessmentMethodVersions, AssessmentSnapshot,
+    BacktestScenarioSummary, FeatureSnapshotRecord, FormalDatasetManifest, FormalDatasetRecord,
+    FormalDatasetRowRecord, Frequency, HorizonEvaluationSummary, Indicator, IndicatorRisk,
+    LogisticProbabilityModel, ModelReleaseManifest, ModelReleaseRecord, Observation,
+    PlattCalibrationArtifact, PredictionSnapshotRecord, ProbabilityBundle,
+    ProbabilityBundleEvaluation, ProbabilityCoefficient, ProbabilityFeatureStat,
+    ProbabilityHorizonBundle, ProtectedStressWindowCatalog, RiskDimension,
+    FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER,
+    FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
     FEATURE_FRESHNESS_STALE_OR_MISSING, FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D,
     FEATURE_HEURISTIC_P_60D, FEATURE_OVERALL_SCORE, FORMAL_PROBABILITY_BUNDLE_FEATURES,
     TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES,
@@ -3206,7 +3206,6 @@ struct ProbabilityTrainingInput {
     point_in_time_mode: String,
     feature_set_version: String,
     label_version: String,
-    target_label_mode: ProbabilityTargetLabelMode,
     feature_names: Vec<String>,
     train_rows: Vec<ProbabilityTrainingRow>,
     calibration_rows: Vec<ProbabilityTrainingRow>,
@@ -3236,6 +3235,7 @@ struct PipelineEvaluationReport {
     calibration_samples: usize,
     evaluation_samples: usize,
     horizons: Vec<ProbabilityHorizonBundle>,
+    actionability: Option<ActionabilityBundle>,
     summary: Option<ProbabilityBundleEvaluation>,
 }
 
@@ -3456,17 +3456,6 @@ async fn load_formal_training_dataset(
         );
     }
 
-    let target_label_mode = if training_rows_support_label_mode(
-        &train_rows,
-        &calibration_rows,
-        &evaluation_rows,
-        ProbabilityTargetLabelMode::ActionWindow,
-    ) {
-        ProbabilityTargetLabelMode::ActionWindow
-    } else {
-        ProbabilityTargetLabelMode::ForwardCrisis
-    };
-
     Ok(ProbabilityTrainingInput {
         dataset_source: PipelineDatasetSource::Formal,
         dataset_label: dataset_key,
@@ -3474,7 +3463,6 @@ async fn load_formal_training_dataset(
         point_in_time_mode: dataset.manifest.point_in_time_mode.clone(),
         feature_set_version: dataset.manifest.feature_set_version.clone(),
         label_version: dataset.manifest.label_version.clone(),
-        target_label_mode,
         feature_names: formal_feature_names(),
         train_rows,
         calibration_rows,
@@ -3512,7 +3500,6 @@ async fn load_snapshot_training_dataset(
         point_in_time_mode: "best_effort".to_string(),
         feature_set_version: "feature_prob_meta_v1".to_string(),
         label_version: "label_forward_crisis_v1".to_string(),
-        target_label_mode: ProbabilityTargetLabelMode::ForwardCrisis,
         feature_names: transitional_feature_names(),
         train_rows,
         calibration_rows,
@@ -3647,6 +3634,7 @@ async fn train_probability_pipeline(
 ) -> anyhow::Result<PipelineArtifacts> {
     let generated_at = Utc::now();
     let training = load_probability_training_input(store, options).await?;
+    let crisis_prior_label_mode = ProbabilityTargetLabelMode::ForwardCrisis;
     let horizons = [5_u32, 20_u32, 60_u32]
         .into_iter()
         .map(|horizon| {
@@ -3656,22 +3644,36 @@ async fn train_probability_pipeline(
                 &training.evaluation_rows,
                 &training.feature_names,
                 horizon,
-                training.target_label_mode,
+                crisis_prior_label_mode,
             )
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
+    let actionability = if matches!(training.dataset_source, PipelineDatasetSource::Formal)
+        && training_rows_support_label_mode(
+            &training.train_rows,
+            &training.calibration_rows,
+            &training.evaluation_rows,
+            ProbabilityTargetLabelMode::ActionWindow,
+        ) {
+        Some(train_actionability_bundle(
+            &training.train_rows,
+            &training.calibration_rows,
+            &training.evaluation_rows,
+            &training.feature_names,
+            &generated_at.format("%Y%m%dT%H%M%S").to_string(),
+        )?)
+    } else {
+        None
+    };
+
     let aggregate_evaluation = summarize_bundle_evaluation(&horizons);
     let release_suffix = generated_at.format("%Y%m%dT%H%M%S").to_string();
     let release_id = format!("{}_{}", options.release_prefix, release_suffix);
-    let label_mode_note = match training.target_label_mode {
-        ProbabilityTargetLabelMode::ForwardCrisis => "forward-crisis labels",
-        ProbabilityTargetLabelMode::ActionWindow => "action-window labels",
-    };
     let bundle_note = match training.dataset_source {
         PipelineDatasetSource::Formal => format!(
-            "Formal bundle trained from persisted formal dataset {} built from raw observations -> feature snapshots -> scenario labels; training target uses {} with positive-class and scenario-aware weighting to favor earlier actionable warnings under severe class imbalance.",
-            training.dataset_label, label_mode_note
+            "Formal bundle trained from persisted formal dataset {} built from raw observations -> feature snapshots -> scenario labels; crisis-prior head uses forward-crisis labels, and actionability head uses bounded action-window labels when coverage is sufficient.",
+            training.dataset_label
         ),
         PipelineDatasetSource::Snapshot => {
             "Transitional formal bundle trained from persisted heuristic prediction snapshots, calibrated with chronological holdout slices, and reweighted toward positive warning windows under severe class imbalance.".to_string()
@@ -3688,6 +3690,7 @@ async fn train_probability_pipeline(
         note: bundle_note.clone(),
         horizons: horizons.clone(),
         evaluation: Some(aggregate_evaluation.clone()),
+        actionability: actionability.clone(),
     };
 
     let bundle_path = options.output_dir.join(format!("{release_id}.json"));
@@ -3741,13 +3744,14 @@ async fn train_probability_pipeline(
         release_id: release_id.clone(),
         dataset_source: training.dataset_source.as_str().to_string(),
         dataset_label: training.dataset_label.clone(),
-        target_label_mode: training.target_label_mode,
+        target_label_mode: crisis_prior_label_mode,
         market_scope: release.manifest.market_scope.clone(),
         feature_names: training.feature_names.clone(),
         training_samples: training.train_rows.len(),
         calibration_samples: training.calibration_rows.len(),
         evaluation_samples: training.evaluation_rows.len(),
         horizons,
+        actionability,
         summary: bundle.evaluation.clone(),
     };
 
@@ -3944,6 +3948,95 @@ fn training_rows_support_label_mode(
             && evaluation_rows
                 .iter()
                 .any(|row| row.label_for_horizon(label_mode, horizon_days) > 0.0)
+    })
+}
+
+fn train_actionability_bundle(
+    train_rows: &[ProbabilityTrainingRow],
+    calibration_rows: &[ProbabilityTrainingRow],
+    evaluation_rows: &[ProbabilityTrainingRow],
+    feature_names: &[String],
+    release_suffix: &str,
+) -> anyhow::Result<ActionabilityBundle> {
+    let levels = [
+        (ActionabilityLevel::Prepare, 60_u32),
+        (ActionabilityLevel::Hedge, 20_u32),
+        (ActionabilityLevel::Defend, 5_u32),
+    ]
+    .into_iter()
+    .map(|(level, proxy_horizon_days)| {
+        train_actionability_level_bundle(
+            train_rows,
+            calibration_rows,
+            evaluation_rows,
+            feature_names,
+            level,
+            proxy_horizon_days,
+        )
+    })
+    .collect::<anyhow::Result<Vec<_>>>()?;
+
+    Ok(ActionabilityBundle {
+        model_version: format!("actionability_bundle_{release_suffix}"),
+        calibration_version: format!("actionability_platt_{release_suffix}"),
+        fusion_policy_version: "fusion_policy_v1_actionability_diag_20260601".to_string(),
+        note: "Separate actionability head trained from bounded action-window labels to complement the crisis-prior horizons without replacing them outright.".to_string(),
+        levels,
+    })
+}
+
+fn train_actionability_level_bundle(
+    train_rows: &[ProbabilityTrainingRow],
+    calibration_rows: &[ProbabilityTrainingRow],
+    evaluation_rows: &[ProbabilityTrainingRow],
+    feature_names: &[String],
+    level: ActionabilityLevel,
+    proxy_horizon_days: u32,
+) -> anyhow::Result<ActionabilityLevelBundle> {
+    let label_mode = ProbabilityTargetLabelMode::ActionWindow;
+    ensure_positive_labels(train_rows, proxy_horizon_days, "train", label_mode)?;
+    ensure_positive_labels(
+        calibration_rows,
+        proxy_horizon_days,
+        "calibration",
+        label_mode,
+    )?;
+    ensure_positive_labels(
+        evaluation_rows,
+        proxy_horizon_days,
+        "evaluation",
+        label_mode,
+    )?;
+
+    let raw_model = fit_logistic_model(train_rows, feature_names, proxy_horizon_days, label_mode);
+    let calibration_inputs = calibration_rows
+        .iter()
+        .map(|row| score_logistic_model_for_dataset(&raw_model, row))
+        .collect::<Vec<_>>();
+    let calibration_labels = calibration_rows
+        .iter()
+        .map(|row| row.label_for_horizon(label_mode, proxy_horizon_days))
+        .collect::<Vec<_>>();
+    let calibration = fit_platt_calibration(&calibration_inputs, &calibration_labels);
+    let evaluation_probabilities = evaluation_rows
+        .iter()
+        .map(|row| {
+            let raw_probability = score_logistic_model_for_dataset(&raw_model, row);
+            apply_platt_calibration(raw_probability, &calibration)
+        })
+        .collect::<Vec<_>>();
+    let evaluation_labels = evaluation_rows
+        .iter()
+        .map(|row| row.label_for_horizon(label_mode, proxy_horizon_days))
+        .collect::<Vec<_>>();
+
+    Ok(ActionabilityLevelBundle {
+        level,
+        proxy_horizon_days,
+        target_label_mode: label_mode.as_str().to_string(),
+        raw_model,
+        calibration: Some(calibration),
+        evaluation: evaluate_probabilities(&evaluation_probabilities, &evaluation_labels),
     })
 }
 
