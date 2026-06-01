@@ -137,6 +137,30 @@ fn probability_action_thresholds(
     }
 }
 
+pub(crate) fn history_runtime_policy_version(
+    serving_model: Option<&ServingModelContext>,
+) -> String {
+    let thresholds = probability_action_thresholds(serving_model);
+    let release_class = if serving_model.is_some_and(|context| {
+        context.release.manifest.feature_set_version == "feature_formal_v1_main_20260531"
+            && context.release.manifest.label_version == "formal_label_v1_main"
+    }) {
+        "formal_main"
+    } else if serving_model.is_some() {
+        "release"
+    } else {
+        "heuristic"
+    };
+
+    // Cached prediction snapshots embed posture/time-bucket outputs. When runtime
+    // thresholds are tightened or relaxed, history must be recomputed even if the
+    // release manifest itself did not change.
+    format!(
+        "runtime_history_v1_20260601|class={release_class}|prepare={:.3}|hedge={:.3}|defend={:.3}",
+        thresholds.prepare_p60d, thresholds.hedge_p20d, thresholds.defend_p5d
+    )
+}
+
 fn bundle_horizon_threshold(bundle: &ProbabilityBundle, horizon_days: u32, fallback: f64) -> f64 {
     bundle
         .horizons
@@ -1123,21 +1147,20 @@ fn build_posture_guidance(
                     || event_assessment.confirmation_score >= 35.0)
         });
     let prepare_signal = conviction_score >= 0.54
-        && ((probabilities.p_60d >= thresholds.prepare_p60d
-            && snapshot.structural_score >= 55.0)
+        && ((probabilities.p_60d >= thresholds.prepare_p60d && snapshot.structural_score >= 55.0)
             || (snapshot.structural_score >= 62.0
                 && probabilities.p_60d >= thresholds.downgrade_prepare_p60d()
                 && (snapshot.trigger_score >= 42.0
                     || external_shock_score >= 50.0
                     || jpy_carry.funding_pressure_score >= 45.0))
-        || (external_shock_score >= 55.0 && snapshot.structural_score >= 52.0)
-        || (jpy_carry.funding_pressure_score >= 45.0
-            && snapshot.structural_score >= 50.0
-            && probabilities.p_60d >= thresholds.carry_prepare_p60d())
-        || actionability.is_some_and(|scores| {
-            scores.prepare >= 0.38
-                && (snapshot.structural_score >= 50.0 || external_shock_score >= 50.0)
-        }));
+            || (external_shock_score >= 55.0 && snapshot.structural_score >= 52.0)
+            || (jpy_carry.funding_pressure_score >= 45.0
+                && snapshot.structural_score >= 50.0
+                && probabilities.p_60d >= thresholds.carry_prepare_p60d())
+            || actionability.is_some_and(|scores| {
+                scores.prepare >= 0.38
+                    && (snapshot.structural_score >= 50.0 || external_shock_score >= 50.0)
+            }));
 
     let base_posture = if defend_signal {
         DecisionPosture::Defend

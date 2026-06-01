@@ -219,6 +219,53 @@ not active_default
 - “旧缓存污染了 formal 候选版复核结果” 现在已经不是主要解释；
 - formal PIT 主线当前确实没有学出足够稳定的动作级提前量。
 
+### 7.2 2026-06-01 候选 `us_formal_pit_scensplit4regime4_20260601T055211` 复核补充
+
+今天又复核了一版更晚的 formal main 候选：
+
+- `us_formal_pit_scensplit4regime4_20260601T055211`
+
+这轮先暴露出一个工程问题：
+
+- API 历史缓存只看 release manifest 版本，没把运行时 posture/action 阈值策略带进 `method_version`；
+- 导致 formal main 已经改过运行时阈值，但 SQLite 里还在复用旧 posture 历史；
+- 旧缓存下会出现明显不合理的历史点，例如 `p_20d≈2.5% / p_60d≈7%` 仍被记成 `prepare/hedge`。
+
+因此本轮先修了缓存口径：
+
+- `analytics_prediction_snapshots.method_version` 现在额外包含 `runtime_policy=...`
+- 只要 formal runtime 阈值发生变化，就会强制重建该 release 的历史评估轨迹
+
+修复缓存后再重跑 review，结果和“旧缓存口径”完全不同：
+
+- 旧缓存口径下，候选曾表现为：
+  - `timely_warning_rate`: `22.2% -> 55.6%`
+  - `actionable_precision`: `80.0% -> 43.6%`
+  - `longest_false_positive_episode_days`: `2 -> 66`
+- 新缓存口径下，候选实际表现为：
+  - `timely_warning_rate`: `22.2% -> 0.0%`
+  - `actionable_precision`: `80.0% -> 0.0%`
+  - `longest_false_positive_episode_days`: `2 -> 0`
+
+这句人话解释是：
+
+- 之前看到的“提前量大幅提升但误报过长”，很大一部分是旧历史 posture 缓存污染出来的假象；
+- 真正按当前正式 runtime 阈值回放后，这版 formal main 候选反而几乎完全打不出动作级预警；
+- 所以当前主问题已经从“误报太长”收敛成“模型本体太冷、动作层完全打不出来”。
+
+结论不变，而且更明确：
+
+```text
+No-Go for active_default
+```
+
+下一步不该继续围着前端或缓存打转，而应回到：
+
+1. 正式标签窗口是否过窄；
+2. formal main 概率头是否整体偏冷；
+3. runtime posture 阈值和训练目标是否脱节；
+4. 是否需要独立 actionability head，而不是继续只靠概率阈值推 posture。
+
 ### 7.2 2026-06-01 场景感知加权复核结果
 
 本轮又补做了一次更贴近业务目标的训练尝试：

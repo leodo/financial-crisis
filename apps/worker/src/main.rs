@@ -4680,7 +4680,8 @@ fn select_actionability_calibration_strategy(
         horizon_days,
         raw_threshold,
     );
-    let raw_score = actionability_summary_selection_score(&raw_summary, raw_threshold, horizon_days);
+    let raw_score =
+        actionability_summary_selection_score(&raw_summary, raw_threshold, horizon_days);
 
     let calibration_probabilities = calibration_raw_probabilities
         .iter()
@@ -7899,9 +7900,9 @@ mod tests {
 
     use super::{
         action_window_label, actionability_bundle_quality_regressions,
-        compare_actionability_guardrails, evaluate_actionability_summary,
-        fit_platt_calibration, forward_crisis_label, forward_crisis_training_regime,
-        negative_sample_weight, observation_is_visible_for_date, positive_sample_action_weight,
+        compare_actionability_guardrails, evaluate_actionability_summary, fit_platt_calibration,
+        forward_crisis_label, forward_crisis_training_regime, negative_sample_weight,
+        observation_is_visible_for_date, positive_sample_action_weight,
         probability_calibration_selection_rows, round3, scenario_aware_formal_split_bounds,
         scenario_count_for_index_range, select_actionability_calibration_strategy,
         select_actionability_decision_threshold, select_probability_calibration_strategy,
@@ -8410,8 +8411,7 @@ mod tests {
         crisis_negative.regime_20d = ProbabilityTrainingRegime::InCrisis;
         let mut cooldown_negative = normal_negative.clone();
         cooldown_negative.primary_scenario_id = Some("scenario_a".to_string());
-        cooldown_negative.scenario_family =
-            Some("systemic_credit_banking_crisis".to_string());
+        cooldown_negative.scenario_family = Some("systemic_credit_banking_crisis".to_string());
         cooldown_negative.days_to_primary_crisis_start = Some(-35);
         cooldown_negative.regime_20d = ProbabilityTrainingRegime::PostCrisisCooldown;
 

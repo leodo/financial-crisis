@@ -115,7 +115,10 @@ mod tests {
     fn embedded_catalog_is_sorted_and_non_empty() {
         let catalog = embedded_protected_stress_window_catalog();
         assert!(!catalog.windows.is_empty());
-        assert_eq!(catalog.windows[0].window_id, "us_gfc_aftershock_2009");
+        assert_eq!(
+            catalog.windows[0].window_id,
+            "us_dotcom_credit_aftershock_2002_2004"
+        );
         assert!(catalog
             .windows
             .windows(2)

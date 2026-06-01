@@ -25,6 +25,7 @@
     {
       "window_set_id": "protected_stress_windows_v1",
       "scenario_ids": [
+        "us_early_90s_banking_stress",
         "us_dotcom_unwind_2000",
         "us_funding_stress_2011",
         "us_rate_shock_2022"
@@ -33,6 +34,20 @@
     }
   ],
   "scenarios": [
+    {
+      "scenario_id": "us_early_90s_banking_stress",
+      "family": "mixed_systemic_stress",
+      "label": "1990-1993 美国银行与衰退压力",
+      "pre_warning_start": "1990-07-01",
+      "crisis_start": "1990-10-01",
+      "acute_start": "1990-10-11",
+      "crisis_peak": "1991-01-03",
+      "crisis_end": "1993-04-30",
+      "default_horizon_roles": [20, 60],
+      "training_role": "extension_only",
+      "protected_window": true,
+      "evidence_basis": "储贷系统尾部压力、地产与衰退环境共同抬升，适合作为受保护压力窗口与历史类比。"
+    },
     {
       "scenario_id": "us_black_monday_1987",
       "family": "acute_market_liquidity_crash",
@@ -65,7 +80,7 @@
       "scenario_id": "us_dotcom_unwind_2000",
       "family": "mixed_systemic_stress",
       "label": "2000-2001 科网泡沫出清",
-      "pre_warning_start": "1999-12-01",
+      "pre_warning_start": "1999-02-01",
       "crisis_start": "2000-03-10",
       "acute_start": "2000-04-14",
       "crisis_peak": "2000-04-14",
@@ -93,7 +108,7 @@
       "scenario_id": "us_funding_stress_2011",
       "family": "mixed_systemic_stress",
       "label": "2011 美欧融资压力",
-      "pre_warning_start": "2011-06-01",
+      "pre_warning_start": "2011-01-01",
       "crisis_start": "2011-07-29",
       "acute_start": "2011-08-08",
       "crisis_peak": "2011-08-08",

@@ -18,13 +18,18 @@ use fc_scoring::ScoringEngine;
 use fc_storage::{PostgresStore, SqliteStore};
 use uuid::Uuid;
 
-use crate::assessment::{build_assessment_snapshot, build_backtest_summary, ServingModelContext};
+use crate::assessment::{
+    build_assessment_snapshot, build_backtest_summary, history_runtime_policy_version,
+    ServingModelContext,
+};
 use crate::AppData;
 
 const EVENT_LOOKBACK_DAYS: i64 = 30;
 const BACKTEST_SIGNAL_WINDOW: usize = 5;
 const BACKTEST_SIGNAL_MIN_HITS: usize = 3;
-const ACTIONABLE_AUDIT_HORIZON_DAYS: i64 = 20;
+const ACTIONABLE_AUDIT_HORIZON_DEFEND_DAYS: i64 = 5;
+const ACTIONABLE_AUDIT_HORIZON_HEDGE_DAYS: i64 = 20;
+const ACTIONABLE_AUDIT_HORIZON_PREPARE_DAYS: i64 = 60;
 const ROLLING_AUDIT_EPISODE_LIMIT: usize = 12;
 const ROLLING_AUDIT_MIN_DATE: (i32, u32, u32) = (1990, 1, 2);
 const PREDICTION_SNAPSHOT_CACHE_VERSION: &str = "history_cache_v2_20260601";
@@ -301,6 +306,7 @@ fn build_app_data_from_inputs(
     mut assessment_history: Vec<fc_domain::AssessmentHistoryPoint>,
     user_preferences: UserRiskPreferences,
 ) -> BuiltAppData {
+    let use_transitional_bridge = use_transitional_actionable_bridge(serving_model.as_ref());
     let scoring = ScoringEngine::default();
     let protected_stress_window_catalog = load_protected_stress_window_catalog();
     let output = scoring.score(
@@ -310,10 +316,15 @@ fn build_app_data_from_inputs(
         "us",
         "financial_system",
     );
-    let backtests = build_backtests(&output.snapshot, &assessment_history);
+    let backtests = build_backtests(
+        &output.snapshot,
+        &assessment_history,
+        use_transitional_bridge,
+    );
     let rolling_audit = build_rolling_backtest_audit(
         &assessment_history,
         &protected_stress_window_catalog.windows,
+        use_transitional_bridge,
     );
     let alerts = stored_alerts
         .map(|alerts| select_recent_alerts_for_date(&alerts, as_of_date))
@@ -342,9 +353,12 @@ fn build_app_data_from_inputs(
         }
         _ => assessment_history.push(current_history_point),
     }
-    let backtest_timeline = build_backtest_timeline(&assessment_history);
-    let current_prediction_snapshot =
-        prediction_snapshot_from_assessment(&assessment, &probability_trace);
+    let backtest_timeline = build_backtest_timeline(&assessment_history, use_transitional_bridge);
+    let current_prediction_snapshot = prediction_snapshot_from_assessment(
+        &assessment,
+        &probability_trace,
+        serving_model.as_ref(),
+    );
     BuiltAppData {
         app_data: AppData {
             data_mode,
@@ -434,7 +448,11 @@ fn build_assessment_history_for_dates(
         let point_alerts = stored_alerts
             .map(|alerts| select_recent_alerts_for_date(alerts, as_of_date))
             .unwrap_or_else(|| build_alerts(&output.snapshot));
-        let point_backtests = build_backtests(&output.snapshot, &[]);
+        let point_backtests = build_backtests(
+            &output.snapshot,
+            &[],
+            use_transitional_actionable_bridge(serving_model),
+        );
         let (assessment, _, probability_trace) = build_assessment_snapshot(
             data_mode,
             &output.snapshot,
@@ -453,6 +471,7 @@ fn build_assessment_history_for_dates(
         prediction_snapshots.push(prediction_snapshot_from_assessment(
             &assessment,
             &probability_trace,
+            serving_model,
         ));
     }
 
@@ -613,6 +632,7 @@ fn historical_output_from_prediction_snapshots(
 fn prediction_snapshot_from_assessment(
     assessment: &AssessmentSnapshot,
     probability_trace: &crate::assessment::ProbabilityComputationTrace,
+    serving_model: Option<&ServingModelContext>,
 ) -> PredictionSnapshotRecord {
     PredictionSnapshotRecord {
         as_of_date: assessment.as_of_date,
@@ -636,23 +656,9 @@ fn prediction_snapshot_from_assessment(
         label_version: assessment.method.label_version.clone(),
         coverage_score: assessment.data_trust.coverage_score,
         freshness_status: worst_freshness_status(&assessment.key_indicators).to_string(),
-        method_version: prediction_snapshot_method_version(&assessment.method),
+        method_version: expected_prediction_snapshot_method_version(serving_model),
         recorded_at: assessment.runtime.generated_at,
     }
-}
-
-fn prediction_snapshot_method_version(method: &fc_domain::AssessmentMethodVersions) -> String {
-    history_cache_key(
-        method.release_id.as_deref(),
-        &method.probability_mode,
-        &method.feature_set_version,
-        &method.label_version,
-        &method.prob_model_version,
-        &method.calibration_version,
-        &method.posture_policy_version,
-        &method.action_playbook_version,
-        &method.point_in_time_mode,
-    )
 }
 
 fn expected_prediction_snapshot_method_version(
@@ -669,6 +675,7 @@ fn expected_prediction_snapshot_method_version(
             "posture_v1_20260530",
             "action_playbook_v1_20260531",
             "best_effort",
+            &history_runtime_policy_version(None),
         );
     };
 
@@ -682,6 +689,7 @@ fn expected_prediction_snapshot_method_version(
         &serving_model.release.manifest.posture_policy_version,
         &serving_model.release.manifest.action_playbook_version,
         &serving_model.release.manifest.point_in_time_mode,
+        &history_runtime_policy_version(Some(serving_model)),
     )
 }
 
@@ -696,9 +704,10 @@ fn history_cache_key(
     posture_policy_version: &str,
     action_playbook_version: &str,
     point_in_time_mode: &str,
+    runtime_history_policy_version: &str,
 ) -> String {
     format!(
-        "{PREDICTION_SNAPSHOT_CACHE_VERSION}|release={}|probability_mode={probability_mode}|feature={feature_set_version}|label={label_version}|prob={prob_model_version}|calib={calibration_version}|posture={posture_policy_version}|action={action_playbook_version}|pit={point_in_time_mode}",
+        "{PREDICTION_SNAPSHOT_CACHE_VERSION}|release={}|probability_mode={probability_mode}|feature={feature_set_version}|label={label_version}|prob={prob_model_version}|calib={calibration_version}|posture={posture_policy_version}|action={action_playbook_version}|pit={point_in_time_mode}|runtime_policy={runtime_history_policy_version}",
         release_id.unwrap_or("heuristic")
     )
 }
@@ -1668,6 +1677,7 @@ fn build_alerts(snapshot: &fc_domain::RiskSnapshot) -> Vec<AlertEvent> {
 fn build_backtests(
     snapshot: &fc_domain::RiskSnapshot,
     history: &[fc_domain::AssessmentHistoryPoint],
+    use_transitional_bridge: bool,
 ) -> Vec<BacktestScenarioSummary> {
     let history_start = history.first().map(|point| point.as_of_date);
     let history_end = history.last().map(|point| point.as_of_date);
@@ -1678,6 +1688,7 @@ fn build_backtests(
                 snapshot,
                 history,
                 &scenario,
+                use_transitional_bridge,
                 snapshot.top_contributors.iter().take(3).cloned().collect(),
             )
             .unwrap_or_else(|| fallback_backtest(snapshot, &scenario, history_start, history_end))
@@ -1830,6 +1841,7 @@ fn scenario_summary_from_history(
     snapshot: &fc_domain::RiskSnapshot,
     history: &[fc_domain::AssessmentHistoryPoint],
     scenario: &ScenarioDefinition,
+    use_transitional_bridge: bool,
     top_contributors: Vec<RiskContributor>,
 ) -> Option<BacktestScenarioSummary> {
     let crisis_points = history
@@ -1853,7 +1865,9 @@ fn scenario_summary_from_history(
         .collect::<Vec<_>>();
 
     let first_l2_date = first_sustained_signal_date(&warmup_points, is_structural_warning_point);
-    let first_l3_date = first_sustained_signal_date(&warmup_points, is_actionable_warning_point);
+    let first_l3_date = first_sustained_signal_date(&warmup_points, |point| {
+        is_actionable_warning_point(point, use_transitional_bridge)
+    });
 
     let max_point = crisis_points
         .iter()
@@ -1861,7 +1875,8 @@ fn scenario_summary_from_history(
         .expect("crisis_points is not empty");
     let lead_time_days = lead_time_from_date(scenario.crisis_start, first_l2_date);
     let actionable_lead_time_days = lead_time_from_date(scenario.crisis_start, first_l3_date);
-    let false_positive_count = count_false_positive_actionable_episodes(&warmup_points);
+    let false_positive_count =
+        count_false_positive_actionable_episodes(&warmup_points, use_transitional_bridge);
 
     Some(BacktestScenarioSummary {
         scenario_id: scenario.scenario_id.clone(),
@@ -1935,6 +1950,7 @@ fn fallback_backtest(
 
 fn build_backtest_timeline(
     history: &[fc_domain::AssessmentHistoryPoint],
+    use_transitional_bridge: bool,
 ) -> Vec<BacktestWindowPoint> {
     history
         .iter()
@@ -1945,7 +1961,7 @@ fn build_backtest_timeline(
             p_20d: point.p_20d,
             p_60d: point.p_60d,
             posture: point.posture,
-            crisis_window_open: is_actionable_warning_point(point),
+            crisis_window_open: is_actionable_warning_point(point, use_transitional_bridge),
         })
         .collect()
 }
@@ -1953,6 +1969,7 @@ fn build_backtest_timeline(
 fn build_rolling_backtest_audit(
     history: &[fc_domain::AssessmentHistoryPoint],
     stress_windows: &[ProtectedStressWindow],
+    use_transitional_bridge: bool,
 ) -> BacktestRollingAudit {
     let catalog_window_start = scenario_catalog()
         .iter()
@@ -2003,7 +2020,7 @@ fn build_rolling_backtest_audit(
     let mut current_episode: Option<RollingAuditEpisodeBuilder> = None;
 
     for point in &filtered_history {
-        let is_actionable = is_actionable_warning_point(point);
+        let is_actionable = is_actionable_warning_point(point, use_transitional_bridge);
         let in_crisis = scenarios.iter().any(|scenario| {
             point.as_of_date >= scenario.crisis_start && point.as_of_date <= scenario.crisis_end
         });
@@ -2014,8 +2031,9 @@ fn build_rolling_backtest_audit(
                     .then_some((scenario.crisis_start - point.as_of_date).num_days())
             })
             .min();
+        let actionable_horizon_days = actionable_audit_horizon_days(point);
         let within_actionable_horizon = next_crisis_lead_days
-            .map(|days| days <= ACTIONABLE_AUDIT_HORIZON_DAYS)
+            .map(|days| days <= actionable_horizon_days)
             .unwrap_or(false);
 
         if is_actionable {
@@ -2044,7 +2062,7 @@ fn build_rolling_backtest_audit(
                     Some((
                         "false_positive",
                         format!(
-                            "未落入危机前 {ACTIONABLE_AUDIT_HORIZON_DAYS} 日窗口，也不在受保护压力窗口内。"
+                            "未落入姿态对应的危机前 {actionable_horizon_days} 日窗口，也不在受保护压力窗口内。"
                         ),
                     )),
                     point.as_of_date,
@@ -2193,10 +2211,13 @@ fn close_classified_episode(
     });
 }
 
-fn first_sustained_signal_date(
+fn first_sustained_signal_date<F>(
     points: &[fc_domain::AssessmentHistoryPoint],
-    predicate: fn(&fc_domain::AssessmentHistoryPoint) -> bool,
-) -> Option<NaiveDate> {
+    predicate: F,
+) -> Option<NaiveDate>
+where
+    F: Fn(&fc_domain::AssessmentHistoryPoint) -> bool,
+{
     points.iter().enumerate().find_map(|(index, point)| {
         if !predicate(point) {
             return None;
@@ -2220,7 +2241,10 @@ fn is_structural_warning_point(point: &fc_domain::AssessmentHistoryPoint) -> boo
             && point.external_shock_score >= 42.0)
 }
 
-fn is_actionable_warning_point(point: &fc_domain::AssessmentHistoryPoint) -> bool {
+fn is_actionable_warning_point(
+    point: &fc_domain::AssessmentHistoryPoint,
+    use_transitional_bridge: bool,
+) -> bool {
     let strict_short_horizon_signal =
         matches!(
             point.posture,
@@ -2249,10 +2273,12 @@ fn is_actionable_warning_point(point: &fc_domain::AssessmentHistoryPoint) -> boo
     // probabilities are often floor-bound, while overall/external stress capture the
     // elevated state. Until the raw point-in-time feature store replaces that archive,
     // rolling audit needs a bridge rule for strong prepare/months phases.
-    let prepare_bridge_signal = matches!(point.posture, DecisionPosture::Prepare)
+    let prepare_bridge_signal = use_transitional_bridge
+        && matches!(point.posture, DecisionPosture::Prepare)
         && point.overall_score >= 58.0
         && point.external_shock_score >= 46.0;
-    let months_bridge_signal = matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+    let months_bridge_signal = use_transitional_bridge
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
         && point.overall_score >= 58.0
         && point.external_shock_score >= 42.0;
 
@@ -2261,6 +2287,24 @@ fn is_actionable_warning_point(point: &fc_domain::AssessmentHistoryPoint) -> boo
         || high_probability_months_signal
         || prepare_bridge_signal
         || months_bridge_signal
+}
+
+fn use_transitional_actionable_bridge(serving_model: Option<&ServingModelContext>) -> bool {
+    !is_formal_main_release(serving_model)
+}
+
+fn actionable_audit_horizon_days(point: &fc_domain::AssessmentHistoryPoint) -> i64 {
+    match point.posture {
+        DecisionPosture::Defend => ACTIONABLE_AUDIT_HORIZON_DEFEND_DAYS,
+        DecisionPosture::Hedge => ACTIONABLE_AUDIT_HORIZON_HEDGE_DAYS,
+        DecisionPosture::Prepare => ACTIONABLE_AUDIT_HORIZON_PREPARE_DAYS,
+        DecisionPosture::Normal => match point.time_to_risk_bucket {
+            TimeToRiskBucket::Now => ACTIONABLE_AUDIT_HORIZON_DEFEND_DAYS,
+            TimeToRiskBucket::Weeks => ACTIONABLE_AUDIT_HORIZON_HEDGE_DAYS,
+            TimeToRiskBucket::Months => ACTIONABLE_AUDIT_HORIZON_PREPARE_DAYS,
+            TimeToRiskBucket::Normal => ACTIONABLE_AUDIT_HORIZON_HEDGE_DAYS,
+        },
+    }
 }
 
 fn protected_stress_window_note(
@@ -2296,10 +2340,13 @@ fn lead_time_from_date(crisis_start: NaiveDate, signal_date: Option<NaiveDate>) 
         .filter(|days| *days >= 0)
 }
 
-fn count_false_positive_actionable_episodes(points: &[fc_domain::AssessmentHistoryPoint]) -> u32 {
+fn count_false_positive_actionable_episodes(
+    points: &[fc_domain::AssessmentHistoryPoint],
+    use_transitional_bridge: bool,
+) -> u32 {
     let actionable_flags = points
         .iter()
-        .map(is_actionable_warning_point)
+        .map(|point| is_actionable_warning_point(point, use_transitional_bridge))
         .collect::<Vec<_>>();
     let mut episode_count = 0_u32;
     let mut index = 0_usize;
@@ -2352,14 +2399,15 @@ fn round3(value: f64) -> f64 {
 mod tests {
     use chrono::{NaiveDate, TimeZone, Utc};
     use fc_domain::{
-        DecisionPosture, ModelReleaseManifest, ModelReleaseRecord, PredictionSnapshotRecord,
-        ProbabilityBundle, TimeToRiskBucket,
+        load_protected_stress_window_catalog, DecisionPosture, ModelReleaseManifest,
+        ModelReleaseRecord, PredictionSnapshotRecord, ProbabilityBundle, TimeToRiskBucket,
     };
 
     use super::{
         build_rolling_backtest_audit, expected_prediction_snapshot_method_version,
         historical_output_from_prediction_snapshots, is_actionable_warning_point,
-        should_refresh_full_formal_history, ServingModelContext,
+        should_refresh_full_formal_history, use_transitional_actionable_bridge,
+        ServingModelContext,
     };
 
     fn history_point(
@@ -2502,7 +2550,7 @@ mod tests {
             46.0,
         );
 
-        assert!(is_actionable_warning_point(&point));
+        assert!(is_actionable_warning_point(&point, true));
     }
 
     #[test]
@@ -2515,26 +2563,64 @@ mod tests {
             45.9,
         );
 
-        assert!(!is_actionable_warning_point(&point));
+        assert!(!is_actionable_warning_point(&point, true));
+    }
+
+    #[test]
+    fn actionable_warning_point_disables_prepare_bridge_for_formal_main() {
+        let point = history_point(
+            NaiveDate::from_ymd_opt(2008, 7, 25).unwrap(),
+            58.0,
+            DecisionPosture::Prepare,
+            TimeToRiskBucket::Normal,
+            46.0,
+        );
+
+        assert!(!is_actionable_warning_point(&point, false));
     }
 
     #[test]
     fn rolling_audit_counts_catalog_protected_windows_as_stress() {
+        let stress_windows = load_protected_stress_window_catalog();
         let history = vec![history_point(
-            NaiveDate::from_ymd_opt(2000, 2, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2015, 9, 1).unwrap(),
             60.0,
             DecisionPosture::Prepare,
             TimeToRiskBucket::Months,
             46.0,
         )];
 
-        let audit = build_rolling_backtest_audit(&history, &[]);
+        let audit = build_rolling_backtest_audit(&history, &stress_windows.windows, true);
 
         assert_eq!(audit.actionable_signal_count, 1);
         assert_eq!(audit.stress_window_signal_count, 1);
+        assert_eq!(audit.pre_crisis_signal_count, 0);
         assert_eq!(audit.false_positive_signal_count, 0);
         assert_eq!(audit.classified_episodes.len(), 1);
         assert_eq!(audit.classified_episodes[0].classification, "stress_window");
+    }
+
+    #[test]
+    fn rolling_audit_counts_prepare_signal_within_sixty_days_as_pre_crisis() {
+        let history = vec![fc_domain::AssessmentHistoryPoint {
+            as_of_date: NaiveDate::from_ymd_opt(2000, 1, 31).unwrap(),
+            overall_score: 63.0,
+            p_5d: 0.03,
+            p_20d: 0.19,
+            p_60d: 0.48,
+            raw_p_5d: Some(0.02),
+            raw_p_20d: Some(0.18),
+            raw_p_60d: Some(0.45),
+            posture: DecisionPosture::Prepare,
+            time_to_risk_bucket: TimeToRiskBucket::Months,
+            external_shock_score: 49.0,
+        }];
+
+        let audit = build_rolling_backtest_audit(&history, &[], false);
+
+        assert_eq!(audit.actionable_signal_count, 1);
+        assert_eq!(audit.pre_crisis_signal_count, 1);
+        assert_eq!(audit.false_positive_signal_count, 0);
     }
 
     #[test]
@@ -2575,5 +2661,22 @@ mod tests {
             &persisted,
             false,
         ));
+    }
+
+    #[test]
+    fn formal_main_disables_transitional_actionable_bridge() {
+        let serving_model = formal_serving_model_context();
+
+        assert!(!use_transitional_actionable_bridge(Some(&serving_model)));
+        assert!(use_transitional_actionable_bridge(None));
+    }
+
+    #[test]
+    fn formal_main_method_version_carries_runtime_policy_cache_key() {
+        let serving_model = formal_serving_model_context();
+        let method_version = expected_prediction_snapshot_method_version(Some(&serving_model));
+
+        assert!(method_version.contains("runtime_policy="));
+        assert!(method_version.contains("class=formal_main"));
     }
 }
