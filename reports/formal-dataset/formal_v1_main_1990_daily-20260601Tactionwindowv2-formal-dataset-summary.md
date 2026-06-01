@@ -1,6 +1,6 @@
 # Formal Dataset Summary
 
-- Generated at: 2026-05-31T19:36:56.969370400+00:00
+- Generated at: 2026-06-01T01:11:03.994651200+00:00
 - Dataset key: formal_v1_main_1990_daily:20260601Tactionwindowv2
 - Market scope: financial_system
 - Feature set: feature_formal_v1_main_20260531
@@ -32,4 +32,4 @@
 
 ## Recommendation
 
-样本量、split 和覆盖率已具备基础研究条件，可以进入正式训练与 release review。
+evaluation split 的动作标签目前只覆盖 1 个场景，动作头评估很不稳；应先扩历史场景或重做 split，再用它判断 formal 候选版优劣。

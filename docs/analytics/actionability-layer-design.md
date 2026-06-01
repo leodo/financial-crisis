@@ -123,6 +123,25 @@ action_phase_score
    - `fusion_policy_version`
 5. 最后再改 posture / time bucket 的融合逻辑
 
+### 5.1 训练侧专属评估口径
+
+动作头不能只沿用普通 horizon 的 `brier / log_loss / ece / precision_at_30pct`。
+
+从 2026-06-01 这一轮开始，训练侧还应额外导出：
+
+- `pre_start_recall_at_threshold`
+  - 在动作窗口正样本里，有多少命中发生在 `crisis_start` 之前；
+- `post_start_recall_at_threshold`
+  - 有多少命中直到 `crisis_start` 之后才出现；
+- `advance_warning_rate`
+  - 按场景统计，至少有一次在危机前触发动作信号的比例；
+- `late_confirmation_rate`
+  - 按场景统计，危机前没有命中，但危机后才首次确认的比例；
+- `missed_rate`
+  - 按场景统计，整个动作窗口都没有形成信号的比例。
+
+这些指标的目的不是替代 runtime guard，而是先把“模型是提前看见了，还是等危机已经开始才补确认”拆开。
+
 ## 6. 当前结论
 
 当前代码已经证明：
@@ -140,6 +159,7 @@ action_phase_score
 2. API `actionability` 字段与方法元数据补充
 3. web 面板动作概率展示
 4. runtime posture / time bucket 的诊断性融合
+5. 训练侧 `actionability` 专属评估口径
 
 对应候选版：
 
@@ -155,4 +175,5 @@ action_phase_score
 
 - `dual-head plumbing` 不是问题；
 - 当前失败点主要在于动作头标签仍然只是 `bounded action window` 的 horizon proxy；
+- 当前训练报告已经能区分“提前命中 / 过晚确认 / 完全漏报”，但 release review 护栏还没把这些指标纳入决策；
 - 下一轮不应优先改融合阈值，而应先改 `prepare / hedge / defend` 的目标定义、样本构造和 episode 评估口径。

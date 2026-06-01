@@ -194,7 +194,15 @@
 因此，接下来应优先推进以下剩余工作：
 
 - [ ] 定义 `prepare / hedge / defend` 独立 episode 目标，而不是继续复用 `60d / 20d / 5d proxy`
-- [ ] 补 `actionability` 专属评估口径，区分“提前准备命中”“保护命中”“过晚确认”
+- [x] 补训练侧 `actionability` 专属评估口径，区分“提前命中”“过晚确认”“完全漏报”
+- [x] 在 dataset summary / 训练输出里显式暴露动作层 `scenario_count`
+- [ ] 把 `actionability` 专属评估继续接入 release review / go-no-go 护栏
 - [ ] 把 formal history 审计链继续往 `raw point-in-time feature store` 收口，减少对 persisted snapshots 的过渡依赖
 - [ ] 扩展美国历史压力样本，尽量覆盖 `1987 / 1994 / 2000 / 2001 / 2008 / 2011 / 2020 / 2023` 中免费可回补的区间
 - [ ] 把方法页和面板解释继续补强，让用户能看懂“危机先验”和“动作概率”不是同一个东西
+
+补充观察：
+
+- 当前 `formal_v1_main_1990_daily:20260601Tactionwindowv2` 的 `evaluation` split，动作标签虽然数量已经不算太少，但场景覆盖仍只有 `1`；
+- 这意味着动作头的离线评估和阈值判断容易被单场景主导；
+- 因此下一步除了改标签，还必须补“更多免费可回补历史样本”或重做时间切分，避免继续在单场景上过拟合。

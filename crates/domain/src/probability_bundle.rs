@@ -151,6 +151,8 @@ pub struct HorizonEvaluationSummary {
     pub ece: f64,
     pub precision_at_30pct: Option<f64>,
     pub recall_at_30pct: Option<f64>,
+    #[serde(default)]
+    pub actionability: Option<ActionabilityEvaluationSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -159,5 +161,30 @@ pub struct ProbabilityBundleEvaluation {
     pub brier_score: f64,
     pub log_loss: f64,
     pub ece: f64,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ActionabilityEvaluationSummary {
+    pub threshold: f64,
+    pub predicted_positive_count: u32,
+    pub actual_positive_count: u32,
+    pub pre_start_positive_count: u32,
+    pub post_start_positive_count: u32,
+    pub unclassified_positive_count: u32,
+    pub pre_start_hit_count: u32,
+    pub post_start_hit_count: u32,
+    pub unclassified_hit_count: u32,
+    pub false_positive_count: u32,
+    pub scenario_count: u32,
+    pub advance_warning_scenario_count: u32,
+    pub late_confirmation_scenario_count: u32,
+    pub missed_scenario_count: u32,
+    pub precision_at_threshold: Option<f64>,
+    pub pre_start_recall_at_threshold: Option<f64>,
+    pub post_start_recall_at_threshold: Option<f64>,
+    pub advance_warning_rate: Option<f64>,
+    pub late_confirmation_rate: Option<f64>,
+    pub missed_rate: Option<f64>,
     pub note: String,
 }

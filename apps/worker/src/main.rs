@@ -10,15 +10,16 @@ use anyhow::{bail, Context};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
 use fc_domain::{
     embedded_protected_stress_window_catalog, load_crisis_scenario_catalog, ActionabilityBundle,
-    ActionabilityLevel, ActionabilityLevelBundle, AssessmentMethodVersions, AssessmentSnapshot,
-    BacktestScenarioSummary, FeatureSnapshotRecord, FormalDatasetManifest, FormalDatasetRecord,
-    FormalDatasetRowRecord, Frequency, HorizonEvaluationSummary, Indicator, IndicatorRisk,
-    LogisticProbabilityModel, ModelReleaseManifest, ModelReleaseRecord, Observation,
-    PlattCalibrationArtifact, PredictionSnapshotRecord, ProbabilityBundle,
-    ProbabilityBundleEvaluation, ProbabilityCoefficient, ProbabilityFeatureStat,
-    ProbabilityHorizonBundle, ProtectedStressWindowCatalog, RiskDimension,
-    FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER,
-    FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
+    ActionabilityEvaluationSummary, ActionabilityLevel, ActionabilityLevelBundle,
+    AssessmentMethodVersions, AssessmentSnapshot, BacktestScenarioSummary, FeatureSnapshotRecord,
+    FormalDatasetManifest, FormalDatasetRecord, FormalDatasetRowRecord, Frequency,
+    HorizonEvaluationSummary, Indicator, IndicatorRisk, LogisticProbabilityModel,
+    ModelReleaseManifest, ModelReleaseRecord, Observation, PlattCalibrationArtifact,
+    PredictionSnapshotRecord, ProbabilityBundle, ProbabilityBundleEvaluation,
+    ProbabilityCoefficient, ProbabilityFeatureStat, ProbabilityHorizonBundle,
+    ProtectedStressWindowCatalog, RiskDimension, FEATURE_BUCKET_MONTHS_OR_HIGHER,
+    FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER, FEATURE_COVERAGE_SCORE,
+    FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
     FEATURE_FRESHNESS_STALE_OR_MISSING, FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D,
     FEATURE_HEURISTIC_P_60D, FEATURE_OVERALL_SCORE, FORMAL_PROBABILITY_BUNDLE_FEATURES,
     TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES,
@@ -1935,6 +1936,20 @@ async fn research_pipeline_train_probability(args: &[String]) -> anyhow::Result<
             summary.brier_score, summary.log_loss, summary.ece
         );
     }
+    if let Some(actionability) = artifacts.bundle.actionability.as_ref() {
+        for level in &actionability.levels {
+            if let Some(summary) = level.evaluation.actionability.as_ref() {
+                println!(
+                    "  actionability    {:>7} scenarios={} advance_warn={} late_confirm={} missed={}",
+                    actionability_level_text(level.level),
+                    summary.scenario_count,
+                    format_pct(summary.advance_warning_rate.unwrap_or(0.0)),
+                    format_pct(summary.late_confirmation_rate.unwrap_or(0.0)),
+                    format_pct(summary.missed_rate.unwrap_or(0.0)),
+                );
+            }
+        }
+    }
     Ok(())
 }
 
@@ -3133,6 +3148,14 @@ fn round6(value: f64) -> f64 {
     (value * 1_000_000.0).round() / 1_000_000.0
 }
 
+fn actionability_level_text(level: ActionabilityLevel) -> &'static str {
+    match level {
+        ActionabilityLevel::Prepare => "prepare",
+        ActionabilityLevel::Hedge => "hedge",
+        ActionabilityLevel::Defend => "defend",
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct ProbabilityTrainingRow {
     as_of_date: NaiveDate,
@@ -4030,13 +4053,21 @@ fn train_actionability_level_bundle(
         .map(|row| row.label_for_horizon(label_mode, proxy_horizon_days))
         .collect::<Vec<_>>();
 
+    let mut evaluation = evaluate_probabilities(&evaluation_probabilities, &evaluation_labels);
+    evaluation.actionability = Some(evaluate_actionability_summary(
+        &evaluation_probabilities,
+        evaluation_rows,
+        proxy_horizon_days,
+        0.3,
+    ));
+
     Ok(ActionabilityLevelBundle {
         level,
         proxy_horizon_days,
         target_label_mode: label_mode.as_str().to_string(),
         raw_model,
         calibration: Some(calibration),
-        evaluation: evaluate_probabilities(&evaluation_probabilities, &evaluation_labels),
+        evaluation,
     })
 }
 
@@ -4416,6 +4447,133 @@ fn evaluate_probabilities(probabilities: &[f64], labels: &[f64]) -> HorizonEvalu
             .then_some(true_positive as f64 / predicted_positive.len() as f64),
         recall_at_30pct: (actual_positive > 0)
             .then_some(true_positive as f64 / actual_positive as f64),
+        actionability: None,
+    }
+}
+
+#[derive(Default)]
+struct ActionabilityScenarioEvaluationState {
+    saw_positive: bool,
+    has_pre_start_hit: bool,
+    has_post_start_hit: bool,
+}
+
+fn evaluate_actionability_summary(
+    probabilities: &[f64],
+    rows: &[ProbabilityTrainingRow],
+    horizon_days: u32,
+    threshold: f64,
+) -> ActionabilityEvaluationSummary {
+    let mut predicted_positive_count = 0_u32;
+    let mut actual_positive_count = 0_u32;
+    let mut pre_start_positive_count = 0_u32;
+    let mut post_start_positive_count = 0_u32;
+    let mut unclassified_positive_count = 0_u32;
+    let mut pre_start_hit_count = 0_u32;
+    let mut post_start_hit_count = 0_u32;
+    let mut unclassified_hit_count = 0_u32;
+    let mut false_positive_count = 0_u32;
+    let mut scenario_states = BTreeMap::<String, ActionabilityScenarioEvaluationState>::new();
+
+    for (probability, row) in probabilities.iter().zip(rows) {
+        let predicted_positive = *probability >= threshold;
+        let actual_positive =
+            row.label_for_horizon(ProbabilityTargetLabelMode::ActionWindow, horizon_days) >= 0.5;
+        let lead_days = row.days_to_primary_crisis_start;
+        let pre_start = lead_days.is_some_and(|days| days > 0);
+        let post_start = lead_days.is_some_and(|days| days <= 0);
+
+        if predicted_positive {
+            predicted_positive_count += 1;
+        }
+
+        if actual_positive {
+            actual_positive_count += 1;
+            if pre_start {
+                pre_start_positive_count += 1;
+            } else if post_start {
+                post_start_positive_count += 1;
+            } else {
+                unclassified_positive_count += 1;
+            }
+
+            if let Some(scenario_id) = row.primary_scenario_id.as_ref() {
+                let state = scenario_states.entry(scenario_id.clone()).or_default();
+                state.saw_positive = true;
+                if predicted_positive {
+                    if pre_start {
+                        state.has_pre_start_hit = true;
+                    } else if post_start {
+                        state.has_post_start_hit = true;
+                    }
+                }
+            }
+        }
+
+        if predicted_positive {
+            if actual_positive {
+                if pre_start {
+                    pre_start_hit_count += 1;
+                } else if post_start {
+                    post_start_hit_count += 1;
+                } else {
+                    unclassified_hit_count += 1;
+                }
+            } else {
+                false_positive_count += 1;
+            }
+        }
+    }
+
+    let mut advance_warning_scenario_count = 0_u32;
+    let mut late_confirmation_scenario_count = 0_u32;
+    let mut missed_scenario_count = 0_u32;
+    for state in scenario_states.values().filter(|state| state.saw_positive) {
+        if state.has_pre_start_hit {
+            advance_warning_scenario_count += 1;
+        } else if state.has_post_start_hit {
+            late_confirmation_scenario_count += 1;
+        } else {
+            missed_scenario_count += 1;
+        }
+    }
+
+    let hit_count = pre_start_hit_count + post_start_hit_count + unclassified_hit_count;
+    let scenario_count =
+        advance_warning_scenario_count + late_confirmation_scenario_count + missed_scenario_count;
+
+    ActionabilityEvaluationSummary {
+        threshold: round3(threshold),
+        predicted_positive_count,
+        actual_positive_count,
+        pre_start_positive_count,
+        post_start_positive_count,
+        unclassified_positive_count,
+        pre_start_hit_count,
+        post_start_hit_count,
+        unclassified_hit_count,
+        false_positive_count,
+        scenario_count,
+        advance_warning_scenario_count,
+        late_confirmation_scenario_count,
+        missed_scenario_count,
+        precision_at_threshold: (predicted_positive_count > 0)
+            .then_some(round3(hit_count as f64 / predicted_positive_count as f64)),
+        pre_start_recall_at_threshold: (pre_start_positive_count > 0)
+            .then_some(round3(pre_start_hit_count as f64 / pre_start_positive_count as f64)),
+        post_start_recall_at_threshold: (post_start_positive_count > 0)
+            .then_some(round3(post_start_hit_count as f64 / post_start_positive_count as f64)),
+        advance_warning_rate: (scenario_count > 0)
+            .then_some(round3(
+                advance_warning_scenario_count as f64 / scenario_count as f64,
+            )),
+        late_confirmation_rate: (scenario_count > 0)
+            .then_some(round3(
+                late_confirmation_scenario_count as f64 / scenario_count as f64,
+            )),
+        missed_rate: (scenario_count > 0)
+            .then_some(round3(missed_scenario_count as f64 / scenario_count as f64)),
+        note: "Pre-start hit means the action signal fired before crisis_start; post-start hit means it only appeared on or after crisis_start within the bounded action window.".to_string(),
     }
 }
 
@@ -5907,6 +6065,12 @@ fn build_formal_dataset_recommendation(
         if evaluation.action_positive_20d_count < 10 || evaluation.action_positive_60d_count < 10 {
             return "evaluation 的 action-window 正样本仍偏少，当前更适合作研究版比较，不适合直接给正式模型做上线判断。".to_string();
         }
+        if evaluation.scenario_count < 2 {
+            return format!(
+                "evaluation split 的动作标签目前只覆盖 {} 个场景，动作头评估很不稳；应先扩历史场景或重做 split，再用它判断 formal 候选版优劣。",
+                evaluation.scenario_count
+            );
+        }
         if evaluation.avg_coverage_score < 0.85 {
             return "evaluation 覆盖率偏低，应先补可见性/覆盖率，再看训练结果。".to_string();
         }
@@ -6580,10 +6744,10 @@ mod tests {
     use fc_domain::{Frequency, Observation};
 
     use super::{
-        action_window_label, forward_crisis_label, observation_is_visible_for_date,
-        positive_sample_action_weight, AuditExportOptions, CrisisScenario,
-        FeatureSnapshotBuildOptions, FormalDatasetBuildOptions, FormalDatasetSummaryOptions,
-        PipelineDatasetSource, PipelineTrainOptions, PointInTimeMode,
+        action_window_label, evaluate_actionability_summary, forward_crisis_label,
+        observation_is_visible_for_date, positive_sample_action_weight, round3, AuditExportOptions,
+        CrisisScenario, FeatureSnapshotBuildOptions, FormalDatasetBuildOptions,
+        FormalDatasetSummaryOptions, PipelineDatasetSource, PipelineTrainOptions, PointInTimeMode,
         PredictionSnapshotQueryOptions, ProbabilityTrainingRow, RefreshLatestOptions,
         ReleasePublishOptions, ReleaseReviewOptions, ReleaseSwitchOptions,
     };
@@ -7036,5 +7200,100 @@ mod tests {
             positive_sample_action_weight(&aligned, 60)
                 > positive_sample_action_weight(&misaligned, 60)
         );
+    }
+
+    #[test]
+    fn actionability_summary_distinguishes_advance_late_and_missed_scenarios() {
+        let build_row =
+            |scenario_id: &str, as_of_date: (i32, u32, u32), lead_days: i64, predicted: bool| {
+                let action_label = 1_u8;
+                let mut features = BTreeMap::new();
+                if predicted {
+                    features.insert("predicted".to_string(), 1.0);
+                }
+                ProbabilityTrainingRow {
+                    as_of_date: NaiveDate::from_ymd_opt(as_of_date.0, as_of_date.1, as_of_date.2)
+                        .unwrap(),
+                    market_scope: "financial_system".to_string(),
+                    release_id: None,
+                    probability_mode: Some("formal_bundle_v1".to_string()),
+                    freshness_status: Some("a".to_string()),
+                    time_to_risk_bucket: Some("weeks".to_string()),
+                    split_name: Some("evaluation".to_string()),
+                    features,
+                    primary_scenario_id: Some(scenario_id.to_string()),
+                    scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+                    days_to_primary_crisis_start: Some(lead_days),
+                    primary_scenario_supports_5d: true,
+                    primary_scenario_supports_20d: true,
+                    primary_scenario_supports_60d: true,
+                    label_5d: 0,
+                    label_20d: 0,
+                    label_60d: 0,
+                    action_label_5d: 0,
+                    action_label_20d: action_label,
+                    action_label_60d: 0,
+                }
+            };
+
+        let false_positive_row = ProbabilityTrainingRow {
+            as_of_date: NaiveDate::from_ymd_opt(2024, 1, 10).unwrap(),
+            market_scope: "financial_system".to_string(),
+            release_id: None,
+            probability_mode: Some("formal_bundle_v1".to_string()),
+            freshness_status: Some("a".to_string()),
+            time_to_risk_bucket: Some("normal".to_string()),
+            split_name: Some("evaluation".to_string()),
+            features: BTreeMap::new(),
+            primary_scenario_id: None,
+            scenario_family: None,
+            days_to_primary_crisis_start: None,
+            primary_scenario_supports_5d: false,
+            primary_scenario_supports_20d: false,
+            primary_scenario_supports_60d: false,
+            label_5d: 0,
+            label_20d: 0,
+            label_60d: 0,
+            action_label_5d: 0,
+            action_label_20d: 0,
+            action_label_60d: 0,
+        };
+
+        let rows = vec![
+            build_row("scenario_a", (2007, 8, 20), 10, true),
+            build_row("scenario_a", (2007, 9, 5), -2, true),
+            build_row("scenario_b", (2020, 2, 20), 8, false),
+            build_row("scenario_b", (2020, 3, 18), -3, true),
+            build_row("scenario_c", (2011, 7, 20), 6, false),
+            build_row("scenario_c", (2011, 8, 10), -1, false),
+            false_positive_row,
+        ];
+        let probabilities = vec![0.82, 0.61, 0.12, 0.42, 0.18, 0.07, 0.77];
+
+        let summary = evaluate_actionability_summary(&probabilities, &rows, 20, 0.3);
+
+        assert_eq!(summary.predicted_positive_count, 4);
+        assert_eq!(summary.actual_positive_count, 6);
+        assert_eq!(summary.pre_start_positive_count, 3);
+        assert_eq!(summary.post_start_positive_count, 3);
+        assert_eq!(summary.pre_start_hit_count, 1);
+        assert_eq!(summary.post_start_hit_count, 2);
+        assert_eq!(summary.false_positive_count, 1);
+        assert_eq!(summary.scenario_count, 3);
+        assert_eq!(summary.advance_warning_scenario_count, 1);
+        assert_eq!(summary.late_confirmation_scenario_count, 1);
+        assert_eq!(summary.missed_scenario_count, 1);
+        assert_eq!(summary.precision_at_threshold, Some(0.75));
+        assert_eq!(
+            summary.pre_start_recall_at_threshold,
+            Some(round3(1.0 / 3.0))
+        );
+        assert_eq!(
+            summary.post_start_recall_at_threshold,
+            Some(round3(2.0 / 3.0))
+        );
+        assert_eq!(summary.advance_warning_rate, Some(round3(1.0 / 3.0)));
+        assert_eq!(summary.late_confirmation_rate, Some(round3(1.0 / 3.0)));
+        assert_eq!(summary.missed_rate, Some(round3(1.0 / 3.0)));
     }
 }
