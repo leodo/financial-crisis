@@ -187,6 +187,7 @@ pub async fn assessment_method(State(state): State<Arc<AppState>>) -> Json<serde
         "method": data.assessment.method,
         "note": note,
         "protected_stress_window_catalog": data.protected_stress_window_catalog,
+        "runtime_thresholds": data.runtime_thresholds,
     }))
 }
 

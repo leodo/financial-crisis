@@ -194,8 +194,11 @@
 因此，接下来应优先推进以下剩余工作：
 
 - [ ] 定义 `prepare / hedge / defend` 独立 episode 目标，而不是继续复用 `60d / 20d / 5d proxy`
+- [ ] 给 runtime audit / release review 增加 clause-level posture 触发拆解，明确是 probability floor、structural context 还是 transitional bridge 在驱动 `prepare / hedge / defend`
+- [ ] 让 formal main 训练目标显式约束 `positive_window` 相对 `normal` 的概率抬升，而不是允许全 regime 输出近似常数
 - [x] 补训练侧 `actionability` 专属评估口径，区分“提前命中”“过晚确认”“完全漏报”
 - [x] 在 dataset summary / 训练输出里显式暴露动作层 `scenario_count`
+- [x] 在 dataset summary / release review 里显式暴露 `regime mix` 和按 regime 的 runtime 概率分布
 - [x] 把 `actionability` 专属评估继续接入 release review / go-no-go 护栏
 - [ ] 让 `actionability` guard 从“基础拦截”升级到“分层级、分角色”的正式阈值
 - [ ] 把 formal history 审计链继续往 `raw point-in-time feature store` 收口，减少对 persisted snapshots 的过渡依赖

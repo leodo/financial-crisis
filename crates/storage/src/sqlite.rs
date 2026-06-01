@@ -100,7 +100,39 @@ impl SqliteStore {
                 sqlx::query(statement).execute(&self.pool).await?;
             }
         }
+        self.ensure_formal_dataset_regime_columns().await?;
         self.ensure_formal_dataset_action_label_columns().await?;
+        Ok(())
+    }
+
+    async fn ensure_formal_dataset_regime_columns(&self) -> Result<(), StorageError> {
+        let columns = sqlx::query("PRAGMA table_info(analytics_formal_dataset_rows)")
+            .fetch_all(&self.pool)
+            .await?;
+        let column_names = columns
+            .into_iter()
+            .map(|row| row.try_get::<String, _>("name"))
+            .collect::<Result<HashSet<_>, _>>()?;
+
+        for (column_name, alter_sql) in [
+            (
+                "regime_5d",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN regime_5d TEXT NOT NULL DEFAULT 'normal'",
+            ),
+            (
+                "regime_20d",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN regime_20d TEXT NOT NULL DEFAULT 'normal'",
+            ),
+            (
+                "regime_60d",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN regime_60d TEXT NOT NULL DEFAULT 'normal'",
+            ),
+        ] {
+            if !column_names.contains(column_name) {
+                sqlx::query(alter_sql).execute(&self.pool).await?;
+            }
+        }
+
         Ok(())
     }
 
@@ -1980,6 +2012,9 @@ impl SqliteStore {
                     label_5d,
                     label_20d,
                     label_60d,
+                    regime_5d,
+                    regime_20d,
+                    regime_60d,
                     action_label_5d,
                     action_label_20d,
                     action_label_60d,
@@ -1988,7 +2023,7 @@ impl SqliteStore {
                 )
                 VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                    ?18, ?19, ?20, ?21, ?22, ?23
+                    ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26
                 )
                 "#,
             )
@@ -2010,6 +2045,9 @@ impl SqliteStore {
             .bind(row.label_5d as i64)
             .bind(row.label_20d as i64)
             .bind(row.label_60d as i64)
+            .bind(&row.regime_5d)
+            .bind(&row.regime_20d)
+            .bind(&row.regime_60d)
             .bind(row.action_label_5d as i64)
             .bind(row.action_label_20d as i64)
             .bind(row.action_label_60d as i64)
@@ -2049,6 +2087,9 @@ impl SqliteStore {
                 label_5d,
                 label_20d,
                 label_60d,
+                regime_5d,
+                regime_20d,
+                regime_60d,
                 action_label_5d,
                 action_label_20d,
                 action_label_60d,
@@ -3211,6 +3252,9 @@ fn map_formal_dataset_row_record(row: SqliteRow) -> Result<FormalDatasetRowRecor
         label_5d: row.try_get::<i64, _>("label_5d")? as u8,
         label_20d: row.try_get::<i64, _>("label_20d")? as u8,
         label_60d: row.try_get::<i64, _>("label_60d")? as u8,
+        regime_5d: row.try_get("regime_5d")?,
+        regime_20d: row.try_get("regime_20d")?,
+        regime_60d: row.try_get("regime_60d")?,
         action_label_5d: row.try_get::<i64, _>("action_label_5d")? as u8,
         action_label_20d: row.try_get::<i64, _>("action_label_20d")? as u8,
         action_label_60d: row.try_get::<i64, _>("action_label_60d")? as u8,
@@ -3661,6 +3705,9 @@ mod tests {
             label_5d: 0,
             label_20d: 0,
             label_60d: 0,
+            regime_5d: "normal".to_string(),
+            regime_20d: "normal".to_string(),
+            regime_60d: "normal".to_string(),
             action_label_5d: 0,
             action_label_20d: 0,
             action_label_60d: 0,
@@ -3690,6 +3737,7 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].split_name, "evaluation");
         assert_eq!(rows[0].dataset_key, dataset_key);
+        assert_eq!(rows[0].regime_60d, "normal");
         assert_eq!(rows[0].features["us_vix_level"], 22.4);
     }
 }

@@ -5,7 +5,10 @@ use fc_domain::{
 };
 use tokio::sync::RwLock;
 
-use crate::demo::{self, AppDataSource};
+use crate::{
+    assessment::RuntimeThresholdDiagnostics,
+    demo::{self, AppDataSource},
+};
 
 #[derive(Debug, Clone)]
 pub struct AppData {
@@ -21,6 +24,7 @@ pub struct AppData {
     pub assessment_history: Vec<AssessmentHistoryPoint>,
     pub posture_guidance: PostureGuidance,
     pub protected_stress_window_catalog: ProtectedStressWindowCatalog,
+    pub runtime_thresholds: RuntimeThresholdDiagnostics,
 }
 
 #[derive(Debug)]

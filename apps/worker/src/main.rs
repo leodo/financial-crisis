@@ -11,9 +11,9 @@ use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
 use fc_domain::{
     embedded_protected_stress_window_catalog, load_crisis_scenario_catalog, ActionabilityBundle,
     ActionabilityEvaluationSummary, ActionabilityLevel, ActionabilityLevelBundle,
-    AssessmentMethodVersions, AssessmentSnapshot, BacktestScenarioSummary, FeatureSnapshotRecord,
-    FormalDatasetManifest, FormalDatasetRecord, FormalDatasetRowRecord, Frequency,
-    HorizonEvaluationSummary, Indicator, IndicatorRisk, LogisticProbabilityModel,
+    AssessmentHistoryPoint, AssessmentMethodVersions, AssessmentSnapshot, BacktestScenarioSummary,
+    FeatureSnapshotRecord, FormalDatasetManifest, FormalDatasetRecord, FormalDatasetRowRecord,
+    Frequency, HorizonEvaluationSummary, Indicator, IndicatorRisk, LogisticProbabilityModel,
     ModelReleaseManifest, ModelReleaseRecord, Observation, PlattCalibrationArtifact,
     PredictionSnapshotRecord, ProbabilityBundle, ProbabilityBundleEvaluation,
     ProbabilityCoefficient, ProbabilityFeatureStat, ProbabilityHorizonBundle,
@@ -1268,10 +1268,26 @@ impl AuditExportOptions {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+struct RuntimeThresholdDiagnosticsWire {
+    prepare_p60d: f64,
+    hedge_p20d: f64,
+    defend_p5d: f64,
+    severe_now_p20d: f64,
+    elevated_weeks_p60d: f64,
+    external_prepare_p20d: f64,
+    carry_prepare_p60d: f64,
+    downgrade_prepare_p60d: f64,
+    downgrade_hedge_p20d: f64,
+    downgrade_defend_p5d: f64,
+    history_runtime_policy_version: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct AuditMethodResponse {
     method: AssessmentMethodVersions,
     note: String,
     protected_stress_window_catalog: ProtectedStressWindowCatalog,
+    runtime_thresholds: Option<RuntimeThresholdDiagnosticsWire>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1279,6 +1295,7 @@ struct AuditMethodResponseWire {
     method: AssessmentMethodVersions,
     note: String,
     protected_stress_window_catalog: Option<ProtectedStressWindowCatalog>,
+    runtime_thresholds: Option<RuntimeThresholdDiagnosticsWire>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1355,6 +1372,37 @@ struct ReleaseActionabilityReview {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct ReleaseRuntimeCount {
+    name: String,
+    count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReleaseRuntimeReviewDiagnostics {
+    release_id: String,
+    history_point_count: usize,
+    posture_distribution: Vec<ReleaseRuntimeCount>,
+    time_bucket_distribution: Vec<ReleaseRuntimeCount>,
+    regime_probability_summaries: Vec<ReleaseRuntimeRegimeProbabilitySummary>,
+    runtime_thresholds: Option<RuntimeThresholdDiagnosticsWire>,
+    points_at_or_above_prepare_p60d: Option<usize>,
+    points_at_or_above_hedge_p20d: Option<usize>,
+    points_at_or_above_defend_p5d: Option<usize>,
+    note: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReleaseRuntimeRegimeProbabilitySummary {
+    horizon_days: u32,
+    regime: String,
+    row_count: usize,
+    row_rate: f64,
+    avg_probability: f64,
+    max_probability: f64,
+    threshold_hit_count: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct ReleaseReviewEnvelope {
     reviewed_at: String,
     market_scope: String,
@@ -1365,6 +1413,8 @@ struct ReleaseReviewEnvelope {
     candidate_release: ModelReleaseRecord,
     baseline_assessment: AssessmentSnapshot,
     candidate_assessment: AssessmentSnapshot,
+    baseline_runtime_review: ReleaseRuntimeReviewDiagnostics,
+    candidate_runtime_review: ReleaseRuntimeReviewDiagnostics,
     baseline_actionability_review: ReleaseActionabilityReview,
     candidate_actionability_review: ReleaseActionabilityReview,
     comparison: ReleaseReviewComparisonSummary,
@@ -1424,6 +1474,15 @@ struct FormalDatasetQualitySummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct FormalDatasetRegimeSummary {
+    split_name: String,
+    horizon_days: u32,
+    regime: String,
+    row_count: usize,
+    row_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct FormalDatasetSummaryEnvelope {
     generated_at: String,
     dataset_key: String,
@@ -1432,6 +1491,7 @@ struct FormalDatasetSummaryEnvelope {
     scenario_summaries: Vec<FormalDatasetScenarioSummary>,
     family_summaries: Vec<FormalDatasetFamilySummary>,
     quality_summaries: Vec<FormalDatasetQualitySummary>,
+    regime_summaries: Vec<FormalDatasetRegimeSummary>,
     recommendation: String,
 }
 
@@ -1459,6 +1519,7 @@ async fn export_current_audit(args: &[String]) -> anyhow::Result<()> {
                 catalog
             },
         ),
+        runtime_thresholds: method_wire.runtime_thresholds,
     };
 
     let report = AuditExportEnvelope {
@@ -1731,7 +1792,8 @@ async fn run_release_review(
         "baseline",
     )
     .await?;
-    let baseline_assessment = fetch_assessment_snapshot_for_guard(&options.api_reload_url).await?;
+    let baseline_runtime_snapshot =
+        fetch_release_review_runtime_snapshot(&options.api_reload_url).await?;
 
     activate_release_for_review(
         store,
@@ -1742,7 +1804,23 @@ async fn run_release_review(
         "candidate",
     )
     .await?;
-    let candidate_assessment = fetch_assessment_snapshot_for_guard(&options.api_reload_url).await?;
+    let candidate_runtime_snapshot =
+        fetch_release_review_runtime_snapshot(&options.api_reload_url).await?;
+
+    let baseline_assessment = baseline_runtime_snapshot.assessment;
+    let candidate_assessment = candidate_runtime_snapshot.assessment;
+    let baseline_runtime_review = build_release_runtime_review_diagnostics(
+        &baseline_release.manifest.release_id,
+        &baseline_release.manifest.label_version,
+        &baseline_runtime_snapshot.method,
+        &baseline_runtime_snapshot.history,
+    );
+    let candidate_runtime_review = build_release_runtime_review_diagnostics(
+        &candidate_release.manifest.release_id,
+        &candidate_release.manifest.label_version,
+        &candidate_runtime_snapshot.method,
+        &candidate_runtime_snapshot.history,
+    );
 
     let baseline_actionability_review = build_release_actionability_review(baseline_release)?;
     let candidate_actionability_review = build_release_actionability_review(candidate_release)?;
@@ -1764,6 +1842,8 @@ async fn run_release_review(
         comparison: build_release_review_comparison(&baseline_assessment, &candidate_assessment),
         baseline_assessment,
         candidate_assessment,
+        baseline_runtime_review,
+        candidate_runtime_review,
         baseline_actionability_review,
         candidate_actionability_review,
         operational_guard_passed: operational_regressions.is_empty(),
@@ -2662,6 +2742,9 @@ fn build_main_formal_dataset_rows_with_catalog(
         .filter(|snapshot| has_main_dataset_core_features(&snapshot.features))
         .map(|snapshot| {
             let primary_scenario = primary_scenario_for_date(snapshot.as_of_date, &scenarios);
+            let regime_5d = forward_crisis_training_regime(snapshot.as_of_date, &scenarios, 5);
+            let regime_20d = forward_crisis_training_regime(snapshot.as_of_date, &scenarios, 20);
+            let regime_60d = forward_crisis_training_regime(snapshot.as_of_date, &scenarios, 60);
             FormalDatasetRowRecord {
                 dataset_key: dataset_key.to_string(),
                 split_name: String::new(),
@@ -2682,6 +2765,9 @@ fn build_main_formal_dataset_rows_with_catalog(
                 label_5d: forward_crisis_label(snapshot.as_of_date, &scenarios, 5),
                 label_20d: forward_crisis_label(snapshot.as_of_date, &scenarios, 20),
                 label_60d: forward_crisis_label(snapshot.as_of_date, &scenarios, 60),
+                regime_5d: probability_training_regime_name(regime_5d).to_string(),
+                regime_20d: probability_training_regime_name(regime_20d).to_string(),
+                regime_60d: probability_training_regime_name(regime_60d).to_string(),
                 action_label_5d: action_window_label(snapshot.as_of_date, &scenarios, 5),
                 action_label_20d: action_window_label(snapshot.as_of_date, &scenarios, 20),
                 action_label_60d: action_window_label(snapshot.as_of_date, &scenarios, 60),
@@ -3503,6 +3589,18 @@ fn round6(value: f64) -> f64 {
     (value * 1_000_000.0).round() / 1_000_000.0
 }
 
+fn safe_divide(numerator: f64, denominator: f64) -> f64 {
+    if denominator.abs() <= f64::EPSILON {
+        0.0
+    } else {
+        numerator / denominator
+    }
+}
+
+fn safe_ratio(numerator: usize, denominator: usize) -> f64 {
+    safe_divide(numerator as f64, denominator as f64)
+}
+
 fn actionability_level_text(level: ActionabilityLevel) -> &'static str {
     match level {
         ActionabilityLevel::Prepare => "prepare",
@@ -3519,6 +3617,16 @@ enum ProbabilityTrainingRegime {
     PreWarningBuffer,
     InCrisis,
     PostCrisisCooldown,
+}
+
+fn probability_training_regime_name(regime: ProbabilityTrainingRegime) -> &'static str {
+    match regime {
+        ProbabilityTrainingRegime::Normal => "normal",
+        ProbabilityTrainingRegime::PositiveWindow => "positive_window",
+        ProbabilityTrainingRegime::PreWarningBuffer => "pre_warning_buffer",
+        ProbabilityTrainingRegime::InCrisis => "in_crisis",
+        ProbabilityTrainingRegime::PostCrisisCooldown => "post_crisis_cooldown",
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -6530,6 +6638,244 @@ async fn fetch_assessment_snapshot_for_guard(
     fetch_api_json(&client, api_base_url, "/api/assessment/current").await
 }
 
+#[derive(Debug, Clone)]
+struct ReleaseReviewRuntimeSnapshot {
+    assessment: AssessmentSnapshot,
+    method: AuditMethodResponseWire,
+    history: Vec<AssessmentHistoryPoint>,
+}
+
+async fn fetch_release_review_runtime_snapshot(
+    api_reload_url: &str,
+) -> anyhow::Result<ReleaseReviewRuntimeSnapshot> {
+    let api_base_url = api_reload_url
+        .strip_suffix("/api/system/reload")
+        .with_context(|| {
+            format!(
+                "cannot derive API base URL from reload URL {api_reload_url}; expected it to end with /api/system/reload"
+            )
+        })?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build()?;
+    let assessment: AssessmentSnapshot =
+        fetch_api_json(&client, api_base_url, "/api/assessment/current").await?;
+    let method: AuditMethodResponseWire =
+        fetch_api_json(&client, api_base_url, "/api/assessment/method").await?;
+    let history: Vec<AssessmentHistoryPoint> =
+        fetch_api_json(&client, api_base_url, "/api/assessment/history?limit=20000").await?;
+    Ok(ReleaseReviewRuntimeSnapshot {
+        assessment,
+        method,
+        history,
+    })
+}
+
+fn build_release_runtime_review_diagnostics(
+    release_id: &str,
+    label_version: &str,
+    method: &AuditMethodResponseWire,
+    history: &[AssessmentHistoryPoint],
+) -> ReleaseRuntimeReviewDiagnostics {
+    let posture_distribution =
+        summarize_named_counts(history.iter().map(|point| match point.posture {
+            fc_domain::DecisionPosture::Normal => "normal",
+            fc_domain::DecisionPosture::Prepare => "prepare",
+            fc_domain::DecisionPosture::Hedge => "hedge",
+            fc_domain::DecisionPosture::Defend => "defend",
+        }));
+    let time_bucket_distribution =
+        summarize_named_counts(history.iter().map(|point| match point.time_to_risk_bucket {
+            fc_domain::TimeToRiskBucket::Normal => "normal",
+            fc_domain::TimeToRiskBucket::Months => "months",
+            fc_domain::TimeToRiskBucket::Weeks => "weeks",
+            fc_domain::TimeToRiskBucket::Now => "now",
+        }));
+    let (
+        points_at_or_above_prepare_p60d,
+        points_at_or_above_hedge_p20d,
+        points_at_or_above_defend_p5d,
+        mut notes,
+    ) = if let Some(thresholds) = method.runtime_thresholds.as_ref() {
+        (
+            Some(
+                history
+                    .iter()
+                    .filter(|point| point.p_60d >= thresholds.prepare_p60d)
+                    .count(),
+            ),
+            Some(
+                history
+                    .iter()
+                    .filter(|point| point.p_20d >= thresholds.hedge_p20d)
+                    .count(),
+            ),
+            Some(
+                history
+                    .iter()
+                    .filter(|point| point.p_5d >= thresholds.defend_p5d)
+                    .count(),
+            ),
+            vec!["基于运行中 API 返回的 runtime_thresholds 统计历史概率越线次数。".to_string()],
+        )
+    } else {
+        (
+            None,
+            None,
+            None,
+            vec![
+                "运行中的 API 没有返回 runtime_thresholds；本报告只保留 posture / time bucket 分布。"
+                    .to_string(),
+            ],
+        )
+    };
+    let regime_probability_summaries = match load_release_review_regime_scenarios(label_version) {
+        Ok((scenarios, scenario_note)) => {
+            notes.push(scenario_note);
+            summarize_release_runtime_regime_probabilities(
+                history,
+                &scenarios,
+                method.runtime_thresholds.as_ref(),
+            )
+        }
+        Err(error) => {
+            notes.push(format!(
+                "未能加载 release review 所需的 regime scenario catalog，跳过 regime 概率分布：{error:#}"
+            ));
+            Vec::new()
+        }
+    };
+
+    ReleaseRuntimeReviewDiagnostics {
+        release_id: release_id.to_string(),
+        history_point_count: history.len(),
+        posture_distribution,
+        time_bucket_distribution,
+        regime_probability_summaries,
+        runtime_thresholds: method.runtime_thresholds.clone(),
+        points_at_or_above_prepare_p60d,
+        points_at_or_above_hedge_p20d,
+        points_at_or_above_defend_p5d,
+        note: notes.join(" "),
+    }
+}
+
+fn load_release_review_regime_scenarios(
+    label_version: &str,
+) -> anyhow::Result<(Vec<CrisisScenario>, String)> {
+    match load_label_set_crisis_scenarios(DEFAULT_FORMAL_SCENARIO_SET_VERSION, label_version) {
+        Ok(scenarios) => Ok((
+            scenarios,
+            format!(
+                "Regime 概率分布基于 {DEFAULT_FORMAL_SCENARIO_SET_VERSION}/{label_version} 重算。"
+            ),
+        )),
+        Err(primary_error) if label_version == "label_forward_crisis_v1" => {
+            let fallback = load_label_set_crisis_scenarios(
+                DEFAULT_FORMAL_SCENARIO_SET_VERSION,
+                DEFAULT_FORMAL_LABEL_VERSION,
+            )?;
+            Ok((
+                fallback,
+                format!(
+                    "当前 release label_version={label_version} 不在 scenario catalog 中，Regime 概率分布回退到 {DEFAULT_FORMAL_SCENARIO_SET_VERSION}/{DEFAULT_FORMAL_LABEL_VERSION} 重算（原始错误：{primary_error:#}）。"
+                ),
+            ))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn summarize_release_runtime_regime_probabilities(
+    history: &[AssessmentHistoryPoint],
+    scenarios: &[CrisisScenario],
+    runtime_thresholds: Option<&RuntimeThresholdDiagnosticsWire>,
+) -> Vec<ReleaseRuntimeRegimeProbabilitySummary> {
+    #[derive(Default)]
+    struct Accumulator {
+        row_count: usize,
+        probability_sum: f64,
+        max_probability: f64,
+        threshold_hit_count: usize,
+    }
+
+    let mut buckets = BTreeMap::<(u32, String), Accumulator>::new();
+    for point in history {
+        for (horizon_days, probability) in [
+            (5_u32, point.p_5d),
+            (20_u32, point.p_20d),
+            (60_u32, point.p_60d),
+        ] {
+            let regime = probability_training_regime_name(forward_crisis_training_regime(
+                point.as_of_date,
+                scenarios,
+                horizon_days,
+            ));
+            let bucket = buckets
+                .entry((horizon_days, regime.to_string()))
+                .or_default();
+            bucket.row_count += 1;
+            bucket.probability_sum += probability;
+            bucket.max_probability = bucket.max_probability.max(probability);
+            if let Some(threshold) =
+                runtime_probability_threshold_for_horizon(runtime_thresholds, horizon_days)
+            {
+                if probability >= threshold {
+                    bucket.threshold_hit_count += 1;
+                }
+            }
+        }
+    }
+
+    buckets
+        .into_iter()
+        .map(
+            |((horizon_days, regime), bucket)| ReleaseRuntimeRegimeProbabilitySummary {
+                horizon_days,
+                regime,
+                row_count: bucket.row_count,
+                row_rate: round6(safe_ratio(bucket.row_count, history.len())),
+                avg_probability: round6(safe_divide(
+                    bucket.probability_sum,
+                    bucket.row_count as f64,
+                )),
+                max_probability: round6(bucket.max_probability),
+                threshold_hit_count: runtime_thresholds.map(|_| bucket.threshold_hit_count),
+            },
+        )
+        .collect()
+}
+
+fn runtime_probability_threshold_for_horizon(
+    runtime_thresholds: Option<&RuntimeThresholdDiagnosticsWire>,
+    horizon_days: u32,
+) -> Option<f64> {
+    runtime_thresholds.map(|thresholds| match horizon_days {
+        5 => thresholds.defend_p5d,
+        20 => thresholds.hedge_p20d,
+        60 => thresholds.prepare_p60d,
+        _ => 1.0,
+    })
+}
+
+fn summarize_named_counts<'a>(names: impl Iterator<Item = &'a str>) -> Vec<ReleaseRuntimeCount> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for name in names {
+        *counts.entry(name.to_string()).or_default() += 1;
+    }
+    let mut rows = counts
+        .into_iter()
+        .map(|(name, count)| ReleaseRuntimeCount { name, count })
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    rows
+}
+
 fn build_release_actionability_review(
     release: &ModelReleaseRecord,
 ) -> anyhow::Result<ReleaseActionabilityReview> {
@@ -6872,6 +7218,20 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
         time_bucket_text(report.candidate_assessment.time_to_risk_bucket)
     );
     let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "## Runtime Diagnostics");
+    let _ = writeln!(markdown);
+    render_release_runtime_review_markdown(
+        &mut markdown,
+        "baseline",
+        &report.baseline_runtime_review,
+    );
+    let _ = writeln!(markdown);
+    render_release_runtime_review_markdown(
+        &mut markdown,
+        "candidate",
+        &report.candidate_runtime_review,
+    );
+    let _ = writeln!(markdown);
     let _ = writeln!(markdown, "## Backtest Guardrails");
     let _ = writeln!(markdown);
     let _ = writeln!(markdown, "| Metric | Baseline | Candidate | Delta |");
@@ -7003,6 +7363,84 @@ fn render_release_actionability_review_markdown(
     }
 }
 
+fn render_release_runtime_review_markdown(
+    markdown: &mut String,
+    role: &str,
+    diagnostics: &ReleaseRuntimeReviewDiagnostics,
+) {
+    let _ = writeln!(markdown, "### {role} Runtime");
+    let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "- Release: {}", diagnostics.release_id);
+    let _ = writeln!(
+        markdown,
+        "- History points: {}",
+        diagnostics.history_point_count
+    );
+    let _ = writeln!(markdown, "- Note: {}", diagnostics.note);
+    if let Some(thresholds) = diagnostics.runtime_thresholds.as_ref() {
+        let _ = writeln!(
+            markdown,
+            "- Thresholds: prepare_p60d={}, hedge_p20d={}, defend_p5d={}",
+            format_pct(thresholds.prepare_p60d),
+            format_pct(thresholds.hedge_p20d),
+            format_pct(thresholds.defend_p5d),
+        );
+        let _ = writeln!(
+            markdown,
+            "- Runtime policy version: {}",
+            thresholds.history_runtime_policy_version
+        );
+        let _ = writeln!(
+            markdown,
+            "- Probability floor hits: p_60d>=prepare {} / p_20d>=hedge {} / p_5d>=defend {}",
+            diagnostics
+                .points_at_or_above_prepare_p60d
+                .unwrap_or_default(),
+            diagnostics
+                .points_at_or_above_hedge_p20d
+                .unwrap_or_default(),
+            diagnostics
+                .points_at_or_above_defend_p5d
+                .unwrap_or_default(),
+        );
+    }
+    let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "| Posture | Count |");
+    let _ = writeln!(markdown, "| --- | --- |");
+    for row in &diagnostics.posture_distribution {
+        let _ = writeln!(markdown, "| {} | {} |", row.name, row.count);
+    }
+    let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "| Time bucket | Count |");
+    let _ = writeln!(markdown, "| --- | --- |");
+    for row in &diagnostics.time_bucket_distribution {
+        let _ = writeln!(markdown, "| {} | {} |", row.name, row.count);
+    }
+    if !diagnostics.regime_probability_summaries.is_empty() {
+        let _ = writeln!(markdown);
+        let _ = writeln!(
+            markdown,
+            "| Horizon | Regime | Rows | Share | Avg P | Max P | Floor hits |"
+        );
+        let _ = writeln!(markdown, "| --- | --- | --- | --- | --- | --- | --- |");
+        for row in &diagnostics.regime_probability_summaries {
+            let _ = writeln!(
+                markdown,
+                "| {}d | {} | {} | {} | {} | {} | {} |",
+                row.horizon_days,
+                row.regime,
+                row.row_count,
+                format_pct(row.row_rate),
+                format_pct(row.avg_probability),
+                format_pct(row.max_probability),
+                row.threshold_hit_count
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+            );
+        }
+    }
+}
+
 fn print_release_review_summary(report: &ReleaseReviewEnvelope) {
     println!("Review comparison:");
     println!(
@@ -7056,6 +7494,7 @@ fn build_formal_dataset_summary(
     let scenario_summaries = summarize_formal_dataset_scenarios(rows, &scenario_ranges);
     let family_summaries = summarize_formal_dataset_families(rows);
     let quality_summaries = summarize_formal_dataset_quality(rows);
+    let regime_summaries = summarize_formal_dataset_regimes(rows, &scenarios);
     let recommendation = build_formal_dataset_recommendation(&split_summaries, rows.len());
 
     Ok(FormalDatasetSummaryEnvelope {
@@ -7066,6 +7505,7 @@ fn build_formal_dataset_summary(
         scenario_summaries,
         family_summaries,
         quality_summaries,
+        regime_summaries,
         recommendation,
     })
 }
@@ -7188,6 +7628,45 @@ fn summarize_formal_dataset_quality(
     buckets
         .into_iter()
         .map(|(grade, row_count)| FormalDatasetQualitySummary { grade, row_count })
+        .collect()
+}
+
+fn summarize_formal_dataset_regimes(
+    rows: &[FormalDatasetRowRecord],
+    scenarios: &[CrisisScenario],
+) -> Vec<FormalDatasetRegimeSummary> {
+    let split_totals = rows
+        .iter()
+        .fold(BTreeMap::<String, usize>::new(), |mut acc, row| {
+            *acc.entry(row.split_name.clone()).or_default() += 1;
+            acc
+        });
+    let mut buckets = BTreeMap::<(String, u32, String), usize>::new();
+    for row in rows {
+        for horizon_days in [5_u32, 20_u32, 60_u32] {
+            let regime = probability_training_regime_name(forward_crisis_training_regime(
+                row.as_of_date,
+                scenarios,
+                horizon_days,
+            ));
+            *buckets
+                .entry((row.split_name.clone(), horizon_days, regime.to_string()))
+                .or_default() += 1;
+        }
+    }
+
+    buckets
+        .into_iter()
+        .map(|((split_name, horizon_days, regime), row_count)| {
+            let split_total = split_totals.get(&split_name).copied().unwrap_or_default();
+            FormalDatasetRegimeSummary {
+                split_name,
+                horizon_days,
+                regime,
+                row_count,
+                row_rate: round6(safe_ratio(row_count, split_total)),
+            }
+        })
         .collect()
 }
 
@@ -7363,6 +7842,22 @@ fn render_formal_dataset_summary_markdown(summary: &FormalDatasetSummaryEnvelope
             markdown,
             "- grade {}: {} rows",
             quality.grade, quality.row_count
+        );
+    }
+    let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "## Regime Mix");
+    let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "| Split | Horizon | Regime | Rows | Share |");
+    let _ = writeln!(markdown, "| --- | --- | --- | --- | --- |");
+    for regime in &summary.regime_summaries {
+        let _ = writeln!(
+            markdown,
+            "| {} | {}d | {} | {} | {} |",
+            regime.split_name,
+            regime.horizon_days,
+            regime.regime,
+            regime.row_count,
+            format_pct(regime.row_rate),
         );
     }
     let _ = writeln!(markdown);
@@ -9027,6 +9522,9 @@ mod tests {
                     label_5d: u8::from(matches!(index, 56..=59 | 106..=109 | 156..=159)),
                     label_20d: u8::from(matches!(index, 52..=59 | 102..=109 | 152..=159)),
                     label_60d: u8::from(matches!(index, 44..=59 | 94..=109 | 144..=159)),
+                    regime_5d: "normal".to_string(),
+                    regime_20d: "normal".to_string(),
+                    regime_60d: "normal".to_string(),
                     action_label_5d: u8::from(matches!(index, 55..=59 | 105..=109 | 155..=159)),
                     action_label_20d: u8::from(matches!(index, 50..=59 | 100..=109 | 150..=159)),
                     action_label_60d: u8::from(matches!(index, 42..=59 | 92..=109 | 142..=159)),

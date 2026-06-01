@@ -353,6 +353,10 @@ mod tests {
         assert!(json["note"].is_string());
         assert!(json["protected_stress_window_catalog"]["catalog_id"].is_string());
         assert!(json["protected_stress_window_catalog"]["windows"].is_array());
+        assert!(json["runtime_thresholds"]["prepare_p60d"].is_number());
+        assert!(json["runtime_thresholds"]["hedge_p20d"].is_number());
+        assert!(json["runtime_thresholds"]["defend_p5d"].is_number());
+        assert!(json["runtime_thresholds"]["history_runtime_policy_version"].is_string());
     }
 
     #[tokio::test]

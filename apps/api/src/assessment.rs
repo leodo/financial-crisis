@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, env};
 
 use chrono::NaiveDate;
 use chrono::Utc;
@@ -21,6 +21,7 @@ use fc_domain::{
     FEATURE_US_UNEMPLOYMENT_LEVEL, FEATURE_US_USDJPY_CHANGE_20D, FEATURE_US_USDJPY_LEVEL,
     FEATURE_US_VIX_CHANGE_5D, FEATURE_US_VIX_LEVEL,
 };
+use serde::Serialize;
 
 const PROB_MODEL_VERSION: &str = "prob_v1_20260531";
 const CALIBRATION_VERSION: &str = "calib_v1_20260531";
@@ -47,6 +48,21 @@ struct ProbabilityActionThresholds {
     defend_p5d: f64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct RuntimeThresholdDiagnostics {
+    pub prepare_p60d: f64,
+    pub hedge_p20d: f64,
+    pub defend_p5d: f64,
+    pub severe_now_p20d: f64,
+    pub elevated_weeks_p60d: f64,
+    pub external_prepare_p20d: f64,
+    pub carry_prepare_p60d: f64,
+    pub downgrade_prepare_p60d: f64,
+    pub downgrade_hedge_p20d: f64,
+    pub downgrade_defend_p5d: f64,
+    pub history_runtime_policy_version: String,
+}
+
 impl ProbabilityActionThresholds {
     fn legacy() -> Self {
         Self {
@@ -58,9 +74,18 @@ impl ProbabilityActionThresholds {
 
     fn formal_main_runtime() -> Self {
         Self {
-            prepare_p60d: FORMAL_MAIN_RUNTIME_PREPARE_P60D_FLOOR,
-            hedge_p20d: FORMAL_MAIN_RUNTIME_HEDGE_P20D_FLOOR,
-            defend_p5d: FORMAL_MAIN_RUNTIME_DEFEND_P5D_FLOOR,
+            prepare_p60d: probability_threshold_env_override(
+                "FC_FORMAL_MAIN_RUNTIME_PREPARE_P60D_FLOOR",
+                FORMAL_MAIN_RUNTIME_PREPARE_P60D_FLOOR,
+            ),
+            hedge_p20d: probability_threshold_env_override(
+                "FC_FORMAL_MAIN_RUNTIME_HEDGE_P20D_FLOOR",
+                FORMAL_MAIN_RUNTIME_HEDGE_P20D_FLOOR,
+            ),
+            defend_p5d: probability_threshold_env_override(
+                "FC_FORMAL_MAIN_RUNTIME_DEFEND_P5D_FLOOR",
+                FORMAL_MAIN_RUNTIME_DEFEND_P5D_FLOOR,
+            ),
         }
     }
 
@@ -95,6 +120,14 @@ impl ProbabilityActionThresholds {
     fn capital_preservation_p5d(self) -> f64 {
         (self.defend_p5d * 1.5).max(self.defend_p5d + 0.02)
     }
+}
+
+fn probability_threshold_env_override(name: &str, fallback: f64) -> f64 {
+    env::var(name)
+        .ok()
+        .and_then(|raw| raw.parse::<f64>().ok())
+        .map(|value| value.clamp(0.001, 0.90))
+        .unwrap_or(fallback)
 }
 
 #[derive(Debug, Clone)]
@@ -159,6 +192,25 @@ pub(crate) fn history_runtime_policy_version(
         "runtime_history_v1_20260601|class={release_class}|prepare={:.3}|hedge={:.3}|defend={:.3}",
         thresholds.prepare_p60d, thresholds.hedge_p20d, thresholds.defend_p5d
     )
+}
+
+pub fn runtime_threshold_diagnostics(
+    serving_model: Option<&ServingModelContext>,
+) -> RuntimeThresholdDiagnostics {
+    let thresholds = probability_action_thresholds(serving_model);
+    RuntimeThresholdDiagnostics {
+        prepare_p60d: round3(thresholds.prepare_p60d),
+        hedge_p20d: round3(thresholds.hedge_p20d),
+        defend_p5d: round3(thresholds.defend_p5d),
+        severe_now_p20d: round3(thresholds.severe_now_p20d()),
+        elevated_weeks_p60d: round3(thresholds.elevated_weeks_p60d()),
+        external_prepare_p20d: round3(thresholds.external_prepare_p20d()),
+        carry_prepare_p60d: round3(thresholds.carry_prepare_p60d()),
+        downgrade_prepare_p60d: round3(thresholds.downgrade_prepare_p60d()),
+        downgrade_hedge_p20d: round3(thresholds.downgrade_hedge_p20d()),
+        downgrade_defend_p5d: round3(thresholds.downgrade_defend_p5d()),
+        history_runtime_policy_version: history_runtime_policy_version(serving_model),
+    }
 }
 
 fn bundle_horizon_threshold(bundle: &ProbabilityBundle, horizon_days: u32, fallback: f64) -> f64 {

@@ -593,6 +593,62 @@ No-Go for replacing transitional baseline
    - 把 `rolling audit` 的纯误报长段直接纳入训练 / 选阈 / 选模目标；
 3. 在主概率头没有把 `288` 天这类长误报段打掉之前，formal main 仍然只能算研究候选，不具备替代当前 active release 的资格。
 
+### 7.8 2026-06-01 runtime regime 审计补充：现在能证明 candidate 是“全 regime 都偏冷”
+
+本轮继续把诊断链补到了两个层面：
+
+1. formal dataset summary 新增 `regime mix`，直接统计 `train / calibration / evaluation` 在 `5d / 20d / 60d` 三个 horizon 下的 `normal / pre_warning_buffer / positive_window / in_crisis / post_crisis_cooldown` 分布；
+2. release review 新增 `runtime regime probability` 表，直接看历史 assessment 在不同 regime 下的平均概率、最大概率和 runtime floor 命中次数。
+
+先看正式训练集 `formal_v1_main_1990_daily:20260601Tscensplit4` 的 evaluation split：
+
+- `5d`：`normal 2117`、`pre_warning_buffer 3`、`positive_window 5`、`in_crisis 116`、`post_crisis_cooldown 28`
+- `20d`：`normal 2058`、`pre_warning_buffer 15`、`positive_window 20`、`in_crisis 116`、`post_crisis_cooldown 60`
+- `60d`：`normal 2003`、`positive_window 60`、`in_crisis 116`、`post_crisis_cooldown 90`
+
+这说明当前正式数据集不是“完全没有 regime 样本”；至少对 `20d / 60d` 来说，正例窗口、危机中、危机后余震都确实存在，只是占比很低。
+
+再看候选版 `us_formal_pit_scensplit4regime4_20260601T055211` 的 release review：
+
+- `5d`：
+  - `normal avg=0.496%`
+  - `positive_window avg=0.500%`
+  - `in_crisis avg=0.501%`
+  - `max=0.700%`
+- `20d`：
+  - `normal avg=2.496%`
+  - `positive_window avg=2.495%`
+  - `in_crisis avg=2.501%`
+  - `max=2.700%`
+- `60d`：
+  - `normal avg=5.996%`
+  - `positive_window avg=5.700%`
+  - `in_crisis avg=5.591%`
+  - `max=7.500%`
+- 三个 horizon 的 runtime floor 命中次数都是 `0`
+
+这个结果已经不是“阈值有点偏高”这么简单，而是：
+
+- candidate 在 `normal / pre-warning / positive_window / in-crisis / cooldown` 各个 regime 下，概率几乎没有拉开；
+- `5d / 20d` 基本完全压成常数；
+- `60d` 虽然有轻微波动，但方向和幅度都不足以触发任何 runtime floor；
+- 因此 candidate 不是“会提前预警但被 serving 压掉”，而是**主概率头本身就没有学出可用的 regime separation**。
+
+同时，baseline `us_formal_transitional_20260531T094603` 的 fallback 审计也说明了另一个问题：
+
+- baseline 的 `5d / 20d / 60d` 概率同样几乎是常数；
+- 但它依然能在历史上给出大量 `prepare` posture；
+- 这意味着当前 baseline 的动作效果主要来自 transitional serving 语义，而不是概率头本身具备了好的可分层能力。
+
+因此下一步的工程重点要再收窄一层：
+
+1. 不要继续主要投入在 runtime floor 微调；
+2. 需要给 runtime / release review 增加 clause-level posture 审计，明确到底是哪条 serving 规则把 baseline 推成 `prepare`；
+3. formal main 训练目标必须显式要求：
+   - `positive_window` 相对 `normal` 有正向拉升；
+   - `in_crisis / cooldown` 不要和真正的“危机前数周窗口”混成一个概率水平；
+4. 在没有看到 `pre_warning / positive_window` 与 `normal` 拉开之前，任何新候选版都不应进入默认线上版本讨论。
+
 ## 12. 结论
 
 从这一步开始，项目里出现“formal bundle”不再自动等于“正式模型”。
