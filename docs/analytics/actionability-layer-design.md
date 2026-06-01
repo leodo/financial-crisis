@@ -175,5 +175,27 @@ action_phase_score
 
 - `dual-head plumbing` 不是问题；
 - 当前失败点主要在于动作头标签仍然只是 `bounded action window` 的 horizon proxy；
-- 当前训练报告已经能区分“提前命中 / 过晚确认 / 完全漏报”，但 release review 护栏还没把这些指标纳入决策；
+- 当前训练报告已经能区分“提前命中 / 过晚确认 / 完全漏报”；随后这一层指标也已经接入 release review 护栏；
 - 下一轮不应优先改融合阈值，而应先改 `prepare / hedge / defend` 的目标定义、样本构造和 episode 评估口径。
+
+### 6.2 2026-06-01 actionability guard 已进入 release review
+
+本轮继续推进后，`actionability` 已不再只是训练输出里的诊断字段，而是正式进入 `release review`：
+
+- review 报告会展示每个动作层级的 `scenario_count / advance_warning_rate / late_confirmation_rate / missed_rate`
+- review guard 会直接拦截：
+  - `scenario_count < 2`
+  - evaluation 正样本存在，但动作头完全零命中
+
+在这个前提下重新复核：
+
+- `us_formal_pit_dualheadguard_20260601T012122`
+
+结果仍然是 No-Go，而且原因比之前更清楚：
+
+- 三个动作层级都只落在 `1` 个 evaluation 场景上；
+- 三个层级在各自 evaluation 正样本上都是 `0` 命中；
+- 这说明当前问题已经可以明确归因到：
+  - 动作头目标定义还不对；
+  - split / 场景覆盖太窄；
+  - 不是简单调阈值能解决的。

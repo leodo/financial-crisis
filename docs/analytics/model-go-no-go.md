@@ -367,6 +367,41 @@ No-Go for replacing transitional baseline
 
 - `us_formal_transitional_20260531T094603`
 
+### 7.5 2026-06-01 actionability guard 已接入 release review
+
+本轮不是只补了训练侧指标，还把动作层护栏正式接进了 `research release review`：
+
+- review 报告现在会单独展示 `prepare / hedge / defend` 的：
+  - `scenario_count`
+  - `advance_warning_rate`
+  - `late_confirmation_rate`
+  - `missed_rate`
+  - `pre_start_recall_at_threshold`
+  - `post_start_recall_at_threshold`
+- guard 现在不再只看 runtime 的 `timely_warning_rate / actionable_precision / false_positive_episode_days`；
+- 对内置动作头的候选版，还会额外拦截两类情况：
+  1. `scenario_count < 2`
+  2. evaluation 正样本存在，但动作头一个命中都没有
+
+对应复核候选版：
+
+- `us_formal_pit_dualheadguard_20260601T012122`
+
+新 review 结果比之前更明确：
+
+- runtime guard 仍然失败：
+  - `timely_warning_rate`: `37.5% -> 12.5%`
+  - `actionable_precision`: `29.6% -> 20.6%`
+  - `longest_false_positive_episode_days`: `9 -> 18`
+- actionability guard 也失败：
+  - `prepare / hedge / defend` 的 `scenario_count` 都只有 `1`
+  - 三个层级在 evaluation 正样本上都没有任何命中
+
+这一步的意义是：
+
+- 以后就算某个候选版 runtime 护栏勉强没退化，只要动作头评估还是“单场景 + 零命中”，也不允许把它说成正式可晋升候选；
+- `actionability` 现在已经从“页面上多显示几个数”升级成了真正参与 Go/No-Go 的对象。
+
 ## 8. 准入清单
 
 发布前至少勾选：

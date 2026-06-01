@@ -1315,6 +1315,46 @@ struct ReleaseReviewComparisonSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct ReleaseActionabilityLevelReview {
+    level: ActionabilityLevel,
+    proxy_horizon_days: u32,
+    sample_count: u32,
+    positive_rate: f64,
+    threshold: f64,
+    predicted_positive_count: u32,
+    actual_positive_count: u32,
+    pre_start_positive_count: u32,
+    post_start_positive_count: u32,
+    pre_start_hit_count: u32,
+    post_start_hit_count: u32,
+    false_positive_count: u32,
+    scenario_count: u32,
+    advance_warning_scenario_count: u32,
+    late_confirmation_scenario_count: u32,
+    missed_scenario_count: u32,
+    precision_at_threshold: Option<f64>,
+    pre_start_recall_at_threshold: Option<f64>,
+    post_start_recall_at_threshold: Option<f64>,
+    advance_warning_rate: Option<f64>,
+    late_confirmation_rate: Option<f64>,
+    missed_rate: Option<f64>,
+    note: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReleaseActionabilityReview {
+    release_id: String,
+    enabled: bool,
+    model_version: Option<String>,
+    calibration_version: Option<String>,
+    fusion_policy_version: Option<String>,
+    levels: Vec<ReleaseActionabilityLevelReview>,
+    guard_regressions: Vec<String>,
+    guard_passed: bool,
+    note: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct ReleaseReviewEnvelope {
     reviewed_at: String,
     market_scope: String,
@@ -1325,9 +1365,15 @@ struct ReleaseReviewEnvelope {
     candidate_release: ModelReleaseRecord,
     baseline_assessment: AssessmentSnapshot,
     candidate_assessment: AssessmentSnapshot,
+    baseline_actionability_review: ReleaseActionabilityReview,
+    candidate_actionability_review: ReleaseActionabilityReview,
     comparison: ReleaseReviewComparisonSummary,
     operational_guard_regressions: Vec<String>,
     operational_guard_passed: bool,
+    actionability_guard_regressions: Vec<String>,
+    actionability_guard_passed: bool,
+    overall_guard_regressions: Vec<String>,
+    overall_guard_passed: bool,
     recommendation: String,
 }
 
@@ -1698,7 +1744,15 @@ async fn run_release_review(
     .await?;
     let candidate_assessment = fetch_assessment_snapshot_for_guard(&options.api_reload_url).await?;
 
-    let regressions = compare_operational_guardrails(&baseline_assessment, &candidate_assessment);
+    let baseline_actionability_review = build_release_actionability_review(baseline_release)?;
+    let candidate_actionability_review = build_release_actionability_review(candidate_release)?;
+    let candidate_has_actionability = candidate_actionability_review.enabled;
+    let operational_regressions =
+        compare_operational_guardrails(&baseline_assessment, &candidate_assessment);
+    let actionability_regressions =
+        compare_actionability_guardrails(&candidate_actionability_review);
+    let mut overall_regressions = operational_regressions.clone();
+    overall_regressions.extend(actionability_regressions.iter().cloned());
     let report = ReleaseReviewEnvelope {
         reviewed_at: Utc::now().to_rfc3339(),
         market_scope: market_scope.to_string(),
@@ -1710,15 +1764,24 @@ async fn run_release_review(
         comparison: build_release_review_comparison(&baseline_assessment, &candidate_assessment),
         baseline_assessment,
         candidate_assessment,
-        operational_guard_passed: regressions.is_empty(),
-        recommendation: build_release_review_recommendation(&regressions),
-        operational_guard_regressions: regressions,
+        baseline_actionability_review,
+        candidate_actionability_review,
+        operational_guard_passed: operational_regressions.is_empty(),
+        actionability_guard_passed: actionability_regressions.is_empty(),
+        overall_guard_passed: overall_regressions.is_empty(),
+        recommendation: build_release_review_recommendation(
+            &overall_regressions,
+            candidate_has_actionability,
+        ),
+        operational_guard_regressions: operational_regressions,
+        actionability_guard_regressions: actionability_regressions,
+        overall_guard_regressions: overall_regressions,
     };
     write_release_review_report(&options.output_dir, &report)?;
 
     println!(
         "Release review complete: guard_passed={} baseline={} candidate={}.",
-        report.operational_guard_passed,
+        report.overall_guard_passed,
         report.baseline_release.manifest.release_id,
         report.candidate_release.manifest.release_id
     );
@@ -5594,6 +5657,105 @@ async fn fetch_assessment_snapshot_for_guard(
     fetch_api_json(&client, api_base_url, "/api/assessment/current").await
 }
 
+fn build_release_actionability_review(
+    release: &ModelReleaseRecord,
+) -> anyhow::Result<ReleaseActionabilityReview> {
+    let bundle = read_probability_bundle(Path::new(&release.manifest.bundle_uri))?;
+    let Some(actionability) = bundle.actionability.as_ref() else {
+        return Ok(ReleaseActionabilityReview {
+            release_id: release.manifest.release_id.clone(),
+            enabled: false,
+            model_version: None,
+            calibration_version: None,
+            fusion_policy_version: None,
+            levels: Vec::new(),
+            guard_regressions: Vec::new(),
+            guard_passed: true,
+            note: "This release has no independent actionability head; release review only applies runtime guardrails.".to_string(),
+        });
+    };
+
+    let levels = actionability
+        .levels
+        .iter()
+        .map(|level| {
+            let evaluation = level
+                .evaluation
+                .actionability
+                .as_ref()
+                .cloned()
+                .unwrap_or_default();
+            ReleaseActionabilityLevelReview {
+                level: level.level,
+                proxy_horizon_days: level.proxy_horizon_days,
+                sample_count: level.evaluation.sample_count,
+                positive_rate: level.evaluation.positive_rate,
+                threshold: evaluation.threshold,
+                predicted_positive_count: evaluation.predicted_positive_count,
+                actual_positive_count: evaluation.actual_positive_count,
+                pre_start_positive_count: evaluation.pre_start_positive_count,
+                post_start_positive_count: evaluation.post_start_positive_count,
+                pre_start_hit_count: evaluation.pre_start_hit_count,
+                post_start_hit_count: evaluation.post_start_hit_count,
+                false_positive_count: evaluation.false_positive_count,
+                scenario_count: evaluation.scenario_count,
+                advance_warning_scenario_count: evaluation.advance_warning_scenario_count,
+                late_confirmation_scenario_count: evaluation.late_confirmation_scenario_count,
+                missed_scenario_count: evaluation.missed_scenario_count,
+                precision_at_threshold: evaluation.precision_at_threshold,
+                pre_start_recall_at_threshold: evaluation.pre_start_recall_at_threshold,
+                post_start_recall_at_threshold: evaluation.post_start_recall_at_threshold,
+                advance_warning_rate: evaluation.advance_warning_rate,
+                late_confirmation_rate: evaluation.late_confirmation_rate,
+                missed_rate: evaluation.missed_rate,
+                note: evaluation.note,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut review = ReleaseActionabilityReview {
+        release_id: release.manifest.release_id.clone(),
+        enabled: true,
+        model_version: Some(actionability.model_version.clone()),
+        calibration_version: Some(actionability.calibration_version.clone()),
+        fusion_policy_version: Some(actionability.fusion_policy_version.clone()),
+        levels,
+        guard_regressions: Vec::new(),
+        guard_passed: true,
+        note: actionability.note.clone(),
+    };
+    review.guard_regressions = compare_actionability_guardrails(&review);
+    review.guard_passed = review.guard_regressions.is_empty();
+    Ok(review)
+}
+
+fn compare_actionability_guardrails(review: &ReleaseActionabilityReview) -> Vec<String> {
+    if !review.enabled {
+        return Vec::new();
+    }
+
+    let mut regressions = Vec::new();
+    for level in &review.levels {
+        let level_name = actionability_level_text(level.level);
+        if level.scenario_count < 2 {
+            regressions.push(format!(
+                "actionability {level_name} scenario_count is {} (<2), so the evaluation slice is too narrow for go/no-go",
+                level.scenario_count
+            ));
+        }
+        if level.actual_positive_count > 0
+            && level.pre_start_hit_count == 0
+            && level.post_start_hit_count == 0
+        {
+            regressions.push(format!(
+                "actionability {level_name} produced no hits in {} labeled evaluation positives",
+                level.actual_positive_count
+            ));
+        }
+    }
+    regressions
+}
+
 fn compare_operational_guardrails(
     baseline: &AssessmentSnapshot,
     candidate: &AssessmentSnapshot,
@@ -5714,9 +5876,18 @@ fn count_metric(baseline: u32, candidate: u32) -> ReleaseReviewCountMetric {
     }
 }
 
-fn build_release_review_recommendation(regressions: &[String]) -> String {
+fn build_release_review_recommendation(
+    regressions: &[String],
+    candidate_has_actionability: bool,
+) -> String {
     if regressions.is_empty() {
-        "候选版通过当前运行时护栏，可进入下一轮人工复核。仍需结合标签质量、样本覆盖和前端解释能力决定是否晋升。".to_string()
+        if candidate_has_actionability {
+            "候选版通过当前运行时与动作层护栏，可进入下一轮人工复核。仍需结合标签质量、样本覆盖和前端解释能力决定是否晋升。".to_string()
+        } else {
+            "候选版通过当前运行时护栏，可进入下一轮人工复核。仍需结合标签质量、样本覆盖和前端解释能力决定是否晋升。".to_string()
+        }
+    } else if candidate_has_actionability {
+        "候选版未通过当前运行时 / 动作层护栏，不应替代当前默认线上版本。应先修正训练目标、标签口径、样本切分或样本治理，再重新训练复核。".to_string()
     } else {
         "候选版未通过当前运行时护栏，不应替代当前默认线上版本。应先修正训练目标、标签口径或样本治理，再重新训练复核。".to_string()
     }
@@ -5745,7 +5916,7 @@ fn write_release_review_report(
 
 fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
     let mut markdown = String::new();
-    let verdict = if report.operational_guard_passed {
+    let verdict = if report.overall_guard_passed {
         "PASS"
     } else {
         "FAIL"
@@ -5860,12 +6031,48 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
         format_signed_count_delta(report.comparison.longest_false_positive_episode_days.delta)
     );
     let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "## Actionability Diagnostics");
+    let _ = writeln!(markdown);
+    render_release_actionability_review_markdown(
+        &mut markdown,
+        "baseline",
+        &report.baseline_actionability_review,
+    );
+    let _ = writeln!(markdown);
+    render_release_actionability_review_markdown(
+        &mut markdown,
+        "candidate",
+        &report.candidate_actionability_review,
+    );
+    let _ = writeln!(markdown);
     let _ = writeln!(markdown, "## Guardrail Result");
     let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "### Runtime Guard");
+    let _ = writeln!(markdown);
     if report.operational_guard_regressions.is_empty() {
-        let _ = writeln!(markdown, "- No guardrail regressions detected.");
+        let _ = writeln!(markdown, "- No runtime guard regressions detected.");
     } else {
         for regression in &report.operational_guard_regressions {
+            let _ = writeln!(markdown, "- {regression}");
+        }
+    }
+    let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "### Actionability Guard");
+    let _ = writeln!(markdown);
+    if report.actionability_guard_regressions.is_empty() {
+        let _ = writeln!(markdown, "- No actionability guard regressions detected.");
+    } else {
+        for regression in &report.actionability_guard_regressions {
+            let _ = writeln!(markdown, "- {regression}");
+        }
+    }
+    let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "### Overall");
+    let _ = writeln!(markdown);
+    if report.overall_guard_regressions.is_empty() {
+        let _ = writeln!(markdown, "- No combined guard regressions detected.");
+    } else {
+        for regression in &report.overall_guard_regressions {
             let _ = writeln!(markdown, "- {regression}");
         }
     }
@@ -5874,6 +6081,53 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
     let _ = writeln!(markdown);
     let _ = writeln!(markdown, "{}", report.recommendation);
     markdown
+}
+
+fn render_release_actionability_review_markdown(
+    markdown: &mut String,
+    role: &str,
+    review: &ReleaseActionabilityReview,
+) {
+    let _ = writeln!(markdown, "### {role} Actionability");
+    let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "- Enabled: {}", review.enabled);
+    let _ = writeln!(markdown, "- Note: {}", review.note);
+    if !review.enabled {
+        return;
+    }
+    let _ = writeln!(
+        markdown,
+        "- Versions: model={} calib={} fusion={}",
+        review.model_version.as_deref().unwrap_or("n/a"),
+        review.calibration_version.as_deref().unwrap_or("n/a"),
+        review.fusion_policy_version.as_deref().unwrap_or("n/a")
+    );
+    let _ = writeln!(markdown);
+    let _ = writeln!(
+        markdown,
+        "| Level | Scenarios | Advance Warn | Late Confirm | Missed | Pre-start Recall | Post-start Recall | Precision | Pred+ | Actual+ | FP |"
+    );
+    let _ = writeln!(
+        markdown,
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+    );
+    for level in &review.levels {
+        let _ = writeln!(
+            markdown,
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            actionability_level_text(level.level),
+            level.scenario_count,
+            format_optional_pct(level.advance_warning_rate),
+            format_optional_pct(level.late_confirmation_rate),
+            format_optional_pct(level.missed_rate),
+            format_optional_pct(level.pre_start_recall_at_threshold),
+            format_optional_pct(level.post_start_recall_at_threshold),
+            format_optional_pct(level.precision_at_threshold),
+            level.predicted_positive_count,
+            level.actual_positive_count,
+            level.false_positive_count
+        );
+    }
 }
 
 fn print_release_review_summary(report: &ReleaseReviewEnvelope) {
@@ -5899,6 +6153,19 @@ fn print_release_review_summary(report: &ReleaseReviewEnvelope) {
             .longest_false_positive_episode_days
             .candidate
     );
+    if report.candidate_actionability_review.enabled {
+        println!("Actionability guard summary:");
+        for level in &report.candidate_actionability_review.levels {
+            println!(
+                "  {:>7} scenarios={} advance_warn={} late_confirm={} missed={}",
+                actionability_level_text(level.level),
+                level.scenario_count,
+                format_optional_pct(level.advance_warning_rate),
+                format_optional_pct(level.late_confirmation_rate),
+                format_optional_pct(level.missed_rate),
+            );
+        }
+    }
     println!("  recommendation        {}", report.recommendation);
 }
 
@@ -6270,6 +6537,13 @@ fn read_release_manifest(path: &Path) -> anyhow::Result<ModelReleaseManifest> {
         .with_context(|| format!("failed to decode release manifest {}", path.display()))
 }
 
+fn read_probability_bundle(path: &Path) -> anyhow::Result<ProbabilityBundle> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("failed to read probability bundle {}", path.display()))?;
+    serde_json::from_str::<ProbabilityBundle>(&raw)
+        .with_context(|| format!("failed to decode probability bundle {}", path.display()))
+}
+
 async fn resolve_release_market_scope(
     store: &SqliteStore,
     release_id: &str,
@@ -6540,6 +6814,10 @@ fn format_pct(value: f64) -> String {
     format!("{:.1}%", value * 100.0)
 }
 
+fn format_optional_pct(value: Option<f64>) -> String {
+    value.map(format_pct).unwrap_or_else(|| "—".to_string())
+}
+
 fn format_signed_pct_delta(value: f64) -> String {
     format!("{:+.1}pp", value * 100.0)
 }
@@ -6744,12 +7022,14 @@ mod tests {
     use fc_domain::{Frequency, Observation};
 
     use super::{
-        action_window_label, evaluate_actionability_summary, forward_crisis_label,
-        observation_is_visible_for_date, positive_sample_action_weight, round3, AuditExportOptions,
-        CrisisScenario, FeatureSnapshotBuildOptions, FormalDatasetBuildOptions,
-        FormalDatasetSummaryOptions, PipelineDatasetSource, PipelineTrainOptions, PointInTimeMode,
+        action_window_label, compare_actionability_guardrails, evaluate_actionability_summary,
+        forward_crisis_label, observation_is_visible_for_date, positive_sample_action_weight,
+        round3, ActionabilityLevel, AuditExportOptions, CrisisScenario,
+        FeatureSnapshotBuildOptions, FormalDatasetBuildOptions, FormalDatasetSummaryOptions,
+        PipelineDatasetSource, PipelineTrainOptions, PointInTimeMode,
         PredictionSnapshotQueryOptions, ProbabilityTrainingRow, RefreshLatestOptions,
-        ReleasePublishOptions, ReleaseReviewOptions, ReleaseSwitchOptions,
+        ReleaseActionabilityLevelReview, ReleaseActionabilityReview, ReleasePublishOptions,
+        ReleaseReviewOptions, ReleaseSwitchOptions,
     };
 
     fn observation(
@@ -7295,5 +7575,49 @@ mod tests {
         assert_eq!(summary.advance_warning_rate, Some(round3(1.0 / 3.0)));
         assert_eq!(summary.late_confirmation_rate, Some(round3(1.0 / 3.0)));
         assert_eq!(summary.missed_rate, Some(round3(1.0 / 3.0)));
+    }
+
+    #[test]
+    fn actionability_guardrails_flag_narrow_or_zero_hit_reviews() {
+        let review = ReleaseActionabilityReview {
+            release_id: "candidate".to_string(),
+            enabled: true,
+            model_version: Some("actionability_bundle_test".to_string()),
+            calibration_version: Some("actionability_platt_test".to_string()),
+            fusion_policy_version: Some("fusion_policy_test".to_string()),
+            levels: vec![ReleaseActionabilityLevelReview {
+                level: ActionabilityLevel::Prepare,
+                proxy_horizon_days: 60,
+                sample_count: 100,
+                positive_rate: 0.03,
+                threshold: 0.3,
+                predicted_positive_count: 0,
+                actual_positive_count: 12,
+                pre_start_positive_count: 8,
+                post_start_positive_count: 4,
+                pre_start_hit_count: 0,
+                post_start_hit_count: 0,
+                false_positive_count: 0,
+                scenario_count: 1,
+                advance_warning_scenario_count: 0,
+                late_confirmation_scenario_count: 0,
+                missed_scenario_count: 1,
+                precision_at_threshold: None,
+                pre_start_recall_at_threshold: Some(0.0),
+                post_start_recall_at_threshold: Some(0.0),
+                advance_warning_rate: Some(0.0),
+                late_confirmation_rate: Some(0.0),
+                missed_rate: Some(1.0),
+                note: "test".to_string(),
+            }],
+            guard_regressions: Vec::new(),
+            guard_passed: true,
+            note: "test".to_string(),
+        };
+
+        let regressions = compare_actionability_guardrails(&review);
+        assert_eq!(regressions.len(), 2);
+        assert!(regressions[0].contains("scenario_count"));
+        assert!(regressions[1].contains("produced no hits"));
     }
 }

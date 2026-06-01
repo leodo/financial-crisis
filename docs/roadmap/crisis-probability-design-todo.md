@@ -196,7 +196,8 @@
 - [ ] 定义 `prepare / hedge / defend` 独立 episode 目标，而不是继续复用 `60d / 20d / 5d proxy`
 - [x] 补训练侧 `actionability` 专属评估口径，区分“提前命中”“过晚确认”“完全漏报”
 - [x] 在 dataset summary / 训练输出里显式暴露动作层 `scenario_count`
-- [ ] 把 `actionability` 专属评估继续接入 release review / go-no-go 护栏
+- [x] 把 `actionability` 专属评估继续接入 release review / go-no-go 护栏
+- [ ] 让 `actionability` guard 从“基础拦截”升级到“分层级、分角色”的正式阈值
 - [ ] 把 formal history 审计链继续往 `raw point-in-time feature store` 收口，减少对 persisted snapshots 的过渡依赖
 - [ ] 扩展美国历史压力样本，尽量覆盖 `1987 / 1994 / 2000 / 2001 / 2008 / 2011 / 2020 / 2023` 中免费可回补的区间
 - [ ] 把方法页和面板解释继续补强，让用户能看懂“危机先验”和“动作概率”不是同一个东西
