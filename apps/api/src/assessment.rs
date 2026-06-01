@@ -36,6 +36,9 @@ const DEFEND_P5D_THRESHOLD: f64 = 0.30;
 const FORMAL_MAIN_PREPARE_P60D_THRESHOLD: f64 = 0.10;
 const FORMAL_MAIN_HEDGE_P20D_THRESHOLD: f64 = 0.07;
 const FORMAL_MAIN_DEFEND_P5D_THRESHOLD: f64 = 0.03;
+const FORMAL_MAIN_RUNTIME_PREPARE_P60D_FLOOR: f64 = 0.12;
+const FORMAL_MAIN_RUNTIME_HEDGE_P20D_FLOOR: f64 = 0.06;
+const FORMAL_MAIN_RUNTIME_DEFEND_P5D_FLOOR: f64 = 0.05;
 
 #[derive(Debug, Clone, Copy)]
 struct ProbabilityActionThresholds {
@@ -53,11 +56,11 @@ impl ProbabilityActionThresholds {
         }
     }
 
-    fn formal_main() -> Self {
+    fn formal_main_runtime() -> Self {
         Self {
-            prepare_p60d: FORMAL_MAIN_PREPARE_P60D_THRESHOLD,
-            hedge_p20d: FORMAL_MAIN_HEDGE_P20D_THRESHOLD,
-            defend_p5d: FORMAL_MAIN_DEFEND_P5D_THRESHOLD,
+            prepare_p60d: FORMAL_MAIN_RUNTIME_PREPARE_P60D_FLOOR,
+            hedge_p20d: FORMAL_MAIN_RUNTIME_HEDGE_P20D_FLOOR,
+            defend_p5d: FORMAL_MAIN_RUNTIME_DEFEND_P5D_FLOOR,
         }
     }
 
@@ -103,19 +106,45 @@ pub struct ServingModelContext {
 }
 
 fn probability_action_thresholds(
-    active_release: Option<&ModelReleaseRecord>,
+    serving_model: Option<&ServingModelContext>,
 ) -> ProbabilityActionThresholds {
-    let Some(active_release) = active_release else {
+    let Some(serving_model) = serving_model else {
         return ProbabilityActionThresholds::legacy();
     };
+    let active_release = &serving_model.release;
 
     if active_release.manifest.feature_set_version == "feature_formal_v1_main_20260531"
         && active_release.manifest.label_version == "formal_label_v1_main"
     {
-        ProbabilityActionThresholds::formal_main()
+        if let Some(bundle) = serving_model.probability_bundle.as_ref() {
+            ProbabilityActionThresholds {
+                prepare_p60d: bundle_horizon_threshold(
+                    bundle,
+                    60,
+                    FORMAL_MAIN_PREPARE_P60D_THRESHOLD,
+                )
+                .max(FORMAL_MAIN_RUNTIME_PREPARE_P60D_FLOOR),
+                hedge_p20d: bundle_horizon_threshold(bundle, 20, FORMAL_MAIN_HEDGE_P20D_THRESHOLD)
+                    .max(FORMAL_MAIN_RUNTIME_HEDGE_P20D_FLOOR),
+                defend_p5d: bundle_horizon_threshold(bundle, 5, FORMAL_MAIN_DEFEND_P5D_THRESHOLD)
+                    .max(FORMAL_MAIN_RUNTIME_DEFEND_P5D_FLOOR),
+            }
+        } else {
+            ProbabilityActionThresholds::formal_main_runtime()
+        }
     } else {
         ProbabilityActionThresholds::legacy()
     }
+}
+
+fn bundle_horizon_threshold(bundle: &ProbabilityBundle, horizon_days: u32, fallback: f64) -> f64 {
+    bundle
+        .horizons
+        .iter()
+        .find(|horizon| horizon.horizon_days == horizon_days)
+        .and_then(|horizon| horizon.decision_threshold)
+        .map(|threshold| threshold.clamp(0.001, 0.90))
+        .unwrap_or(fallback)
 }
 
 #[derive(Debug, Clone)]
@@ -191,7 +220,7 @@ pub fn build_assessment_snapshot(
         .actionability_enabled
         .then_some(&actionability);
     let active_release = serving_model.map(|context| &context.release);
-    let action_thresholds = probability_action_thresholds(active_release);
+    let action_thresholds = probability_action_thresholds(serving_model);
     let time_to_risk_bucket = build_time_to_risk_bucket(
         &probabilities,
         actionability_fusion,
@@ -486,48 +515,62 @@ fn build_probability_trace(
     let calibrated_p_60d = clamp_probability(
         calibrated_p_60d_raw.max((calibrated_p_20d + min_gap_20_to_60).min(0.99)),
     );
+    let calibrated_probabilities = ProbabilityBlock {
+        p_5d: round3(calibrated_p_5d),
+        p_20d: round3(calibrated_p_20d),
+        p_60d: round3(calibrated_p_60d),
+    };
+    let action_thresholds = probability_action_thresholds(Some(serving_model));
 
     let actionability = bundle
         .actionability
         .as_ref()
         .map(|actionability_bundle| ActionabilityBlock {
-            prepare: round3(
+            prepare: round3(fuse_actionability_confidence(
+                ActionabilityLevel::Prepare,
                 score_actionability_level(
                     actionability_bundle,
                     ActionabilityLevel::Prepare,
                     &features,
                 )
-                .map(|(_, calibrated)| calibrated)
                 .unwrap_or(heuristic_actionability.prepare),
-            ),
-            hedge: round3(
+                &calibrated_probabilities,
+                snapshot,
+                external_shock_score,
+                action_thresholds,
+            )),
+            hedge: round3(fuse_actionability_confidence(
+                ActionabilityLevel::Hedge,
                 score_actionability_level(
                     actionability_bundle,
                     ActionabilityLevel::Hedge,
                     &features,
                 )
-                .map(|(_, calibrated)| calibrated)
                 .unwrap_or(heuristic_actionability.hedge),
-            ),
-            defend: round3(
+                &calibrated_probabilities,
+                snapshot,
+                external_shock_score,
+                action_thresholds,
+            )),
+            defend: round3(fuse_actionability_confidence(
+                ActionabilityLevel::Defend,
                 score_actionability_level(
                     actionability_bundle,
                     ActionabilityLevel::Defend,
                     &features,
                 )
-                .map(|(_, calibrated)| calibrated)
                 .unwrap_or(heuristic_actionability.defend),
-            ),
+                &calibrated_probabilities,
+                snapshot,
+                external_shock_score,
+                action_thresholds,
+            )),
         })
         .unwrap_or_else(|| heuristic_actionability.clone());
 
     ProbabilityComputationTrace {
         raw_probabilities,
-        calibrated_probabilities: ProbabilityBlock {
-            p_5d: round3(calibrated_p_5d),
-            p_20d: round3(calibrated_p_20d),
-            p_60d: round3(calibrated_p_60d),
-        },
+        calibrated_probabilities,
         actionability,
         actionability_enabled: bundle.actionability.is_some(),
         actionability_model_version: bundle
@@ -541,7 +584,7 @@ fn build_probability_trace(
         fusion_policy_version: bundle
             .actionability
             .as_ref()
-            .map(|bundle| bundle.fusion_policy_version.clone()),
+            .map(|_| "fusion_policy_v3_probability_context_gate_20260601".to_string()),
     }
 }
 
@@ -825,7 +868,7 @@ fn score_actionability_level(
     bundle: &fc_domain::ActionabilityBundle,
     level: ActionabilityLevel,
     features: &BTreeMap<String, f64>,
-) -> Option<(f64, f64)> {
+) -> Option<f64> {
     let level_bundle = bundle
         .levels
         .iter()
@@ -835,7 +878,84 @@ fn score_actionability_level(
         Some(calibration) => apply_platt_calibration(raw_probability, calibration),
         None => raw_probability,
     };
-    Some((raw_probability, calibrated_probability))
+    Some(actionability_confidence_from_probability(
+        calibrated_probability,
+        level_bundle.decision_threshold,
+    ))
+}
+
+fn actionability_confidence_from_probability(probability: f64, decision_threshold: f64) -> f64 {
+    let threshold = decision_threshold.clamp(0.01, 0.95);
+    if probability <= threshold {
+        return 0.0;
+    }
+    let normalized = ((probability - threshold) / (1.0 - threshold)).clamp(0.0, 1.0);
+    normalized.powi(2)
+}
+
+fn fuse_actionability_confidence(
+    level: ActionabilityLevel,
+    confidence: f64,
+    probabilities: &ProbabilityBlock,
+    snapshot: &RiskSnapshot,
+    external_shock_score: f64,
+    thresholds: ProbabilityActionThresholds,
+) -> f64 {
+    if confidence <= 0.0 {
+        return 0.0;
+    }
+
+    let context_support = match level {
+        ActionabilityLevel::Prepare => {
+            0.55 * normalized_score_support(snapshot.structural_score, 48.0, 62.0)
+                + 0.25
+                    * normalized_probability_support(
+                        probabilities.p_60d,
+                        thresholds.prepare_p60d,
+                        thresholds.elevated_weeks_p60d(),
+                    )
+                + 0.20 * normalized_score_support(external_shock_score, 45.0, 60.0)
+        }
+        ActionabilityLevel::Hedge => {
+            0.40 * normalized_score_support(snapshot.trigger_score, 42.0, 60.0)
+                + 0.25 * normalized_score_support(external_shock_score, 44.0, 58.0)
+                + 0.20 * normalized_score_support(snapshot.structural_score, 45.0, 58.0)
+                + 0.15
+                    * normalized_probability_support(
+                        probabilities.p_20d,
+                        thresholds.hedge_p20d,
+                        thresholds.severe_now_p20d(),
+                    )
+        }
+        ActionabilityLevel::Defend => {
+            0.50 * normalized_score_support(snapshot.trigger_score, 55.0, 68.0)
+                + 0.20 * normalized_score_support(external_shock_score, 52.0, 65.0)
+                + 0.15 * normalized_score_support(snapshot.structural_score, 50.0, 62.0)
+                + 0.15
+                    * normalized_probability_support(
+                        probabilities.p_5d,
+                        thresholds.defend_p5d,
+                        thresholds.capital_preservation_p5d(),
+                    )
+        }
+    }
+    .clamp(0.0, 1.0);
+
+    round3((confidence * context_support).clamp(0.0, 1.0))
+}
+
+fn normalized_score_support(value: f64, start: f64, full: f64) -> f64 {
+    if full <= start {
+        return f64::from(value >= full);
+    }
+    ((value - start) / (full - start)).clamp(0.0, 1.0)
+}
+
+fn normalized_probability_support(value: f64, threshold: f64, full: f64) -> f64 {
+    if full <= threshold {
+        return f64::from(value >= full);
+    }
+    ((value - threshold) / (full - threshold)).clamp(0.0, 1.0)
 }
 
 fn score_logistic_model(model: &LogisticProbabilityModel, features: &BTreeMap<String, f64>) -> f64 {
@@ -934,7 +1054,9 @@ fn build_time_to_risk_bucket(
     {
         TimeToRiskBucket::Weeks
     } else if (probabilities.p_60d >= thresholds.prepare_p60d && structural_score >= 55.0)
-        || (structural_score >= 62.0 && trigger_score >= 42.0)
+        || (structural_score >= 62.0
+            && trigger_score >= 42.0
+            && probabilities.p_60d >= thresholds.downgrade_prepare_p60d())
         || (external_shock_score >= 55.0
             && probabilities.p_20d >= thresholds.external_prepare_p20d())
         || prepare_head_months
@@ -1000,9 +1122,14 @@ fn build_posture_guidance(
                     || external_shock_score >= 48.0
                     || event_assessment.confirmation_score >= 35.0)
         });
-    let prepare_signal = (probabilities.p_60d >= thresholds.prepare_p60d
-        && snapshot.structural_score >= 55.0)
-        || snapshot.structural_score >= 62.0
+    let prepare_signal = conviction_score >= 0.54
+        && ((probabilities.p_60d >= thresholds.prepare_p60d
+            && snapshot.structural_score >= 55.0)
+            || (snapshot.structural_score >= 62.0
+                && probabilities.p_60d >= thresholds.downgrade_prepare_p60d()
+                && (snapshot.trigger_score >= 42.0
+                    || external_shock_score >= 50.0
+                    || jpy_carry.funding_pressure_score >= 45.0))
         || (external_shock_score >= 55.0 && snapshot.structural_score >= 52.0)
         || (jpy_carry.funding_pressure_score >= 45.0
             && snapshot.structural_score >= 50.0
@@ -1010,7 +1137,7 @@ fn build_posture_guidance(
         || actionability.is_some_and(|scores| {
             scores.prepare >= 0.38
                 && (snapshot.structural_score >= 50.0 || external_shock_score >= 50.0)
-        });
+        }));
 
     let base_posture = if defend_signal {
         DecisionPosture::Defend
@@ -2162,4 +2289,127 @@ fn round6(value: f64) -> f64 {
 fn round_option(value: Option<f64>, decimals: i32) -> Option<f64> {
     let scale = 10_f64.powi(decimals);
     value.map(|value| (value * scale).round() / scale)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        actionability_confidence_from_probability, fuse_actionability_confidence,
+        ProbabilityActionThresholds,
+    };
+    use chrono::{NaiveDate, Utc};
+    use fc_domain::{
+        ActionabilityLevel, DataQualitySummary, ProbabilityBlock, QualityGrade, RiskLevel,
+        RiskSnapshot,
+    };
+
+    #[test]
+    fn actionability_confidence_requires_margin_above_decision_threshold() {
+        assert_eq!(actionability_confidence_from_probability(0.05, 0.05), 0.0);
+        assert!(actionability_confidence_from_probability(0.20, 0.05) < 0.05);
+        assert!(actionability_confidence_from_probability(0.55, 0.05) > 0.25);
+    }
+
+    #[test]
+    fn fused_actionability_suppresses_high_confidence_without_context() {
+        let snapshot = RiskSnapshot {
+            as_of_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            overall_score: 33.3,
+            overall_level: RiskLevel::Watch,
+            structural_score: 39.7,
+            trigger_score: 25.4,
+            level_reason: "test".to_string(),
+            dimensions: Vec::new(),
+            top_contributors: Vec::new(),
+            data_quality_summary: DataQualitySummary {
+                overall_score: 91.0,
+                grade: QualityGrade::A,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count: 0,
+            },
+            generated_at: Utc::now(),
+            method_version: "test".to_string(),
+        };
+        let probabilities = ProbabilityBlock {
+            p_5d: 0.005,
+            p_20d: 0.025,
+            p_60d: 0.055,
+        };
+        let thresholds = ProbabilityActionThresholds {
+            prepare_p60d: 0.023,
+            hedge_p20d: 0.008,
+            defend_p5d: 0.005,
+        };
+
+        let prepare = fuse_actionability_confidence(
+            ActionabilityLevel::Prepare,
+            0.954,
+            &probabilities,
+            &snapshot,
+            29.8,
+            thresholds,
+        );
+        let hedge = fuse_actionability_confidence(
+            ActionabilityLevel::Hedge,
+            0.812,
+            &probabilities,
+            &snapshot,
+            29.8,
+            thresholds,
+        );
+
+        assert!(prepare < 0.10);
+        assert!(hedge < 0.10);
+    }
+
+    #[test]
+    fn fused_actionability_preserves_supported_prepare_context() {
+        let snapshot = RiskSnapshot {
+            as_of_date: NaiveDate::from_ymd_opt(2020, 2, 20).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            overall_score: 61.0,
+            overall_level: RiskLevel::Stress,
+            structural_score: 58.0,
+            trigger_score: 54.0,
+            level_reason: "test".to_string(),
+            dimensions: Vec::new(),
+            top_contributors: Vec::new(),
+            data_quality_summary: DataQualitySummary {
+                overall_score: 91.0,
+                grade: QualityGrade::A,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count: 0,
+            },
+            generated_at: Utc::now(),
+            method_version: "test".to_string(),
+        };
+        let probabilities = ProbabilityBlock {
+            p_5d: 0.018,
+            p_20d: 0.052,
+            p_60d: 0.118,
+        };
+        let thresholds = ProbabilityActionThresholds {
+            prepare_p60d: 0.023,
+            hedge_p20d: 0.008,
+            defend_p5d: 0.005,
+        };
+
+        let prepare = fuse_actionability_confidence(
+            ActionabilityLevel::Prepare,
+            0.82,
+            &probabilities,
+            &snapshot,
+            52.0,
+            thresholds,
+        );
+
+        assert!(prepare > 0.35);
+    }
 }

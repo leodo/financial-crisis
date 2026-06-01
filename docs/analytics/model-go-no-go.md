@@ -402,6 +402,44 @@ No-Go for replacing transitional baseline
 - 以后就算某个候选版 runtime 护栏勉强没退化，只要动作头评估还是“单场景 + 零命中”，也不允许把它说成正式可晋升候选；
 - `actionability` 现在已经从“页面上多显示几个数”升级成了真正参与 Go/No-Go 的对象。
 
+### 7.6 2026-06-01 formal main `scensplit4` 继续复核：问题已收敛到标签 / regime 口径
+
+在 `formal_v1_main_1990_daily:20260601Tscensplit4` 这条线上，本轮继续做了三类修正：
+
+1. `20d / 60d` 主概率头允许在“raw ranking 明显反向”时保留负 `alpha` 校准，而不是一律丢弃；
+2. 动态阈值允许落到 `1%` 以下，但把 `5d` 重新收回保守底线，避免短端阈值被放得过低；
+3. API runtime 对 `actionability` 增加了 `probability + structural/trigger context` 融合门控，不再只看动作头自己的 margin。
+
+对应候选版：
+
+- `us_formal_pit_scensplit4negcal2_20260601T041308`
+- `us_formal_pit_scensplit4negcal3_20260601T043828`
+
+复核结论仍然是否决，而且结论已经足够清晰：
+
+- `negcal2` 激活护栏结果：
+  - `timely_warning_rate`: `37.5% -> 25.0%`
+  - `actionable_precision`: `29.6% -> 9.1%`
+  - `longest_false_positive_episode_days`: `9 -> 128`
+- `negcal3`（仅把 `5d` 阈值收回）激活护栏结果：
+  - `actionable_precision`: `29.6% -> 10.1%`
+  - `longest_false_positive_episode_days`: `9 -> 288`
+  - 依然触发自动回滚
+
+这里最关键的新发现不是“阈值还没调好”，而是：
+
+- `20d / 60d` raw 主模型在 calibration / evaluation 上确实存在**反向排序**；
+- 这不是纯 serving bug，而是 `forward_crisis` 标签把大量“危机已发生 / 危机余震期”的高压样本记成了负样本；
+- 因此模型会学到“高压 != 即将发生危机”，随后只能靠负 `alpha` 校准去补救；
+- serving 层再怎么加阈值和融合门控，也只能局部止血，不能从根上修复。
+
+所以这条主线下一步不应继续只做 runtime 微调，而应直接进入：
+
+1. 给 formal dataset / training row 增加明确的 `regime` 标记（至少区分 `pre-crisis / in-crisis / post-crisis cooldown / normal`）；
+2. 对 `forward_crisis` 主概率头重新定义负样本口径，至少不要再把危机已发生后的高压区间按普通负样本等权训练；
+3. 重跑 `scensplit4` 或新的 scenario-aware split，再复核 `20d / 60d` 是否还需要负 `alpha` 才能工作；
+4. 只有在这一步成立后，后续的 threshold / actionability fusion 微调才值得继续投入。
+
 ## 8. 准入清单
 
 发布前至少勾选：
@@ -467,6 +505,46 @@ No-Go for replacing transitional baseline
 4. 再生成正式 dataset
 5. 再把 `rolling audit` 从 persisted snapshot bridge 切到 raw PIT history
 6. 最后才是“是否允许正式模型替代启发式”
+
+### 7.7 2026-06-01 `regime-aware + actionability quality gate` 复核：动作头不是主因
+
+在 `scensplit4` 主线上又做了一轮更激进的治理：
+
+1. 给 training row 增加 `ProbabilityTrainingRegime`，并对 `forward_crisis` 主概率头按 `pre-warning / in-crisis / cooldown / normal` 重加权；
+2. 给 `actionability` 头加入精度 / 预测量质量门，质量不过线就直接不打进 bundle；
+3. API runtime 对 formal main 增加更保守的 posture floor，不再把训练出的极低分类阈值直接当线上动作阈值。
+
+对应候选版：
+
+- `us_formal_pit_scensplit4regime1_20260601T052013`
+- `us_formal_pit_scensplit4regime4_20260601T055211`
+
+这轮的关键结论是：
+
+- `regime1` 虽然把 `timely_warning_rate` 拉到 `75.0%`，但 `actionable_precision` 只有 `10.1%`，`longest_false_positive_episode_days` 直接拉到 `288` 天；
+- 给 `actionability` 头加独立质量门后，worker 已经会自动输出：
+  - `precision below required floor`
+  - `predicted positives exceed ceiling`
+  - 并把动作头从 bundle 里剔除；
+- 即便动作头被剔除，`regime4` 复核依然不通过：
+  - 在旧 runtime 下：`timely_warning_rate 37.5% -> 75.0%`，但 `actionable_precision 29.6% -> 10.1%`
+  - 在更保守 runtime floor 下：`timely_warning_rate 25.0% -> 50.0%`，但 `actionable_precision 21.1% -> 9.8%`
+  - `longest_false_positive_episode_days` 仍然维持 `288`
+
+因此当前可以明确排除一个误区：
+
+- **不是独立动作头把 release 搞坏了；**
+- 即便完全回退到 `probability-context fusion`，formal main 主概率头仍会在若干年份拉出超长 `prepare / hedge` 误报段；
+- runtime floor 只能把 `timely_warning_rate` 压下来，但没有把长误报段真正消掉。
+
+现阶段最重要的工程结论：
+
+1. `actionability` 头可以保留为实验项，但默认必须走质量门，不得再无条件写入正式 bundle；
+2. formal main 下一步不应继续主要投入在动作头阈值，而应回到主概率头本身：
+   - 重新审视 `forward_crisis` 标签边界；
+   - 增补更能区分“结构脆弱但未临近危机”和“真正进入离场窗口”的特征；
+   - 把 `rolling audit` 的纯误报长段直接纳入训练 / 选阈 / 选模目标；
+3. 在主概率头没有把 `288` 天这类长误报段打掉之前，formal main 仍然只能算研究候选，不具备替代当前 active release 的资格。
 
 ## 12. 结论
 

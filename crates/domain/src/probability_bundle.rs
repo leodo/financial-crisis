@@ -81,6 +81,8 @@ pub struct ProbabilityBundle {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProbabilityHorizonBundle {
     pub horizon_days: u32,
+    #[serde(default)]
+    pub decision_threshold: Option<f64>,
     pub raw_model: LogisticProbabilityModel,
     pub calibration: Option<PlattCalibrationArtifact>,
     pub evaluation: HorizonEvaluationSummary,
@@ -108,9 +110,15 @@ pub struct ActionabilityLevelBundle {
     pub level: ActionabilityLevel,
     pub proxy_horizon_days: u32,
     pub target_label_mode: String,
+    #[serde(default = "default_actionability_decision_threshold")]
+    pub decision_threshold: f64,
     pub raw_model: LogisticProbabilityModel,
     pub calibration: Option<PlattCalibrationArtifact>,
     pub evaluation: HorizonEvaluationSummary,
+}
+
+fn default_actionability_decision_threshold() -> f64 {
+    0.3
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
