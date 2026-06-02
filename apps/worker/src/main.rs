@@ -12,16 +12,17 @@ mod reporting;
 use anyhow::{bail, Context};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
 use fc_domain::{
-    embedded_protected_stress_window_catalog, load_crisis_scenario_catalog,
-    probability_feature_names_for_transform, resolve_probability_feature_value,
-    ActionEpisodeTemplateId, ActionabilityBundle, ActionabilityEvaluationSummary,
-    ActionabilityLevel, ActionabilityLevelBundle, AssessmentHistoryPoint, AssessmentMethodVersions,
-    AssessmentSnapshot, BacktestScenarioSummary, CrisisScenarioActionEpisodeOverrides,
-    FeatureSnapshotRecord, FormalDatasetManifest, FormalDatasetRecord, FormalDatasetRowRecord,
-    Frequency, HorizonEvaluationSummary, Indicator, IndicatorRisk, LogisticProbabilityModel,
-    ModelReleaseManifest, ModelReleaseRecord, Observation, PlattCalibrationArtifact,
-    PredictionSnapshotRecord, ProbabilityBundle, ProbabilityBundleEvaluation,
-    ProbabilityCoefficient, ProbabilityFeatureStat, ProbabilityHorizonBundle,
+    apply_platt_probability_calibration, embedded_protected_stress_window_catalog,
+    load_crisis_scenario_catalog, probability_feature_names_for_transform,
+    resolve_probability_feature_value, ActionEpisodeTemplateId, ActionabilityBundle,
+    ActionabilityEvaluationSummary, ActionabilityLevel, ActionabilityLevelBundle,
+    AssessmentHistoryPoint, AssessmentMethodVersions, AssessmentSnapshot, BacktestScenarioSummary,
+    CrisisScenarioActionEpisodeOverrides, FeatureSnapshotRecord, FormalDatasetManifest,
+    FormalDatasetRecord, FormalDatasetRowRecord, Frequency, HorizonEvaluationSummary, Indicator,
+    IndicatorRisk, LogisticProbabilityModel, ModelReleaseManifest, ModelReleaseRecord, Observation,
+    PlattCalibrationArtifact, PredictionSnapshotRecord, ProbabilityBundle,
+    ProbabilityBundleEvaluation, ProbabilityCoefficient, ProbabilityFeatureStat,
+    ProbabilityHorizonBundle,
     ProbabilityThresholdDecisionSummary as ProbabilityThresholdDecisionSummaryWire,
     ProbabilityThresholdDiagnostics as ProbabilityThresholdDiagnosticsWire,
     ProtectedStressWindowCatalog, RegimeSeparationEvaluationSummary, RiskDimension,
@@ -6124,7 +6125,9 @@ fn select_actionability_calibration_strategy(
 
     let calibration_probabilities = calibration_raw_probabilities
         .iter()
-        .map(|raw_probability| apply_platt_calibration(*raw_probability, &calibration_candidate))
+        .map(|raw_probability| {
+            apply_platt_probability_calibration(*raw_probability, &calibration_candidate)
+        })
         .collect::<Vec<_>>();
     let calibrated_threshold = select_actionability_decision_threshold(
         &calibration_probabilities,
@@ -6148,7 +6151,7 @@ fn select_actionability_calibration_strategy(
         let evaluation_probabilities = evaluation_raw_probabilities
             .iter()
             .map(|raw_probability| {
-                apply_platt_calibration(*raw_probability, &calibration_candidate)
+                apply_platt_probability_calibration(*raw_probability, &calibration_candidate)
             })
             .collect::<Vec<_>>();
         (
@@ -6232,7 +6235,9 @@ fn train_horizon_bundle(
         |calibration| {
             calibration_inputs
                 .iter()
-                .map(|raw_probability| apply_platt_calibration(*raw_probability, calibration))
+                .map(|raw_probability| {
+                    apply_platt_probability_calibration(*raw_probability, calibration)
+                })
                 .collect::<Vec<_>>()
         },
     );
@@ -6440,7 +6445,9 @@ fn select_probability_calibration_strategy(
 
     let calibration_probabilities = calibration_raw_probabilities
         .iter()
-        .map(|raw_probability| apply_platt_calibration(*raw_probability, &calibration_candidate))
+        .map(|raw_probability| {
+            apply_platt_probability_calibration(*raw_probability, &calibration_candidate)
+        })
         .collect::<Vec<_>>();
     let calibrated_summary = evaluate_probabilities(&calibration_probabilities, calibration_labels);
     let calibrated_regime_separation = evaluate_regime_separation_summary_refs(
@@ -6463,7 +6470,7 @@ fn select_probability_calibration_strategy(
         let evaluation_probabilities = evaluation_raw_probabilities
             .iter()
             .map(|raw_probability| {
-                apply_platt_calibration(*raw_probability, &calibration_candidate)
+                apply_platt_probability_calibration(*raw_probability, &calibration_candidate)
             })
             .collect::<Vec<_>>();
         (Some(calibration_candidate), evaluation_probabilities)
@@ -8013,11 +8020,6 @@ fn score_logistic_model_for_dataset(
                 .map(|(coefficient, value)| coefficient.weight * value)
                 .sum::<f64>(),
     )
-}
-
-fn apply_platt_calibration(raw_probability: f64, calibration: &PlattCalibrationArtifact) -> f64 {
-    let clipped = raw_probability.clamp(calibration.min_input, calibration.max_input);
-    sigmoid(calibration.alpha * clipped + calibration.beta)
 }
 
 fn evaluate_probabilities(probabilities: &[f64], labels: &[f64]) -> HorizonEvaluationSummary {

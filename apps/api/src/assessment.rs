@@ -3,12 +3,12 @@ use std::{collections::BTreeMap, env};
 use chrono::NaiveDate;
 use chrono::Utc;
 use fc_domain::{
-    resolve_probability_feature_value, ActionabilityBlock, ActionabilityLevel, AlertEvent,
-    AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot, BacktestPerformanceSummary,
-    BacktestRollingAudit, BacktestScenarioSummary, BacktestSignalSource, DataMode, DataTrust,
-    DecisionPosture, EventAssessment, EventConfirmationState, EventSignalSummary, FreshnessStatus,
-    HistoricalAnalog, IndicatorRisk, JpyCarrySnapshot, JpyCarryState, KeyIndicatorStatus,
-    LogisticProbabilityModel, ModelReleaseRecord, Observation, PlattCalibrationArtifact,
+    apply_platt_probability_calibration, score_logistic_probability_model, ActionabilityBlock,
+    ActionabilityLevel, AlertEvent, AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot,
+    BacktestPerformanceSummary, BacktestRollingAudit, BacktestScenarioSummary,
+    BacktestSignalSource, DataMode, DataTrust, DecisionPosture, EventAssessment,
+    EventConfirmationState, EventSignalSummary, FreshnessStatus, HistoricalAnalog, IndicatorRisk,
+    JpyCarrySnapshot, JpyCarryState, KeyIndicatorStatus, ModelReleaseRecord, Observation,
     PositionGuidance, PostureGuidance, ProbabilityBlock, ProbabilityBundle, QualityGrade,
     RiskContributor, RiskDimension, RiskSnapshot, RuntimeMetadata, TimeToRiskBucket,
     UserRiskPreferences, UserRiskProfile, FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW,
@@ -970,9 +970,9 @@ fn score_bundle_horizon(
         .horizons
         .iter()
         .find(|horizon| horizon.horizon_days == horizon_days)?;
-    let raw_probability = score_logistic_model(&horizon.raw_model, features);
+    let raw_probability = score_logistic_probability_model(&horizon.raw_model, features);
     let calibrated_probability = match horizon.calibration.as_ref() {
-        Some(calibration) => apply_platt_calibration(raw_probability, calibration),
+        Some(calibration) => apply_platt_probability_calibration(raw_probability, calibration),
         None => raw_probability,
     };
     Some((raw_probability, calibrated_probability))
@@ -987,9 +987,9 @@ fn score_actionability_level(
         .levels
         .iter()
         .find(|candidate| candidate.level == level)?;
-    let raw_probability = score_logistic_model(&level_bundle.raw_model, features);
+    let raw_probability = score_logistic_probability_model(&level_bundle.raw_model, features);
     let calibrated_probability = match level_bundle.calibration.as_ref() {
-        Some(calibration) => apply_platt_calibration(raw_probability, calibration),
+        Some(calibration) => apply_platt_probability_calibration(raw_probability, calibration),
         None => raw_probability,
     };
     Some(actionability_confidence_from_probability(
@@ -1070,34 +1070,6 @@ fn normalized_probability_support(value: f64, threshold: f64, full: f64) -> f64 
         return f64::from(value >= full);
     }
     ((value - threshold) / (full - threshold)).clamp(0.0, 1.0)
-}
-
-fn score_logistic_model(model: &LogisticProbabilityModel, features: &BTreeMap<String, f64>) -> f64 {
-    let mut linear = model.intercept;
-    for coefficient in &model.coefficients {
-        let stat = model
-            .feature_stats
-            .iter()
-            .find(|stat| stat.name == coefficient.name);
-        let raw_value = resolve_probability_feature_value(&coefficient.name, features)
-            .or_else(|| stat.map(|stat| stat.fill_value))
-            .unwrap_or(0.0);
-        let normalized = stat.map_or(raw_value, |stat| {
-            let std_dev = if stat.std_dev.abs() < 1e-9 {
-                1.0
-            } else {
-                stat.std_dev
-            };
-            (raw_value - stat.mean) / std_dev
-        });
-        linear += normalized * coefficient.weight;
-    }
-    sigmoid(linear)
-}
-
-fn apply_platt_calibration(raw_probability: f64, calibration: &PlattCalibrationArtifact) -> f64 {
-    let clipped = raw_probability.clamp(calibration.min_input, calibration.max_input);
-    sigmoid(calibration.alpha * clipped + calibration.beta)
 }
 
 fn worst_key_indicator_freshness(key_indicators: &[KeyIndicatorStatus]) -> FreshnessStatus {
@@ -2623,10 +2595,6 @@ fn ratio(present: usize, total: usize) -> f64 {
 
 fn scaled_pressure(score: f64, center: f64, width: f64) -> f64 {
     ((score - center) / width).clamp(0.0, 1.0)
-}
-
-fn sigmoid(value: f64) -> f64 {
-    1.0 / (1.0 + (-value).exp())
 }
 
 fn clamp_probability(value: f64) -> f64 {

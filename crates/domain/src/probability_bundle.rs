@@ -143,6 +143,44 @@ pub fn resolve_probability_feature_value(
     }
 }
 
+pub fn score_logistic_probability_model(
+    model: &LogisticProbabilityModel,
+    features: &BTreeMap<String, f64>,
+) -> f64 {
+    let mut linear = model.intercept;
+    for coefficient in &model.coefficients {
+        let stat = model
+            .feature_stats
+            .iter()
+            .find(|stat| stat.name == coefficient.name);
+        let raw_value = resolve_probability_feature_value(&coefficient.name, features)
+            .or_else(|| stat.map(|stat| stat.fill_value))
+            .unwrap_or(0.0);
+        let normalized = stat.map_or(raw_value, |stat| {
+            let std_dev = if stat.std_dev.abs() < 1e-9 {
+                1.0
+            } else {
+                stat.std_dev
+            };
+            (raw_value - stat.mean) / std_dev
+        });
+        linear += normalized * coefficient.weight;
+    }
+    probability_sigmoid(linear)
+}
+
+pub fn apply_platt_probability_calibration(
+    raw_probability: f64,
+    calibration: &PlattCalibrationArtifact,
+) -> f64 {
+    let clipped = raw_probability.clamp(calibration.min_input, calibration.max_input);
+    probability_sigmoid(calibration.alpha * clipped + calibration.beta)
+}
+
+fn probability_sigmoid(value: f64) -> f64 {
+    1.0 / (1.0 + (-value).exp())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProbabilityBundle {
     pub bundle_id: String,
@@ -432,5 +470,61 @@ mod tests {
             resolve_probability_feature_value("tail_abs_pos__us_usdjpy_change_20d__4", &features),
             Some(2.0)
         );
+    }
+
+    #[test]
+    fn shared_probability_scorer_uses_stats_and_fill_values() {
+        let model = LogisticProbabilityModel {
+            intercept: 0.5,
+            feature_transform: PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1.to_string(),
+            feature_stats: vec![
+                ProbabilityFeatureStat {
+                    name: FEATURE_OVERALL_SCORE.to_string(),
+                    mean: 50.0,
+                    std_dev: 10.0,
+                    fill_value: 42.0,
+                },
+                ProbabilityFeatureStat {
+                    name: FEATURE_US_VIX_LEVEL.to_string(),
+                    mean: 20.0,
+                    std_dev: 5.0,
+                    fill_value: 18.0,
+                },
+            ],
+            coefficients: vec![
+                ProbabilityCoefficient {
+                    name: FEATURE_OVERALL_SCORE.to_string(),
+                    weight: 0.4,
+                },
+                ProbabilityCoefficient {
+                    name: FEATURE_US_VIX_LEVEL.to_string(),
+                    weight: 0.2,
+                },
+            ],
+        };
+        let mut features = BTreeMap::new();
+        features.insert(FEATURE_OVERALL_SCORE.to_string(), 60.0);
+
+        let probability = score_logistic_probability_model(&model, &features);
+
+        assert!(probability > 0.69 && probability < 0.70);
+    }
+
+    #[test]
+    fn shared_platt_calibration_clips_to_input_bounds() {
+        let calibration = PlattCalibrationArtifact {
+            alpha: 2.0,
+            beta: -1.0,
+            min_input: 0.2,
+            max_input: 0.8,
+        };
+
+        let below = apply_platt_probability_calibration(0.05, &calibration);
+        let at_min = apply_platt_probability_calibration(0.2, &calibration);
+        let above = apply_platt_probability_calibration(0.95, &calibration);
+        let at_max = apply_platt_probability_calibration(0.8, &calibration);
+
+        assert!((below - at_min).abs() < 1e-12);
+        assert!((above - at_max).abs() < 1e-12);
     }
 }

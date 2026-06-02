@@ -72,6 +72,12 @@
 - [ ] 明确概率数学、特征派生、runtime threshold 诊断哪些属于共享领域逻辑，哪些属于 app-specific glue code。
 - [ ] 为共享逻辑补单元测试，避免训练侧和运行侧未来再次分叉。
 
+当前进展：
+
+- 已把 logistic 概率打分与 `Platt` 校准收敛到 `crates/domain/src/probability_bundle.rs`。
+- `apps/api` 与 `apps/worker` 已开始复用同一套共享概率函数。
+- 观测窗口 / `difference_from_tail` 仍待继续收敛，但涉及 PIT 可见性过滤，下一步需要先划清 generic helper 与 runtime-specific 过滤边界。
+
 ## 4. P2：次级重构项
 
 ### 4.1 Storage
