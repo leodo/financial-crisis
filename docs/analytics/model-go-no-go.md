@@ -902,6 +902,58 @@ release review 的结论也一致：
 2. 用同一套 strict rebuild runtime review 判断表达力增强后，是否终于恢复“危机前数周的可执行提前量”；
 3. 如果仍失败，再进入 family-conditional 的第二阶段设计，而不是继续在同一条低收益路线里循环。
 
+### 7.17 2026-06-02 首版 `interaction_tail_v1` 已证明“模型形态升级有效”，但还没到可上线
+
+按新设计跑出的第一版候选：
+
+- `us_formal_interaction_tail_extmix1_20260602T015347`
+
+训练输入：
+
+- `formal_v1_main_1990_daily:20260601T172759`
+- `formal_v1_ext_stress_1990_daily:20260601T162655`
+- `formal_v1_ext_acute_pre1990:20260601T163102`
+
+先看 bundle evaluation：
+
+- `5d / 20d / 60d` 三个 horizon 全部进入 `usable_early_warning_separation`
+- 这说明 `interaction + tail` 这条线不是空转，模型表达力确实增强了
+
+再看 strict rebuild runtime review：
+
+- `timely_warning_rate: 0.0% -> 10.0%`
+- `actionable_precision: 0.0% -> 63.8%`
+- `longest_false_positive_episode_days: 0 -> 21`
+
+runtime regime 诊断也已经和前一轮明显不同：
+
+- `5d = weak_regime_separation`
+- `20d = usable_early_warning_separation`
+- `60d = usable_early_warning_separation`
+
+这意味着一个非常关键的新结论：
+
+1. `interaction_tail_v1` 已经把问题从“全 regime 都偏冷”推进到了“中长 horizon 已有可用 separation”；
+2. 当前剩余瓶颈不再是“模型完全学不会”，而是：
+   - `5d` 仍然存在明显的 normal leakage
+   - `60d` 正常期与 cooldown 仍偏宽，导致 runtime `prepare` 太常触发
+3. 因此这次 FAIL 不是在否定 `interaction_tail_v1`，而是在告诉我们：
+   - 下一轮应继续沿着 `interaction_tail_v1` 压缩 `5d normal` 与 `60d cooldown/normal`；
+   - 还不到直接跳去 `family_conditional_v1` 的时候
+
+从 review 细项看，当前 candidate 的主要问题是：
+
+- `prepare_p60d` runtime floor 被 bundle threshold 拉到 `68.9%`
+- 历史里 `p_60d>=prepare` 仍命中 `2406` 次
+- `5d normal` 平均概率 `3.9%`，高于 `5d positive_window` 的 `3.8%`
+- 因此虽然 `20d/60d` 已经开始具备“数周级”的可用分离，但短窗与 months bucket 还没有收口到可执行水平
+
+所以这轮最重要的项目判断是：
+
+- **`interaction_tail_v1` 是正确方向，应继续推进**
+- **但它当前仍不能替代默认线上版本**
+- **下一轮应优先修正 `5d normal leakage` 与 `60d/20d runtime overfire`，而不是回头继续做纯权重微调**
+
 ## 12. 结论
 
 从这一步开始，项目里出现“formal bundle”不再自动等于“正式模型”。

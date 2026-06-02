@@ -4583,6 +4583,7 @@ struct ProbabilityTrainingRow {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[allow(dead_code)]
 #[serde(rename_all = "snake_case")]
 enum ProbabilityTargetLabelMode {
     ForwardCrisis,
@@ -7456,8 +7457,8 @@ fn evaluate_regime_separation_summary_refs(
     let in_crisis_lift_vs_normal = lift_vs_baseline(in_crisis_avg, normal_avg);
     let post_crisis_cooldown_lift_vs_normal =
         lift_vs_baseline(post_crisis_cooldown_avg, normal_avg);
-    let positive_window_gap_vs_normal = Some(round6(positive_window_avg - normal_avg));
-    let post_crisis_cooldown_gap_vs_normal = Some(round6(post_crisis_cooldown_avg - normal_avg));
+    let positive_window_gap_vs_normal = round6(positive_window_avg - normal_avg);
+    let post_crisis_cooldown_gap_vs_normal = round6(post_crisis_cooldown_avg - normal_avg);
     let max_non_normal_lift_vs_normal = lift_vs_baseline(max_non_normal_avg, normal_avg);
     let diagnosis = classify_probability_regime_separation(
         horizon_days,
@@ -7466,8 +7467,8 @@ fn evaluate_regime_separation_summary_refs(
         early_warning_lift_vs_normal.unwrap_or_default(),
         in_crisis_lift_vs_normal.unwrap_or_default(),
         post_crisis_cooldown_lift_vs_normal.unwrap_or_default(),
-        positive_window_gap_vs_normal.unwrap_or_default(),
-        post_crisis_cooldown_gap_vs_normal.unwrap_or_default(),
+        positive_window_gap_vs_normal,
+        post_crisis_cooldown_gap_vs_normal,
         max_non_normal_lift_vs_normal.unwrap_or_default(),
     )
     .to_string();
@@ -7495,8 +7496,8 @@ fn evaluate_regime_separation_summary_refs(
         early_warning_lift_vs_normal,
         in_crisis_lift_vs_normal,
         post_crisis_cooldown_lift_vs_normal,
-        positive_window_gap_vs_normal,
-        post_crisis_cooldown_gap_vs_normal,
+        positive_window_gap_vs_normal: Some(positive_window_gap_vs_normal),
+        post_crisis_cooldown_gap_vs_normal: Some(post_crisis_cooldown_gap_vs_normal),
         max_non_normal_lift_vs_normal,
         diagnosis,
     })
@@ -7510,6 +7511,7 @@ fn regime_positive_window_gap_floor(horizon_days: u32) -> f64 {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn classify_probability_regime_separation(
     horizon_days: u32,
     pre_warning_buffer_lift_vs_normal: f64,
@@ -9113,6 +9115,7 @@ fn early_warning_regime_name(horizon_days: u32) -> &'static str {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn classify_regime_separation(
     horizon_days: u32,
     early_warning_raw_lift: f64,
@@ -9446,9 +9449,10 @@ fn compare_probability_guardrails(release: &ModelReleaseRecord) -> anyhow::Resul
 
     let mut regressions = Vec::new();
     if summary.usable_early_warning_horizon_count == 0 {
-        regressions.push(format!(
+        regressions.push(
             "probability head has zero usable early-warning horizons in bundle evaluation"
-        ));
+                .to_string(),
+        );
     }
 
     for horizon in &summary.regime_separation_summaries {

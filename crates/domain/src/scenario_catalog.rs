@@ -325,16 +325,14 @@ fn validate_action_episode_override(
     {
         if primary_start > primary_end {
             return Err(format!(
-                "场景 {} 的 {} action episode override 中 primary_start 晚于 primary_end。",
-                scenario_id, level_name
+                "场景 {scenario_id} 的 {level_name} action episode override 中 primary_start 晚于 primary_end。"
             ));
         }
     }
 
     if override_window.primary_start.is_some() ^ override_window.primary_end.is_some() {
         return Err(format!(
-            "场景 {} 的 {} action episode override 必须同时提供 primary_start 和 primary_end。",
-            scenario_id, level_name
+            "场景 {scenario_id} 的 {level_name} action episode override 必须同时提供 primary_start 和 primary_end。"
         ));
     }
 
@@ -344,8 +342,7 @@ fn validate_action_episode_override(
     ) {
         if late_validation_end < primary_end {
             return Err(format!(
-                "场景 {} 的 {} action episode override 中 late_validation_end 早于 primary_end。",
-                scenario_id, level_name
+                "场景 {scenario_id} 的 {level_name} action episode override 中 late_validation_end 早于 primary_end。"
             ));
         }
     }
@@ -356,8 +353,7 @@ fn validate_action_episode_override(
     ) {
         if cooldown_end < late_validation_end {
             return Err(format!(
-                "场景 {} 的 {} action episode override 中 cooldown_end 早于 late_validation_end。",
-                scenario_id, level_name
+                "场景 {scenario_id} 的 {level_name} action episode override 中 cooldown_end 早于 late_validation_end。"
             ));
         }
     }
