@@ -88,6 +88,7 @@
 当前进展：
 
 - 已新增 `apps/api/src/data_source.rs`，把 `FC_DATA_MODE` 解析、SQLite/Postgres 装载、active release bundle 装配与 API reload 入口依赖的 `AppDataSource` / `AssessmentHistoryBuildMode` 从 `demo.rs` 中拆出。
+- 已新增 `apps/api/src/history_replay.rs`，把 historical replay run 持久化、prediction snapshot cache、history cache key/method version、history point 转换和 release-aware cache refresh 判定从 `demo.rs` 中拆出。
 - `demo.rs` 当前主要收缩为 demo seed、assessment history/backtest 生成、historical replay 缓存与审计辅助逻辑，后续可以继续沿 replay/cache 边界拆分。
 
 ### 3.3 Shared Logic

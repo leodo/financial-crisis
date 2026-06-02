@@ -3,6 +3,7 @@ mod config;
 mod data_source;
 mod demo;
 mod handlers;
+mod history_replay;
 mod state;
 
 use std::sync::Arc;
