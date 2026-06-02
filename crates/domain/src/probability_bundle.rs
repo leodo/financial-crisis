@@ -168,9 +168,58 @@ pub struct ProbabilityHorizonBundle {
     pub horizon_days: u32,
     #[serde(default)]
     pub decision_threshold: Option<f64>,
+    #[serde(default)]
+    pub threshold_diagnostics: Option<ProbabilityThresholdDiagnostics>,
     pub raw_model: LogisticProbabilityModel,
     pub calibration: Option<PlattCalibrationArtifact>,
     pub evaluation: HorizonEvaluationSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbabilityThresholdDiagnostics {
+    pub label_mode: String,
+    pub early_warning_regime: String,
+    pub full_calibration_row_count: usize,
+    pub eligible_row_count: usize,
+    pub eligible_positive_count: usize,
+    pub eligible_negative_count: usize,
+    pub used_full_split_fallback: bool,
+    pub selected_row_count: usize,
+    pub selected_positive_count: usize,
+    pub selected_negative_count: usize,
+    pub base_threshold: f64,
+    pub final_threshold: f64,
+    pub repair_applied: bool,
+    pub repair_eligible: bool,
+    pub repair_reason: String,
+    pub early_warning_probability_cap: Option<f64>,
+    pub prediction_ceiling: Option<u32>,
+    pub relaxed_prediction_ceiling: Option<u32>,
+    pub base_summary: ProbabilityThresholdDecisionSummary,
+    pub final_summary: ProbabilityThresholdDecisionSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbabilityThresholdDecisionSummary {
+    pub predicted_positive_count: u32,
+    pub true_positive_count: u32,
+    pub precision: f64,
+    pub recall: f64,
+    pub early_warning_row_count: u32,
+    pub early_warning_hit_count: u32,
+    pub early_warning_hit_rate: f64,
+    pub normal_row_count: u32,
+    pub normal_hit_count: u32,
+    pub normal_hit_rate: f64,
+    pub positive_window_row_count: u32,
+    pub positive_window_hit_count: u32,
+    pub positive_window_hit_rate: f64,
+    pub in_crisis_row_count: u32,
+    pub in_crisis_hit_count: u32,
+    pub in_crisis_hit_rate: f64,
+    pub cooldown_row_count: u32,
+    pub cooldown_hit_count: u32,
+    pub cooldown_hit_rate: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

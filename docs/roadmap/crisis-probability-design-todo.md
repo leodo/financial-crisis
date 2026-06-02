@@ -269,10 +269,16 @@
    - [ ] 在 `interaction_tail_v1` 上继续压缩 `5d normal leakage`，避免 `5d normal_avg_probability >= positive_window_avg_probability`
    - [ ] 在 `interaction_tail_v1` 上继续压缩 `60d normal / cooldown` months 过宽问题；runtime guard tightening 已把 `months` 从 `1053` 历史点压到 `56`，但 `60d` 仍是 `separated_but_below_runtime_floor`
    - [ ] 复核 `interaction_tail_v1` 的 calibration / decision-threshold 选择是否把 `prepare_p60d` 拉得过高（当前 runtime floor 已到 `73.2%`）
+     - [x] 已导出 `threshold_diagnostics` 到 bundle 元数据，并用 `extmix8/extmix9` 复核 threshold repair 路径
+     - [x] 已确认 `60d` 不是“完全没有 early-warning hit”，而是 calibration split 上 `early_warning_hit_rate=6.0%` 低于 `normal_hit_rate=11.6%`
+     - [x] 已确认 `60d repair_reason=early_warning_lift_below_guardrail`，说明当前 calibration split 的 `pre_warning_buffer` calibrated lift 连 `1.5x` 护栏都没跨过
+     - [ ] 下一步改 `60d calibration evidence` 构造：优先审计 `probability_row_is_calibration_eligible`、split regime mix、`pre_warning_buffer` soft-label / weight
    - [x] 产出 `interaction_tail_extmix2` 并重跑 strict rebuild review；结果是 `actionable_precision` 从 `63.8%` 提到 `65.8%`、`longest_false_positive_episode_days` 从 `21` 降到 `19`，但 `timely_warning_rate` 仍停在 `10.0%`
    - [x] 拆解 `prepare_carry_structural / prepare_p60d_structural / prepare_structural_downgrade` 的 overfire；已确认 `carry` 过宽是 runtime posture 问题，收紧 guard 后 `prepare` 从 `477` 点降到 `30`、`longest_false_positive_episode_days` 降到 `5`
    - [ ] 复盘 `interaction_tail_extmix2` 为什么离线 `5d usable separation` 没有穿透到 runtime，优先看 `5d` label / calibration / posture clause 是否口径错位
    - [ ] 在新的 runtime guard 下重训下一版 `interaction_tail` 候选，目标从“继续压误报”切到“把 `60d pre_warning_buffer` 真正推过 `prepare` floor，并恢复绝对提前量”
+     - [x] `extmix8/extmix9` 已完成，但结论是 threshold repair 仍不足以改变 `60d=0.732`
+     - [ ] 下一版重训前先完成 `60d calibration evidence` 设计与实现，避免重复得到同样阈值
    - [ ] 只有当 `interaction_tail_v1` 连续两轮仍无法提升 `timely_warning_rate` 且无法压下误报段时，再进入 `family_conditional_v1` 细分设计与 PoC
 3. Raw PIT history replay 闭环
    - [x] 新增 historical replay run / point 存储结构

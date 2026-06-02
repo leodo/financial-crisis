@@ -1081,6 +1081,61 @@ runtime 诊断说明两件事：
 - 但当前这批 calibration 样本本身没有给出足够强的下调理由；
 - 所以瓶颈更像是 `split / label / calibration evidence`，而不是下一轮再改一版阈值打分公式。
 
+### 7.21 2026-06-02 `threshold_diagnostics` 证明 `60d` 真正卡在 calibration split 证据，而不是“repair 没有执行”
+
+本轮把 threshold 选择路径完整导出到了 bundle 元数据里，并用新候选：
+
+- `us_formal_interaction_tail_extmix8_20260602T055237`
+- `us_formal_interaction_tail_extmix9_20260602T055725`
+
+拿到了之前看不到的训练侧事实。
+
+`extmix9` 的关键信号如下：
+
+1. `20d` 不是完全没打到 early-warning：
+   - `selected_rows = 10175`
+   - `pre_warning_buffer rows = 116`
+   - `base_threshold = 0.522`
+   - `early_warning_hit_rate = 12.9%`
+   - `normal_hit_rate = 9.8%`
+   - 所以它被诊断成 `base_threshold_has_usable_early_warning_gap`
+2. `60d` 才是核心瓶颈：
+   - `selected_rows = 10015`
+   - `pre_warning_buffer rows = 150`
+   - `base_threshold = 0.732`
+   - `early_warning_probability_cap = 0.876`
+   - `early_warning_hit_rate = 6.0%`
+   - `normal_hit_rate = 11.6%`
+   - `repair_reason = early_warning_lift_below_guardrail`
+3. 这说明：
+   - `60d` 并不是 “repair 逻辑完全没走到”
+   - 而是 calibration split 上，`pre_warning_buffer` 对 `normal` 的 calibrated lift 连 `1.5x` 护栏都没跨过去
+   - 所以 repair 连“允许下调阈值”的资格都拿不到
+
+这句人话就是：
+
+- runtime 的 `prepare_p60d=73.2%` 当然太高；
+- 但训练侧不是不知道这件事；
+- 它在 calibration split 上看到的证据本身，就不足以支持把阈值往下拉。
+
+因此下一步主线已经很明确：
+
+1. 不再继续微调 `select_probability_decision_threshold` 排序规则；
+2. 直接审计 `60d calibration selection`：
+   - `pre_warning_buffer` 是否太少
+   - `protected / positive_window / cooldown` 是否把 calibrated lift 稀释掉
+   - `probability_row_is_calibration_eligible` 是否把真正有用的 `60d` 过渡样本过滤掉
+3. 如果审计成立，优先改：
+   - split / calibration eligibility
+   - `60d pre_warning_buffer` soft-label / sample-weight
+   - 或 threshold selection 显式接入 `pre_warning vs normal` 的命中差，而不是只靠全局正例 precision/recall
+
+结论更新：
+
+- 训练侧 threshold observability 已经补齐；
+- `60d` 当前仍不是“阈值公式层”的问题；
+- 真正的下一刀应当落在 `calibration evidence` 的构造上。
+
 ## 12. 结论
 
 从这一步开始，项目里出现“formal bundle”不再自动等于“正式模型”。

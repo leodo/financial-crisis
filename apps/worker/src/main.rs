@@ -19,6 +19,8 @@ use fc_domain::{
     ModelReleaseManifest, ModelReleaseRecord, Observation, PlattCalibrationArtifact,
     PredictionSnapshotRecord, ProbabilityBundle, ProbabilityBundleEvaluation,
     ProbabilityCoefficient, ProbabilityFeatureStat, ProbabilityHorizonBundle,
+    ProbabilityThresholdDecisionSummary as ProbabilityThresholdDecisionSummaryWire,
+    ProbabilityThresholdDiagnostics as ProbabilityThresholdDiagnosticsWire,
     ProtectedStressWindowCatalog, RegimeSeparationEvaluationSummary, RiskDimension,
     FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER,
     FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
@@ -2273,6 +2275,31 @@ async fn research_pipeline_train_probability(args: &[String]) -> anyhow::Result<
                 format_optional_multiplier(regime.post_crisis_cooldown_lift_vs_normal),
                 format_optional_multiplier(regime.in_crisis_lift_vs_normal),
                 regime.diagnosis,
+            );
+        }
+    }
+    for horizon in &artifacts.bundle.horizons {
+        if let Some(diag) = horizon.threshold_diagnostics.as_ref() {
+            println!(
+                "  threshold_diag   {:>2}d base={:.3} final={:.3} repair={} reason={} selected_rows={} early_rows={}",
+                horizon.horizon_days,
+                diag.base_threshold,
+                diag.final_threshold,
+                diag.repair_applied,
+                diag.repair_reason,
+                diag.selected_row_count,
+                diag.base_summary.early_warning_row_count,
+            );
+            println!(
+                "                   base_hits early={}/{} normal={}/{} final_hits early={}/{} normal={}/{}",
+                diag.base_summary.early_warning_hit_count,
+                diag.base_summary.early_warning_row_count,
+                diag.base_summary.normal_hit_count,
+                diag.base_summary.normal_row_count,
+                diag.final_summary.early_warning_hit_count,
+                diag.final_summary.early_warning_row_count,
+                diag.final_summary.normal_hit_count,
+                diag.final_summary.normal_row_count,
             );
         }
     }
@@ -4699,6 +4726,36 @@ struct PipelineEvaluationReport {
     summary: Option<ProbabilityBundleEvaluation>,
 }
 
+#[derive(Debug, Clone)]
+struct ProbabilityCalibrationSelection<'a> {
+    rows: Vec<&'a ProbabilityTrainingRow>,
+    eligible_row_count: usize,
+    eligible_positive_count: usize,
+    eligible_negative_count: usize,
+    used_full_split_fallback: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ProbabilityThresholdDecisionMetrics {
+    regime_hits: ProbabilityThresholdRegimeHitSummary,
+    predicted_positive_count: u32,
+    true_positive_count: u32,
+    precision: f64,
+    recall: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProbabilityThresholdDiagnosticsInput<'a> {
+    full_calibration_rows: &'a [ProbabilityTrainingRow],
+    selection: &'a ProbabilityCalibrationSelection<'a>,
+    probabilities: &'a [f64],
+    labels: &'a [f64],
+    horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
+    base_threshold: f64,
+    final_threshold: f64,
+}
+
 async fn load_prediction_snapshots(
     store: &SqliteStore,
     options: &PredictionSnapshotQueryOptions,
@@ -6119,13 +6176,15 @@ fn train_horizon_bundle(
     ensure_positive_labels(evaluation_rows, horizon_days, "evaluation", label_mode)?;
 
     let raw_model = fit_logistic_model(train_rows, feature_names, horizon_days, label_mode);
-    let calibration_selection_rows =
+    let calibration_selection =
         probability_calibration_selection_rows(calibration_rows, horizon_days, label_mode);
-    let calibration_inputs = calibration_selection_rows
+    let calibration_inputs = calibration_selection
+        .rows
         .iter()
         .map(|row| score_logistic_model_for_dataset(&raw_model, row))
         .collect::<Vec<_>>();
-    let calibration_labels = calibration_selection_rows
+    let calibration_labels = calibration_selection
+        .rows
         .iter()
         .map(|row| row.label_for_horizon(label_mode, horizon_days))
         .collect::<Vec<_>>();
@@ -6137,7 +6196,7 @@ fn train_horizon_bundle(
     let (calibration, evaluation_probabilities) = select_probability_calibration_strategy(
         &calibration_inputs,
         &calibration_labels,
-        &calibration_selection_rows,
+        &calibration_selection.rows,
         horizon_days,
         label_mode,
         &evaluation_raw_probabilities,
@@ -6152,19 +6211,30 @@ fn train_horizon_bundle(
                 .collect::<Vec<_>>()
         },
     );
-    let decision_threshold = select_probability_decision_threshold(
+    let base_decision_threshold = select_probability_decision_threshold(
         &calibration_decision_probabilities,
         &calibration_labels,
         horizon_days,
     );
     let decision_threshold = adjust_probability_decision_threshold_for_regime_support(
-        decision_threshold,
+        base_decision_threshold,
         &calibration_decision_probabilities,
         &calibration_labels,
-        &calibration_selection_rows,
+        &calibration_selection.rows,
         horizon_days,
         label_mode,
     );
+    let threshold_diagnostics =
+        build_probability_threshold_diagnostics(ProbabilityThresholdDiagnosticsInput {
+            full_calibration_rows: calibration_rows,
+            selection: &calibration_selection,
+            probabilities: &calibration_decision_probabilities,
+            labels: &calibration_labels,
+            horizon_days,
+            label_mode,
+            base_threshold: base_decision_threshold,
+            final_threshold: decision_threshold,
+        });
     let evaluation = evaluate_probabilities_for_rows(
         &evaluation_probabilities,
         evaluation_rows,
@@ -6175,6 +6245,7 @@ fn train_horizon_bundle(
     Ok(ProbabilityHorizonBundle {
         horizon_days,
         decision_threshold: Some(decision_threshold),
+        threshold_diagnostics: Some(threshold_diagnostics),
         raw_model,
         calibration,
         evaluation,
@@ -6185,7 +6256,7 @@ fn probability_calibration_selection_rows(
     rows: &[ProbabilityTrainingRow],
     horizon_days: u32,
     label_mode: ProbabilityTargetLabelMode,
-) -> Vec<&ProbabilityTrainingRow> {
+) -> ProbabilityCalibrationSelection<'_> {
     let filtered = rows
         .iter()
         .filter(|row| probability_row_is_calibration_eligible(row, horizon_days, label_mode))
@@ -6198,9 +6269,21 @@ fn probability_calibration_selection_rows(
     let filtered_negative_count = filtered.len().saturating_sub(filtered_positive_count);
 
     if filtered_positive_count > 0 && filtered_negative_count > 0 {
-        filtered
+        ProbabilityCalibrationSelection {
+            rows: filtered,
+            eligible_row_count: filtered_positive_count + filtered_negative_count,
+            eligible_positive_count: filtered_positive_count,
+            eligible_negative_count: filtered_negative_count,
+            used_full_split_fallback: false,
+        }
     } else {
-        rows.iter().collect()
+        ProbabilityCalibrationSelection {
+            rows: rows.iter().collect(),
+            eligible_row_count: filtered_positive_count + filtered_negative_count,
+            eligible_positive_count: filtered_positive_count,
+            eligible_negative_count: filtered_negative_count,
+            used_full_split_fallback: true,
+        }
     }
 }
 
@@ -6555,17 +6638,21 @@ impl ProbabilityThresholdRegimeHitSummary {
     }
 }
 
+fn probability_early_warning_regime(horizon_days: u32) -> ProbabilityTrainingRegime {
+    match horizon_days {
+        5 => ProbabilityTrainingRegime::PositiveWindow,
+        20 | 60 => ProbabilityTrainingRegime::PreWarningBuffer,
+        _ => ProbabilityTrainingRegime::PositiveWindow,
+    }
+}
+
 fn probability_threshold_regime_hit_summary(
     probabilities: &[f64],
     rows: &[&ProbabilityTrainingRow],
     horizon_days: u32,
     threshold: f64,
 ) -> ProbabilityThresholdRegimeHitSummary {
-    let early_warning_regime = match horizon_days {
-        5 => ProbabilityTrainingRegime::PositiveWindow,
-        20 | 60 => ProbabilityTrainingRegime::PreWarningBuffer,
-        _ => ProbabilityTrainingRegime::PositiveWindow,
-    };
+    let early_warning_regime = probability_early_warning_regime(horizon_days);
 
     let mut summary = ProbabilityThresholdRegimeHitSummary::default();
     for (probability, row) in probabilities.iter().zip(rows.iter().copied()) {
@@ -6631,6 +6718,24 @@ fn regime_floor_min_hit_rate(horizon_days: u32) -> f64 {
     }
 }
 
+fn regime_floor_min_gap_vs_normal(horizon_days: u32) -> f64 {
+    match horizon_days {
+        60 => 0.02,
+        20 => 0.01,
+        _ => 0.0,
+    }
+}
+
+fn threshold_has_usable_early_warning_support(
+    hits: ProbabilityThresholdRegimeHitSummary,
+    horizon_days: u32,
+) -> bool {
+    hits.early_warning_hit_count > 0
+        && hits.early_warning_hit_rate() >= regime_floor_min_hit_rate(horizon_days)
+        && (hits.early_warning_hit_rate() - hits.normal_hit_rate())
+            >= regime_floor_min_gap_vs_normal(horizon_days)
+}
+
 fn adjust_probability_decision_threshold_for_regime_support(
     base_threshold: f64,
     probabilities: &[f64],
@@ -6656,7 +6761,7 @@ fn adjust_probability_decision_threshold_for_regime_support(
 
     let base_hits =
         probability_threshold_regime_hit_summary(probabilities, rows, horizon_days, base_threshold);
-    if base_hits.early_warning_hit_count > 0 {
+    if threshold_has_usable_early_warning_support(base_hits, horizon_days) {
         return base_threshold;
     }
     if regime_summary
@@ -6673,11 +6778,7 @@ fn adjust_probability_decision_threshold_for_regime_support(
         return base_threshold;
     }
 
-    let early_warning_regime = match horizon_days {
-        5 => ProbabilityTrainingRegime::PositiveWindow,
-        20 | 60 => ProbabilityTrainingRegime::PreWarningBuffer,
-        _ => ProbabilityTrainingRegime::PositiveWindow,
-    };
+    let early_warning_regime = probability_early_warning_regime(horizon_days);
     let early_warning_probability_cap = probabilities
         .iter()
         .zip(rows.iter().copied())
@@ -6752,6 +6853,173 @@ fn adjust_probability_decision_threshold_for_regime_support(
         };
 
     round3(repaired_threshold).clamp(0.005, base_threshold)
+}
+
+fn probability_threshold_decision_metrics(
+    probabilities: &[f64],
+    labels: &[f64],
+    rows: &[&ProbabilityTrainingRow],
+    horizon_days: u32,
+    threshold: f64,
+) -> ProbabilityThresholdDecisionMetrics {
+    let regime_hits =
+        probability_threshold_regime_hit_summary(probabilities, rows, horizon_days, threshold);
+    let mut predicted_positive_count = 0_u32;
+    let mut true_positive_count = 0_u32;
+    let positive_count = labels.iter().filter(|label| **label >= 0.5).count() as f64;
+
+    for (probability, label) in probabilities.iter().zip(labels) {
+        if *probability >= threshold {
+            predicted_positive_count += 1;
+            if *label >= 0.5 {
+                true_positive_count += 1;
+            }
+        }
+    }
+
+    ProbabilityThresholdDecisionMetrics {
+        regime_hits,
+        predicted_positive_count,
+        true_positive_count,
+        precision: safe_divide(true_positive_count as f64, predicted_positive_count as f64),
+        recall: safe_divide(true_positive_count as f64, positive_count),
+    }
+}
+
+fn probability_threshold_decision_summary_wire(
+    metrics: ProbabilityThresholdDecisionMetrics,
+) -> ProbabilityThresholdDecisionSummaryWire {
+    ProbabilityThresholdDecisionSummaryWire {
+        predicted_positive_count: metrics.predicted_positive_count,
+        true_positive_count: metrics.true_positive_count,
+        precision: round3(metrics.precision),
+        recall: round3(metrics.recall),
+        early_warning_row_count: metrics.regime_hits.early_warning_row_count,
+        early_warning_hit_count: metrics.regime_hits.early_warning_hit_count,
+        early_warning_hit_rate: round3(metrics.regime_hits.early_warning_hit_rate()),
+        normal_row_count: metrics.regime_hits.normal_row_count,
+        normal_hit_count: metrics.regime_hits.normal_hit_count,
+        normal_hit_rate: round3(metrics.regime_hits.normal_hit_rate()),
+        positive_window_row_count: metrics.regime_hits.positive_window_row_count,
+        positive_window_hit_count: metrics.regime_hits.positive_window_hit_count,
+        positive_window_hit_rate: round3(metrics.regime_hits.positive_window_hit_rate()),
+        in_crisis_row_count: metrics.regime_hits.in_crisis_row_count,
+        in_crisis_hit_count: metrics.regime_hits.in_crisis_hit_count,
+        in_crisis_hit_rate: round3(metrics.regime_hits.in_crisis_hit_rate()),
+        cooldown_row_count: metrics.regime_hits.cooldown_row_count,
+        cooldown_hit_count: metrics.regime_hits.cooldown_hit_count,
+        cooldown_hit_rate: round3(metrics.regime_hits.cooldown_hit_rate()),
+    }
+}
+
+fn build_probability_threshold_diagnostics(
+    input: ProbabilityThresholdDiagnosticsInput<'_>,
+) -> ProbabilityThresholdDiagnosticsWire {
+    let ProbabilityThresholdDiagnosticsInput {
+        full_calibration_rows,
+        selection,
+        probabilities,
+        labels,
+        horizon_days,
+        label_mode,
+        base_threshold,
+        final_threshold,
+    } = input;
+    let early_warning_regime = probability_early_warning_regime(horizon_days);
+    let selected_positive_count = labels.iter().filter(|label| **label >= 0.5).count();
+    let selected_negative_count = labels.len().saturating_sub(selected_positive_count);
+    let actual_positive_count = selected_positive_count as u32;
+    let prediction_ceiling = (actual_positive_count > 0).then(|| {
+        probability_prediction_count_ceiling_from_actual_positive_count(
+            actual_positive_count,
+            horizon_days,
+        )
+    });
+    let relaxed_prediction_ceiling = (label_mode == ProbabilityTargetLabelMode::ForwardCrisis
+        && matches!(horizon_days, 20 | 60)
+        && actual_positive_count > 0)
+        .then(|| regime_aware_threshold_prediction_ceiling(actual_positive_count, horizon_days));
+    let early_warning_probability_cap = probabilities
+        .iter()
+        .zip(selection.rows.iter().copied())
+        .filter(|(_, row)| row.regime_for_horizon(horizon_days) == early_warning_regime)
+        .map(|(probability, _)| *probability)
+        .max_by(f64::total_cmp);
+    let base_metrics = probability_threshold_decision_metrics(
+        probabilities,
+        labels,
+        &selection.rows,
+        horizon_days,
+        base_threshold,
+    );
+    let final_metrics = probability_threshold_decision_metrics(
+        probabilities,
+        labels,
+        &selection.rows,
+        horizon_days,
+        final_threshold,
+    );
+    let regime_summary = evaluate_regime_separation_summary_refs(
+        probabilities,
+        &selection.rows,
+        horizon_days,
+        label_mode,
+    );
+    let repair_eligible = label_mode == ProbabilityTargetLabelMode::ForwardCrisis
+        && matches!(horizon_days, 20 | 60)
+        && !probabilities.is_empty()
+        && !selection.rows.is_empty()
+        && probabilities.len() == selection.rows.len();
+    let repair_applied = (final_threshold - base_threshold).abs() >= 0.000_5;
+    let repair_reason = if !repair_eligible {
+        "not_applicable".to_string()
+    } else if base_metrics.regime_hits.early_warning_row_count == 0 {
+        "no_early_warning_rows".to_string()
+    } else if threshold_has_usable_early_warning_support(base_metrics.regime_hits, horizon_days) {
+        "base_threshold_has_usable_early_warning_gap".to_string()
+    } else if regime_summary
+        .as_ref()
+        .and_then(|summary| summary.early_warning_lift_vs_normal)
+        .unwrap_or_default()
+        < 1.5
+    {
+        "early_warning_lift_below_guardrail".to_string()
+    } else if base_metrics.regime_hits.early_warning_hit_count > 0 {
+        "base_hits_early_warning_but_gap_is_too_weak".to_string()
+    } else if actual_positive_count == 0 {
+        "no_positive_labels".to_string()
+    } else if !repair_applied {
+        "repair_considered_but_no_better_candidate".to_string()
+    } else if early_warning_probability_cap
+        .is_some_and(|cap| cap < base_threshold && (final_threshold - cap).abs() < 0.000_5)
+    {
+        "repaired_to_early_warning_cap".to_string()
+    } else {
+        "repaired_to_regime_support_candidate".to_string()
+    };
+
+    ProbabilityThresholdDiagnosticsWire {
+        label_mode: label_mode.as_str().to_string(),
+        early_warning_regime: probability_training_regime_name(early_warning_regime).to_string(),
+        full_calibration_row_count: full_calibration_rows.len(),
+        eligible_row_count: selection.eligible_row_count,
+        eligible_positive_count: selection.eligible_positive_count,
+        eligible_negative_count: selection.eligible_negative_count,
+        used_full_split_fallback: selection.used_full_split_fallback,
+        selected_row_count: selection.rows.len(),
+        selected_positive_count,
+        selected_negative_count,
+        base_threshold: round3(base_threshold),
+        final_threshold: round3(final_threshold),
+        repair_applied,
+        repair_eligible,
+        repair_reason,
+        early_warning_probability_cap: early_warning_probability_cap.map(round3),
+        prediction_ceiling,
+        relaxed_prediction_ceiling,
+        base_summary: probability_threshold_decision_summary_wire(base_metrics),
+        final_summary: probability_threshold_decision_summary_wire(final_metrics),
+    }
 }
 
 fn probability_prediction_count_ceiling_from_actual_positive_count(
@@ -11567,13 +11835,13 @@ mod tests {
     use super::{
         action_window_label, actionability_bundle_quality_regressions,
         adjust_probability_decision_threshold_for_regime_support,
-        classify_probability_regime_separation, classify_regime_separation,
-        compare_actionability_guardrails, compare_probability_guardrails,
-        evaluate_actionability_summary, fit_platt_calibration, formal_dataset_split_requirements,
-        forward_crisis_label, forward_crisis_regime_pairwise_targets,
-        forward_crisis_regime_sample_weight, forward_crisis_training_regime,
-        forward_crisis_training_regime_with_context, negative_sample_weight,
-        observation_is_visible_for_date, positive_sample_action_weight,
+        build_probability_threshold_diagnostics, classify_probability_regime_separation,
+        classify_regime_separation, compare_actionability_guardrails,
+        compare_probability_guardrails, evaluate_actionability_summary, fit_platt_calibration,
+        formal_dataset_split_requirements, forward_crisis_label,
+        forward_crisis_regime_pairwise_targets, forward_crisis_regime_sample_weight,
+        forward_crisis_training_regime, forward_crisis_training_regime_with_context,
+        negative_sample_weight, observation_is_visible_for_date, positive_sample_action_weight,
         probability_calibration_selection_rows, round3, scenario_aware_formal_split_bounds,
         scenario_count_for_index_range, select_actionability_calibration_strategy,
         select_actionability_decision_threshold, select_probability_calibration_strategy,
@@ -11582,10 +11850,10 @@ mod tests {
         CrisisScenario, FeatureSnapshotBuildOptions, FormalDatasetBuildOptions,
         FormalDatasetSummaryOptions, FormalSplitLabelSupport, PipelineDatasetSource,
         PipelineTrainOptions, PointInTimeMode, PredictionSnapshotQueryOptions,
-        ProbabilityModelShape, ProbabilityTargetLabelMode, ProbabilityTrainingRegime,
-        ProbabilityTrainingRow, RefreshLatestOptions, ReleaseActionabilityLevelReview,
-        ReleaseActionabilityReview, ReleasePublishOptions, ReleaseReviewOptions,
-        ReleaseSwitchOptions, ScenarioRowRange,
+        ProbabilityCalibrationSelection, ProbabilityModelShape, ProbabilityTargetLabelMode,
+        ProbabilityThresholdDiagnosticsInput, ProbabilityTrainingRegime, ProbabilityTrainingRow,
+        RefreshLatestOptions, ReleaseActionabilityLevelReview, ReleaseActionabilityReview,
+        ReleasePublishOptions, ReleaseReviewOptions, ReleaseSwitchOptions, ScenarioRowRange,
     };
 
     fn observation(
@@ -12507,9 +12775,11 @@ mod tests {
             20,
             ProbabilityTargetLabelMode::ForwardCrisis,
         );
-        assert_eq!(selection.len(), 4);
+        assert_eq!(selection.rows.len(), 4);
+        assert!(!selection.used_full_split_fallback);
         assert_eq!(
             selection
+                .rows
                 .iter()
                 .filter(|row| {
                     row.label_20d > 0
@@ -13584,11 +13854,18 @@ mod tests {
             build_row(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
         ];
         let row_refs = rows.iter().collect::<Vec<_>>();
-        let probabilities = vec![0.95, 0.91, 0.84, 0.80, 0.58, 0.56, 0.54, 0.48, 0.40, 0.18];
+        let probabilities = vec![0.95, 0.91, 0.84, 0.80, 0.58, 0.56, 0.22, 0.18, 0.14, 0.10];
         let labels = rows
             .iter()
             .map(|row| row.label_60d as f64)
             .collect::<Vec<_>>();
+        let selection = ProbabilityCalibrationSelection {
+            rows: row_refs.clone(),
+            eligible_row_count: row_refs.len(),
+            eligible_positive_count: labels.iter().filter(|label| **label >= 0.5).count(),
+            eligible_negative_count: labels.iter().filter(|label| **label < 0.5).count(),
+            used_full_split_fallback: false,
+        };
 
         let base_threshold = select_probability_decision_threshold(&probabilities, &labels, 60);
         let adjusted_threshold = adjust_probability_decision_threshold_for_regime_support(
@@ -13599,9 +13876,27 @@ mod tests {
             60,
             ProbabilityTargetLabelMode::ForwardCrisis,
         );
+        let diagnostics =
+            build_probability_threshold_diagnostics(ProbabilityThresholdDiagnosticsInput {
+                full_calibration_rows: &rows,
+                selection: &selection,
+                probabilities: &probabilities,
+                labels: &labels,
+                horizon_days: 60,
+                label_mode: ProbabilityTargetLabelMode::ForwardCrisis,
+                base_threshold,
+                final_threshold: adjusted_threshold,
+            });
 
         assert!(base_threshold > 0.58);
         assert!(adjusted_threshold <= base_threshold);
+        assert!(diagnostics.repair_applied);
+        assert!(matches!(
+            diagnostics.repair_reason.as_str(),
+            "repaired_to_early_warning_cap" | "repaired_to_regime_support_candidate"
+        ));
+        assert_eq!(diagnostics.base_summary.early_warning_hit_count, 0);
+        assert!(diagnostics.final_summary.early_warning_hit_count > 0);
     }
 
     #[test]
