@@ -993,6 +993,54 @@ runtime 诊断说明两件事：
 - 继续优化 `interaction_tail_v1` 本身的 `5d` 与 `60d cooldown/normal` 形态；
 - 同时审计 runtime `prepare` clause，避免结构性高压阶段被过宽地推入 months posture。
 
+### 7.19 2026-06-02 收紧 runtime `prepare` guard 后，`extmix2` 已接近新的 `active_experimental` 基线
+
+针对上一轮 `extmix2` review 暴露出来的 runtime 问题，本轮先没有继续训练新模型，而是先收紧了 serving 侧的 `prepare` / `months` 判定：
+
+- `prepare` 不再允许“单个 structural / external / carry 信号”直接升级；
+- `prepare_external_structural` 现在要求 `p_20d` 概率伴随确认；
+- `prepare_carry_structural` 现在要求 `stressed_carry + non-carry confirmation`；
+- `prepare_actionability` 现在要求 `p_60d` 同行确认；
+- `time_to_risk_bucket=months` 也同步切到“概率 + 多重上下文确认”。
+
+在重启 API 并按新 runtime policy 重新跑 `strict rebuild review` 后，`us_formal_interaction_tail_extmix2_20260602T022315` 的结果发生了明显变化：
+
+- `timely_warning_rate` 仍是 `10.0%`
+- `actionable_precision` 从 `65.8%` 回落到 `51.9%`
+- `longest_false_positive_episode_days` 从 `19` 进一步压到 `5`
+
+更关键的是 posture / bucket 分布出现了真正的收口：
+
+- `prepare` posture 从 `477` 个历史点降到 `30`
+- `months` bucket 从 `1053` 个历史点降到 `56`
+- `prepare_carry_structural` 已经不再成为主要触发项
+- 剩余 `prepare` 主要来自：
+  - `prepare_p60d_structural`（`23`）
+  - `prepare_structural_downgrade`（`9`）
+
+对应的 runtime 诊断也变了：
+
+- `5d=usable_early_warning_separation`
+- `20d=usable_early_warning_separation`
+- `60d=separated_but_below_runtime_floor`
+
+这说明本轮修正已经把问题进一步收敛清楚：
+
+1. 之前 `extmix2` 的大块 months/prepare 误报，确实有一部分是 runtime clause 过宽；
+2. 收紧 guard 后，`carry` 主导的伪 `prepare` 基本被切掉了；
+3. 但绝对提前量仍停在 `10.0%`，说明剩余瓶颈已经更集中地落在：
+   - `5d` 仍不够稳定；
+   - `60d pre_warning_buffer` 虽有 separation，但还穿不过 `prepare_p60d=73.2%` 的 runtime floor。
+
+因此当前更准确的工程判断是：
+
+- 这版 `extmix2` **已经可以视为新的 `active_experimental` 研究基线**；
+- 但它**仍不能直接晋升为默认正式版**；
+- 下一轮重点不该回头放宽 runtime guard，而应转向：
+  - 压缩 `5d normal leakage`
+  - 提高 `60d pre_warning_buffer` 对 runtime floor 的穿透能力
+  - 复核 `prepare_p60d` 阈值选择是否过高，或训练目标是否没有显式优化“越过 floor”的能力
+
 ## 12. 结论
 
 从这一步开始，项目里出现“formal bundle”不再自动等于“正式模型”。
