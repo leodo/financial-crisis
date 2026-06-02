@@ -196,8 +196,8 @@ pub(crate) async fn research_formal_dataset_build_main(args: &[String]) -> anyho
     let store = crate::open_sqlite_store().await?;
     store.migrate().await?;
     let (indicators, observations) =
-        crate::load_formal_feature_inputs(&store, options.feature.to).await?;
-    let snapshot_build = crate::build_or_load_feature_snapshots(
+        super::feature::load_formal_feature_inputs(&store, options.feature.to).await?;
+    let snapshot_build = super::feature::build_or_load_feature_snapshots(
         &store,
         &indicators,
         &observations,

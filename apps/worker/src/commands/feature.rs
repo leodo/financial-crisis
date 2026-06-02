@@ -1,5 +1,10 @@
+use std::collections::BTreeMap;
+
 use anyhow::{bail, Context};
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
+use fc_domain::{FeatureSnapshotRecord, Indicator, Observation};
+use fc_scoring::ScoringEngine;
+use fc_storage::SqliteStore;
 
 #[derive(Debug, Clone)]
 pub(crate) struct FeatureSnapshotBuildOptions {
@@ -158,10 +163,9 @@ pub(crate) async fn research_feature_snapshot_build(args: &[String]) -> anyhow::
     let options = FeatureSnapshotBuildOptions::parse(args)?;
     let store = crate::open_sqlite_store().await?;
     store.migrate().await?;
-    let (indicators, observations) = crate::load_formal_feature_inputs(&store, options.to).await?;
+    let (indicators, observations) = load_formal_feature_inputs(&store, options.to).await?;
     let snapshot_build =
-        crate::build_or_load_feature_snapshots(&store, &indicators, &observations, &options)
-            .await?;
+        build_or_load_feature_snapshots(&store, &indicators, &observations, &options).await?;
     let snapshots = snapshot_build.snapshots;
     if snapshots.is_empty() {
         bail!("no feature snapshots were generated for the requested range");
@@ -236,4 +240,120 @@ pub(crate) async fn research_feature_snapshot_list(args: &[String]) -> anyhow::R
         );
     }
     Ok(())
+}
+
+pub(crate) async fn load_formal_feature_inputs(
+    store: &SqliteStore,
+    to: Option<NaiveDate>,
+) -> anyhow::Result<(Vec<Indicator>, Vec<Observation>)> {
+    let indicators = store.load_indicators().await?;
+    let upper_bound = to.unwrap_or_else(|| Utc::now().date_naive());
+    let observations = store
+        .load_observations_for_entities(&["us", "jp"], upper_bound)
+        .await?;
+    if observations.is_empty() {
+        bail!("no observations found in SQLite; run bootstrap/backfill first");
+    }
+    Ok((indicators, observations))
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct FeatureSnapshotBuildResult {
+    pub(crate) snapshots: Vec<FeatureSnapshotRecord>,
+    pub(crate) reused_count: usize,
+    pub(crate) recomputed_count: usize,
+}
+
+pub(crate) async fn build_or_load_feature_snapshots(
+    store: &SqliteStore,
+    indicators: &[Indicator],
+    observations: &[Observation],
+    options: &FeatureSnapshotBuildOptions,
+) -> anyhow::Result<FeatureSnapshotBuildResult> {
+    let target_dates = crate::formal_feature_dates(observations, options.from, options.to);
+    if target_dates.is_empty() {
+        return Ok(FeatureSnapshotBuildResult {
+            snapshots: Vec::new(),
+            reused_count: 0,
+            recomputed_count: 0,
+        });
+    }
+
+    let reusable = if options.force_rebuild {
+        BTreeMap::new()
+    } else {
+        load_reusable_feature_snapshots(store, options).await?
+    };
+
+    let missing_dates = target_dates
+        .iter()
+        .copied()
+        .filter(|date| !reusable.contains_key(date))
+        .collect::<Vec<_>>();
+    let recomputed = build_formal_feature_snapshots_for_dates(
+        indicators,
+        observations,
+        options,
+        &missing_dates,
+    )?;
+
+    let mut combined = reusable.into_values().chain(recomputed).collect::<Vec<_>>();
+    combined.sort_by_key(|snapshot| snapshot.as_of_date);
+
+    Ok(FeatureSnapshotBuildResult {
+        reused_count: combined.len().saturating_sub(missing_dates.len()),
+        recomputed_count: missing_dates.len(),
+        snapshots: combined,
+    })
+}
+
+async fn load_reusable_feature_snapshots(
+    store: &SqliteStore,
+    options: &FeatureSnapshotBuildOptions,
+) -> anyhow::Result<BTreeMap<NaiveDate, FeatureSnapshotRecord>> {
+    let rows = store
+        .list_feature_snapshots_for_mode(
+            &options.market_scope,
+            &options.feature_set_version,
+            &options.point_in_time_mode,
+            options.from,
+            options.to,
+        )
+        .await?;
+    let reusable = rows
+        .into_iter()
+        .filter(feature_snapshot_status_is_current)
+        .fold(BTreeMap::new(), |mut acc, snapshot| {
+            acc.entry(snapshot.as_of_date).or_insert(snapshot);
+            acc
+        });
+    Ok(reusable)
+}
+
+fn feature_snapshot_status_is_current(snapshot: &FeatureSnapshotRecord) -> bool {
+    matches!(
+        snapshot.visibility_status.as_str(),
+        crate::FEATURE_SNAPSHOT_STATUS_READY
+            | crate::FEATURE_SNAPSHOT_STATUS_COVERAGE_OR_VISIBILITY_FAILED
+    )
+}
+
+fn build_formal_feature_snapshots_for_dates(
+    indicators: &[Indicator],
+    observations: &[Observation],
+    options: &FeatureSnapshotBuildOptions,
+    dates: &[NaiveDate],
+) -> anyhow::Result<Vec<FeatureSnapshotRecord>> {
+    let scoring = ScoringEngine::default();
+    let mut snapshots = Vec::with_capacity(dates.len());
+    for as_of_date in dates.iter().copied() {
+        snapshots.push(crate::build_formal_feature_snapshot_for_date(
+            indicators,
+            observations,
+            &scoring,
+            as_of_date,
+            options,
+        )?);
+    }
+    Ok(snapshots)
 }
