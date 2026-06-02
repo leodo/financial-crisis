@@ -70,6 +70,7 @@
 - 已新增 `apps/worker/src/formal.rs`，把 snapshot/formal dataset 共用的场景标签推导收敛成单一 helper，避免两条训练输入链路各自维护一套 crisis/actionability 标注逻辑。
 - 已新增 `apps/worker/src/training.rs`，把 `ProbabilityTrainingRow/Input`、chronological split 与 label-mode 支持检查从 `main.rs` 中抽离，固定训练数据 contract 的归属边界。
 - 已新增 `apps/worker/src/actionability.rs`，把 actionability bundle 训练、阈值选择、校准策略、guardrail 与 actionability evaluation summary 从 `main.rs` 中拆出，供训练与 release review 共用。
+- 已新增 `apps/worker/src/probability.rs`，把 probability bundle 训练、Platt 校准择优、threshold 选择、regime separation 诊断与 evaluation summary 从 `main.rs` 中拆出，收拢概率训练主链路的模块边界。
 - release 相关的 `activate_release_with_runtime_guard`、review stage activate/restore、market scope resolve 也已迁到 `commands/release.rs`。
 - `release review` 的 runtime snapshot 抓取与 orchestration 也已迁到 `commands/release.rs`。
 - `release review` 专属的 probability/actionability/runtime sanity guardrail、recommendation、summary helper 也已开始跟随迁移。
