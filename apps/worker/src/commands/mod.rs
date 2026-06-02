@@ -2,6 +2,7 @@ mod audit;
 mod backfill;
 mod db;
 mod refresh;
+pub(crate) mod release;
 mod research;
 
 use anyhow::{bail, Result};

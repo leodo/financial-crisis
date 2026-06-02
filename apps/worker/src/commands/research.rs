@@ -20,12 +20,12 @@ pub(crate) async fn handle_research_command(
 
 async fn handle_release_command(action: &str, rest: &[String]) -> Result<()> {
     match action {
-        "publish" => crate::research_release_publish(rest).await,
-        "list" => crate::research_release_list(rest).await,
-        "show" => crate::research_release_show(rest).await,
-        "activate" => crate::research_release_activate(rest).await,
-        "rollback" => crate::research_release_rollback(rest).await,
-        "review" => crate::research_release_review(rest).await,
+        "publish" => super::release::research_release_publish(rest).await,
+        "list" => super::release::research_release_list(rest).await,
+        "show" => super::release::research_release_show(rest).await,
+        "activate" => super::release::research_release_activate(rest).await,
+        "rollback" => super::release::research_release_rollback(rest).await,
+        "review" => super::release::research_release_review(rest).await,
         _ => {
             super::print_help();
             bail!("unknown research release command: {action}")
