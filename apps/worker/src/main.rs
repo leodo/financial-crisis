@@ -10,6 +10,7 @@ mod commands;
 mod formal;
 mod output_paths;
 mod reporting;
+mod training;
 
 use anyhow::{bail, Context};
 use chrono::{Duration, NaiveDate, Utc};
@@ -65,6 +66,11 @@ use output_paths::{
 };
 use reporting::write_formal_dataset_summary_report;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+pub(crate) use training::{
+    chronological_split, chronological_split_bounds, training_rows_support_label_mode,
+    validate_split_bounds, ProbabilityTargetLabelMode, ProbabilityTrainingInput,
+    ProbabilityTrainingRow,
+};
 use uuid::Uuid;
 
 #[cfg(test)]
@@ -950,129 +956,6 @@ pub(crate) fn probability_training_regime_name(regime: ProbabilityTrainingRegime
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-struct ProbabilityTrainingRow {
-    as_of_date: NaiveDate,
-    market_scope: String,
-    release_id: Option<String>,
-    probability_mode: Option<String>,
-    freshness_status: Option<String>,
-    time_to_risk_bucket: Option<String>,
-    split_name: Option<String>,
-    features: BTreeMap<String, f64>,
-    primary_scenario_id: Option<String>,
-    scenario_family: Option<String>,
-    scenario_training_role: Option<String>,
-    days_to_primary_crisis_start: Option<i64>,
-    primary_scenario_supports_5d: bool,
-    primary_scenario_supports_20d: bool,
-    primary_scenario_supports_60d: bool,
-    label_5d: u8,
-    label_20d: u8,
-    label_60d: u8,
-    regime_5d: ProbabilityTrainingRegime,
-    regime_20d: ProbabilityTrainingRegime,
-    regime_60d: ProbabilityTrainingRegime,
-    action_label_5d: u8,
-    action_label_20d: u8,
-    action_label_60d: u8,
-    prepare_episode_label: u8,
-    hedge_episode_label: u8,
-    defend_episode_label: u8,
-    primary_action_level: Option<String>,
-    action_episode_id: Option<String>,
-    action_episode_phase: String,
-    protected_action_window: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[allow(dead_code)]
-#[serde(rename_all = "snake_case")]
-enum ProbabilityTargetLabelMode {
-    ForwardCrisis,
-    ActionWindow,
-    ActionEpisode,
-}
-
-impl ProbabilityTargetLabelMode {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::ForwardCrisis => "forward_crisis",
-            Self::ActionWindow => "action_window",
-            Self::ActionEpisode => "action_episode",
-        }
-    }
-}
-
-impl ProbabilityTrainingRow {
-    fn label_for_horizon(&self, label_mode: ProbabilityTargetLabelMode, horizon_days: u32) -> f64 {
-        match (label_mode, horizon_days) {
-            (ProbabilityTargetLabelMode::ForwardCrisis, 5) => self.label_5d as f64,
-            (ProbabilityTargetLabelMode::ForwardCrisis, 20) => self.label_20d as f64,
-            (ProbabilityTargetLabelMode::ForwardCrisis, 60) => self.label_60d as f64,
-            (ProbabilityTargetLabelMode::ActionWindow, 5) => self.action_label_5d as f64,
-            (ProbabilityTargetLabelMode::ActionWindow, 20) => self.action_label_20d as f64,
-            (ProbabilityTargetLabelMode::ActionWindow, 60) => self.action_label_60d as f64,
-            (ProbabilityTargetLabelMode::ActionEpisode, 5) => self.defend_episode_label as f64,
-            (ProbabilityTargetLabelMode::ActionEpisode, 20) => self.hedge_episode_label as f64,
-            (ProbabilityTargetLabelMode::ActionEpisode, 60) => self.prepare_episode_label as f64,
-            _ => 0.0,
-        }
-    }
-
-    fn action_episode_phase_for_horizon(&self, horizon_days: u32) -> ActionEpisodePhase {
-        let Some(level) = actionability_level_for_proxy_horizon(horizon_days) else {
-            return ActionEpisodePhase::Outside;
-        };
-        let Some(action_episode_id) = self.action_episode_id.as_deref() else {
-            return ActionEpisodePhase::Outside;
-        };
-        if !action_episode_id.ends_with(actionability_level_text(level)) {
-            return ActionEpisodePhase::Outside;
-        }
-        match self.action_episode_phase.as_str() {
-            "primary" => ActionEpisodePhase::Primary,
-            "late_validation" => ActionEpisodePhase::LateValidation,
-            "cooldown" => ActionEpisodePhase::Cooldown,
-            _ => ActionEpisodePhase::Outside,
-        }
-    }
-
-    fn primary_scenario_supports_horizon(&self, horizon_days: u32) -> Option<bool> {
-        self.primary_scenario_id
-            .as_ref()
-            .map(|_| match horizon_days {
-                5 => self.primary_scenario_supports_5d,
-                20 => self.primary_scenario_supports_20d,
-                60 => self.primary_scenario_supports_60d,
-                _ => false,
-            })
-    }
-
-    fn regime_for_horizon(&self, horizon_days: u32) -> ProbabilityTrainingRegime {
-        match horizon_days {
-            5 => self.regime_5d,
-            20 => self.regime_20d,
-            60 => self.regime_60d,
-            _ => ProbabilityTrainingRegime::Normal,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ProbabilityTrainingInput {
-    dataset_source: PipelineDatasetSource,
-    dataset_label: String,
-    market_scope: String,
-    point_in_time_mode: String,
-    feature_set_version: String,
-    label_version: String,
-    feature_names: Vec<String>,
-    train_rows: Vec<ProbabilityTrainingRow>,
-    calibration_rows: Vec<ProbabilityTrainingRow>,
-    evaluation_rows: Vec<ProbabilityTrainingRow>,
-}
-
 #[derive(Debug, Clone)]
 struct PipelineArtifacts {
     release: ModelReleaseRecord,
@@ -1403,68 +1286,6 @@ fn forward_crisis_training_regime_with_context(
         Some(ActionEpisodePhase::Cooldown) => ProbabilityTrainingRegime::PostCrisisCooldown,
         _ => base_regime,
     }
-}
-
-fn chronological_split(
-    dataset: &[ProbabilityTrainingRow],
-) -> anyhow::Result<(
-    Vec<ProbabilityTrainingRow>,
-    Vec<ProbabilityTrainingRow>,
-    Vec<ProbabilityTrainingRow>,
-)> {
-    let (train_end, calibration_end) = chronological_split_bounds(dataset.len())?;
-    Ok((
-        dataset[..train_end].to_vec(),
-        dataset[train_end..calibration_end].to_vec(),
-        dataset[calibration_end..].to_vec(),
-    ))
-}
-
-fn validate_split_bounds(
-    dataset_len: usize,
-    train_end: usize,
-    calibration_end: usize,
-) -> anyhow::Result<()> {
-    if dataset_len < 30 {
-        bail!("dataset is too small for chronological split");
-    }
-    if train_end < 30 || calibration_end <= train_end + 10 || calibration_end >= dataset_len {
-        bail!("unable to construct train/calibration/evaluation split");
-    }
-    if dataset_len.saturating_sub(calibration_end) < 10 {
-        bail!("evaluation split would be too small");
-    }
-    Ok(())
-}
-
-fn chronological_split_bounds(dataset_len: usize) -> anyhow::Result<(usize, usize)> {
-    let train_end = (dataset_len * 6 / 10)
-        .max(30)
-        .min(dataset_len.saturating_sub(20));
-    let calibration_end = (dataset_len * 8 / 10)
-        .max(train_end + 10)
-        .min(dataset_len.saturating_sub(10));
-    validate_split_bounds(dataset_len, train_end, calibration_end)?;
-    Ok((train_end, calibration_end))
-}
-
-fn training_rows_support_label_mode(
-    train_rows: &[ProbabilityTrainingRow],
-    calibration_rows: &[ProbabilityTrainingRow],
-    evaluation_rows: &[ProbabilityTrainingRow],
-    label_mode: ProbabilityTargetLabelMode,
-) -> bool {
-    [5_u32, 20_u32, 60_u32].into_iter().all(|horizon_days| {
-        train_rows
-            .iter()
-            .any(|row| row.label_for_horizon(label_mode, horizon_days) > 0.0)
-            && calibration_rows
-                .iter()
-                .any(|row| row.label_for_horizon(label_mode, horizon_days) > 0.0)
-            && evaluation_rows
-                .iter()
-                .any(|row| row.label_for_horizon(label_mode, horizon_days) > 0.0)
-    })
 }
 
 fn train_actionability_bundle(
