@@ -6412,6 +6412,7 @@ fn select_probability_decision_threshold(
         horizon_days,
     );
     let mut best_threshold = 0.3;
+    let beta_sq = probability_threshold_beta_sq(horizon_days);
     let mut best_score = None::<(i64, i64, i64, i64)>;
     let mut best_capped_threshold = None::<f64>;
     let mut best_capped_score = None::<(i64, i64, i64, i64)>;
@@ -6435,18 +6436,13 @@ fn select_probability_decision_threshold(
         }
         let precision = true_positive_count as f64 / predicted_positive_count as f64;
         let recall = true_positive_count as f64 / positive_count;
-        let beta_sq = 0.25_f64;
-        let f05 = if precision > 0.0 || recall > 0.0 {
+        let f_beta = if precision > 0.0 || recall > 0.0 {
             (1.0 + beta_sq) * precision * recall / (beta_sq * precision + recall).max(1e-9)
         } else {
             0.0
         };
-        let score = (
-            (precision * 1_000_000.0).round() as i64,
-            (f05 * 1_000_000.0).round() as i64,
-            (recall * 1_000_000.0).round() as i64,
-            (threshold * 1_000.0).round() as i64,
-        );
+        let score =
+            probability_threshold_score_tuple(horizon_days, precision, recall, f_beta, threshold);
         if best_score.is_none_or(|best| score > best) {
             best_score = Some(score);
             best_threshold = threshold;
@@ -6467,6 +6463,35 @@ fn select_probability_decision_threshold(
     };
 
     round3(best_capped_threshold.unwrap_or(best_threshold)).clamp(minimum_threshold, 0.90)
+}
+
+fn probability_threshold_beta_sq(horizon_days: u32) -> f64 {
+    match horizon_days {
+        5 => 0.25,
+        20 => 1.0,
+        60 => 2.25,
+        _ => 1.0,
+    }
+}
+
+fn probability_threshold_score_tuple(
+    horizon_days: u32,
+    precision: f64,
+    recall: f64,
+    f_beta: f64,
+    threshold: f64,
+) -> (i64, i64, i64, i64) {
+    let precision_score = (precision * 1_000_000.0).round() as i64;
+    let recall_score = (recall * 1_000_000.0).round() as i64;
+    let f_beta_score = (f_beta * 1_000_000.0).round() as i64;
+    let threshold_score = (threshold * 1_000.0).round() as i64;
+
+    match horizon_days {
+        5 => (precision_score, f_beta_score, recall_score, threshold_score),
+        20 => (f_beta_score, precision_score, recall_score, threshold_score),
+        60 => (f_beta_score, recall_score, precision_score, threshold_score),
+        _ => (f_beta_score, precision_score, recall_score, threshold_score),
+    }
 }
 
 fn probability_prediction_count_ceiling_from_actual_positive_count(
@@ -13235,6 +13260,17 @@ mod tests {
 
         assert!(threshold >= 0.35);
         assert!(threshold > 0.30);
+    }
+
+    #[test]
+    fn probability_decision_threshold_keeps_more_recall_for_60d_when_precision_tradeoff_is_small() {
+        let probabilities = vec![0.45, 0.40, 0.35, 0.30, 0.25, 0.34, 0.28, 0.22, 0.18, 0.12];
+        let labels = vec![1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+        let threshold = select_probability_decision_threshold(&probabilities, &labels, 60);
+
+        assert!(threshold <= 0.30);
+        assert!(threshold >= 0.25);
     }
 
     #[test]
