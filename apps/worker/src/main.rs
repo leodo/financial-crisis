@@ -6157,6 +6157,14 @@ fn train_horizon_bundle(
         &calibration_labels,
         horizon_days,
     );
+    let decision_threshold = adjust_probability_decision_threshold_for_regime_support(
+        decision_threshold,
+        &calibration_decision_probabilities,
+        &calibration_labels,
+        &calibration_selection_rows,
+        horizon_days,
+        label_mode,
+    );
     let evaluation = evaluate_probabilities_for_rows(
         &evaluation_probabilities,
         evaluation_rows,
@@ -6393,17 +6401,7 @@ fn select_probability_decision_threshold(
     labels: &[f64],
     horizon_days: u32,
 ) -> f64 {
-    let mut thresholds = probabilities
-        .iter()
-        .copied()
-        .filter(|value| value.is_finite())
-        .filter(|value| (0.001..0.99).contains(value))
-        .collect::<Vec<_>>();
-    thresholds.extend((1..=20).map(|value| value as f64 / 1_000.0));
-    thresholds.extend((2..=90).map(|value| value as f64 / 100.0));
-    thresholds.push(0.3);
-    thresholds.sort_by(f64::total_cmp);
-    thresholds.dedup_by(|left, right| (*left - *right).abs() < 1e-6);
+    let thresholds = probability_decision_threshold_candidates(probabilities);
 
     let actual_positive_count = labels.iter().filter(|label| **label >= 0.5).count() as u32;
     let positive_count = actual_positive_count as f64;
@@ -6465,6 +6463,21 @@ fn select_probability_decision_threshold(
     round3(best_capped_threshold.unwrap_or(best_threshold)).clamp(minimum_threshold, 0.90)
 }
 
+fn probability_decision_threshold_candidates(probabilities: &[f64]) -> Vec<f64> {
+    let mut thresholds = probabilities
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite())
+        .filter(|value| (0.001..0.99).contains(value))
+        .collect::<Vec<_>>();
+    thresholds.extend((1..=20).map(|value| value as f64 / 1_000.0));
+    thresholds.extend((2..=90).map(|value| value as f64 / 100.0));
+    thresholds.push(0.3);
+    thresholds.sort_by(f64::total_cmp);
+    thresholds.dedup_by(|left, right| (*left - *right).abs() < 1e-6);
+    thresholds
+}
+
 fn probability_threshold_beta_sq(horizon_days: u32) -> f64 {
     match horizon_days {
         5 => 0.25,
@@ -6492,6 +6505,234 @@ fn probability_threshold_score_tuple(
         60 => (f_beta_score, recall_score, precision_score, threshold_score),
         _ => (f_beta_score, precision_score, recall_score, threshold_score),
     }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ProbabilityThresholdRegimeHitSummary {
+    early_warning_row_count: u32,
+    early_warning_hit_count: u32,
+    normal_row_count: u32,
+    normal_hit_count: u32,
+    positive_window_row_count: u32,
+    positive_window_hit_count: u32,
+    in_crisis_row_count: u32,
+    in_crisis_hit_count: u32,
+    cooldown_row_count: u32,
+    cooldown_hit_count: u32,
+}
+
+impl ProbabilityThresholdRegimeHitSummary {
+    fn early_warning_hit_rate(self) -> f64 {
+        safe_divide(
+            self.early_warning_hit_count as f64,
+            self.early_warning_row_count as f64,
+        )
+    }
+
+    fn normal_hit_rate(self) -> f64 {
+        safe_divide(self.normal_hit_count as f64, self.normal_row_count as f64)
+    }
+
+    fn positive_window_hit_rate(self) -> f64 {
+        safe_divide(
+            self.positive_window_hit_count as f64,
+            self.positive_window_row_count as f64,
+        )
+    }
+
+    fn in_crisis_hit_rate(self) -> f64 {
+        safe_divide(
+            self.in_crisis_hit_count as f64,
+            self.in_crisis_row_count as f64,
+        )
+    }
+
+    fn cooldown_hit_rate(self) -> f64 {
+        safe_divide(
+            self.cooldown_hit_count as f64,
+            self.cooldown_row_count as f64,
+        )
+    }
+}
+
+fn probability_threshold_regime_hit_summary(
+    probabilities: &[f64],
+    rows: &[&ProbabilityTrainingRow],
+    horizon_days: u32,
+    threshold: f64,
+) -> ProbabilityThresholdRegimeHitSummary {
+    let early_warning_regime = match horizon_days {
+        5 => ProbabilityTrainingRegime::PositiveWindow,
+        20 | 60 => ProbabilityTrainingRegime::PreWarningBuffer,
+        _ => ProbabilityTrainingRegime::PositiveWindow,
+    };
+
+    let mut summary = ProbabilityThresholdRegimeHitSummary::default();
+    for (probability, row) in probabilities.iter().zip(rows.iter().copied()) {
+        let regime = row.regime_for_horizon(horizon_days);
+        let hit = *probability >= threshold;
+
+        if regime == early_warning_regime {
+            summary.early_warning_row_count += 1;
+            if hit {
+                summary.early_warning_hit_count += 1;
+            }
+        }
+
+        match regime {
+            ProbabilityTrainingRegime::Normal => {
+                summary.normal_row_count += 1;
+                if hit {
+                    summary.normal_hit_count += 1;
+                }
+            }
+            ProbabilityTrainingRegime::PositiveWindow => {
+                summary.positive_window_row_count += 1;
+                if hit {
+                    summary.positive_window_hit_count += 1;
+                }
+            }
+            ProbabilityTrainingRegime::InCrisis => {
+                summary.in_crisis_row_count += 1;
+                if hit {
+                    summary.in_crisis_hit_count += 1;
+                }
+            }
+            ProbabilityTrainingRegime::PostCrisisCooldown => {
+                summary.cooldown_row_count += 1;
+                if hit {
+                    summary.cooldown_hit_count += 1;
+                }
+            }
+            ProbabilityTrainingRegime::PreWarningBuffer => {}
+        }
+    }
+
+    summary
+}
+
+fn regime_aware_threshold_prediction_ceiling(actual_positive_count: u32, horizon_days: u32) -> u32 {
+    let base = probability_prediction_count_ceiling_from_actual_positive_count(
+        actual_positive_count,
+        horizon_days,
+    );
+    match horizon_days {
+        60 => base.saturating_mul(3),
+        20 => base.saturating_mul(2),
+        _ => base,
+    }
+}
+
+fn regime_floor_min_hit_rate(horizon_days: u32) -> f64 {
+    match horizon_days {
+        60 => 0.05,
+        20 => 0.03,
+        _ => 0.0,
+    }
+}
+
+fn adjust_probability_decision_threshold_for_regime_support(
+    base_threshold: f64,
+    probabilities: &[f64],
+    labels: &[f64],
+    rows: &[&ProbabilityTrainingRow],
+    horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
+) -> f64 {
+    if label_mode != ProbabilityTargetLabelMode::ForwardCrisis
+        || !matches!(horizon_days, 20 | 60)
+        || probabilities.is_empty()
+        || rows.is_empty()
+        || probabilities.len() != rows.len()
+    {
+        return base_threshold;
+    }
+
+    let Some(regime_summary) =
+        evaluate_regime_separation_summary_refs(probabilities, rows, horizon_days, label_mode)
+    else {
+        return base_threshold;
+    };
+
+    let base_hits =
+        probability_threshold_regime_hit_summary(probabilities, rows, horizon_days, base_threshold);
+    if base_hits.early_warning_hit_count > 0 {
+        return base_threshold;
+    }
+    if regime_summary
+        .early_warning_lift_vs_normal
+        .unwrap_or_default()
+        < 1.5
+    {
+        return base_threshold;
+    }
+
+    let actual_positive_count = labels.iter().filter(|label| **label >= 0.5).count() as u32;
+    let positive_count = actual_positive_count as f64;
+    if positive_count <= 0.0 {
+        return base_threshold;
+    }
+
+    let relaxed_prediction_ceiling =
+        regime_aware_threshold_prediction_ceiling(actual_positive_count, horizon_days);
+    let beta_sq = probability_threshold_beta_sq(horizon_days);
+    let mut best_score = None::<(bool, bool, i64, i64, i64, i64, i64, i64, i64)>;
+    let mut best_threshold = base_threshold;
+
+    for threshold in probability_decision_threshold_candidates(probabilities) {
+        if threshold >= base_threshold {
+            continue;
+        }
+
+        let hits =
+            probability_threshold_regime_hit_summary(probabilities, rows, horizon_days, threshold);
+        let early_warning_hit_rate = hits.early_warning_hit_rate();
+        if hits.early_warning_hit_count == 0 {
+            continue;
+        }
+
+        let mut true_positive_count = 0_u32;
+        let mut predicted_positive_count = 0_u32;
+        for (probability, label) in probabilities.iter().zip(labels) {
+            if *probability >= threshold {
+                predicted_positive_count += 1;
+                if *label >= 0.5 {
+                    true_positive_count += 1;
+                }
+            }
+        }
+        if predicted_positive_count == 0 || true_positive_count == 0 {
+            continue;
+        }
+
+        let precision = true_positive_count as f64 / predicted_positive_count as f64;
+        let recall = true_positive_count as f64 / positive_count;
+        let f_beta = if precision > 0.0 || recall > 0.0 {
+            (1.0 + beta_sq) * precision * recall / (beta_sq * precision + recall).max(1e-9)
+        } else {
+            0.0
+        };
+
+        let normal_hit_rate = hits.normal_hit_rate();
+        let cooldown_hit_rate = hits.cooldown_hit_rate();
+        let score = (
+            early_warning_hit_rate >= regime_floor_min_hit_rate(horizon_days),
+            predicted_positive_count <= relaxed_prediction_ceiling,
+            ((early_warning_hit_rate - normal_hit_rate) * 1_000_000.0).round() as i64,
+            ((hits.positive_window_hit_rate() - cooldown_hit_rate) * 1_000_000.0).round() as i64,
+            ((hits.in_crisis_hit_rate() - cooldown_hit_rate) * 1_000_000.0).round() as i64,
+            (f_beta * 1_000_000.0).round() as i64,
+            (precision * 1_000_000.0).round() as i64,
+            (recall * 1_000_000.0).round() as i64,
+            -((threshold * 1_000.0).round() as i64),
+        );
+        if best_score.is_none_or(|best| score > best) {
+            best_score = Some(score);
+            best_threshold = threshold;
+        }
+    }
+
+    round3(best_threshold).clamp(0.005, base_threshold)
 }
 
 fn probability_prediction_count_ceiling_from_actual_positive_count(
@@ -11306,6 +11547,7 @@ mod tests {
 
     use super::{
         action_window_label, actionability_bundle_quality_regressions,
+        adjust_probability_decision_threshold_for_regime_support,
         classify_probability_regime_separation, classify_regime_separation,
         compare_actionability_guardrails, compare_probability_guardrails,
         evaluate_actionability_summary, fit_platt_calibration, formal_dataset_split_requirements,
@@ -13271,6 +13513,76 @@ mod tests {
 
         assert!(threshold <= 0.30);
         assert!(threshold >= 0.25);
+    }
+
+    #[test]
+    fn regime_support_adjustment_lowers_60d_threshold_when_base_misses_prewarning_buffer() {
+        let build_row =
+            |regime_60d: ProbabilityTrainingRegime, label_60d: u8| ProbabilityTrainingRow {
+                as_of_date: NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+                market_scope: "financial_system".to_string(),
+                release_id: None,
+                probability_mode: Some("formal_bundle_v1".to_string()),
+                freshness_status: Some("fresh".to_string()),
+                time_to_risk_bucket: Some("test".to_string()),
+                split_name: Some("calibration".to_string()),
+                features: BTreeMap::new(),
+                primary_scenario_id: Some("scenario".to_string()),
+                scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+                scenario_training_role: None,
+                days_to_primary_crisis_start: Some(20),
+                primary_scenario_supports_5d: true,
+                primary_scenario_supports_20d: true,
+                primary_scenario_supports_60d: true,
+                label_5d: 0,
+                label_20d: 0,
+                label_60d,
+                regime_5d: ProbabilityTrainingRegime::Normal,
+                regime_20d: ProbabilityTrainingRegime::Normal,
+                regime_60d,
+                action_label_5d: 0,
+                action_label_20d: 0,
+                action_label_60d: 0,
+                prepare_episode_label: 0,
+                hedge_episode_label: 0,
+                defend_episode_label: 0,
+                primary_action_level: None,
+                action_episode_id: None,
+                action_episode_phase: "outside".to_string(),
+                protected_action_window: false,
+            };
+
+        let rows = vec![
+            build_row(ProbabilityTrainingRegime::PositiveWindow, 1),
+            build_row(ProbabilityTrainingRegime::PositiveWindow, 1),
+            build_row(ProbabilityTrainingRegime::InCrisis, 1),
+            build_row(ProbabilityTrainingRegime::InCrisis, 1),
+            build_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+            build_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+            build_row(ProbabilityTrainingRegime::Normal, 0),
+            build_row(ProbabilityTrainingRegime::Normal, 0),
+            build_row(ProbabilityTrainingRegime::Normal, 0),
+            build_row(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+        ];
+        let row_refs = rows.iter().collect::<Vec<_>>();
+        let probabilities = vec![0.95, 0.91, 0.84, 0.80, 0.58, 0.56, 0.54, 0.48, 0.40, 0.18];
+        let labels = rows
+            .iter()
+            .map(|row| row.label_60d as f64)
+            .collect::<Vec<_>>();
+
+        let base_threshold = select_probability_decision_threshold(&probabilities, &labels, 60);
+        let adjusted_threshold = adjust_probability_decision_threshold_for_regime_support(
+            base_threshold,
+            &probabilities,
+            &labels,
+            &row_refs,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert!(base_threshold > 0.58);
+        assert!(adjusted_threshold <= base_threshold);
     }
 
     #[test]
