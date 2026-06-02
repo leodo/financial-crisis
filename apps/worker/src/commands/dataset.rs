@@ -475,27 +475,10 @@ fn build_main_formal_dataset_rows_with_catalog(
         .filter(|snapshot| snapshot.as_of_date >= min_date)
         .filter(|snapshot| formal_dataset_snapshot_is_usable(snapshot, label_version))
         .map(|snapshot| {
-            let primary_scenario =
-                crate::primary_scenario_for_date(snapshot.as_of_date, &context_scenarios);
-            let dominant_action_episode =
-                crate::dominant_action_episode_for_date(snapshot.as_of_date, &context_scenarios);
-            let regime_5d = crate::forward_crisis_training_regime_with_context(
+            let scenario_labels = crate::derive_scenario_label_snapshot(
                 snapshot.as_of_date,
                 &positive_scenarios,
                 &context_scenarios,
-                5,
-            );
-            let regime_20d = crate::forward_crisis_training_regime_with_context(
-                snapshot.as_of_date,
-                &positive_scenarios,
-                &context_scenarios,
-                20,
-            );
-            let regime_60d = crate::forward_crisis_training_regime_with_context(
-                snapshot.as_of_date,
-                &positive_scenarios,
-                &context_scenarios,
-                60,
             );
             FormalDatasetRowRecord {
                 dataset_key: dataset_key.to_string(),
@@ -511,79 +494,28 @@ fn build_main_formal_dataset_rows_with_catalog(
                 external_feature_coverage: snapshot.external_feature_coverage,
                 sample_quality_grade: crate::feature_quality_grade(snapshot.coverage_score)
                     .to_string(),
-                primary_scenario_id: primary_scenario
-                    .as_ref()
-                    .map(|scenario| scenario.scenario_id.clone()),
-                scenario_family: primary_scenario
-                    .as_ref()
-                    .map(|scenario| scenario.family.clone()),
-                scenario_training_role: primary_scenario
-                    .as_ref()
-                    .map(|scenario| scenario.training_role.clone()),
-                label_5d: crate::forward_crisis_label(snapshot.as_of_date, &positive_scenarios, 5),
-                label_20d: crate::forward_crisis_label(
-                    snapshot.as_of_date,
-                    &positive_scenarios,
-                    20,
-                ),
-                label_60d: crate::forward_crisis_label(
-                    snapshot.as_of_date,
-                    &positive_scenarios,
-                    60,
-                ),
-                regime_5d: crate::probability_training_regime_name(regime_5d).to_string(),
-                regime_20d: crate::probability_training_regime_name(regime_20d).to_string(),
-                regime_60d: crate::probability_training_regime_name(regime_60d).to_string(),
-                action_label_5d: crate::action_window_label(
-                    snapshot.as_of_date,
-                    &context_scenarios,
-                    5,
-                ),
-                action_label_20d: crate::action_window_label(
-                    snapshot.as_of_date,
-                    &context_scenarios,
-                    20,
-                ),
-                action_label_60d: crate::action_window_label(
-                    snapshot.as_of_date,
-                    &context_scenarios,
-                    60,
-                ),
-                prepare_episode_label: crate::action_episode_label_for_level(
-                    snapshot.as_of_date,
-                    &context_scenarios,
-                    ActionabilityLevel::Prepare,
-                ),
-                hedge_episode_label: crate::action_episode_label_for_level(
-                    snapshot.as_of_date,
-                    &context_scenarios,
-                    ActionabilityLevel::Hedge,
-                ),
-                defend_episode_label: crate::action_episode_label_for_level(
-                    snapshot.as_of_date,
-                    &context_scenarios,
-                    ActionabilityLevel::Defend,
-                ),
-                primary_action_level: dominant_action_episode
-                    .as_ref()
-                    .filter(|selection| {
-                        matches!(selection.phase, crate::ActionEpisodePhase::Primary)
-                    })
-                    .map(|selection| crate::actionability_level_text(selection.level).to_string()),
-                action_episode_id: dominant_action_episode.as_ref().map(|selection| {
-                    format!(
-                        "{}:{}",
-                        selection.scenario_id,
-                        crate::actionability_level_text(selection.level)
-                    )
-                }),
-                action_episode_phase: dominant_action_episode
-                    .as_ref()
-                    .map(|selection| selection.phase.as_str().to_string())
-                    .unwrap_or_else(|| crate::ActionEpisodePhase::Outside.as_str().to_string()),
-                protected_action_window: dominant_action_episode
-                    .as_ref()
-                    .is_some_and(|selection| selection.protected_action_window),
+                primary_scenario_id: scenario_labels.primary_scenario_id,
+                scenario_family: scenario_labels.scenario_family,
+                scenario_training_role: scenario_labels.scenario_training_role,
+                label_5d: scenario_labels.label_5d,
+                label_20d: scenario_labels.label_20d,
+                label_60d: scenario_labels.label_60d,
+                regime_5d: crate::probability_training_regime_name(scenario_labels.regime_5d)
+                    .to_string(),
+                regime_20d: crate::probability_training_regime_name(scenario_labels.regime_20d)
+                    .to_string(),
+                regime_60d: crate::probability_training_regime_name(scenario_labels.regime_60d)
+                    .to_string(),
+                action_label_5d: scenario_labels.action_label_5d,
+                action_label_20d: scenario_labels.action_label_20d,
+                action_label_60d: scenario_labels.action_label_60d,
+                prepare_episode_label: scenario_labels.prepare_episode_label,
+                hedge_episode_label: scenario_labels.hedge_episode_label,
+                defend_episode_label: scenario_labels.defend_episode_label,
+                primary_action_level: scenario_labels.primary_action_level,
+                action_episode_id: scenario_labels.action_episode_id,
+                action_episode_phase: scenario_labels.action_episode_phase,
+                protected_action_window: scenario_labels.protected_action_window,
                 features: snapshot.features.clone(),
                 created_at: Utc::now(),
             }

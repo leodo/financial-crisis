@@ -7,6 +7,7 @@ use std::{
 };
 
 mod commands;
+mod formal;
 mod output_paths;
 mod reporting;
 
@@ -57,6 +58,7 @@ use fc_storage::{
     BOJ_MONEY_MARKET_DATASET_ID, FRED_DATASET_ID, GDELT_DOC_DATASET_ID, SEC_EVENTS_DATASET_ID,
     SEC_SUBMISSIONS_DATASET_ID, TREASURY_YIELD_DATASET_ID, WORLD_BANK_DATASET_ID,
 };
+pub(crate) use formal::derive_scenario_label_snapshot;
 use output_paths::{
     DEFAULT_FORMAL_DATASET_SUMMARY_OUTPUT_DIR, DEFAULT_PIPELINE_BUNDLE_OUTPUT_DIR,
     DEFAULT_PIPELINE_MANIFEST_OUTPUT_DIR, DEFAULT_RELEASE_REVIEW_OUTPUT_DIR,
