@@ -1,6 +1,8 @@
+mod audit;
 mod backfill;
 mod db;
 mod refresh;
+mod research;
 
 use anyhow::{bail, Result};
 
@@ -10,23 +12,11 @@ pub(crate) async fn run_from_args(args: Vec<String>) -> Result<()> {
     match args.as_slice() {
         [] => crate::run_demo_ingestion().await,
         [scope, action] if scope == "db" => db::handle_db_command(action).await,
-        [scope, action, rest @ ..] if scope == "audit" && action == "export-current" => {
-            crate::export_current_audit(rest).await
+        [scope, action, rest @ ..] if scope == "audit" => {
+            audit::handle_audit_command(action, rest).await
         }
-        [scope, area, action, rest @ ..] if scope == "research" && area == "release" => {
-            dispatch_research_release(action, rest).await
-        }
-        [scope, area, action, rest @ ..] if scope == "research" && area == "snapshot" => {
-            dispatch_research_snapshot(action, rest).await
-        }
-        [scope, area, action, rest @ ..] if scope == "research" && area == "feature" => {
-            dispatch_research_feature(action, rest).await
-        }
-        [scope, area, action, rest @ ..] if scope == "research" && area == "dataset" => {
-            dispatch_research_dataset(action, rest).await
-        }
-        [scope, area, action, rest @ ..] if scope == "research" && area == "pipeline" => {
-            dispatch_research_pipeline(action, rest).await
+        [scope, area, action, rest @ ..] if scope == "research" => {
+            research::handle_research_command(area, action, rest).await
         }
         [scope, action, rest @ ..] if scope == "refresh" => {
             refresh::handle_refresh_command(action, rest).await
@@ -39,52 +29,6 @@ pub(crate) async fn run_from_args(args: Vec<String>) -> Result<()> {
             Ok(())
         }
         _ => unknown_command("unknown worker command"),
-    }
-}
-
-async fn dispatch_research_release(action: &str, rest: &[String]) -> Result<()> {
-    match action {
-        "publish" => crate::research_release_publish(rest).await,
-        "list" => crate::research_release_list(rest).await,
-        "show" => crate::research_release_show(rest).await,
-        "activate" => crate::research_release_activate(rest).await,
-        "rollback" => crate::research_release_rollback(rest).await,
-        "review" => crate::research_release_review(rest).await,
-        _ => unknown_command("unknown research release command"),
-    }
-}
-
-async fn dispatch_research_snapshot(action: &str, rest: &[String]) -> Result<()> {
-    match action {
-        "list" => crate::research_prediction_snapshot_list(rest).await,
-        "export" => crate::research_prediction_snapshot_export(rest).await,
-        "dataset" => crate::research_prediction_snapshot_dataset(rest).await,
-        _ => unknown_command("unknown research snapshot command"),
-    }
-}
-
-async fn dispatch_research_feature(action: &str, rest: &[String]) -> Result<()> {
-    match action {
-        "build" => crate::research_feature_snapshot_build(rest).await,
-        "list" => crate::research_feature_snapshot_list(rest).await,
-        _ => unknown_command("unknown research feature command"),
-    }
-}
-
-async fn dispatch_research_dataset(action: &str, rest: &[String]) -> Result<()> {
-    match action {
-        "build-main" => crate::research_formal_dataset_build_main(rest).await,
-        "list-main" => crate::research_formal_dataset_list_main(rest).await,
-        "summarize-main" => crate::research_formal_dataset_summarize_main(rest).await,
-        _ => unknown_command("unknown research dataset command"),
-    }
-}
-
-async fn dispatch_research_pipeline(action: &str, rest: &[String]) -> Result<()> {
-    match action {
-        "train-probability" => crate::research_pipeline_train_probability(rest).await,
-        "bootstrap-formal-release" => crate::research_pipeline_bootstrap_formal_release(rest).await,
-        _ => unknown_command("unknown research pipeline command"),
     }
 }
 
