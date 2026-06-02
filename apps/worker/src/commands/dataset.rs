@@ -7,7 +7,8 @@ use std::{
 use anyhow::{bail, Context};
 use chrono::{NaiveDate, Utc};
 use fc_domain::{
-    ActionabilityLevel, FormalDatasetManifest, FormalDatasetRecord, FormalDatasetRowRecord,
+    ActionabilityLevel, FeatureSnapshotRecord, FormalDatasetManifest, FormalDatasetRecord,
+    FormalDatasetRowRecord,
 };
 use serde::Serialize;
 
@@ -285,6 +286,50 @@ struct ScenarioSummaryMetadata {
     default_horizon_roles: Vec<u32>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct FormalDatasetScenarioSets {
+    pub(crate) positive_scenarios: Vec<crate::CrisisScenario>,
+    pub(crate) context_scenarios: Vec<crate::CrisisScenario>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FormalDatasetSplitProfile {
+    Main,
+    ExtensionAcute,
+    ExtensionStress,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FormalDatasetSplitRequirements {
+    minimum_scenario_ranges: usize,
+    minimum_calibration_scenarios: usize,
+    minimum_evaluation_scenarios: usize,
+    require_forward_5d: bool,
+    require_forward_20d: bool,
+    require_forward_60d: bool,
+    require_prepare: bool,
+    require_hedge: bool,
+    require_defend: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ScenarioRowRange {
+    pub(crate) scenario_id: String,
+    pub(crate) family: String,
+    pub(crate) start_index: usize,
+    pub(crate) end_index: usize,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct FormalSplitLabelSupport {
+    forward_5d: Vec<usize>,
+    forward_20d: Vec<usize>,
+    forward_60d: Vec<usize>,
+    prepare_primary: Vec<usize>,
+    hedge_primary: Vec<usize>,
+    defend_primary: Vec<usize>,
+}
+
 pub(crate) async fn research_formal_dataset_build_main(args: &[String]) -> anyhow::Result<()> {
     let options = FormalDatasetBuildOptions::parse(args)?;
     let store = crate::open_sqlite_store().await?;
@@ -310,7 +355,7 @@ pub(crate) async fn research_formal_dataset_build_main(args: &[String]) -> anyho
         .clone()
         .unwrap_or_else(|| format!("{}", generated_at.format("%Y%m%dT%H%M%S")));
     let dataset_key = crate::formal_dataset_key(&options.dataset_id, &dataset_version);
-    let rows = crate::build_main_formal_dataset_rows_with_catalog(
+    let rows = build_main_formal_dataset_rows_with_catalog(
         &dataset_key,
         &snapshots,
         &options.feature.point_in_time_mode,
@@ -414,6 +459,141 @@ pub(crate) async fn research_formal_dataset_build_main(args: &[String]) -> anyho
     Ok(())
 }
 
+fn build_main_formal_dataset_rows_with_catalog(
+    dataset_key: &str,
+    snapshots: &[FeatureSnapshotRecord],
+    point_in_time_mode: &str,
+    label_version: &str,
+    scenario_set_version: &str,
+) -> anyhow::Result<Vec<FormalDatasetRowRecord>> {
+    let scenario_sets = load_formal_dataset_scenario_sets(scenario_set_version, label_version)?;
+    let positive_scenarios = scenario_sets.positive_scenarios;
+    let context_scenarios = scenario_sets.context_scenarios;
+    let min_date = formal_dataset_min_date(label_version);
+    let mut rows = snapshots
+        .iter()
+        .filter(|snapshot| snapshot.as_of_date >= min_date)
+        .filter(|snapshot| formal_dataset_snapshot_is_usable(snapshot, label_version))
+        .map(|snapshot| {
+            let primary_scenario =
+                crate::primary_scenario_for_date(snapshot.as_of_date, &context_scenarios);
+            let dominant_action_episode =
+                crate::dominant_action_episode_for_date(snapshot.as_of_date, &context_scenarios);
+            let regime_5d = crate::forward_crisis_training_regime_with_context(
+                snapshot.as_of_date,
+                &positive_scenarios,
+                &context_scenarios,
+                5,
+            );
+            let regime_20d = crate::forward_crisis_training_regime_with_context(
+                snapshot.as_of_date,
+                &positive_scenarios,
+                &context_scenarios,
+                20,
+            );
+            let regime_60d = crate::forward_crisis_training_regime_with_context(
+                snapshot.as_of_date,
+                &positive_scenarios,
+                &context_scenarios,
+                60,
+            );
+            FormalDatasetRowRecord {
+                dataset_key: dataset_key.to_string(),
+                split_name: String::new(),
+                entity_id: snapshot.entity_id.clone(),
+                market_scope: snapshot.market_scope.clone(),
+                as_of_date: snapshot.as_of_date,
+                point_in_time_mode: point_in_time_mode.to_string(),
+                latest_visible_at: snapshot.latest_visible_at,
+                coverage_score: snapshot.coverage_score,
+                core_feature_coverage: snapshot.core_feature_coverage,
+                trigger_feature_coverage: snapshot.trigger_feature_coverage,
+                external_feature_coverage: snapshot.external_feature_coverage,
+                sample_quality_grade: crate::feature_quality_grade(snapshot.coverage_score)
+                    .to_string(),
+                primary_scenario_id: primary_scenario
+                    .as_ref()
+                    .map(|scenario| scenario.scenario_id.clone()),
+                scenario_family: primary_scenario
+                    .as_ref()
+                    .map(|scenario| scenario.family.clone()),
+                scenario_training_role: primary_scenario
+                    .as_ref()
+                    .map(|scenario| scenario.training_role.clone()),
+                label_5d: crate::forward_crisis_label(snapshot.as_of_date, &positive_scenarios, 5),
+                label_20d: crate::forward_crisis_label(
+                    snapshot.as_of_date,
+                    &positive_scenarios,
+                    20,
+                ),
+                label_60d: crate::forward_crisis_label(
+                    snapshot.as_of_date,
+                    &positive_scenarios,
+                    60,
+                ),
+                regime_5d: crate::probability_training_regime_name(regime_5d).to_string(),
+                regime_20d: crate::probability_training_regime_name(regime_20d).to_string(),
+                regime_60d: crate::probability_training_regime_name(regime_60d).to_string(),
+                action_label_5d: crate::action_window_label(
+                    snapshot.as_of_date,
+                    &context_scenarios,
+                    5,
+                ),
+                action_label_20d: crate::action_window_label(
+                    snapshot.as_of_date,
+                    &context_scenarios,
+                    20,
+                ),
+                action_label_60d: crate::action_window_label(
+                    snapshot.as_of_date,
+                    &context_scenarios,
+                    60,
+                ),
+                prepare_episode_label: crate::action_episode_label_for_level(
+                    snapshot.as_of_date,
+                    &context_scenarios,
+                    ActionabilityLevel::Prepare,
+                ),
+                hedge_episode_label: crate::action_episode_label_for_level(
+                    snapshot.as_of_date,
+                    &context_scenarios,
+                    ActionabilityLevel::Hedge,
+                ),
+                defend_episode_label: crate::action_episode_label_for_level(
+                    snapshot.as_of_date,
+                    &context_scenarios,
+                    ActionabilityLevel::Defend,
+                ),
+                primary_action_level: dominant_action_episode
+                    .as_ref()
+                    .filter(|selection| {
+                        matches!(selection.phase, crate::ActionEpisodePhase::Primary)
+                    })
+                    .map(|selection| crate::actionability_level_text(selection.level).to_string()),
+                action_episode_id: dominant_action_episode.as_ref().map(|selection| {
+                    format!(
+                        "{}:{}",
+                        selection.scenario_id,
+                        crate::actionability_level_text(selection.level)
+                    )
+                }),
+                action_episode_phase: dominant_action_episode
+                    .as_ref()
+                    .map(|selection| selection.phase.as_str().to_string())
+                    .unwrap_or_else(|| crate::ActionEpisodePhase::Outside.as_str().to_string()),
+                protected_action_window: dominant_action_episode
+                    .as_ref()
+                    .is_some_and(|selection| selection.protected_action_window),
+                features: snapshot.features.clone(),
+                created_at: Utc::now(),
+            }
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by_key(|row| row.as_of_date);
+    assign_formal_dataset_splits(&mut rows, &context_scenarios, label_version);
+    Ok(rows)
+}
+
 pub(crate) async fn research_formal_dataset_list_main(args: &[String]) -> anyhow::Result<()> {
     let options = FormalDatasetListOptions::parse(args)?;
     let store = crate::open_sqlite_store().await?;
@@ -484,6 +664,597 @@ pub(crate) async fn research_formal_dataset_summarize_main(args: &[String]) -> a
     crate::write_formal_dataset_summary_report(&options.output_dir, &summary)?;
     crate::print_formal_dataset_summary(&summary);
     Ok(())
+}
+
+pub(crate) fn formal_dataset_min_date(label_version: &str) -> NaiveDate {
+    match label_version {
+        "formal_label_v1_ext_acute" => NaiveDate::from_ymd_opt(1987, 1, 1).expect("valid date"),
+        _ => NaiveDate::from_ymd_opt(1990, 1, 2).expect("valid date"),
+    }
+}
+
+fn scenario_family_code(family: fc_domain::CrisisScenarioFamily) -> &'static str {
+    match family {
+        fc_domain::CrisisScenarioFamily::AcuteMarketLiquidityCrash => {
+            "acute_market_liquidity_crash"
+        }
+        fc_domain::CrisisScenarioFamily::SystemicCreditBankingCrisis => {
+            "systemic_credit_banking_crisis"
+        }
+        fc_domain::CrisisScenarioFamily::MixedSystemicStress => "mixed_systemic_stress",
+        fc_domain::CrisisScenarioFamily::RateShockOrPolicyDislocation => {
+            "rate_shock_or_policy_dislocation"
+        }
+    }
+}
+
+fn scenario_training_role_code(role: fc_domain::CrisisScenarioTrainingRole) -> &'static str {
+    match role {
+        fc_domain::CrisisScenarioTrainingRole::Mandatory => "mandatory",
+        fc_domain::CrisisScenarioTrainingRole::CandidateOptional => "candidate_optional",
+        fc_domain::CrisisScenarioTrainingRole::ExtensionOnly => "extension_only",
+        fc_domain::CrisisScenarioTrainingRole::NoPositiveMain => "no_positive_main",
+    }
+}
+
+fn action_episode_template_code(template: fc_domain::ActionEpisodeTemplateId) -> &'static str {
+    match template {
+        fc_domain::ActionEpisodeTemplateId::AcuteMarketLiquidityCrash => {
+            "acute_market_liquidity_crash"
+        }
+        fc_domain::ActionEpisodeTemplateId::SystemicCreditBankingCrisis => {
+            "systemic_credit_banking_crisis"
+        }
+        fc_domain::ActionEpisodeTemplateId::MixedSystemicStress => "mixed_systemic_stress",
+        fc_domain::ActionEpisodeTemplateId::RateShockOrPolicyDislocation => {
+            "rate_shock_or_policy_dislocation"
+        }
+    }
+}
+
+pub(crate) fn formal_dataset_snapshot_is_usable(
+    snapshot: &FeatureSnapshotRecord,
+    label_version: &str,
+) -> bool {
+    match label_version {
+        "formal_label_v1_ext_stress" => {
+            snapshot.visibility_status == crate::FEATURE_SNAPSHOT_STATUS_READY
+                && snapshot.coverage_score >= 0.75
+                && snapshot.core_feature_coverage >= 0.85
+                && snapshot.trigger_feature_coverage >= 0.80
+                && snapshot.external_feature_coverage >= 0.50
+                && crate::has_main_dataset_core_features(&snapshot.features)
+        }
+        "formal_label_v1_ext_acute" => {
+            matches!(
+                snapshot.visibility_status.as_str(),
+                crate::FEATURE_SNAPSHOT_STATUS_READY
+                    | crate::FEATURE_SNAPSHOT_STATUS_COVERAGE_OR_VISIBILITY_FAILED
+            ) && snapshot.coverage_score >= 0.55
+                && snapshot.core_feature_coverage >= 0.60
+                && snapshot.trigger_feature_coverage >= 0.50
+                && snapshot.external_feature_coverage >= 0.50
+                && crate::has_extension_acute_core_features(&snapshot.features)
+        }
+        _ => {
+            snapshot.visibility_status == crate::FEATURE_SNAPSHOT_STATUS_READY
+                && snapshot.coverage_score >= 0.85
+                && snapshot.core_feature_coverage >= 0.90
+                && snapshot.trigger_feature_coverage >= 0.75
+                && snapshot.external_feature_coverage >= 0.70
+                && crate::has_main_dataset_core_features(&snapshot.features)
+        }
+    }
+}
+
+pub(crate) fn formal_dataset_split_profile(label_version: &str) -> FormalDatasetSplitProfile {
+    match label_version {
+        "formal_label_v1_ext_acute" => FormalDatasetSplitProfile::ExtensionAcute,
+        "formal_label_v1_ext_stress" => FormalDatasetSplitProfile::ExtensionStress,
+        _ => FormalDatasetSplitProfile::Main,
+    }
+}
+
+pub(crate) fn formal_dataset_split_requirements(
+    label_version: &str,
+) -> FormalDatasetSplitRequirements {
+    match formal_dataset_split_profile(label_version) {
+        FormalDatasetSplitProfile::Main => FormalDatasetSplitRequirements {
+            minimum_scenario_ranges: 3,
+            minimum_calibration_scenarios: 2,
+            minimum_evaluation_scenarios: 2,
+            require_forward_5d: true,
+            require_forward_20d: true,
+            require_forward_60d: true,
+            require_prepare: true,
+            require_hedge: true,
+            require_defend: true,
+        },
+        FormalDatasetSplitProfile::ExtensionAcute => FormalDatasetSplitRequirements {
+            minimum_scenario_ranges: 2,
+            minimum_calibration_scenarios: 2,
+            minimum_evaluation_scenarios: 1,
+            require_forward_5d: true,
+            require_forward_20d: true,
+            require_forward_60d: false,
+            require_prepare: false,
+            require_hedge: false,
+            require_defend: true,
+        },
+        FormalDatasetSplitProfile::ExtensionStress => FormalDatasetSplitRequirements {
+            minimum_scenario_ranges: 3,
+            minimum_calibration_scenarios: 2,
+            minimum_evaluation_scenarios: 2,
+            require_forward_5d: false,
+            require_forward_20d: true,
+            require_forward_60d: true,
+            require_prepare: true,
+            require_hedge: true,
+            require_defend: false,
+        },
+    }
+}
+
+pub(crate) fn assign_formal_dataset_splits(
+    rows: &mut [FormalDatasetRowRecord],
+    scenarios: &[crate::CrisisScenario],
+    label_version: &str,
+) {
+    let ranges = collect_formal_dataset_scenario_ranges(rows, scenarios);
+    let split_requirements = formal_dataset_split_requirements(label_version);
+    let Ok((train_end, calibration_end)) =
+        scenario_aware_formal_split_bounds(rows, &ranges, split_requirements)
+            .or_else(|_| crate::chronological_split_bounds(rows.len()))
+    else {
+        return;
+    };
+    for (index, row) in rows.iter_mut().enumerate() {
+        row.split_name = split_name_for_index(index, train_end, calibration_end).to_string();
+    }
+}
+
+pub(crate) fn scenario_aware_formal_split_bounds(
+    rows: &[FormalDatasetRowRecord],
+    ranges: &[ScenarioRowRange],
+    split_requirements: FormalDatasetSplitRequirements,
+) -> anyhow::Result<(usize, usize)> {
+    if ranges.len() < split_requirements.minimum_scenario_ranges {
+        bail!(
+            "fewer than {} scenario ranges available for scenario-aware split",
+            split_requirements.minimum_scenario_ranges
+        );
+    }
+    let (baseline_train_end, baseline_calibration_end) =
+        crate::chronological_split_bounds(rows.len())?;
+    let label_support = FormalSplitLabelSupport::from_rows(rows);
+    let mut best_candidate = None::<(usize, usize, usize, usize, usize)>;
+
+    for first_boundary_scenario in 0..ranges.len().saturating_sub(1) {
+        let train_candidates = split_boundaries_within_scenario(&ranges[first_boundary_scenario]);
+        for second_boundary_scenario in (first_boundary_scenario + 1)..ranges.len() {
+            let calibration_candidates =
+                split_boundaries_within_scenario(&ranges[second_boundary_scenario]);
+            for &train_end in &train_candidates {
+                for &calibration_end in &calibration_candidates {
+                    if crate::validate_split_bounds(rows.len(), train_end, calibration_end).is_err()
+                    {
+                        continue;
+                    }
+
+                    let calibration_scenario_count =
+                        scenario_count_for_split_range(ranges, train_end, calibration_end);
+                    let evaluation_scenario_count =
+                        scenario_count_for_split_range(ranges, calibration_end, rows.len());
+                    if calibration_scenario_count < split_requirements.minimum_calibration_scenarios
+                        || evaluation_scenario_count
+                            < split_requirements.minimum_evaluation_scenarios
+                    {
+                        continue;
+                    }
+
+                    if !label_support.split_has_required_label_support(
+                        0,
+                        train_end,
+                        split_requirements,
+                    ) || !label_support.split_has_required_label_support(
+                        train_end,
+                        calibration_end,
+                        split_requirements,
+                    ) || !label_support.split_has_required_label_support(
+                        calibration_end,
+                        rows.len(),
+                        split_requirements,
+                    ) {
+                        continue;
+                    }
+
+                    let scenario_coverage =
+                        calibration_scenario_count.saturating_add(evaluation_scenario_count);
+                    let evaluation_actionability_support_score =
+                        split_actionability_scenario_support_score(
+                            rows,
+                            ranges,
+                            calibration_end,
+                            rows.len(),
+                            split_requirements,
+                        );
+                    let deviation_from_baseline = train_end.abs_diff(baseline_train_end)
+                        + calibration_end.abs_diff(baseline_calibration_end);
+                    let replace_candidate = match best_candidate {
+                        None => true,
+                        Some((
+                            best_train_end,
+                            best_calibration_end,
+                            best_coverage,
+                            best_actionability_support_score,
+                            best_deviation,
+                        )) => {
+                            scenario_coverage > best_coverage
+                                || (scenario_coverage == best_coverage
+                                    && evaluation_actionability_support_score
+                                        > best_actionability_support_score)
+                                || (scenario_coverage == best_coverage
+                                    && evaluation_actionability_support_score
+                                        == best_actionability_support_score
+                                    && deviation_from_baseline < best_deviation)
+                                || (scenario_coverage == best_coverage
+                                    && evaluation_actionability_support_score
+                                        == best_actionability_support_score
+                                    && deviation_from_baseline == best_deviation
+                                    && (train_end > best_train_end
+                                        || (train_end == best_train_end
+                                            && calibration_end > best_calibration_end)))
+                        }
+                    };
+                    if replace_candidate {
+                        best_candidate = Some((
+                            train_end,
+                            calibration_end,
+                            scenario_coverage,
+                            evaluation_actionability_support_score,
+                            deviation_from_baseline,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    best_candidate
+        .map(|(train_end, calibration_end, _, _, _)| (train_end, calibration_end))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "no scenario-aware split preserves multi-scenario calibration/evaluation coverage together with forward/action-episode label support"
+            )
+        })
+}
+
+pub(crate) fn collect_formal_dataset_scenario_ranges(
+    rows: &[FormalDatasetRowRecord],
+    scenarios: &[crate::CrisisScenario],
+) -> Vec<ScenarioRowRange> {
+    let family_by_id = scenarios
+        .iter()
+        .map(|scenario| (scenario.scenario_id.as_str(), scenario.family.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut ranges = BTreeMap::<String, (usize, usize)>::new();
+    for (index, row) in rows.iter().enumerate() {
+        let Some(scenario_id) = row.primary_scenario_id.as_ref() else {
+            continue;
+        };
+        ranges
+            .entry(scenario_id.clone())
+            .and_modify(|range| range.1 = index)
+            .or_insert((index, index));
+    }
+
+    let mut summaries = ranges
+        .into_iter()
+        .map(|(scenario_id, (start_index, end_index))| ScenarioRowRange {
+            family: family_by_id
+                .get(scenario_id.as_str())
+                .cloned()
+                .or_else(|| rows[start_index].scenario_family.clone())
+                .unwrap_or_else(|| "unknown".to_string()),
+            scenario_id,
+            start_index,
+            end_index,
+        })
+        .collect::<Vec<_>>();
+    summaries.sort_by_key(|range| range.start_index);
+    summaries
+}
+
+impl FormalSplitLabelSupport {
+    pub(crate) fn from_rows(rows: &[FormalDatasetRowRecord]) -> Self {
+        let mut support = Self {
+            forward_5d: Vec::with_capacity(rows.len() + 1),
+            forward_20d: Vec::with_capacity(rows.len() + 1),
+            forward_60d: Vec::with_capacity(rows.len() + 1),
+            prepare_primary: Vec::with_capacity(rows.len() + 1),
+            hedge_primary: Vec::with_capacity(rows.len() + 1),
+            defend_primary: Vec::with_capacity(rows.len() + 1),
+        };
+        support.forward_5d.push(0);
+        support.forward_20d.push(0);
+        support.forward_60d.push(0);
+        support.prepare_primary.push(0);
+        support.hedge_primary.push(0);
+        support.defend_primary.push(0);
+        for row in rows {
+            support.forward_5d.push(
+                support.forward_5d.last().copied().unwrap_or_default()
+                    + usize::from(row.label_5d > 0),
+            );
+            support.forward_20d.push(
+                support.forward_20d.last().copied().unwrap_or_default()
+                    + usize::from(row.label_20d > 0),
+            );
+            support.forward_60d.push(
+                support.forward_60d.last().copied().unwrap_or_default()
+                    + usize::from(row.label_60d > 0),
+            );
+            support.prepare_primary.push(
+                support.prepare_primary.last().copied().unwrap_or_default()
+                    + usize::from(row.prepare_episode_label > 0),
+            );
+            support.hedge_primary.push(
+                support.hedge_primary.last().copied().unwrap_or_default()
+                    + usize::from(row.hedge_episode_label > 0),
+            );
+            support.defend_primary.push(
+                support.defend_primary.last().copied().unwrap_or_default()
+                    + usize::from(row.defend_episode_label > 0),
+            );
+        }
+        support
+    }
+
+    pub(crate) fn split_has_required_label_support(
+        &self,
+        start: usize,
+        end: usize,
+        split_requirements: FormalDatasetSplitRequirements,
+    ) -> bool {
+        end > start
+            && (!split_requirements.require_forward_5d
+                || self.has_positive(&self.forward_5d, start, end))
+            && (!split_requirements.require_forward_20d
+                || self.has_positive(&self.forward_20d, start, end))
+            && (!split_requirements.require_forward_60d
+                || self.has_positive(&self.forward_60d, start, end))
+            && (!split_requirements.require_prepare
+                || self.has_positive(&self.prepare_primary, start, end))
+            && (!split_requirements.require_hedge
+                || self.has_positive(&self.hedge_primary, start, end))
+            && (!split_requirements.require_defend
+                || self.has_positive(&self.defend_primary, start, end))
+    }
+
+    fn has_positive(&self, prefix: &[usize], start: usize, end: usize) -> bool {
+        prefix[end] > prefix[start]
+    }
+}
+
+fn split_boundaries_within_scenario(range: &ScenarioRowRange) -> Vec<usize> {
+    ((range.start_index + 1)..=range.end_index.saturating_add(1)).collect()
+}
+
+pub(crate) fn scenario_count_for_split_range(
+    ranges: &[ScenarioRowRange],
+    start: usize,
+    end: usize,
+) -> usize {
+    ranges
+        .iter()
+        .filter(|range| start <= range.end_index && end > range.start_index)
+        .count()
+}
+
+fn split_actionability_scenario_support_score(
+    rows: &[FormalDatasetRowRecord],
+    ranges: &[ScenarioRowRange],
+    start: usize,
+    end: usize,
+    split_requirements: FormalDatasetSplitRequirements,
+) -> usize {
+    let mut score = 0;
+    if split_requirements.require_prepare {
+        score += actionability_positive_scenario_count_for_split_range(
+            rows,
+            ranges,
+            start,
+            end,
+            ActionabilityLevel::Prepare,
+        )
+        .min(2);
+    }
+    if split_requirements.require_hedge {
+        score += actionability_positive_scenario_count_for_split_range(
+            rows,
+            ranges,
+            start,
+            end,
+            ActionabilityLevel::Hedge,
+        )
+        .min(2);
+    }
+    if split_requirements.require_defend {
+        score += actionability_positive_scenario_count_for_split_range(
+            rows,
+            ranges,
+            start,
+            end,
+            ActionabilityLevel::Defend,
+        )
+        .min(2);
+    }
+    score
+}
+
+fn actionability_positive_scenario_count_for_split_range(
+    rows: &[FormalDatasetRowRecord],
+    ranges: &[ScenarioRowRange],
+    start: usize,
+    end: usize,
+    level: ActionabilityLevel,
+) -> usize {
+    ranges
+        .iter()
+        .filter(|range| {
+            let overlap_start = start.max(range.start_index);
+            let overlap_end = end.min(range.end_index.saturating_add(1));
+            overlap_start < overlap_end
+                && rows[overlap_start..overlap_end].iter().any(|row| {
+                    row.primary_scenario_id.as_deref() == Some(range.scenario_id.as_str())
+                        && row_has_action_episode_label(row, level)
+                })
+        })
+        .count()
+}
+
+pub(crate) fn row_has_action_episode_label(
+    row: &FormalDatasetRowRecord,
+    level: ActionabilityLevel,
+) -> bool {
+    match level {
+        ActionabilityLevel::Prepare => row.prepare_episode_label > 0,
+        ActionabilityLevel::Hedge => row.hedge_episode_label > 0,
+        ActionabilityLevel::Defend => row.defend_episode_label > 0,
+    }
+}
+
+pub(crate) fn scenario_count_for_index_range(
+    rows: &[FormalDatasetRowRecord],
+    start: usize,
+    end: usize,
+) -> usize {
+    rows[start.min(rows.len())..end.min(rows.len())]
+        .iter()
+        .filter_map(|row| row.primary_scenario_id.as_ref())
+        .collect::<BTreeSet<_>>()
+        .len()
+}
+
+fn split_name_for_index(index: usize, train_end: usize, calibration_end: usize) -> &'static str {
+    if index < train_end {
+        "train"
+    } else if index < calibration_end {
+        "calibration"
+    } else {
+        "evaluation"
+    }
+}
+
+pub(crate) fn load_label_set_crisis_scenarios(
+    scenario_set_version: &str,
+    label_set_id: &str,
+) -> anyhow::Result<Vec<crate::CrisisScenario>> {
+    let catalog = crate::load_crisis_scenario_catalog();
+    if catalog.catalog_id != scenario_set_version {
+        bail!(
+            "scenario set version {} is not available in the active catalog {}; set FC_SCENARIO_CATALOG_PATH to another catalog or use {}",
+            scenario_set_version,
+            catalog.catalog_id,
+            catalog.catalog_id
+        );
+    }
+
+    load_label_set_crisis_scenarios_from_catalog(&catalog, label_set_id)
+}
+
+pub(crate) fn load_formal_dataset_scenario_sets(
+    scenario_set_version: &str,
+    label_set_id: &str,
+) -> anyhow::Result<FormalDatasetScenarioSets> {
+    let catalog = crate::load_crisis_scenario_catalog();
+    if catalog.catalog_id != scenario_set_version {
+        bail!(
+            "scenario set version {} is not available in the active catalog {}; set FC_SCENARIO_CATALOG_PATH to another catalog or use {}",
+            scenario_set_version,
+            catalog.catalog_id,
+            catalog.catalog_id
+        );
+    }
+
+    let positive_scenarios = load_label_set_crisis_scenarios_from_catalog(&catalog, label_set_id)?;
+    let mut context_scenarios = positive_scenarios.clone();
+    if label_set_id == crate::DEFAULT_FORMAL_LABEL_VERSION {
+        let protected_context_scenarios = load_window_set_crisis_scenarios_from_catalog(
+            &catalog,
+            crate::DEFAULT_FORMAL_MAIN_CONTEXT_WINDOW_SET_ID,
+        )?;
+        for scenario in protected_context_scenarios {
+            if context_scenarios
+                .iter()
+                .any(|existing| existing.scenario_id == scenario.scenario_id)
+            {
+                continue;
+            }
+            context_scenarios.push(scenario);
+        }
+        context_scenarios.sort_by_key(|scenario| scenario.crisis_start);
+    }
+
+    Ok(FormalDatasetScenarioSets {
+        positive_scenarios,
+        context_scenarios,
+    })
+}
+
+fn load_label_set_crisis_scenarios_from_catalog(
+    catalog: &fc_domain::CrisisScenarioCatalog,
+    label_set_id: &str,
+) -> anyhow::Result<Vec<crate::CrisisScenario>> {
+    let scenarios = catalog
+        .scenarios_for_label_set(label_set_id)
+        .with_context(|| format!("label set {label_set_id} was not found in scenario catalog"))?;
+    Ok(scenarios
+        .into_iter()
+        .map(crisis_scenario_from_definition)
+        .collect())
+}
+
+fn load_window_set_crisis_scenarios_from_catalog(
+    catalog: &fc_domain::CrisisScenarioCatalog,
+    window_set_id: &str,
+) -> anyhow::Result<Vec<crate::CrisisScenario>> {
+    let scenario_ids = catalog
+        .scenario_ids_for_window_set(window_set_id)
+        .with_context(|| format!("window set {window_set_id} was not found in scenario catalog"))?;
+    let mut scenarios = Vec::with_capacity(scenario_ids.len());
+    for scenario_id in scenario_ids {
+        let scenario = catalog
+            .scenarios
+            .iter()
+            .find(|scenario| scenario.scenario_id == *scenario_id)
+            .with_context(|| {
+                format!("window set {window_set_id} references unknown scenario {scenario_id}")
+            })?;
+        scenarios.push(crisis_scenario_from_definition(scenario));
+    }
+    Ok(scenarios)
+}
+
+fn crisis_scenario_from_definition(
+    scenario: &fc_domain::CrisisScenarioDefinition,
+) -> crate::CrisisScenario {
+    crate::CrisisScenario {
+        scenario_id: scenario.scenario_id.clone(),
+        family: scenario_family_code(scenario.family).to_string(),
+        training_role: scenario_training_role_code(scenario.training_role).to_string(),
+        pre_warning_start: scenario.pre_warning_start,
+        crisis_start: scenario.crisis_start,
+        acute_start: scenario.acute_start,
+        crisis_end: scenario.crisis_end,
+        default_horizon_roles: scenario.default_horizon_roles.clone(),
+        protected_window: scenario.protected_window,
+        protected_action_levels: scenario.protected_action_levels.clone(),
+        episode_template_id: scenario
+            .episode_template_id
+            .expect("validated scenario catalog must include episode_template_id"),
+        action_episode_overrides: scenario.action_episode_overrides.clone(),
+    }
 }
 
 pub(crate) fn build_formal_dataset_summary(
@@ -1026,11 +1797,10 @@ fn load_formal_dataset_scenario_metadata(
                 scenario.scenario_id.clone(),
                 ScenarioSummaryMetadata {
                     label: scenario.label,
-                    family: crate::scenario_family_code(scenario.family).to_string(),
-                    training_role: crate::scenario_training_role_code(scenario.training_role)
-                        .to_string(),
+                    family: scenario_family_code(scenario.family).to_string(),
+                    training_role: scenario_training_role_code(scenario.training_role).to_string(),
                     protected_window: scenario.protected_window,
-                    episode_template_id: crate::action_episode_template_code(
+                    episode_template_id: action_episode_template_code(
                         scenario
                             .episode_template_id
                             .expect("validated scenario catalog must include episode_template_id"),

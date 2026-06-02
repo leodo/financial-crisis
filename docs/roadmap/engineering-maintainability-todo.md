@@ -66,6 +66,7 @@
 - snapshot 导出写盘、heuristic snapshot 训练样本装配、formal dataset 训练集解析等 research helper 也已开始跟随迁移到对应子模块，不再继续堆在 `main.rs` 的同一层里。
 - formal feature snapshot 的观测可见性判断、时区截止规则、覆盖率汇总、核心特征门槛与单日快照构建实现，已继续迁入 `commands/feature.rs`，`main.rs` 不再直接承载这一整块特征工程细节。
 - formal dataset summary 的 envelope 结构、split/scenario/regime 汇总、Markdown 渲染与 CLI 打印，也已迁入 `commands/dataset.rs`，`main.rs` 只保留场景切分与共享训练 helper。
+- formal dataset 的主样本装配、场景集加载/切分要求、scenario metadata 编码 helper 也已继续迁入 `commands/dataset.rs`，`main.rs` 进一步缩回到 actionability / 概率训练共享逻辑。
 - release 相关的 `activate_release_with_runtime_guard`、review stage activate/restore、market scope resolve 也已迁到 `commands/release.rs`。
 - `release review` 的 runtime snapshot 抓取与 orchestration 也已迁到 `commands/release.rs`。
 - `release review` 专属的 probability/actionability/runtime sanity guardrail、recommendation、summary helper 也已开始跟随迁移。
