@@ -10,10 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
-    demo::AssessmentHistoryBuildMode,
-    demo::{
-        select_assessment_history, select_backtest_timeline, AppDataSource, HistoryQueryWindow,
-    },
+    data_source::{AppDataSource, AssessmentHistoryBuildMode},
+    demo::{select_assessment_history, select_backtest_timeline, HistoryQueryWindow},
     AppState,
 };
 use fc_storage::SqliteStore;

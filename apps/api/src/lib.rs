@@ -1,5 +1,6 @@
 mod assessment;
 mod config;
+mod data_source;
 mod demo;
 mod handlers;
 mod state;
@@ -20,20 +21,21 @@ use chrono::Utc;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 pub use config::AppConfig;
+pub use data_source::{AppDataSource, AssessmentHistoryBuildMode};
 pub use state::{AppData, AppState};
 
 pub async fn run() -> anyhow::Result<()> {
     init_tracing();
     let config = AppConfig::from_env();
-    let source = demo::source_from_env()?;
-    let data = demo::load_app_data(&source, config.max_history_points).await?;
+    let source = data_source::source_from_env()?;
+    let data = data_source::load_app_data(&source, config.max_history_points).await?;
     let state = Arc::new(AppState::new(
         data,
         source.clone(),
         config.default_history_points,
         config.max_history_points,
     ));
-    if config.refresh_interval_seconds > 0 && !matches!(source, demo::AppDataSource::Demo) {
+    if config.refresh_interval_seconds > 0 && !matches!(source, data_source::AppDataSource::Demo) {
         tokio::spawn(refresh_loop(state.clone(), config.refresh_interval_seconds));
     }
     let app = router(state);
@@ -164,12 +166,12 @@ mod tests {
     use axum::{body::Body, http::Request};
     use tower::ServiceExt;
 
-    use crate::{demo, router, AppState};
+    use crate::{data_source, demo, router, AppState};
 
     async fn get_json(uri: &str) -> serde_json::Value {
         let app = router(Arc::new(AppState::new(
             demo::build_demo_data(260),
-            demo::AppDataSource::Demo,
+            data_source::AppDataSource::Demo,
             260,
             260,
         )));
@@ -192,7 +194,7 @@ mod tests {
     async fn health_endpoint_works() {
         let app = router(Arc::new(AppState::new(
             demo::build_demo_data(260),
-            demo::AppDataSource::Demo,
+            data_source::AppDataSource::Demo,
             260,
             260,
         )));
@@ -310,7 +312,7 @@ mod tests {
     async fn system_reload_endpoint_returns_refresh_metadata() {
         let app = router(Arc::new(AppState::new(
             demo::build_demo_data(260),
-            demo::AppDataSource::Demo,
+            data_source::AppDataSource::Demo,
             260,
             260,
         )));
@@ -339,7 +341,7 @@ mod tests {
     async fn system_reload_endpoint_accepts_strict_rebuild_history_mode() {
         let app = router(Arc::new(AppState::new(
             demo::build_demo_data(260),
-            demo::AppDataSource::Demo,
+            data_source::AppDataSource::Demo,
             260,
             260,
         )));
@@ -394,7 +396,7 @@ mod tests {
     async fn api_responses_disable_browser_cache() {
         let app = router(Arc::new(AppState::new(
             demo::build_demo_data(260),
-            demo::AppDataSource::Demo,
+            data_source::AppDataSource::Demo,
             260,
             260,
         )));

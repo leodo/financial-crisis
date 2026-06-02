@@ -85,6 +85,11 @@
 - [ ] 把 historical replay / prediction snapshot bridge / cache key 逻辑拆开。
 - [ ] 把 `apps/api/src/assessment.rs` 中的特征构造、概率评分、posture 判定、position guidance、analogs 分模块。
 
+当前进展：
+
+- 已新增 `apps/api/src/data_source.rs`，把 `FC_DATA_MODE` 解析、SQLite/Postgres 装载、active release bundle 装配与 API reload 入口依赖的 `AppDataSource` / `AssessmentHistoryBuildMode` 从 `demo.rs` 中拆出。
+- `demo.rs` 当前主要收缩为 demo seed、assessment history/backtest 生成、historical replay 缓存与审计辅助逻辑，后续可以继续沿 replay/cache 边界拆分。
+
 ### 3.3 Shared Logic
 
 - [ ] 收敛 `apply_platt_calibration`、观测值窗口切片、`difference_from_tail` 等重复函数。
