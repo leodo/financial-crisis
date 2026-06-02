@@ -291,7 +291,7 @@ pub(crate) async fn research_release_publish(args: &[String]) -> anyhow::Result<
     println!("  PIT mode   {}", record.manifest.point_in_time_mode);
 
     if options.activate {
-        crate::activate_release_with_runtime_guard(
+        activate_release_with_runtime_guard(
             &store,
             &record.manifest.market_scope,
             &record.manifest.release_id,
@@ -351,13 +351,10 @@ pub(crate) async fn research_release_activate(args: &[String]) -> anyhow::Result
     let options = ReleaseSwitchOptions::parse(args)?;
     let store = crate::open_sqlite_store().await?;
     store.migrate().await?;
-    let market_scope = crate::resolve_release_market_scope(
-        &store,
-        &options.release_id,
-        options.market_scope.as_deref(),
-    )
-    .await?;
-    crate::activate_release_with_runtime_guard(
+    let market_scope =
+        resolve_release_market_scope(&store, &options.release_id, options.market_scope.as_deref())
+            .await?;
+    activate_release_with_runtime_guard(
         &store,
         &market_scope,
         &options.release_id,
@@ -374,12 +371,9 @@ pub(crate) async fn research_release_rollback(args: &[String]) -> anyhow::Result
     let options = ReleaseSwitchOptions::parse(args)?;
     let store = crate::open_sqlite_store().await?;
     store.migrate().await?;
-    let market_scope = crate::resolve_release_market_scope(
-        &store,
-        &options.release_id,
-        options.market_scope.as_deref(),
-    )
-    .await?;
+    let market_scope =
+        resolve_release_market_scope(&store, &options.release_id, options.market_scope.as_deref())
+            .await?;
     let activated = store
         .rollback_model_release(&market_scope, &options.release_id, &options.updated_by)
         .await?;
@@ -472,7 +466,7 @@ pub(crate) async fn research_release_review(args: &[String]) -> anyhow::Result<(
         &candidate_release,
     )
     .await;
-    let restore_result = crate::restore_release_review_state(
+    let restore_result = restore_release_review_state(
         &store,
         &market_scope,
         &original_active.manifest.release_id,
@@ -497,4 +491,160 @@ pub(crate) async fn research_release_review(args: &[String]) -> anyhow::Result<(
         original_active.manifest.release_id
     );
     Ok(())
+}
+
+pub(crate) async fn activate_release_for_review(
+    store: &fc_storage::SqliteStore,
+    market_scope: &str,
+    release_id: &str,
+    api_reload_url: &str,
+    history_mode: crate::ApiReloadHistoryMode,
+    updated_by: &str,
+    stage: &str,
+) -> anyhow::Result<()> {
+    store
+        .activate_model_release(market_scope, release_id, updated_by)
+        .await?;
+    println!("Review step {stage}: activated {release_id}.");
+    println!(
+        "Review step {stage}: reloading API runtime via {api_reload_url} (history_mode={}).",
+        history_mode.as_label()
+    );
+    crate::reload_api_runtime_with_history_mode(api_reload_url, history_mode).await?;
+    println!("Review step {stage}: runtime ready.");
+    Ok(())
+}
+
+pub(crate) async fn restore_release_review_state(
+    store: &fc_storage::SqliteStore,
+    market_scope: &str,
+    original_active_release_id: &str,
+    original_records: &BTreeMap<String, ModelReleaseRecord>,
+    api_reload_url: &str,
+    updated_by: &str,
+) -> anyhow::Result<()> {
+    store
+        .activate_model_release(market_scope, original_active_release_id, updated_by)
+        .await?;
+    crate::reload_api_runtime(api_reload_url).await?;
+    for record in original_records.values() {
+        store.upsert_model_release(record).await?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn activate_release_with_runtime_guard(
+    store: &fc_storage::SqliteStore,
+    market_scope: &str,
+    release_id: &str,
+    reload_api: bool,
+    api_reload_url: &str,
+    skip_operational_guard: bool,
+    updated_by: &str,
+) -> anyhow::Result<ModelReleaseRecord> {
+    let previous_active = store.load_active_model_release(market_scope).await?;
+    let previous_release_id = previous_active
+        .as_ref()
+        .map(|release| release.manifest.release_id.clone());
+    let should_check_guard =
+        reload_api && !skip_operational_guard && previous_release_id.as_deref() != Some(release_id);
+    let baseline_assessment = if should_check_guard {
+        Some(crate::fetch_assessment_snapshot_for_guard(api_reload_url).await?)
+    } else {
+        None
+    };
+
+    let activated = store
+        .activate_model_release(market_scope, release_id, updated_by)
+        .await?;
+    println!(
+        "Activated release {} for {}.",
+        activated.manifest.release_id, activated.manifest.market_scope
+    );
+    println!(
+        "  mode={} serving={} pit={}",
+        activated.manifest.probability_mode,
+        activated.manifest.serving_status,
+        activated.manifest.point_in_time_mode
+    );
+
+    if reload_api {
+        println!(
+            "Reloading API runtime via {api_reload_url}. First load for a new release may take several minutes while history snapshots are materialized."
+        );
+        crate::reload_api_runtime(api_reload_url).await?;
+        println!("Reloaded API runtime via {api_reload_url}.");
+    }
+
+    if let Some(baseline_assessment) = baseline_assessment {
+        let candidate_assessment =
+            crate::fetch_assessment_snapshot_for_guard(api_reload_url).await?;
+        let regressions =
+            crate::compare_operational_guardrails(&baseline_assessment, &candidate_assessment);
+        if regressions.is_empty() {
+            crate::print_operational_guardrail_summary(&baseline_assessment, &candidate_assessment);
+            return Ok(activated);
+        }
+
+        if let Some(previous_release_id) = previous_release_id
+            .as_deref()
+            .filter(|previous_release_id| *previous_release_id != release_id)
+        {
+            println!(
+                "Operational guard failed after activating {release_id}. Rolling back to {previous_release_id}."
+            );
+            let rolled_back = store
+                .rollback_model_release(market_scope, previous_release_id, updated_by)
+                .await?;
+            if reload_api {
+                println!(
+                    "Reloading API runtime after rollback via {api_reload_url}. This may also take several minutes."
+                );
+                crate::reload_api_runtime(api_reload_url).await?;
+                println!("Reloaded API runtime after rollback.");
+            }
+            bail!(
+                "release {} regressed against baseline release {} and was rolled back to {}:\n  - {}",
+                release_id,
+                baseline_assessment
+                    .method
+                    .release_id
+                    .as_deref()
+                    .unwrap_or("unknown"),
+                rolled_back.manifest.release_id,
+                regressions.join("\n  - ")
+            );
+        }
+
+        bail!(
+            "release {} regressed against baseline but no previous active release was available for automatic rollback:\n  - {}",
+            release_id,
+            regressions.join("\n  - ")
+        );
+    }
+
+    if !reload_api && !skip_operational_guard {
+        println!(
+            "Operational guard skipped because --reload-api was not enabled; use --reload-api to compare the new runtime against the current baseline."
+        );
+    } else if skip_operational_guard {
+        println!("Operational guard explicitly skipped.");
+    }
+
+    Ok(activated)
+}
+
+pub(crate) async fn resolve_release_market_scope(
+    store: &fc_storage::SqliteStore,
+    release_id: &str,
+    override_market_scope: Option<&str>,
+) -> anyhow::Result<String> {
+    if let Some(market_scope) = override_market_scope {
+        return Ok(market_scope.to_string());
+    }
+    let release = store
+        .load_model_release(release_id)
+        .await?
+        .with_context(|| format!("release {release_id} not found"))?;
+    Ok(release.manifest.market_scope)
 }

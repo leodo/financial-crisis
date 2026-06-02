@@ -1268,7 +1268,7 @@ async fn run_release_review(
         baseline_release.manifest.release_id, candidate_release.manifest.release_id
     );
 
-    activate_release_for_review(
+    commands::release::activate_release_for_review(
         store,
         market_scope,
         &baseline_release.manifest.release_id,
@@ -1281,7 +1281,7 @@ async fn run_release_review(
     let baseline_runtime_snapshot =
         fetch_release_review_runtime_snapshot(&options.api_reload_url).await?;
 
-    activate_release_for_review(
+    commands::release::activate_release_for_review(
         store,
         market_scope,
         &candidate_release.manifest.release_id,
@@ -1364,146 +1364,6 @@ async fn run_release_review(
     print_release_review_summary(&report);
 
     Ok(())
-}
-
-async fn activate_release_for_review(
-    store: &SqliteStore,
-    market_scope: &str,
-    release_id: &str,
-    api_reload_url: &str,
-    history_mode: ApiReloadHistoryMode,
-    updated_by: &str,
-    stage: &str,
-) -> anyhow::Result<()> {
-    store
-        .activate_model_release(market_scope, release_id, updated_by)
-        .await?;
-    println!("Review step {stage}: activated {release_id}.");
-    println!(
-        "Review step {stage}: reloading API runtime via {api_reload_url} (history_mode={}).",
-        history_mode.as_label()
-    );
-    reload_api_runtime_with_history_mode(api_reload_url, history_mode).await?;
-    println!("Review step {stage}: runtime ready.");
-    Ok(())
-}
-
-async fn restore_release_review_state(
-    store: &SqliteStore,
-    market_scope: &str,
-    original_active_release_id: &str,
-    original_records: &BTreeMap<String, ModelReleaseRecord>,
-    api_reload_url: &str,
-    updated_by: &str,
-) -> anyhow::Result<()> {
-    store
-        .activate_model_release(market_scope, original_active_release_id, updated_by)
-        .await?;
-    reload_api_runtime(api_reload_url).await?;
-    for record in original_records.values() {
-        store.upsert_model_release(record).await?;
-    }
-    Ok(())
-}
-
-async fn activate_release_with_runtime_guard(
-    store: &SqliteStore,
-    market_scope: &str,
-    release_id: &str,
-    reload_api: bool,
-    api_reload_url: &str,
-    skip_operational_guard: bool,
-    updated_by: &str,
-) -> anyhow::Result<ModelReleaseRecord> {
-    let previous_active = store.load_active_model_release(market_scope).await?;
-    let previous_release_id = previous_active
-        .as_ref()
-        .map(|release| release.manifest.release_id.clone());
-    let should_check_guard =
-        reload_api && !skip_operational_guard && previous_release_id.as_deref() != Some(release_id);
-    let baseline_assessment = if should_check_guard {
-        Some(fetch_assessment_snapshot_for_guard(api_reload_url).await?)
-    } else {
-        None
-    };
-
-    let activated = store
-        .activate_model_release(market_scope, release_id, updated_by)
-        .await?;
-    println!(
-        "Activated release {} for {}.",
-        activated.manifest.release_id, activated.manifest.market_scope
-    );
-    println!(
-        "  mode={} serving={} pit={}",
-        activated.manifest.probability_mode,
-        activated.manifest.serving_status,
-        activated.manifest.point_in_time_mode
-    );
-
-    if reload_api {
-        println!(
-            "Reloading API runtime via {api_reload_url}. First load for a new release may take several minutes while history snapshots are materialized."
-        );
-        reload_api_runtime(api_reload_url).await?;
-        println!("Reloaded API runtime via {api_reload_url}.");
-    }
-
-    if let Some(baseline_assessment) = baseline_assessment {
-        let candidate_assessment = fetch_assessment_snapshot_for_guard(api_reload_url).await?;
-        let regressions =
-            compare_operational_guardrails(&baseline_assessment, &candidate_assessment);
-        if regressions.is_empty() {
-            print_operational_guardrail_summary(&baseline_assessment, &candidate_assessment);
-            return Ok(activated);
-        }
-
-        if let Some(previous_release_id) = previous_release_id
-            .as_deref()
-            .filter(|previous_release_id| *previous_release_id != release_id)
-        {
-            println!(
-                "Operational guard failed after activating {release_id}. Rolling back to {previous_release_id}."
-            );
-            let rolled_back = store
-                .rollback_model_release(market_scope, previous_release_id, updated_by)
-                .await?;
-            if reload_api {
-                println!(
-                    "Reloading API runtime after rollback via {api_reload_url}. This may also take several minutes."
-                );
-                reload_api_runtime(api_reload_url).await?;
-                println!("Reloaded API runtime after rollback.");
-            }
-            bail!(
-                "release {} regressed against baseline release {} and was rolled back to {}:\n  - {}",
-                release_id,
-                baseline_assessment
-                    .method
-                    .release_id
-                    .as_deref()
-                    .unwrap_or("unknown"),
-                rolled_back.manifest.release_id,
-                regressions.join("\n  - ")
-            );
-        }
-
-        bail!(
-            "release {} regressed against baseline but no previous active release was available for automatic rollback:\n  - {}",
-            release_id,
-            regressions.join("\n  - ")
-        );
-    }
-
-    if !reload_api && !skip_operational_guard {
-        println!(
-            "Operational guard skipped because --reload-api was not enabled; use --reload-api to compare the new runtime against the current baseline."
-        );
-    } else if skip_operational_guard {
-        println!("Operational guard explicitly skipped.");
-    }
-
-    Ok(activated)
 }
 
 async fn research_prediction_snapshot_list(args: &[String]) -> anyhow::Result<()> {
@@ -1652,7 +1512,7 @@ async fn research_pipeline_bootstrap_formal_release(args: &[String]) -> anyhow::
     println!("  bundle   {}", artifacts.bundle_path.display());
 
     if options.activate {
-        activate_release_with_runtime_guard(
+        commands::release::activate_release_with_runtime_guard(
             &store,
             &artifacts.release.manifest.market_scope,
             &artifacts.release.manifest.release_id,
@@ -10564,21 +10424,6 @@ fn read_probability_bundle(path: &Path) -> anyhow::Result<ProbabilityBundle> {
         .with_context(|| format!("failed to read probability bundle {}", path.display()))?;
     serde_json::from_str::<ProbabilityBundle>(&raw)
         .with_context(|| format!("failed to decode probability bundle {}", path.display()))
-}
-
-async fn resolve_release_market_scope(
-    store: &SqliteStore,
-    release_id: &str,
-    override_market_scope: Option<&str>,
-) -> anyhow::Result<String> {
-    if let Some(market_scope) = override_market_scope {
-        return Ok(market_scope.to_string());
-    }
-    let release = store
-        .load_model_release(release_id)
-        .await?
-        .with_context(|| format!("release {release_id} not found"))?;
-    Ok(release.manifest.market_scope)
 }
 
 fn truncate_text(value: &str, max_len: usize) -> String {
