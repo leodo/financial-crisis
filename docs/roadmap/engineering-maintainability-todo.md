@@ -49,7 +49,7 @@
 
 ### 3.1 Worker
 
-- [ ] 把 `apps/worker/src/main.rs` 的 CLI 参数解析与命令分发拆出去。
+- [x] 把 `apps/worker/src/main.rs` 的 CLI 参数解析与命令分发拆出去。
 - [ ] 把 release review / publish / activate / rollback 收敛到独立模块。
 - [ ] 把 feature snapshot / formal dataset / pipeline train 拆成独立研究模块。
 - [ ] 把 backfill / refresh 免费数据路径拆成独立命令模块。
@@ -59,6 +59,9 @@
 
 - 已先抽出 `apps/worker/src/output_paths.rs`，统一实验/追踪输出路径策略。
 - 已先抽出 `apps/worker/src/reporting.rs`，收走 release review / formal dataset summary 的写盘逻辑。
+- 已新增 `apps/worker/src/commands/mod.rs`，收走顶层 CLI 参数匹配、帮助文本和一级命令分发。
+- 已新增 `apps/worker/src/commands/db.rs`，把 `db init/seed/check` 从超大入口文件中拆出。
+- 已新增 `apps/worker/src/commands/refresh.rs` 与 `commands/backfill.rs`，开始把免费数据刷新与回填入口从 `main.rs` 中剥离。
 
 ### 3.2 API
 
