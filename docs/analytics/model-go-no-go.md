@@ -1041,6 +1041,46 @@ runtime 诊断说明两件事：
   - 提高 `60d pre_warning_buffer` 对 runtime floor 的穿透能力
   - 复核 `prepare_p60d` 阈值选择是否过高，或训练目标是否没有显式优化“越过 floor”的能力
 
+### 7.20 2026-06-02 训练侧 threshold repair 已落地，但 `extmix7` 说明当前瓶颈不在“简单阈值打分规则”
+
+本轮又连续做了两步训练侧修正：
+
+1. 把 `select_probability_decision_threshold` 改成 horizon-aware：
+   - `5d` 继续偏 precision-first
+   - `20d/60d` 提高 recall / F-beta 权重
+2. 又补了一层 `regime-aware threshold repair`：
+   - 如果 `20d/60d` 已经学出 early-warning separation
+   - 但 base threshold 连 calibration 里的 early-warning regime 都完全打不到
+   - 就尝试向下修正 threshold，并增加 `early-warning cap` 保护
+
+对应训练候选：
+
+- `us_formal_interaction_tail_extmix6_20260602T052712`
+- `us_formal_interaction_tail_extmix7_20260602T053257`
+
+但结果出现了一个很关键的工程事实：
+
+- 两版候选的 bundle threshold 仍然是：
+  - `5d = 0.03`
+  - `20d = 0.522`
+  - `60d = 0.732`
+- 离线 `regime_eval` 也没有变化，仍然是 `5d/20d/60d usable_early_warning_separation`
+
+这说明：
+
+1. 当前问题已经不是“threshold 选择函数纯粹按 precision 排序”这么简单；
+2. 即便补了 horizon-aware / regime-aware 修正，当前 calibration split 里仍没有提供足够强的 `60d pre_warning_buffer` 穿越证据；
+3. 所以下一步不该继续盲目堆阈值小修，而应优先确认：
+   - calibration split 是否真的包含足够可用的 `pre_warning_buffer`
+   - `60d` 的 positive / protected / buffer 角色是否在 split 上被稀释
+   - 是否需要把 threshold selection 显式接到 `calibration_rows` 的 regime diagnostics 导出，而不是只在训练内部静默处理
+
+这句人话解释是：
+
+- 训练侧已经尽力“想把 threshold 往下拉”；
+- 但当前这批 calibration 样本本身没有给出足够强的下调理由；
+- 所以瓶颈更像是 `split / label / calibration evidence`，而不是下一轮再改一版阈值打分公式。
+
 ## 12. 结论
 
 从这一步开始，项目里出现“formal bundle”不再自动等于“正式模型”。
