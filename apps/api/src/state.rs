@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     assessment::RuntimeThresholdDiagnostics,
-    demo::{self, AppDataSource},
+    demo::{self, AppDataSource, AssessmentHistoryBuildMode},
 };
 
 #[derive(Debug, Clone)]
@@ -63,7 +63,20 @@ impl AppState {
     }
 
     pub async fn reload(&self) -> anyhow::Result<AppData> {
-        let data = demo::load_app_data(&self.source, self.max_history_points).await?;
+        self.reload_with_history_mode(AssessmentHistoryBuildMode::Default)
+            .await
+    }
+
+    pub async fn reload_with_history_mode(
+        &self,
+        history_build_mode: AssessmentHistoryBuildMode,
+    ) -> anyhow::Result<AppData> {
+        let data = demo::load_app_data_with_history_mode(
+            &self.source,
+            self.max_history_points,
+            history_build_mode,
+        )
+        .await?;
         *self.data.write().await = data.clone();
         Ok(data)
     }

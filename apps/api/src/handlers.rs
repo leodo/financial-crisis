@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
+    demo::AssessmentHistoryBuildMode,
     demo::{
         select_assessment_history, select_backtest_timeline, AppDataSource, HistoryQueryWindow,
     },
@@ -33,6 +34,11 @@ pub struct ResearchAuditQuery {
     limit: Option<usize>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+pub struct ReloadQuery {
+    history_mode: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct ResearchAuditResponse {
     supported: bool,
@@ -42,8 +48,10 @@ struct ResearchAuditResponse {
     runtime_probability_mode: String,
     runtime_release_status: String,
     latest_snapshot_date: Option<NaiveDate>,
+    latest_replay_run_id: Option<String>,
     note: String,
     releases: Vec<fc_domain::ModelReleaseRecord>,
+    replay_runs: Vec<fc_domain::HistoricalReplayRunRecord>,
     snapshots: Vec<fc_domain::PredictionSnapshotRecord>,
 }
 
@@ -168,12 +176,12 @@ pub async fn assessment_method(State(state): State<Arc<AppState>>) -> Json<serde
         data.assessment.runtime.data_mode,
         fc_domain::DataMode::Sqlite
     ) {
-        "assessment/history 在 SQLite 模式下会复用已落库的 prediction snapshots；若 active release 是 formal main 且缓存版本失配，会改为基于原始观测全量重建该 release 的历史。"
+        "assessment/history 在 SQLite 模式下会优先复用同口径的 historical replay points；若无命中 replay cache，则退回已落库 prediction snapshots；若 active release 带有 bundle-backed 概率模型且缓存版本失配，会改为基于原始观测全量重建该 release 的历史。"
     } else {
         "assessment/history 当前仍由运行时即时构造。"
     };
     let note = format!(
-        "assessment 概率、风险强度和 posture 为不同层的输出；当前 probability_mode={}、release_status={}{}。{} 页面应先检查 data_mode、关键指标日期、stale warning 和 action playbook，再解释当前数值。",
+        "assessment 概率、风险强度、episode-native 动作层和 posture 为不同层的输出；5d / 20d / 60d 回答风险窗口距离，prepare / hedge / defend 回答动作优先级，不是把 60d / 20d / 5d 直接改名。当前 probability_mode={}、release_status={}{}。{} 页面应先检查 data_mode、关键指标日期、stale warning 和 action playbook，再解释当前数值。",
         method.probability_mode,
         method.release_status,
         method
@@ -226,7 +234,18 @@ pub async fn research_audit(
                 )
                 .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let replay_runs = store
+                .list_historical_replay_runs(
+                    Some(&market_scope),
+                    query.release_id.as_deref(),
+                    from,
+                    to,
+                    Some(limit),
+                )
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             let latest_snapshot_date = snapshots.iter().map(|snapshot| snapshot.as_of_date).max();
+            let latest_replay_run_id = replay_runs.first().map(|run| run.replay_run_id.clone());
             ResearchAuditResponse {
                 supported: true,
                 storage_mode: "sqlite".to_string(),
@@ -235,8 +254,10 @@ pub async fn research_audit(
                 runtime_probability_mode: data.assessment.method.probability_mode.clone(),
                 runtime_release_status: data.assessment.method.release_status.clone(),
                 latest_snapshot_date,
-                note: "当前页面展示的是 release registry 与 prediction snapshot 落库审计。若 runtime probability mode 与 release manifest 不一致，说明线上已自动降级回 heuristic。".to_string(),
+                latest_replay_run_id,
+                note: "当前页面展示的是 release registry、historical replay run / point、以及 prediction snapshot 的落库审计。若 runtime probability mode 与 release manifest 不一致，说明线上已自动降级回 heuristic。".to_string(),
                 releases,
+                replay_runs,
                 snapshots,
             }
         }
@@ -248,8 +269,10 @@ pub async fn research_audit(
             runtime_probability_mode: data.assessment.method.probability_mode.clone(),
             runtime_release_status: data.assessment.method.release_status.clone(),
             latest_snapshot_date: None,
-            note: "当前运行在 demo 模式，release registry 和 prediction snapshot 审计不可用。切到 SQLite 后该页面会显示真实审计数据。".to_string(),
+            latest_replay_run_id: None,
+            note: "当前运行在 demo 模式，release registry、historical replay、prediction snapshot 审计不可用。切到 SQLite 后该页面会显示真实审计数据。".to_string(),
             releases: Vec::new(),
+            replay_runs: Vec::new(),
             snapshots: Vec::new(),
         },
         AppDataSource::Postgres { .. } => ResearchAuditResponse {
@@ -260,8 +283,10 @@ pub async fn research_audit(
             runtime_probability_mode: data.assessment.method.probability_mode.clone(),
             runtime_release_status: data.assessment.method.release_status.clone(),
             latest_snapshot_date: None,
-            note: "当前 Postgres 路径尚未接入本地 release registry 与 prediction snapshot 审计，建议先通过 SQLite 研究链路完成模型训练、发布与复盘。".to_string(),
+            latest_replay_run_id: None,
+            note: "当前 Postgres 路径尚未接入本地 release registry、historical replay 与 prediction snapshot 审计，建议先通过 SQLite 研究链路完成模型训练、发布与复盘。".to_string(),
             releases: Vec::new(),
+            replay_runs: Vec::new(),
             snapshots: Vec::new(),
         },
     };
@@ -271,9 +296,14 @@ pub async fn research_audit(
 
 pub async fn system_reload(
     State(state): State<Arc<AppState>>,
+    Query(query): Query<ReloadQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    let history_build_mode = match query.history_mode.as_deref() {
+        Some("strict_rebuild") => AssessmentHistoryBuildMode::StrictRebuild,
+        _ => AssessmentHistoryBuildMode::Default,
+    };
     let data = state
-        .reload()
+        .reload_with_history_mode(history_build_mode)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({
@@ -281,5 +311,9 @@ pub async fn system_reload(
         "data_mode": data.data_mode,
         "as_of_date": data.assessment.as_of_date,
         "generated_at": data.assessment.runtime.generated_at,
+        "history_mode": match history_build_mode {
+            AssessmentHistoryBuildMode::Default => "default",
+            AssessmentHistoryBuildMode::StrictRebuild => "strict_rebuild",
+        },
     })))
 }

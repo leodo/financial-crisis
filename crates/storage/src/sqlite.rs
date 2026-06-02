@@ -3,9 +3,10 @@ use std::{collections::HashSet, fs, path::Path, str::FromStr};
 use chrono::{DateTime, NaiveDate, Utc};
 use fc_domain::{
     ActiveModelPointer, AlertEvent, AlertStatus, AlertType, FeatureSnapshotRecord,
-    FormalDatasetManifest, FormalDatasetRecord, FormalDatasetRowRecord, Frequency, Indicator,
-    ModelReleaseManifest, ModelReleaseRecord, Observation, PredictionSnapshotRecord, RiskDimension,
-    RiskDirection, RiskLevel,
+    FormalDatasetManifest, FormalDatasetRecord, FormalDatasetRowRecord, Frequency,
+    HistoricalAssessmentPointRecord, HistoricalReplayRunRecord, Indicator, ModelReleaseManifest,
+    ModelReleaseRecord, Observation, PredictionSnapshotRecord, RiskDimension, RiskDirection,
+    RiskLevel,
 };
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow},
@@ -100,8 +101,37 @@ impl SqliteStore {
                 sqlx::query(statement).execute(&self.pool).await?;
             }
         }
+        self.ensure_prediction_snapshot_clause_columns().await?;
         self.ensure_formal_dataset_regime_columns().await?;
         self.ensure_formal_dataset_action_label_columns().await?;
+        self.ensure_formal_dataset_action_episode_columns().await?;
+        Ok(())
+    }
+
+    async fn ensure_prediction_snapshot_clause_columns(&self) -> Result<(), StorageError> {
+        let columns = sqlx::query("PRAGMA table_info(analytics_prediction_snapshots)")
+            .fetch_all(&self.pool)
+            .await?;
+        let column_names = columns
+            .into_iter()
+            .map(|row| row.try_get::<String, _>("name"))
+            .collect::<Result<HashSet<_>, _>>()?;
+
+        for (column_name, alter_sql) in [
+            (
+                "posture_trigger_codes_json",
+                "ALTER TABLE analytics_prediction_snapshots ADD COLUMN posture_trigger_codes_json TEXT NOT NULL DEFAULT '[]'",
+            ),
+            (
+                "posture_blocker_codes_json",
+                "ALTER TABLE analytics_prediction_snapshots ADD COLUMN posture_blocker_codes_json TEXT NOT NULL DEFAULT '[]'",
+            ),
+        ] {
+            if !column_names.contains(column_name) {
+                sqlx::query(alter_sql).execute(&self.pool).await?;
+            }
+        }
+
         Ok(())
     }
 
@@ -157,6 +187,57 @@ impl SqliteStore {
             (
                 "action_label_60d",
                 "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN action_label_60d INTEGER NOT NULL DEFAULT 0",
+            ),
+        ] {
+            if !column_names.contains(column_name) {
+                sqlx::query(alter_sql).execute(&self.pool).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn ensure_formal_dataset_action_episode_columns(&self) -> Result<(), StorageError> {
+        let columns = sqlx::query("PRAGMA table_info(analytics_formal_dataset_rows)")
+            .fetch_all(&self.pool)
+            .await?;
+        let column_names = columns
+            .into_iter()
+            .map(|row| row.try_get::<String, _>("name"))
+            .collect::<Result<HashSet<_>, _>>()?;
+
+        for (column_name, alter_sql) in [
+            (
+                "scenario_training_role",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN scenario_training_role TEXT",
+            ),
+            (
+                "prepare_episode_label",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN prepare_episode_label INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
+                "hedge_episode_label",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN hedge_episode_label INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
+                "defend_episode_label",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN defend_episode_label INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
+                "primary_action_level",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN primary_action_level TEXT",
+            ),
+            (
+                "action_episode_id",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN action_episode_id TEXT",
+            ),
+            (
+                "action_episode_phase",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN action_episode_phase TEXT NOT NULL DEFAULT 'outside'",
+            ),
+            (
+                "protected_action_window",
+                "ALTER TABLE analytics_formal_dataset_rows ADD COLUMN protected_action_window INTEGER NOT NULL DEFAULT 0",
             ),
         ] {
             if !column_names.contains(column_name) {
@@ -1419,6 +1500,10 @@ impl SqliteStore {
     ) -> Result<(), StorageError> {
         let mut transaction = self.pool.begin().await?;
         for snapshot in snapshots {
+            let posture_trigger_codes_json = serde_json::to_string(&snapshot.posture_trigger_codes)
+                .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+            let posture_blocker_codes_json = serde_json::to_string(&snapshot.posture_blocker_codes)
+                .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
             let snapshot_id = prediction_snapshot_id(
                 &snapshot.entity_id,
                 &snapshot.market_scope,
@@ -1452,11 +1537,13 @@ impl SqliteStore {
                     coverage_score,
                     freshness_status,
                     method_version,
+                    posture_trigger_codes_json,
+                    posture_blocker_codes_json,
                     recorded_at
                 )
                 VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                    ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24
+                    ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26
                 )
                 ON CONFLICT(snapshot_id) DO UPDATE SET
                     release_id = excluded.release_id,
@@ -1478,6 +1565,8 @@ impl SqliteStore {
                     coverage_score = excluded.coverage_score,
                     freshness_status = excluded.freshness_status,
                     method_version = excluded.method_version,
+                    posture_trigger_codes_json = excluded.posture_trigger_codes_json,
+                    posture_blocker_codes_json = excluded.posture_blocker_codes_json,
                     recorded_at = excluded.recorded_at
                 "#,
             )
@@ -1504,6 +1593,8 @@ impl SqliteStore {
             .bind(snapshot.coverage_score)
             .bind(&snapshot.freshness_status)
             .bind(&snapshot.method_version)
+            .bind(&posture_trigger_codes_json)
+            .bind(&posture_blocker_codes_json)
             .bind(format_datetime(snapshot.recorded_at))
             .execute(&mut *transaction)
             .await?;
@@ -1545,6 +1636,8 @@ impl SqliteStore {
                 coverage_score,
                 freshness_status,
                 method_version,
+                posture_trigger_codes_json,
+                posture_blocker_codes_json,
                 recorded_at
             FROM analytics_prediction_snapshots
             WHERE 1 = 1
@@ -2009,6 +2102,7 @@ impl SqliteStore {
                     sample_quality_grade,
                     primary_scenario_id,
                     scenario_family,
+                    scenario_training_role,
                     label_5d,
                     label_20d,
                     label_60d,
@@ -2018,12 +2112,20 @@ impl SqliteStore {
                     action_label_5d,
                     action_label_20d,
                     action_label_60d,
+                    prepare_episode_label,
+                    hedge_episode_label,
+                    defend_episode_label,
+                    primary_action_level,
+                    action_episode_id,
+                    action_episode_phase,
+                    protected_action_window,
                     features_json,
                     created_at
                 )
                 VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                    ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26
+                    ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32,
+                    ?33, ?34
                 )
                 "#,
             )
@@ -2042,6 +2144,7 @@ impl SqliteStore {
             .bind(&row.sample_quality_grade)
             .bind(row.primary_scenario_id.as_deref())
             .bind(row.scenario_family.as_deref())
+            .bind(row.scenario_training_role.as_deref())
             .bind(row.label_5d as i64)
             .bind(row.label_20d as i64)
             .bind(row.label_60d as i64)
@@ -2051,6 +2154,13 @@ impl SqliteStore {
             .bind(row.action_label_5d as i64)
             .bind(row.action_label_20d as i64)
             .bind(row.action_label_60d as i64)
+            .bind(row.prepare_episode_label as i64)
+            .bind(row.hedge_episode_label as i64)
+            .bind(row.defend_episode_label as i64)
+            .bind(row.primary_action_level.as_deref())
+            .bind(row.action_episode_id.as_deref())
+            .bind(&row.action_episode_phase)
+            .bind(row.protected_action_window as i64)
             .bind(features_json)
             .bind(format_datetime(row.created_at))
             .execute(&mut *transaction)
@@ -2084,6 +2194,7 @@ impl SqliteStore {
                 sample_quality_grade,
                 primary_scenario_id,
                 scenario_family,
+                scenario_training_role,
                 label_5d,
                 label_20d,
                 label_60d,
@@ -2093,6 +2204,13 @@ impl SqliteStore {
                 action_label_5d,
                 action_label_20d,
                 action_label_60d,
+                prepare_episode_label,
+                hedge_episode_label,
+                defend_episode_label,
+                primary_action_level,
+                action_episode_id,
+                action_episode_phase,
+                protected_action_window,
                 features_json,
                 created_at
             FROM analytics_formal_dataset_rows
@@ -2120,6 +2238,409 @@ impl SqliteStore {
         let rows = statement.fetch_all(&self.pool).await?;
         rows.into_iter()
             .map(map_formal_dataset_row_record)
+            .collect()
+    }
+
+    pub async fn upsert_historical_replay_run(
+        &self,
+        run: &HistoricalReplayRunRecord,
+    ) -> Result<(), StorageError> {
+        sqlx::query(
+            r#"
+            INSERT INTO analytics_historical_replay_runs (
+                replay_run_id,
+                release_id,
+                market_scope,
+                from_date,
+                to_date,
+                history_cache_key,
+                feature_set_version,
+                label_version,
+                point_in_time_mode,
+                runtime_policy_version,
+                action_playbook_version,
+                protected_window_catalog_id,
+                source_watermark,
+                status,
+                point_count,
+                failure_reason,
+                created_at
+            )
+            VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17
+            )
+            ON CONFLICT(replay_run_id) DO UPDATE SET
+                release_id = excluded.release_id,
+                market_scope = excluded.market_scope,
+                from_date = excluded.from_date,
+                to_date = excluded.to_date,
+                history_cache_key = excluded.history_cache_key,
+                feature_set_version = excluded.feature_set_version,
+                label_version = excluded.label_version,
+                point_in_time_mode = excluded.point_in_time_mode,
+                runtime_policy_version = excluded.runtime_policy_version,
+                action_playbook_version = excluded.action_playbook_version,
+                protected_window_catalog_id = excluded.protected_window_catalog_id,
+                source_watermark = excluded.source_watermark,
+                status = excluded.status,
+                point_count = excluded.point_count,
+                failure_reason = excluded.failure_reason,
+                created_at = excluded.created_at
+            "#,
+        )
+        .bind(&run.replay_run_id)
+        .bind(run.release_id.as_deref())
+        .bind(&run.market_scope)
+        .bind(run.from_date.to_string())
+        .bind(run.to_date.to_string())
+        .bind(&run.history_cache_key)
+        .bind(&run.feature_set_version)
+        .bind(&run.label_version)
+        .bind(&run.point_in_time_mode)
+        .bind(&run.runtime_policy_version)
+        .bind(&run.action_playbook_version)
+        .bind(&run.protected_window_catalog_id)
+        .bind(&run.source_watermark)
+        .bind(&run.status)
+        .bind(run.point_count as i64)
+        .bind(run.failure_reason.as_deref())
+        .bind(format_datetime(run.created_at))
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn load_latest_historical_replay_run(
+        &self,
+        market_scope: &str,
+        release_id: Option<&str>,
+        history_cache_key: &str,
+        from_date: NaiveDate,
+        to_date: NaiveDate,
+    ) -> Result<Option<HistoricalReplayRunRecord>, StorageError> {
+        let mut query = String::from(
+            r#"
+            SELECT
+                replay_run_id,
+                release_id,
+                market_scope,
+                from_date,
+                to_date,
+                history_cache_key,
+                feature_set_version,
+                label_version,
+                point_in_time_mode,
+                runtime_policy_version,
+                action_playbook_version,
+                protected_window_catalog_id,
+                source_watermark,
+                status,
+                point_count,
+                failure_reason,
+                created_at
+            FROM analytics_historical_replay_runs
+            WHERE market_scope = ?1
+              AND history_cache_key = ?2
+              AND from_date = ?3
+              AND to_date = ?4
+              AND status = 'success'
+            "#,
+        );
+        if release_id.is_some() {
+            query.push_str(" AND release_id = ?5");
+        } else {
+            query.push_str(" AND release_id IS NULL");
+        }
+        query.push_str(" ORDER BY created_at DESC LIMIT 1");
+
+        let mut statement = sqlx::query(&query)
+            .bind(market_scope)
+            .bind(history_cache_key)
+            .bind(from_date.to_string())
+            .bind(to_date.to_string());
+        if let Some(release_id) = release_id {
+            statement = statement.bind(release_id);
+        }
+
+        let row = statement.fetch_optional(&self.pool).await?;
+        row.map(map_historical_replay_run_row).transpose()
+    }
+
+    pub async fn list_historical_replay_runs(
+        &self,
+        market_scope: Option<&str>,
+        release_id: Option<&str>,
+        from: Option<NaiveDate>,
+        to: Option<NaiveDate>,
+        limit: Option<usize>,
+    ) -> Result<Vec<HistoricalReplayRunRecord>, StorageError> {
+        let mut query = String::from(
+            r#"
+            SELECT
+                replay_run_id,
+                release_id,
+                market_scope,
+                from_date,
+                to_date,
+                history_cache_key,
+                feature_set_version,
+                label_version,
+                point_in_time_mode,
+                runtime_policy_version,
+                action_playbook_version,
+                protected_window_catalog_id,
+                source_watermark,
+                status,
+                point_count,
+                failure_reason,
+                created_at
+            FROM analytics_historical_replay_runs
+            WHERE 1 = 1
+            "#,
+        );
+        let mut param_index = 1;
+        if market_scope.is_some() {
+            query.push_str(&format!(" AND market_scope = ?{param_index}"));
+            param_index += 1;
+        }
+        if release_id.is_some() {
+            query.push_str(&format!(" AND release_id = ?{param_index}"));
+            param_index += 1;
+        }
+        if from.is_some() {
+            query.push_str(&format!(" AND to_date >= ?{param_index}"));
+            param_index += 1;
+        }
+        if to.is_some() {
+            query.push_str(&format!(" AND from_date <= ?{param_index}"));
+            param_index += 1;
+        }
+        query.push_str(" ORDER BY created_at DESC");
+        if limit.is_some() {
+            query.push_str(&format!(" LIMIT ?{param_index}"));
+        }
+
+        let mut statement = sqlx::query(&query);
+        if let Some(market_scope) = market_scope {
+            statement = statement.bind(market_scope);
+        }
+        if let Some(release_id) = release_id {
+            statement = statement.bind(release_id);
+        }
+        if let Some(from) = from {
+            statement = statement.bind(from.to_string());
+        }
+        if let Some(to) = to {
+            statement = statement.bind(to.to_string());
+        }
+        if let Some(limit) = limit {
+            statement = statement.bind(limit as i64);
+        }
+
+        let rows = statement.fetch_all(&self.pool).await?;
+        rows.into_iter()
+            .map(map_historical_replay_run_row)
+            .collect()
+    }
+
+    pub async fn replace_historical_assessment_points(
+        &self,
+        replay_run_id: &str,
+        points: &[HistoricalAssessmentPointRecord],
+    ) -> Result<(), StorageError> {
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query(
+            r#"
+            DELETE FROM analytics_historical_assessment_points
+            WHERE replay_run_id = ?1
+            "#,
+        )
+        .bind(replay_run_id)
+        .execute(&mut *transaction)
+        .await?;
+
+        for point in points {
+            let replay_point_id = historical_assessment_point_id(
+                &point.replay_run_id,
+                &point.entity_id,
+                point.as_of_date,
+            );
+            let posture_trigger_codes_json = serde_json::to_string(&point.posture_trigger_codes)
+                .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+            let posture_blocker_codes_json = serde_json::to_string(&point.posture_blocker_codes)
+                .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+            sqlx::query(
+                r#"
+                INSERT INTO analytics_historical_assessment_points (
+                    replay_point_id,
+                    replay_run_id,
+                    entity_id,
+                    market_scope,
+                    release_id,
+                    as_of_date,
+                    feature_snapshot_id,
+                    point_in_time_mode,
+                    runtime_policy_version,
+                    action_playbook_version,
+                    overall_score,
+                    structural_score,
+                    trigger_score,
+                    external_shock_score,
+                    raw_p_5d,
+                    raw_p_20d,
+                    raw_p_60d,
+                    calibrated_p_5d,
+                    calibrated_p_20d,
+                    calibrated_p_60d,
+                    posture,
+                    time_to_risk_bucket,
+                    actionability_prepare,
+                    actionability_hedge,
+                    actionability_defend,
+                    posture_trigger_codes_json,
+                    posture_blocker_codes_json,
+                    coverage_score,
+                    freshness_status,
+                    generated_at
+                )
+                VALUES (
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+                    ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30
+                )
+                "#,
+            )
+            .bind(replay_point_id)
+            .bind(&point.replay_run_id)
+            .bind(&point.entity_id)
+            .bind(&point.market_scope)
+            .bind(point.release_id.as_deref())
+            .bind(point.as_of_date.to_string())
+            .bind(point.feature_snapshot_id.as_deref())
+            .bind(&point.point_in_time_mode)
+            .bind(&point.runtime_policy_version)
+            .bind(&point.action_playbook_version)
+            .bind(point.overall_score)
+            .bind(point.structural_score)
+            .bind(point.trigger_score)
+            .bind(point.external_shock_score)
+            .bind(point.raw_p_5d)
+            .bind(point.raw_p_20d)
+            .bind(point.raw_p_60d)
+            .bind(point.calibrated_p_5d)
+            .bind(point.calibrated_p_20d)
+            .bind(point.calibrated_p_60d)
+            .bind(&point.posture)
+            .bind(&point.time_to_risk_bucket)
+            .bind(point.actionability_prepare)
+            .bind(point.actionability_hedge)
+            .bind(point.actionability_defend)
+            .bind(&posture_trigger_codes_json)
+            .bind(&posture_blocker_codes_json)
+            .bind(point.coverage_score)
+            .bind(&point.freshness_status)
+            .bind(format_datetime(point.generated_at))
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn list_historical_assessment_points(
+        &self,
+        replay_run_id: Option<&str>,
+        market_scope: Option<&str>,
+        release_id: Option<&str>,
+        from: Option<NaiveDate>,
+        to: Option<NaiveDate>,
+        limit: Option<usize>,
+    ) -> Result<Vec<HistoricalAssessmentPointRecord>, StorageError> {
+        let mut query = String::from(
+            r#"
+            SELECT
+                replay_run_id,
+                entity_id,
+                market_scope,
+                release_id,
+                as_of_date,
+                feature_snapshot_id,
+                point_in_time_mode,
+                runtime_policy_version,
+                action_playbook_version,
+                overall_score,
+                structural_score,
+                trigger_score,
+                external_shock_score,
+                raw_p_5d,
+                raw_p_20d,
+                raw_p_60d,
+                calibrated_p_5d,
+                calibrated_p_20d,
+                calibrated_p_60d,
+                posture,
+                time_to_risk_bucket,
+                actionability_prepare,
+                actionability_hedge,
+                actionability_defend,
+                posture_trigger_codes_json,
+                posture_blocker_codes_json,
+                coverage_score,
+                freshness_status,
+                generated_at
+            FROM analytics_historical_assessment_points
+            WHERE 1 = 1
+            "#,
+        );
+        let mut param_index = 1;
+        if replay_run_id.is_some() {
+            query.push_str(&format!(" AND replay_run_id = ?{param_index}"));
+            param_index += 1;
+        }
+        if market_scope.is_some() {
+            query.push_str(&format!(" AND market_scope = ?{param_index}"));
+            param_index += 1;
+        }
+        if release_id.is_some() {
+            query.push_str(&format!(" AND release_id = ?{param_index}"));
+            param_index += 1;
+        }
+        if from.is_some() {
+            query.push_str(&format!(" AND as_of_date >= ?{param_index}"));
+            param_index += 1;
+        }
+        if to.is_some() {
+            query.push_str(&format!(" AND as_of_date <= ?{param_index}"));
+            param_index += 1;
+        }
+        query.push_str(" ORDER BY as_of_date ASC, generated_at DESC");
+        if limit.is_some() {
+            query.push_str(&format!(" LIMIT ?{param_index}"));
+        }
+
+        let mut statement = sqlx::query(&query);
+        if let Some(replay_run_id) = replay_run_id {
+            statement = statement.bind(replay_run_id);
+        }
+        if let Some(market_scope) = market_scope {
+            statement = statement.bind(market_scope);
+        }
+        if let Some(release_id) = release_id {
+            statement = statement.bind(release_id);
+        }
+        if let Some(from) = from {
+            statement = statement.bind(from.to_string());
+        }
+        if let Some(to) = to {
+            statement = statement.bind(to.to_string());
+        }
+        if let Some(limit) = limit {
+            statement = statement.bind(limit as i64);
+        }
+
+        let rows = statement.fetch_all(&self.pool).await?;
+        rows.into_iter()
+            .map(map_historical_assessment_point_row)
             .collect()
     }
 
@@ -3150,6 +3671,16 @@ fn map_active_pointer_row(row: SqliteRow) -> Result<ActiveModelPointer, StorageE
 }
 
 fn map_prediction_snapshot_row(row: SqliteRow) -> Result<PredictionSnapshotRecord, StorageError> {
+    let posture_trigger_codes = serde_json::from_str::<Vec<String>>(
+        row.try_get::<String, _>("posture_trigger_codes_json")?
+            .as_str(),
+    )
+    .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+    let posture_blocker_codes = serde_json::from_str::<Vec<String>>(
+        row.try_get::<String, _>("posture_blocker_codes_json")?
+            .as_str(),
+    )
+    .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
     Ok(PredictionSnapshotRecord {
         as_of_date: parse_date(row.try_get::<String, _>("as_of_date")?.as_str())?,
         entity_id: row.try_get("entity_id")?,
@@ -3173,6 +3704,8 @@ fn map_prediction_snapshot_row(row: SqliteRow) -> Result<PredictionSnapshotRecor
         coverage_score: row.try_get("coverage_score")?,
         freshness_status: row.try_get("freshness_status")?,
         method_version: row.try_get("method_version")?,
+        posture_trigger_codes,
+        posture_blocker_codes,
         recorded_at: parse_required_datetime(row.try_get::<String, _>("recorded_at")?.as_str())?,
     })
 }
@@ -3249,6 +3782,7 @@ fn map_formal_dataset_row_record(row: SqliteRow) -> Result<FormalDatasetRowRecor
         sample_quality_grade: row.try_get("sample_quality_grade")?,
         primary_scenario_id: row.try_get("primary_scenario_id")?,
         scenario_family: row.try_get("scenario_family")?,
+        scenario_training_role: row.try_get("scenario_training_role")?,
         label_5d: row.try_get::<i64, _>("label_5d")? as u8,
         label_20d: row.try_get::<i64, _>("label_20d")? as u8,
         label_60d: row.try_get::<i64, _>("label_60d")? as u8,
@@ -3258,8 +3792,85 @@ fn map_formal_dataset_row_record(row: SqliteRow) -> Result<FormalDatasetRowRecor
         action_label_5d: row.try_get::<i64, _>("action_label_5d")? as u8,
         action_label_20d: row.try_get::<i64, _>("action_label_20d")? as u8,
         action_label_60d: row.try_get::<i64, _>("action_label_60d")? as u8,
+        prepare_episode_label: row.try_get::<i64, _>("prepare_episode_label")? as u8,
+        hedge_episode_label: row.try_get::<i64, _>("hedge_episode_label")? as u8,
+        defend_episode_label: row.try_get::<i64, _>("defend_episode_label")? as u8,
+        primary_action_level: row.try_get("primary_action_level")?,
+        action_episode_id: row.try_get("action_episode_id")?,
+        action_episode_phase: row.try_get("action_episode_phase")?,
+        protected_action_window: row.try_get::<i64, _>("protected_action_window")? != 0,
         features,
         created_at: parse_required_datetime(row.try_get::<String, _>("created_at")?.as_str())?,
+    })
+}
+
+fn map_historical_replay_run_row(
+    row: SqliteRow,
+) -> Result<HistoricalReplayRunRecord, StorageError> {
+    Ok(HistoricalReplayRunRecord {
+        replay_run_id: row.try_get("replay_run_id")?,
+        release_id: row.try_get("release_id")?,
+        market_scope: row.try_get("market_scope")?,
+        from_date: parse_date(row.try_get::<String, _>("from_date")?.as_str())?,
+        to_date: parse_date(row.try_get::<String, _>("to_date")?.as_str())?,
+        history_cache_key: row.try_get("history_cache_key")?,
+        feature_set_version: row.try_get("feature_set_version")?,
+        label_version: row.try_get("label_version")?,
+        point_in_time_mode: row.try_get("point_in_time_mode")?,
+        runtime_policy_version: row.try_get("runtime_policy_version")?,
+        action_playbook_version: row.try_get("action_playbook_version")?,
+        protected_window_catalog_id: row.try_get("protected_window_catalog_id")?,
+        source_watermark: row.try_get("source_watermark")?,
+        status: row.try_get("status")?,
+        point_count: row.try_get::<i64, _>("point_count")? as usize,
+        failure_reason: row.try_get("failure_reason")?,
+        created_at: parse_required_datetime(row.try_get::<String, _>("created_at")?.as_str())?,
+    })
+}
+
+fn map_historical_assessment_point_row(
+    row: SqliteRow,
+) -> Result<HistoricalAssessmentPointRecord, StorageError> {
+    let posture_trigger_codes = serde_json::from_str::<Vec<String>>(
+        row.try_get::<String, _>("posture_trigger_codes_json")?
+            .as_str(),
+    )
+    .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+    let posture_blocker_codes = serde_json::from_str::<Vec<String>>(
+        row.try_get::<String, _>("posture_blocker_codes_json")?
+            .as_str(),
+    )
+    .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+    Ok(HistoricalAssessmentPointRecord {
+        replay_run_id: row.try_get("replay_run_id")?,
+        entity_id: row.try_get("entity_id")?,
+        market_scope: row.try_get("market_scope")?,
+        release_id: row.try_get("release_id")?,
+        as_of_date: parse_date(row.try_get::<String, _>("as_of_date")?.as_str())?,
+        feature_snapshot_id: row.try_get("feature_snapshot_id")?,
+        point_in_time_mode: row.try_get("point_in_time_mode")?,
+        runtime_policy_version: row.try_get("runtime_policy_version")?,
+        action_playbook_version: row.try_get("action_playbook_version")?,
+        overall_score: row.try_get("overall_score")?,
+        structural_score: row.try_get("structural_score")?,
+        trigger_score: row.try_get("trigger_score")?,
+        external_shock_score: row.try_get("external_shock_score")?,
+        raw_p_5d: row.try_get("raw_p_5d")?,
+        raw_p_20d: row.try_get("raw_p_20d")?,
+        raw_p_60d: row.try_get("raw_p_60d")?,
+        calibrated_p_5d: row.try_get("calibrated_p_5d")?,
+        calibrated_p_20d: row.try_get("calibrated_p_20d")?,
+        calibrated_p_60d: row.try_get("calibrated_p_60d")?,
+        posture: row.try_get("posture")?,
+        time_to_risk_bucket: row.try_get("time_to_risk_bucket")?,
+        actionability_prepare: row.try_get("actionability_prepare")?,
+        actionability_hedge: row.try_get("actionability_hedge")?,
+        actionability_defend: row.try_get("actionability_defend")?,
+        posture_trigger_codes,
+        posture_blocker_codes,
+        coverage_score: row.try_get("coverage_score")?,
+        freshness_status: row.try_get("freshness_status")?,
+        generated_at: parse_required_datetime(row.try_get::<String, _>("generated_at")?.as_str())?,
     })
 }
 
@@ -3296,6 +3907,14 @@ fn formal_dataset_key(dataset_id: &str, dataset_version: &str) -> String {
 
 fn formal_dataset_row_id(dataset_key: &str, as_of_date: NaiveDate, split_name: &str) -> String {
     format!("{dataset_key}:{split_name}:{as_of_date}")
+}
+
+fn historical_assessment_point_id(
+    replay_run_id: &str,
+    entity_id: &str,
+    as_of_date: NaiveDate,
+) -> String {
+    format!("{replay_run_id}:{entity_id}:{as_of_date}")
 }
 
 fn parse_risk_level(value: &str) -> Result<RiskLevel, StorageError> {
@@ -3372,7 +3991,8 @@ mod tests {
     use chrono::{NaiveDate, Utc};
     use fc_domain::{
         AlertEvent, AlertStatus, AlertType, FeatureSnapshotRecord, FormalDatasetManifest,
-        FormalDatasetRecord, FormalDatasetRowRecord, ModelReleaseManifest, ModelReleaseRecord,
+        FormalDatasetRecord, FormalDatasetRowRecord, HistoricalAssessmentPointRecord,
+        HistoricalReplayRunRecord, ModelReleaseManifest, ModelReleaseRecord,
         PredictionSnapshotRecord, RiskContributor, RiskDimension, RiskLevel,
     };
     use uuid::Uuid;
@@ -3573,6 +4193,8 @@ mod tests {
             coverage_score: 0.87,
             freshness_status: "fresh".to_string(),
             method_version: "scoring_v2_20260531".to_string(),
+            posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
+            posture_blocker_codes: vec!["quality_blocked_hedge".to_string()],
             recorded_at,
         };
 
@@ -3599,6 +4221,14 @@ mod tests {
         );
         assert_eq!(rows[0].time_to_risk_bucket, "weeks");
         assert_eq!(rows[0].freshness_status, "fresh");
+        assert_eq!(
+            rows[0].posture_trigger_codes,
+            vec!["prepare_p60d_structural".to_string()]
+        );
+        assert_eq!(
+            rows[0].posture_blocker_codes,
+            vec!["quality_blocked_hedge".to_string()]
+        );
     }
 
     #[tokio::test]
@@ -3702,6 +4332,7 @@ mod tests {
             sample_quality_grade: "a".to_string(),
             primary_scenario_id: None,
             scenario_family: None,
+            scenario_training_role: None,
             label_5d: 0,
             label_20d: 0,
             label_60d: 0,
@@ -3711,6 +4342,13 @@ mod tests {
             action_label_5d: 0,
             action_label_20d: 0,
             action_label_60d: 0,
+            prepare_episode_label: 0,
+            hedge_episode_label: 0,
+            defend_episode_label: 0,
+            primary_action_level: None,
+            action_episode_id: None,
+            action_episode_phase: "outside".to_string(),
+            protected_action_window: false,
             features: snapshot.features.clone(),
             created_at,
         };
@@ -3739,5 +4377,151 @@ mod tests {
         assert_eq!(rows[0].dataset_key, dataset_key);
         assert_eq!(rows[0].regime_60d, "normal");
         assert_eq!(rows[0].features["us_vix_level"], 22.4);
+    }
+
+    #[tokio::test]
+    async fn sqlite_store_round_trips_historical_replay_runs_and_points() {
+        let store = SqliteStore::connect_url("sqlite::memory:").await.unwrap();
+        store.migrate().await.unwrap();
+        let created_at = Utc::now();
+        let release = ModelReleaseRecord {
+            manifest: ModelReleaseManifest {
+                release_id: "release-1".to_string(),
+                market_scope: "financial_system".to_string(),
+                status: "candidate".to_string(),
+                probability_mode: "formal_bundle_v1".to_string(),
+                serving_status: "shadow".to_string(),
+                bundle_uri: "file:///tmp/release.json".to_string(),
+                feature_set_version: "feature_formal_v1".to_string(),
+                label_version: "formal_label_v1_main".to_string(),
+                prob_model_version: "prob_v1".to_string(),
+                calibration_version: "calib_v1".to_string(),
+                posture_policy_version: "posture_v1".to_string(),
+                action_playbook_version: "action_playbook_v1".to_string(),
+                point_in_time_mode: "best_effort".to_string(),
+                training_range_start: None,
+                training_range_end: None,
+                calibration_range_start: None,
+                calibration_range_end: None,
+                evaluation_range_start: None,
+                evaluation_range_end: None,
+                brier_score: None,
+                log_loss: None,
+                ece: None,
+                note: String::new(),
+            },
+            created_at,
+            activated_at: None,
+            retired_at: None,
+        };
+        store.upsert_model_release(&release).await.unwrap();
+
+        let run = HistoricalReplayRunRecord {
+            replay_run_id: "replay-1".to_string(),
+            release_id: Some("release-1".to_string()),
+            market_scope: "financial_system".to_string(),
+            from_date: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            to_date: NaiveDate::from_ymd_opt(2026, 5, 30).unwrap(),
+            history_cache_key: "history_cache_v3|release=release-1".to_string(),
+            feature_set_version: "feature_formal_v1".to_string(),
+            label_version: "formal_label_v1_main".to_string(),
+            point_in_time_mode: "best_effort".to_string(),
+            runtime_policy_version: "runtime_history_v1".to_string(),
+            action_playbook_version: "action_playbook_v1".to_string(),
+            protected_window_catalog_id: "scenario_v1_main".to_string(),
+            source_watermark: "observations=2026-05-30".to_string(),
+            status: "success".to_string(),
+            point_count: 1,
+            failure_reason: None,
+            created_at,
+        };
+        store.upsert_historical_replay_run(&run).await.unwrap();
+
+        let point = HistoricalAssessmentPointRecord {
+            replay_run_id: run.replay_run_id.clone(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            release_id: Some("release-1".to_string()),
+            as_of_date: NaiveDate::from_ymd_opt(2026, 5, 30).unwrap(),
+            feature_snapshot_id: Some(
+                "financial_system:us:2026-05-30:feature_formal_v1:best_effort".to_string(),
+            ),
+            point_in_time_mode: "best_effort".to_string(),
+            runtime_policy_version: "runtime_history_v1".to_string(),
+            action_playbook_version: "action_playbook_v1".to_string(),
+            overall_score: 72.4,
+            structural_score: 68.1,
+            trigger_score: 64.2,
+            external_shock_score: 55.8,
+            raw_p_5d: 0.08,
+            raw_p_20d: 0.19,
+            raw_p_60d: 0.27,
+            calibrated_p_5d: 0.06,
+            calibrated_p_20d: 0.17,
+            calibrated_p_60d: 0.24,
+            posture: "prepare".to_string(),
+            time_to_risk_bucket: "months".to_string(),
+            actionability_prepare: 0.61,
+            actionability_hedge: 0.28,
+            actionability_defend: 0.09,
+            posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
+            posture_blocker_codes: vec!["quality_blocked_hedge".to_string()],
+            coverage_score: 0.92,
+            freshness_status: "fresh".to_string(),
+            generated_at: created_at,
+        };
+        store
+            .replace_historical_assessment_points(&run.replay_run_id, &[point.clone()])
+            .await
+            .unwrap();
+
+        let loaded_run = store
+            .load_latest_historical_replay_run(
+                "financial_system",
+                Some("release-1"),
+                "history_cache_v3|release=release-1",
+                NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 5, 30).unwrap(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded_run.replay_run_id, "replay-1");
+        assert_eq!(loaded_run.point_count, 1);
+
+        let runs = store
+            .list_historical_replay_runs(
+                Some("financial_system"),
+                Some("release-1"),
+                Some(NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
+                Some(NaiveDate::from_ymd_opt(2026, 5, 31).unwrap()),
+                Some(10),
+            )
+            .await
+            .unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].history_cache_key,
+            "history_cache_v3|release=release-1"
+        );
+
+        let points = store
+            .list_historical_assessment_points(
+                Some("replay-1"),
+                Some("financial_system"),
+                Some("release-1"),
+                Some(NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
+                Some(NaiveDate::from_ymd_opt(2026, 5, 31).unwrap()),
+                Some(10),
+            )
+            .await
+            .unwrap();
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].posture, "prepare");
+        assert_eq!(points[0].actionability_prepare, 0.61);
+        assert_eq!(
+            points[0].posture_trigger_codes,
+            vec!["prepare_p60d_structural".to_string()]
+        );
     }
 }

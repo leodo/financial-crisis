@@ -26,6 +26,7 @@ import {
   auditEpisodeClass,
   auditEpisodeLabel,
   backtestSignalSourceLabel,
+  describePostureClause,
   eventStateLabel,
   formatDate,
   formatDateTime,
@@ -301,6 +302,7 @@ export function MethodView({
             rows={[
               ["风险强度", "0-100 分只表示指标组合位于历史压力区的什么位置，不等于危机发生概率。"],
               ["危机概率", "告诉你未来 5d / 20d / 60d 进入风险窗口的可能性。"],
+              ["动作概率", "prepare / hedge / defend 是 episode-native 动作层，只回答是否该准备、对冲或防守，不等于危机先验，也不是 60d / 20d / 5d 的直接改名。"],
               ["Time bucket", "告诉你更像是数月、数周还是当下风险。"],
               ["Posture", "把概率和可信度转换成可执行的风险处理节奏。"]
             ]}
@@ -324,6 +326,71 @@ export function MethodView({
             <VersionRow label="release" value={assessment.method.release_status} />
             <VersionRow label="release id" value={assessment.method.release_id ?? "none"} />
             <VersionRow label="pit mode" value={assessment.method.point_in_time_mode} />
+          </div>
+        </section>
+      </section>
+
+      <section className="band-grid">
+        <section className="surface">
+          <div className="surface-head">
+            <h2>先验和动作概率怎么区分</h2>
+            <BadgeInfo size={18} />
+          </div>
+          <GuideList
+            rows={[
+              [
+                "危机先验",
+                `当前是 ${formatPercent(assessment.probabilities.p_5d)} / ${formatPercent(assessment.probabilities.p_20d)} / ${formatPercent(assessment.probabilities.p_60d)}，回答“风险窗口离现在有多近”。`
+              ],
+              [
+                "动作概率",
+                `当前是 ${formatPercent(assessment.actionability.prepare)} / ${formatPercent(assessment.actionability.hedge)} / ${formatPercent(assessment.actionability.defend)}，回答“现在该不该准备、对冲或防守”；它和 60d / 20d / 5d 的危机先验不是一一对应关系。`
+              ],
+              [
+                "最终 posture",
+                `当前 posture 为 ${postureLabel(assessment.posture)}，它是把危机先验、动作层、数据可信度和事件确认压缩后的执行结论。`
+              ],
+              [
+                "动作头状态",
+                assessment.method.actionability_enabled
+                  ? `当前 active release 已启用独立 episode-native 动作头：${assessment.method.actionability_model_version ?? "actionability"}`
+                  : "当前 active release 还没有独立动作头，页面里的动作概率仍有一部分来自危机先验和评分层的过渡映射。"
+              ]
+            ]}
+          />
+        </section>
+
+        <section className="surface">
+          <div className="surface-head">
+            <h2>当前 runtime 阈值</h2>
+            <History size={18} />
+          </div>
+          <div className="mini-metrics">
+            <Metric label="prepare floor" value={formatPercent(method.runtime_thresholds.prepare_p60d)} />
+            <Metric label="hedge floor" value={formatPercent(method.runtime_thresholds.hedge_p20d)} />
+            <Metric label="defend floor" value={formatPercent(method.runtime_thresholds.defend_p5d)} />
+            <Metric label="weeks bridge" value={formatPercent(method.runtime_thresholds.elevated_weeks_p60d)} />
+            <Metric label="external bridge" value={formatPercent(method.runtime_thresholds.external_prepare_p20d)} />
+            <Metric label="carry bridge" value={formatPercent(method.runtime_thresholds.carry_prepare_p60d)} />
+          </div>
+          <div className="rule-box">
+            <strong>历史审计策略版本</strong>
+            <span>{method.runtime_thresholds.history_runtime_policy_version}</span>
+          </div>
+          <div className="rule-box">
+            <strong>当前 posture 条款</strong>
+            <div className="list-stack compact">
+              {renderClauseRows(posture.trigger_codes, "当前没有额外触发条款。")}
+              {posture.blocker_codes.length > 0 && (
+                <>
+                  <div className="bullet-row">
+                    <span className="bullet-dot" />
+                    <span>以下条款阻断了更激进的 posture 升级：</span>
+                  </div>
+                  {renderClauseRows(posture.blocker_codes, "")}
+                </>
+              )}
+            </div>
           </div>
         </section>
       </section>
@@ -870,6 +937,22 @@ export function AuditView({
                       <td>
                         <strong>{snapshot.posture}</strong>
                         <span>{snapshot.time_to_risk_bucket}</span>
+                        {snapshot.posture_trigger_codes.length > 0 ? (
+                          <span>
+                            触发:{" "}
+                            {snapshot.posture_trigger_codes
+                              .map((code) => describePostureClause(code).label)
+                              .join(" / ")}
+                          </span>
+                        ) : null}
+                        {snapshot.posture_blocker_codes.length > 0 ? (
+                          <span>
+                            阻断:{" "}
+                            {snapshot.posture_blocker_codes
+                              .map((code) => describePostureClause(code).label)
+                              .join(" / ")}
+                          </span>
+                        ) : null}
                       </td>
                       <td>{snapshot.freshness_status}</td>
                       <td>{formatPercent(snapshot.coverage_score)}</td>
@@ -940,4 +1023,27 @@ function Metric({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function renderClauseRows(codes: string[], emptyText: string) {
+  if (codes.length === 0) {
+    return emptyText ? (
+      <div className="bullet-row">
+        <span className="bullet-dot" />
+        <span>{emptyText}</span>
+      </div>
+    ) : null;
+  }
+
+  return codes.map((code) => {
+    const clause = describePostureClause(code);
+    return (
+      <div className="bullet-row" key={code}>
+        <span className="bullet-dot" />
+        <span>
+          <strong>{clause.label}</strong> {clause.summary}
+        </span>
+      </div>
+    );
+  });
 }

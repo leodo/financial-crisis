@@ -20,6 +20,7 @@ import { api } from "./api";
 import {
   auditEpisodeClass,
   auditEpisodeLabel,
+  describePostureClause,
   formatDate,
   formatDateTime,
   dataModeLabel,
@@ -280,6 +281,7 @@ export default function App() {
                 <DecisionView
                   assessment={assessment.data}
                   history={assessmentHistory.data}
+                  method={method.data}
                   posture={posture.data}
                   overview={overview.data}
                   backtests={backtests.data}
@@ -328,12 +330,14 @@ export default function App() {
 function DecisionView({
   assessment,
   history,
+  method,
   posture,
   overview,
   backtests
 }: {
   assessment: AssessmentSnapshot;
   history: AssessmentHistoryPoint[];
+  method: AssessmentMethodResponse;
   posture: PostureGuidance;
   overview: RiskSnapshot;
   backtests: BacktestScenarioSummary[];
@@ -349,6 +353,8 @@ function DecisionView({
   const usdJpyIndicator = assessment.key_indicators.find(
     (item) => item.indicator_id === "us_external_usdjpy_level"
   );
+  const triggerClauses = posture.trigger_codes.map(describePostureClause);
+  const blockerClauses = posture.blocker_codes.map(describePostureClause);
 
   return (
     <section className="workspace">
@@ -358,7 +364,7 @@ function DecisionView({
           <strong>风险强度分不是危机概率。</strong>
           <span>
             `overall / structural / trigger / external` 反映的是压力位置；真正用于决策的是
-            `5d / 20d / 60d` 概率、time bucket 和 posture。
+            `5d / 20d / 60d` 危机先验、`prepare / hedge / defend` 动作层、time bucket 和 posture。
           </span>
         </div>
       </section>
@@ -457,31 +463,38 @@ function DecisionView({
             />
           </div>
           <div className="legend-note">
-            `5d` 看急性冲击，`20d` 看未来几周是否需要离场和保护，`60d` 看数月级脆弱性。
+            `5d` 看急性冲击，`20d` 看未来几周是否需要离场和保护，`60d` 看数月级脆弱性；动作层不是把这三条概率直接改名。
+          </div>
+          <div className="rule-box">
+            <strong>先验和动作概率不是一回事</strong>
+            <span>
+              上面 `5d / 20d / 60d` 是危机先验，回答“风险窗口离现在有多近”；下面
+              `prepare / hedge / defend` 是 episode-native 动作概率，回答“现在该不该开始准备、对冲或防守”，不是把 `60d / 20d / 5d` 直接换了名字。
+            </span>
           </div>
           <div className="mini-metrics">
             <Metric
               label="准备动作"
               value={formatPercent(assessment.actionability.prepare)}
-              hint="更偏向数月到数周的预备性收缩，不等于立刻离场。"
+              hint="回答是否该先准备现金、执行顺序和保护工具，通常早于真正的离场动作。"
             />
             <Metric
               label="对冲动作"
               value={formatPercent(assessment.actionability.hedge)}
-              hint="更偏向未来几周是否应主动加保护。"
+              hint="回答是否该把保护性对冲提前到未来几周内执行。"
             />
             <Metric
               label="防守动作"
               value={formatPercent(assessment.actionability.defend)}
-              hint="更偏向近端风险窗口是否已经打开。"
+              hint="回答近端保护和去杠杆是否已经优先于继续冒险。"
             />
             <Metric
               label="动作头来源"
               value={assessment.method.actionability_enabled ? "双头诊断" : "旧逻辑回推"}
               hint={
                 assessment.method.actionability_enabled
-                  ? `${assessment.method.actionability_model_version ?? "actionability"} / ${assessment.method.fusion_policy_version ?? "fusion"}`
-                  : "当前 active release 尚未内置独立动作头，先用概率与评分做诊断映射。"
+                  ? `${assessment.method.actionability_model_version ?? "actionability"} / ${assessment.method.fusion_policy_version ?? "fusion"} · 独立 episode-native 动作头已启用`
+                  : "当前 active release 尚未内置独立动作头，先用危机先验和评分层做过渡映射。"
               }
             />
           </div>
@@ -504,6 +517,55 @@ function DecisionView({
             posture 是系统建议的风险处理节奏，从观察到防守一共四档，当前高亮的是系统结论。
           </p>
           <PostureLadder current={assessment.posture} />
+        </section>
+      </section>
+
+      <section className="band-grid">
+        <section className="surface">
+          <div className="surface-head">
+            <h2>当前结论怎么来的</h2>
+            <BadgeInfo size={18} />
+          </div>
+          <SignalLayerRows assessment={assessment} posture={posture} method={method} />
+        </section>
+
+        <section className="surface">
+          <div className="surface-head">
+            <h2>当前 posture 条款</h2>
+            <ShieldCheck size={18} />
+          </div>
+          <ClauseList
+            title="已触发"
+            emptyText="当前 posture 没有额外条款触发，仍处于常态观察。"
+            clauses={triggerClauses}
+          />
+          <ClauseList
+            title="被阻断"
+            emptyText="当前没有阻断条款。"
+            clauses={blockerClauses}
+          />
+          <div className="mini-metrics">
+            <Metric
+              label="prepare floor"
+              value={formatPercent(method.runtime_thresholds.prepare_p60d)}
+              hint="这是 posture 进入 prepare 的 runtime 底线之一，不是 prepare 动作概率本身。"
+            />
+            <Metric
+              label="hedge floor"
+              value={formatPercent(method.runtime_thresholds.hedge_p20d)}
+              hint="这是 posture 进入 hedge 的 runtime 底线之一，不是 hedge 动作概率本身。"
+            />
+            <Metric
+              label="defend floor"
+              value={formatPercent(method.runtime_thresholds.defend_p5d)}
+              hint="这是 posture 进入 defend 的 runtime 底线之一，不是 defend 动作概率本身。"
+            />
+            <Metric
+              label="history policy"
+              value={method.runtime_thresholds.history_runtime_policy_version}
+              hint="滚动审计和历史姿态回放使用的 runtime policy 版本。"
+            />
+          </div>
         </section>
       </section>
 
@@ -1102,6 +1164,99 @@ function PostureLadder({ current }: { current: AssessmentSnapshot["posture"] }) 
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function SignalLayerRows({
+  assessment,
+  posture,
+  method
+}: {
+  assessment: AssessmentSnapshot;
+  posture: PostureGuidance;
+  method: AssessmentMethodResponse;
+}) {
+  const actionabilitySource = assessment.method.actionability_enabled
+    ? `独立动作头已启用：${assessment.method.actionability_model_version ?? "actionability"}`
+    : "当前 active release 还没有独立动作头，先用危机先验和评分层做动作映射。";
+
+  return (
+    <div className="signal-layer-list">
+      <div className="signal-layer-row">
+        <div>
+          <strong>危机先验</strong>
+          <span>先看未来 5d / 20d / 60d 进入风险窗口的概率，回答“离风险还有多远”。</span>
+        </div>
+        <div className="signal-layer-meta">
+          <b>
+            {formatPercent(assessment.probabilities.p_5d)} / {formatPercent(assessment.probabilities.p_20d)} /{" "}
+            {formatPercent(assessment.probabilities.p_60d)}
+          </b>
+          <small>
+            当前运行门槛：prepare {formatPercent(method.runtime_thresholds.prepare_p60d)} / hedge{" "}
+            {formatPercent(method.runtime_thresholds.hedge_p20d)} / defend{" "}
+            {formatPercent(method.runtime_thresholds.defend_p5d)}
+          </small>
+        </div>
+      </div>
+
+      <div className="signal-layer-row">
+        <div>
+          <strong>动作概率</strong>
+          <span>再看 prepare / hedge / defend，回答“现在该不该开始准备、加保护、保流动性”。</span>
+        </div>
+        <div className="signal-layer-meta">
+          <b>
+            {formatPercent(assessment.actionability.prepare)} / {formatPercent(assessment.actionability.hedge)} /{" "}
+            {formatPercent(assessment.actionability.defend)}
+          </b>
+          <small>{actionabilitySource}</small>
+        </div>
+      </div>
+
+      <div className="signal-layer-row">
+        <div>
+          <strong>最终 posture</strong>
+          <span>最后再叠加数据可信度、事件确认、JPY carry 和用户偏好，压成一档执行节奏。</span>
+        </div>
+        <div className="signal-layer-meta">
+          <b>
+            {postureLabel(assessment.posture)} / {timeBucketLabel(assessment.time_to_risk_bucket)}
+          </b>
+          <small>{posture.summary}</small>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClauseList({
+  title,
+  clauses,
+  emptyText
+}: {
+  title: string;
+  clauses: ReturnType<typeof describePostureClause>[];
+  emptyText: string;
+}) {
+  return (
+    <div className="clause-section">
+      <strong className="clause-section-title">{title}</strong>
+      {clauses.length === 0 ? (
+        <div className="rule-box">
+          <span>{emptyText}</span>
+        </div>
+      ) : (
+        <div className="clause-grid">
+          {clauses.map((clause) => (
+            <div className={`clause-card ${clause.kind}`} key={`${title}-${clause.label}`}>
+              <strong>{clause.label}</strong>
+              <span>{clause.summary}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

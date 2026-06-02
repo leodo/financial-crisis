@@ -25,5 +25,9 @@ pub struct PredictionSnapshotRecord {
     pub coverage_score: f64,
     pub freshness_status: String,
     pub method_version: String,
+    #[serde(default)]
+    pub posture_trigger_codes: Vec<String>,
+    #[serde(default)]
+    pub posture_blocker_codes: Vec<String>,
     pub recorded_at: DateTime<Utc>,
 }

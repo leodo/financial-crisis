@@ -300,7 +300,9 @@ mod tests {
         assert!(json["storage_mode"].is_string());
         assert!(json["runtime_probability_mode"].is_string());
         assert!(json["runtime_release_status"].is_string());
+        assert!(json["latest_replay_run_id"].is_null() || json["latest_replay_run_id"].is_string());
         assert!(json["releases"].is_array());
+        assert!(json["replay_runs"].is_array());
         assert!(json["snapshots"].is_array());
     }
 
@@ -329,7 +331,36 @@ mod tests {
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["status"], "ok");
+        assert_eq!(json["history_mode"], "default");
         assert!(json["generated_at"].is_string());
+    }
+
+    #[tokio::test]
+    async fn system_reload_endpoint_accepts_strict_rebuild_history_mode() {
+        let app = router(Arc::new(AppState::new(
+            demo::build_demo_data(260),
+            demo::AppDataSource::Demo,
+            260,
+            260,
+        )));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/system/reload?history_mode=strict_rebuild")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["history_mode"], "strict_rebuild");
     }
 
     #[tokio::test]

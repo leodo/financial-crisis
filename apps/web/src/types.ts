@@ -386,6 +386,8 @@ export interface AssessmentHistoryPoint {
   posture: DecisionPosture;
   time_to_risk_bucket: TimeToRiskBucket;
   external_shock_score: number;
+  posture_trigger_codes: string[];
+  posture_blocker_codes: string[];
 }
 
 export interface PostureGuidance {
@@ -394,6 +396,8 @@ export interface PostureGuidance {
   reasons: string[];
   upgrade_condition: string;
   downgrade_condition: string;
+  trigger_codes: string[];
+  blocker_codes: string[];
 }
 
 export interface ProtectedStressWindow {
@@ -491,13 +495,30 @@ export interface PredictionSnapshotRecord {
   coverage_score: number;
   freshness_status: string;
   method_version: string;
+  posture_trigger_codes: string[];
+  posture_blocker_codes: string[];
   recorded_at: string;
+}
+
+export interface RuntimeThresholdDiagnostics {
+  prepare_p60d: number;
+  hedge_p20d: number;
+  defend_p5d: number;
+  severe_now_p20d: number;
+  elevated_weeks_p60d: number;
+  external_prepare_p20d: number;
+  carry_prepare_p60d: number;
+  downgrade_prepare_p60d: number;
+  downgrade_hedge_p20d: number;
+  downgrade_defend_p5d: number;
+  history_runtime_policy_version: string;
 }
 
 export interface AssessmentMethodResponse {
   method: AssessmentMethodVersions;
   note: string;
   protected_stress_window_catalog: ProtectedStressWindowCatalog;
+  runtime_thresholds: RuntimeThresholdDiagnostics;
 }
 
 export interface ResearchAuditResponse {

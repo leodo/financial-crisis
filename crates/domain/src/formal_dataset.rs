@@ -44,6 +44,8 @@ pub struct FormalDatasetRowRecord {
     pub sample_quality_grade: String,
     pub primary_scenario_id: Option<String>,
     pub scenario_family: Option<String>,
+    #[serde(default)]
+    pub scenario_training_role: Option<String>,
     pub label_5d: u8,
     pub label_20d: u8,
     pub label_60d: u8,
@@ -53,6 +55,20 @@ pub struct FormalDatasetRowRecord {
     pub action_label_5d: u8,
     pub action_label_20d: u8,
     pub action_label_60d: u8,
+    #[serde(default)]
+    pub prepare_episode_label: u8,
+    #[serde(default)]
+    pub hedge_episode_label: u8,
+    #[serde(default)]
+    pub defend_episode_label: u8,
+    #[serde(default)]
+    pub primary_action_level: Option<String>,
+    #[serde(default)]
+    pub action_episode_id: Option<String>,
+    #[serde(default)]
+    pub action_episode_phase: String,
+    #[serde(default)]
+    pub protected_action_window: bool,
     pub features: BTreeMap<String, f64>,
     pub created_at: DateTime<Utc>,
 }

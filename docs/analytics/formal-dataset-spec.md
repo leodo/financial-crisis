@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-05-31
+最后更新：2026-06-01
 
 ## 1. 目标
 
@@ -24,12 +24,13 @@
 
 ## 3. 数据集族
 
-第一阶段固定三类：
+第一阶段固定四类：
 
 | 数据集 ID | 含义 | 用途 |
 |---|---|---|
 | `formal_v1_main_1990_daily` | `1990+` 美国主线统一日频主面板 | 正式 `p_5d / p_20d / p_60d` 主训练集 |
 | `formal_v1_ext_acute_pre1990` | `1987 / 1998` 扩展急性冲击包 | 短窗研究、historical analog、专项校验 |
+| `formal_v1_ext_stress_1990_daily` | `1990-1993 / 1994 / 2000-2001 / 2011` protected stress 扩展包 | `prepare / hedge` 分离、protected stress 审计、扩展训练 |
 | `formal_v1_eval_all` | 主面板 + 扩展样本的评估视图 | 审计与对照，不直接作为统一训练输入 |
 
 ## 4. 行粒度
@@ -50,6 +51,9 @@ label_60d
 action_label_5d
 action_label_20d
 action_label_60d
+prepare_episode_label
+hedge_episode_label
+defend_episode_label
 ```
 
 ## 5. 元数据列
@@ -121,18 +125,31 @@ label_60d
 action_label_5d
 action_label_20d
 action_label_60d
+prepare_episode_label
+hedge_episode_label
+defend_episode_label
 primary_scenario_id nullable
 scenario_family nullable
+scenario_training_role nullable
+primary_action_level nullable
+action_episode_id nullable
+action_episode_phase
+protected_action_window
 ```
 
 规则：
 
 - 标签来自 [危机场景目录](scenario-catalog.md)
 - 默认 `label_set = formal_label_v1_main`
-- 若构建扩展包，使用 `label_set = formal_label_v1_ext_acute`
+- 若构建急性扩展包，使用 `label_set = formal_label_v1_ext_acute`
+- 若构建 protected stress 扩展包，使用 `label_set = formal_label_v1_ext_stress`
 - `label_*` 继续保留“未来 H 日进入危机起点”的前瞻口径，供审计和历史对照使用
-- `action_label_*` 用 bounded action window 口径，供 formal 主线研究“提前动作”目标使用
-- 当前研究版已验证：把整套 formal bundle 直接切到 `action_label_*` 仍不足以替代线上 transitional baseline，因此这组标签要继续保留，但不能直接视为最终答案
+- `action_label_*` 保留为 bounded action window proxy 标签，主要服务历史对照和旧研究结果兼容
+- `prepare / hedge / defend episode labels` 才是新的正式动作目标，actionability 训练头应优先使用它们
+- `primary_action_level / action_episode_phase / protected_action_window` 用于区分主正例、过晚确认、protected stress 与 cooldown，不再只用 `crisis_start +/- N` 近似
+- `scenario_training_role` 用于把 `mandatory / candidate_optional / extension_only / no_positive_main` 这层治理元数据下沉到 dataset row、CSV 导出和后续训练权重，不再只停留在 scenario catalog summary
+- dataset summary / release review / actionability guard 也应以 `prepare / hedge / defend primary labels`、`late_validation`、`protected_action_window` 为主口径，不再把 `action_label_*` 当正式评估基线
+- 当前研究版已验证：把整套 formal bundle 直接切到 `action_label_*` 仍不足以替代线上 transitional baseline，因此 proxy 标签要继续保留，但不能直接视为最终答案
 
 ## 8. 样本纳入规则
 
@@ -162,17 +179,17 @@ scenario_family nullable
 - `1987`
 - `1998`
 
-且仅使用可跨时代稳定取得的代理特征：
+并允许使用“弱于主面板”的 proxy gate：
+
+- 不强制要求 `VIX` 在每个样本点都可见；
+- 允许 `coverage_or_visibility_failed` 的 feature snapshot 进入扩展 acute 包；
+- 但仍要求以下代理核心特征同时存在：
 
 ```text
-proxy_gs10_level
-proxy_gs2_level
-proxy_curve_10y2y_monthly
-proxy_baa_10y_spread
-proxy_fed_funds_level
-proxy_nfci_level
-proxy_usdjpy_level
-proxy_unemployment_level
+us_curve_10y2y_level
+us_baa_10y_spread_level
+us_fed_funds_level
+us_usdjpy_level
 ```
 
 用途：
@@ -180,6 +197,27 @@ proxy_unemployment_level
 - 检查短窗风险逻辑；
 - 验证历史类比；
 - 不与主面板直接拼成一套统一宽表模型。
+
+切分要求：
+
+- 不再使用主训练集那套“`5d/20d/60d + prepare/hedge/defend` 三段都必须在每个 split 里出现”的硬规则；
+- 改为 `5d/20d + acute tail(defend)` 的 scenario-aware split；
+- 允许 `calibration / evaluation` 只覆盖急性 episode 的一部分阶段，只要仍能保留短窗预警和急性尾段；
+- 因此它适合 historical analog 与短窗研究，不适合作为正式上线包的单独评估集。
+
+`formal_v1_ext_stress_1990_daily` 只保留：
+
+- `1990-1993`
+- `1994`
+- `2000-2001`
+- `2011`
+
+并使用扩展 stress 专属 split 规则：
+
+- 不强制 `5d` 与 `defend`；
+- 强制 `20d/60d + prepare/hedge`；
+- evaluation 需要保留 `protected stress` 与 extension 主正例；
+- 用于 protected stress、历史对照与扩展训练研究，不直接作为正式主模型 go/no-go 依据。
 
 ## 10. 缺失值策略
 
@@ -212,6 +250,12 @@ proxy_unemployment_level
 - 不把 `2020 / 2023` 混进训练段；
 - 保留现代样本用于真实 out-of-sample 检查；
 - 避免时间泄漏。
+
+补充：
+
+- 上述固定时间切分只适用于 `formal_v1_main_1990_daily` 这类正式主训练集；
+- `formal_v1_ext_acute_pre1990` 和 `formal_v1_ext_stress_1990_daily` 已改为 role-aware scenario split，因为简单按时间 `60/20/20` 切会把正例全部挤进 `train`，导致扩展包失去研究价值。
+- `formal_v1_main_1990_daily` 自 `2026-06-02` 起已接入 `protected_stress_windows_v1` 作为 context scenarios，因此主数据集中的 `protected` 行不再是 `0`；但这仍不等于这些场景被升级为正式主正例。
 
 ## 12. 数据集产物
 
@@ -280,6 +324,14 @@ Worker 至少支持：
 research dataset build-main
 research dataset build-extension
 research dataset report
+```
+
+当前仓库已补的快捷入口：
+
+```text
+just formal-dataset-build
+just formal-dataset-build-ext-stress
+just formal-dataset-build-ext-acute
 ```
 
 ## 16. 下一步

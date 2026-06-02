@@ -34,7 +34,7 @@ audit-report:
 release-list:
     cargo run -p fc-worker -- research release list
 
-# 用“当前 active release”对比一个 candidate release，自动切换 API、导出 review 报告，再恢复原 active。
+# 用“当前 active release”对比一个 candidate release，自动切换 API、以 strict_rebuild 方式重放历史、导出 review 报告，再恢复原 active。
 # 用法：`just release-review us_formal_pit_20260531T160129`
 release-review candidate_release_id:
     cargo run -p fc-worker -- research release review --candidate-release-id {{candidate_release_id}}
@@ -68,6 +68,16 @@ feature-build:
 # 这一步会把 dataset manifest 和逐日样本一起写入 SQLite。
 formal-dataset-build:
     cargo run -p fc-worker -- research dataset build-main --market-scope financial_system
+
+# 构建 1990+ 的 protected stress / extension 数据集。
+# 适合把 1990-1993、1994、2000-2001、2011 这些“高压但不等同主危机正例”的场景单独拉出来做 summary、审计和扩展训练。
+formal-dataset-build-ext-stress:
+    cargo run -p fc-worker -- research dataset build-main --market-scope financial_system --dataset-id formal_v1_ext_stress_1990_daily --label-version formal_label_v1_ext_stress
+
+# 构建 1987 / 1998 急性冲击扩展数据集。
+# 这套数据集允许使用更宽松的 proxy gate，不要求现代 VIX 完整覆盖，主要服务短窗研究与历史类比。
+formal-dataset-build-ext-acute:
+    cargo run -p fc-worker -- research dataset build-main --market-scope financial_system --dataset-id formal_v1_ext_acute_pre1990 --label-version formal_label_v1_ext_acute
 
 # 按年度切块重建 long-history feature snapshots，再汇总生成一版 formal dataset。
 # 适合第一次迁移到新的 PIT 口径，或者中途中断后继续续跑。

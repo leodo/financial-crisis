@@ -19,6 +19,16 @@
         "us_ltcm_1998"
       ],
       "note": "急性冲击扩展标签集，用于 5d/20d 研究和历史类比校验。"
+    },
+    {
+      "label_set_id": "formal_label_v1_ext_stress",
+      "scenario_ids": [
+        "us_early_90s_banking_stress",
+        "us_bond_massacre_1994",
+        "us_dotcom_unwind_2000",
+        "us_funding_stress_2011"
+      ],
+      "note": "受保护压力与扩展训练标签集，用于 20d/60d 的 posture 分离、历史对照与 extension 研究。"
     }
   ],
   "window_sets": [
@@ -26,6 +36,7 @@
       "window_set_id": "protected_stress_windows_v1",
       "scenario_ids": [
         "us_early_90s_banking_stress",
+        "us_bond_massacre_1994",
         "us_dotcom_unwind_2000",
         "us_funding_stress_2011",
         "us_rate_shock_2022"
@@ -45,7 +56,9 @@
       "crisis_end": "1993-04-30",
       "default_horizon_roles": [20, 60],
       "training_role": "extension_only",
+      "episode_template_id": "mixed_systemic_stress",
       "protected_window": true,
+      "protected_action_levels": ["prepare", "hedge"],
       "evidence_basis": "储贷系统尾部压力、地产与衰退环境共同抬升，适合作为受保护压力窗口与历史类比。"
     },
     {
@@ -59,8 +72,26 @@
       "crisis_end": "1987-11-20",
       "default_horizon_roles": [5, 20],
       "training_role": "extension_only",
+      "episode_template_id": "acute_market_liquidity_crash",
       "protected_window": false,
+      "protected_action_levels": [],
       "evidence_basis": "单日极端暴跌与流动性冲击主导，适合作为急性市场崩盘类比，而不是银行信用危机主样本。"
+    },
+    {
+      "scenario_id": "us_bond_massacre_1994",
+      "family": "rate_shock_or_policy_dislocation",
+      "label": "1994 联储加息与债市暴跌",
+      "pre_warning_start": "1993-10-01",
+      "crisis_start": "1994-02-04",
+      "acute_start": "1994-11-15",
+      "crisis_peak": "1994-12-06",
+      "crisis_end": "1995-01-31",
+      "default_horizon_roles": [20, 60],
+      "training_role": "extension_only",
+      "episode_template_id": "rate_shock_or_policy_dislocation",
+      "protected_window": true,
+      "protected_action_levels": ["prepare", "hedge"],
+      "evidence_basis": "联储快速加息、久期损失、杠杆债券组合回撤和 Orange County 违约共同构成典型的利率冲击压力窗口。"
     },
     {
       "scenario_id": "us_ltcm_1998",
@@ -73,7 +104,9 @@
       "crisis_end": "1998-10-15",
       "default_horizon_roles": [5, 20],
       "training_role": "extension_only",
+      "episode_template_id": "acute_market_liquidity_crash",
       "protected_window": false,
+      "protected_action_levels": [],
       "evidence_basis": "俄罗斯违约外溢、杠杆去化和融资条件收缩共同推动的急性风险样本。"
     },
     {
@@ -87,7 +120,9 @@
       "crisis_end": "2001-04-04",
       "default_horizon_roles": [20, 60],
       "training_role": "candidate_optional",
+      "episode_template_id": "mixed_systemic_stress",
       "protected_window": true,
+      "protected_action_levels": ["prepare", "hedge"],
       "evidence_basis": "资产泡沫出清与风险偏好塌缩主导，更适合 posture 和 protected stress 审计。"
     },
     {
@@ -101,7 +136,9 @@
       "crisis_end": "2009-06-30",
       "default_horizon_roles": [20, 60],
       "training_role": "mandatory",
+      "episode_template_id": "systemic_credit_banking_crisis",
       "protected_window": false,
+      "protected_action_levels": [],
       "evidence_basis": "信用、地产、银行和融资链条持续恶化，是 20d/60d 主线最关键的系统性危机样本。"
     },
     {
@@ -115,7 +152,9 @@
       "crisis_end": "2011-10-31",
       "default_horizon_roles": [20, 60],
       "training_role": "extension_only",
+      "episode_template_id": "mixed_systemic_stress",
       "protected_window": true,
+      "protected_action_levels": ["prepare", "hedge"],
       "evidence_basis": "美国主权评级下调与欧债融资压力叠加，更适合受保护压力窗口和历史类比。"
     },
     {
@@ -129,7 +168,9 @@
       "crisis_end": "2020-04-30",
       "default_horizon_roles": [5, 20],
       "training_role": "mandatory",
+      "episode_template_id": "acute_market_liquidity_crash",
       "protected_window": false,
+      "protected_action_levels": [],
       "evidence_basis": "市场与流动性在极短时间内同步失稳，是 5d/20d 急性冲击主样本。"
     },
     {
@@ -143,7 +184,9 @@
       "crisis_end": "2022-10-31",
       "default_horizon_roles": [20, 60],
       "training_role": "no_positive_main",
+      "episode_template_id": "rate_shock_or_policy_dislocation",
       "protected_window": true,
+      "protected_action_levels": ["prepare", "hedge"],
       "evidence_basis": "利率、政策和久期冲击主导，不应直接充当银行信用危机正例，但必须进入 posture 审计。"
     },
     {
@@ -157,7 +200,9 @@
       "crisis_end": "2023-05-15",
       "default_horizon_roles": [20, 60],
       "training_role": "mandatory",
+      "episode_template_id": "systemic_credit_banking_crisis",
       "protected_window": false,
+      "protected_action_levels": [],
       "evidence_basis": "银行、存款与融资信心压力快速放大，是当前美国主线银行危机样本。"
     }
   ]

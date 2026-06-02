@@ -88,7 +88,7 @@ pub struct ProbabilityHorizonBundle {
     pub evaluation: HorizonEvaluationSummary,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionabilityLevel {
     Prepare,
@@ -160,6 +160,8 @@ pub struct HorizonEvaluationSummary {
     pub precision_at_30pct: Option<f64>,
     pub recall_at_30pct: Option<f64>,
     #[serde(default)]
+    pub regime_separation: Option<RegimeSeparationEvaluationSummary>,
+    #[serde(default)]
     pub actionability: Option<ActionabilityEvaluationSummary>,
 }
 
@@ -169,7 +171,55 @@ pub struct ProbabilityBundleEvaluation {
     pub brier_score: f64,
     pub log_loss: f64,
     pub ece: f64,
+    #[serde(default)]
+    pub regime_separation_summaries: Vec<RegimeSeparationEvaluationSummary>,
+    #[serde(default)]
+    pub usable_early_warning_horizon_count: u32,
+    #[serde(default)]
+    pub insufficient_early_warning_horizon_count: u32,
     pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RegimeSeparationEvaluationSummary {
+    pub horizon_days: u32,
+    pub early_warning_regime: String,
+    pub normal_sample_count: u32,
+    #[serde(default)]
+    pub pre_warning_buffer_sample_count: u32,
+    #[serde(default)]
+    pub positive_window_sample_count: u32,
+    pub early_warning_sample_count: u32,
+    pub in_crisis_sample_count: u32,
+    #[serde(default)]
+    pub post_crisis_cooldown_sample_count: u32,
+    pub normal_avg_probability: f64,
+    #[serde(default)]
+    pub pre_warning_buffer_avg_probability: f64,
+    #[serde(default)]
+    pub positive_window_avg_probability: f64,
+    pub early_warning_avg_probability: f64,
+    pub in_crisis_avg_probability: f64,
+    #[serde(default)]
+    pub post_crisis_cooldown_avg_probability: f64,
+    pub max_non_normal_avg_probability: f64,
+    #[serde(default)]
+    pub pre_warning_buffer_lift_vs_normal: Option<f64>,
+    #[serde(default)]
+    pub positive_window_lift_vs_normal: Option<f64>,
+    #[serde(default)]
+    pub early_warning_lift_vs_normal: Option<f64>,
+    #[serde(default)]
+    pub in_crisis_lift_vs_normal: Option<f64>,
+    #[serde(default)]
+    pub post_crisis_cooldown_lift_vs_normal: Option<f64>,
+    #[serde(default)]
+    pub positive_window_gap_vs_normal: Option<f64>,
+    #[serde(default)]
+    pub post_crisis_cooldown_gap_vs_normal: Option<f64>,
+    #[serde(default)]
+    pub max_non_normal_lift_vs_normal: Option<f64>,
+    pub diagnosis: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

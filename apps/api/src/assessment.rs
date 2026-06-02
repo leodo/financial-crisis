@@ -48,6 +48,44 @@ struct ProbabilityActionThresholds {
     defend_p5d: f64,
 }
 
+#[derive(Debug, Clone, Default)]
+struct PostureClauseDiagnostics {
+    defend_trigger_codes: Vec<&'static str>,
+    hedge_trigger_codes: Vec<&'static str>,
+    prepare_trigger_codes: Vec<&'static str>,
+    blocker_codes: Vec<&'static str>,
+}
+
+impl PostureClauseDiagnostics {
+    fn selected_trigger_codes(&self, posture: DecisionPosture) -> Vec<String> {
+        match posture {
+            DecisionPosture::Defend => self
+                .defend_trigger_codes
+                .iter()
+                .map(|code| (*code).to_string())
+                .collect(),
+            DecisionPosture::Hedge => self
+                .hedge_trigger_codes
+                .iter()
+                .map(|code| (*code).to_string())
+                .collect(),
+            DecisionPosture::Prepare => self
+                .prepare_trigger_codes
+                .iter()
+                .map(|code| (*code).to_string())
+                .collect(),
+            DecisionPosture::Normal => Vec::new(),
+        }
+    }
+
+    fn blocker_code_strings(&self) -> Vec<String> {
+        self.blocker_codes
+            .iter()
+            .map(|code| (*code).to_string())
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct RuntimeThresholdDiagnostics {
     pub prepare_p60d: f64,
@@ -1144,6 +1182,145 @@ fn build_time_to_risk_bucket(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn build_posture_clause_diagnostics(
+    snapshot: &RiskSnapshot,
+    probabilities: &ProbabilityBlock,
+    actionability: Option<&ActionabilityBlock>,
+    conviction_score: f64,
+    data_trust: &DataTrust,
+    external_shock_score: f64,
+    breadth_score: f64,
+    jpy_carry: &JpyCarrySnapshot,
+    event_assessment: &EventAssessment,
+    thresholds: ProbabilityActionThresholds,
+) -> PostureClauseDiagnostics {
+    let severe_quality_block =
+        matches!(data_trust.quality_grade, QualityGrade::D | QualityGrade::F);
+    let defend_quality_gate = matches!(data_trust.quality_grade, QualityGrade::A | QualityGrade::B);
+    let confirmation_count = posture_confirmation_count(
+        snapshot.trigger_score,
+        external_shock_score,
+        event_assessment.confirmation_score,
+    );
+    let severe_carry = jpy_carry.score >= 70.0 && jpy_carry.funding_pressure_score >= 55.0;
+    let stressed_carry = jpy_carry.score >= 58.0 && jpy_carry.funding_pressure_score >= 48.0;
+
+    let mut defend_trigger_codes = Vec::new();
+    if defend_quality_gate
+        && confirmation_count >= 2
+        && conviction_score >= 0.62
+        && breadth_score >= 48.0
+    {
+        if probabilities.p_5d >= thresholds.defend_p5d && snapshot.trigger_score >= 60.0 {
+            defend_trigger_codes.push("defend_p5d_trigger");
+        }
+        if severe_carry && snapshot.trigger_score >= 55.0 && external_shock_score >= 55.0 {
+            defend_trigger_codes.push("defend_carry_trigger");
+        }
+        if actionability.is_some_and(|scores| {
+            scores.defend >= 0.36
+                && (snapshot.trigger_score >= 55.0 || external_shock_score >= 55.0)
+        }) {
+            defend_trigger_codes.push("defend_actionability");
+        }
+    }
+
+    let mut hedge_trigger_codes = Vec::new();
+    let hedge_context_support_count = [
+        snapshot.trigger_score >= 50.0,
+        external_shock_score >= 50.0,
+        breadth_score >= 40.0,
+        event_assessment.confirmation_score >= 40.0,
+    ]
+    .into_iter()
+    .filter(|supported| *supported)
+    .count();
+    let hedge_medium_horizon_support = snapshot.structural_score >= 48.0
+        || probabilities.p_60d >= thresholds.downgrade_prepare_p60d()
+        || stressed_carry;
+    let hedge_context_ready = snapshot.overall_score >= 58.0
+        || external_shock_score >= 50.0
+        || event_assessment.confirmation_score >= 45.0
+        || stressed_carry;
+    if probabilities.p_20d >= thresholds.hedge_p20d
+        && hedge_context_support_count >= 2
+        && hedge_medium_horizon_support
+        && hedge_context_ready
+    {
+        hedge_trigger_codes.push("hedge_p20d_context");
+    }
+    if probabilities.p_60d >= thresholds.elevated_weeks_p60d()
+        && snapshot.structural_score >= 55.0
+        && snapshot.trigger_score >= 54.0
+        && external_shock_score >= 48.0
+    {
+        hedge_trigger_codes.push("hedge_p60d_elevated");
+    }
+    if stressed_carry
+        && external_shock_score >= 50.0
+        && snapshot.structural_score >= 50.0
+        && snapshot.trigger_score >= 45.0
+    {
+        hedge_trigger_codes.push("hedge_carry_structural");
+    }
+    if actionability.is_some_and(|scores| {
+        scores.hedge >= 0.36
+            && (snapshot.trigger_score >= 46.0
+                || external_shock_score >= 48.0
+                || event_assessment.confirmation_score >= 35.0)
+    }) {
+        hedge_trigger_codes.push("hedge_actionability");
+    }
+
+    let mut prepare_trigger_codes = Vec::new();
+    if conviction_score >= 0.54 {
+        if probabilities.p_60d >= thresholds.prepare_p60d
+            && snapshot.structural_score >= 58.0
+            && (snapshot.trigger_score >= 45.0
+                || external_shock_score >= 50.0
+                || jpy_carry.funding_pressure_score >= 45.0)
+        {
+            prepare_trigger_codes.push("prepare_p60d_structural");
+        }
+        if snapshot.structural_score >= 64.0
+            && probabilities.p_60d >= thresholds.downgrade_prepare_p60d()
+            && (snapshot.trigger_score >= 45.0
+                || external_shock_score >= 52.0
+                || jpy_carry.funding_pressure_score >= 48.0)
+        {
+            prepare_trigger_codes.push("prepare_structural_downgrade");
+        }
+        if external_shock_score >= 55.0 && snapshot.structural_score >= 52.0 {
+            prepare_trigger_codes.push("prepare_external_structural");
+        }
+        if jpy_carry.funding_pressure_score >= 50.0
+            && snapshot.structural_score >= 54.0
+            && probabilities.p_60d >= thresholds.carry_prepare_p60d()
+        {
+            prepare_trigger_codes.push("prepare_carry_structural");
+        }
+        if actionability.is_some_and(|scores| {
+            scores.prepare >= 0.38
+                && (snapshot.structural_score >= 50.0 || external_shock_score >= 50.0)
+        }) {
+            prepare_trigger_codes.push("prepare_actionability");
+        }
+    }
+
+    let mut blocker_codes = Vec::new();
+    if severe_quality_block && !hedge_trigger_codes.is_empty() {
+        blocker_codes.push("quality_blocked_hedge");
+    }
+
+    PostureClauseDiagnostics {
+        defend_trigger_codes,
+        hedge_trigger_codes,
+        prepare_trigger_codes,
+        blocker_codes,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_posture_guidance(
     snapshot: &RiskSnapshot,
     probabilities: &ProbabilityBlock,
@@ -1160,59 +1337,21 @@ fn build_posture_guidance(
 ) -> PostureGuidance {
     let severe_quality_block =
         matches!(data_trust.quality_grade, QualityGrade::D | QualityGrade::F);
-    let defend_quality_gate = matches!(data_trust.quality_grade, QualityGrade::A | QualityGrade::B);
-    let confirmation_count = posture_confirmation_count(
-        snapshot.trigger_score,
+    let clause_diagnostics = build_posture_clause_diagnostics(
+        snapshot,
+        probabilities,
+        actionability,
+        conviction_score,
+        data_trust,
         external_shock_score,
-        event_assessment.confirmation_score,
+        breadth_score,
+        jpy_carry,
+        event_assessment,
+        thresholds,
     );
-    let severe_carry = jpy_carry.score >= 70.0 && jpy_carry.funding_pressure_score >= 55.0;
-    let stressed_carry = jpy_carry.score >= 58.0 && jpy_carry.funding_pressure_score >= 48.0;
-
-    let defend_signal = defend_quality_gate
-        && confirmation_count >= 2
-        && conviction_score >= 0.62
-        && breadth_score >= 48.0
-        && ((probabilities.p_5d >= thresholds.defend_p5d && snapshot.trigger_score >= 60.0)
-            || (severe_carry && snapshot.trigger_score >= 55.0 && external_shock_score >= 55.0)
-            || actionability.is_some_and(|scores| {
-                scores.defend >= 0.36
-                    && (snapshot.trigger_score >= 55.0 || external_shock_score >= 55.0)
-            }));
-    let hedge_signal = (probabilities.p_20d >= thresholds.hedge_p20d
-        && (snapshot.trigger_score >= 50.0
-            || external_shock_score >= 50.0
-            || breadth_score >= 40.0
-            || event_assessment.confirmation_score >= 40.0))
-        || (probabilities.p_60d >= thresholds.elevated_weeks_p60d()
-            && snapshot.structural_score >= 55.0
-            && snapshot.trigger_score >= 54.0
-            && external_shock_score >= 48.0)
-        || (stressed_carry
-            && external_shock_score >= 50.0
-            && snapshot.structural_score >= 50.0
-            && snapshot.trigger_score >= 45.0)
-        || actionability.is_some_and(|scores| {
-            scores.hedge >= 0.36
-                && (snapshot.trigger_score >= 46.0
-                    || external_shock_score >= 48.0
-                    || event_assessment.confirmation_score >= 35.0)
-        });
-    let prepare_signal = conviction_score >= 0.54
-        && ((probabilities.p_60d >= thresholds.prepare_p60d && snapshot.structural_score >= 55.0)
-            || (snapshot.structural_score >= 62.0
-                && probabilities.p_60d >= thresholds.downgrade_prepare_p60d()
-                && (snapshot.trigger_score >= 42.0
-                    || external_shock_score >= 50.0
-                    || jpy_carry.funding_pressure_score >= 45.0))
-            || (external_shock_score >= 55.0 && snapshot.structural_score >= 52.0)
-            || (jpy_carry.funding_pressure_score >= 45.0
-                && snapshot.structural_score >= 50.0
-                && probabilities.p_60d >= thresholds.carry_prepare_p60d())
-            || actionability.is_some_and(|scores| {
-                scores.prepare >= 0.38
-                    && (snapshot.structural_score >= 50.0 || external_shock_score >= 50.0)
-            }));
+    let defend_signal = !clause_diagnostics.defend_trigger_codes.is_empty();
+    let hedge_signal = !clause_diagnostics.hedge_trigger_codes.is_empty();
+    let prepare_signal = !clause_diagnostics.prepare_trigger_codes.is_empty();
 
     let base_posture = if defend_signal {
         DecisionPosture::Defend
@@ -1224,6 +1363,15 @@ fn build_posture_guidance(
         DecisionPosture::Normal
     };
     let posture = adjust_posture_for_preferences(base_posture, user_preferences, event_assessment);
+    let mut trigger_codes = clause_diagnostics.selected_trigger_codes(base_posture);
+    if posture != base_posture {
+        let adjustment_code = match user_preferences.profile {
+            UserRiskProfile::Conservative => "preference_conservative_escalation",
+            UserRiskProfile::Aggressive => "preference_aggressive_deescalation",
+            UserRiskProfile::Neutral => "preference_neutral_no_adjustment",
+        };
+        trigger_codes.push(adjustment_code.to_string());
+    }
 
     let mut reasons = Vec::new();
     if snapshot.structural_score >= 60.0 {
@@ -1319,6 +1467,8 @@ fn build_posture_guidance(
         reasons,
         upgrade_condition,
         downgrade_condition,
+        trigger_codes,
+        blocker_codes: clause_diagnostics.blocker_code_strings(),
     }
 }
 
@@ -1926,7 +2076,7 @@ fn build_summary(
         TimeToRiskBucket::Now => "短期风险窗口已经打开",
     };
     format!(
-        "{}。5d / 20d / 60d 概率分别为 {:.0}% / {:.0}% / {:.0}%，当前 posture 为 {}。",
+        "{}。5d / 20d / 60d 概率分别为 {:.0}% / {:.0}% / {:.0}%，它们回答的是危机窗口离现在多近；prepare / hedge / defend 动作层与当前 posture 回答的是现在该不该开始准备、保护或防守。当前 posture 为 {}。",
         horizon_text,
         probabilities.p_5d * 100.0,
         probabilities.p_20d * 100.0,
@@ -2369,14 +2519,76 @@ fn round_option(value: Option<f64>, decimals: i32) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::{
-        actionability_confidence_from_probability, fuse_actionability_confidence,
-        ProbabilityActionThresholds,
+        actionability_confidence_from_probability, build_posture_guidance,
+        fuse_actionability_confidence, ProbabilityActionThresholds,
     };
     use chrono::{NaiveDate, Utc};
     use fc_domain::{
-        ActionabilityLevel, DataQualitySummary, ProbabilityBlock, QualityGrade, RiskLevel,
-        RiskSnapshot,
+        ActionabilityLevel, DataQualitySummary, DataTrust, EventAssessment, EventConfirmationState,
+        JpyCarrySnapshot, JpyCarryState, ProbabilityBlock, QualityGrade, RiskLevel, RiskSnapshot,
+        UserRiskPreferences, UserRiskProfile,
     };
+
+    fn neutral_preferences() -> UserRiskPreferences {
+        UserRiskPreferences {
+            profile: UserRiskProfile::Neutral,
+            cash_floor_pct: 15.0,
+            max_equity_cap_pct: 70.0,
+            max_leverage_pct: 100.0,
+            option_overlay_preference_pct: 5.0,
+            allow_aggressive_reentry: false,
+            note: "test".to_string(),
+        }
+    }
+
+    fn test_data_trust(quality_grade: QualityGrade) -> DataTrust {
+        DataTrust {
+            coverage_score: 0.98,
+            core_feature_coverage: 1.0,
+            trigger_feature_coverage: 0.95,
+            external_feature_coverage: 0.95,
+            quality_grade,
+            data_quality_summary: DataQualitySummary {
+                overall_score: 91.0,
+                grade: quality_grade,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count: 0,
+            },
+            warnings: Vec::new(),
+        }
+    }
+
+    fn quiet_event_assessment(confirmation_score: f64) -> EventAssessment {
+        EventAssessment {
+            state: EventConfirmationState::Quiet,
+            confirmation_score,
+            recent_event_count: 0,
+            summary: "test".to_string(),
+            confirmed_signals: Vec::new(),
+            pending_gaps: Vec::new(),
+            recent_events: Vec::new(),
+        }
+    }
+
+    fn quiet_jpy_carry(funding_pressure_score: f64) -> JpyCarrySnapshot {
+        JpyCarrySnapshot {
+            state: JpyCarryState::Quiet,
+            score: 10.0,
+            usdjpy_level: Some(150.0),
+            jp_call_rate: Some(0.25),
+            us_short_rate: Some(4.0),
+            us_jp_short_rate_diff: Some(3.75),
+            change_5d: Some(0.2),
+            change_20d: Some(1.0),
+            realized_vol_20d: Some(0.01),
+            funding_pressure_score,
+            vix_coupling_score: 15.0,
+            credit_coupling_score: 15.0,
+            reason: "test".to_string(),
+        }
+    }
 
     #[test]
     fn actionability_confidence_requires_margin_above_decision_threshold() {
@@ -2486,5 +2698,276 @@ mod tests {
         );
 
         assert!(prepare > 0.35);
+    }
+
+    #[test]
+    fn posture_guidance_emits_prepare_external_structural_clause() {
+        let snapshot = RiskSnapshot {
+            as_of_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            overall_score: 57.0,
+            overall_level: RiskLevel::Stress,
+            structural_score: 54.0,
+            trigger_score: 32.0,
+            level_reason: "test".to_string(),
+            dimensions: Vec::new(),
+            top_contributors: Vec::new(),
+            data_quality_summary: DataQualitySummary {
+                overall_score: 91.0,
+                grade: QualityGrade::A,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count: 0,
+            },
+            generated_at: Utc::now(),
+            method_version: "test".to_string(),
+        };
+        let probabilities = ProbabilityBlock {
+            p_5d: 0.004,
+            p_20d: 0.018,
+            p_60d: 0.010,
+        };
+        let posture = build_posture_guidance(
+            &snapshot,
+            &probabilities,
+            None,
+            0.60,
+            &test_data_trust(QualityGrade::A),
+            56.0,
+            30.0,
+            &[],
+            &quiet_jpy_carry(20.0),
+            &quiet_event_assessment(20.0),
+            &neutral_preferences(),
+            ProbabilityActionThresholds {
+                prepare_p60d: 0.12,
+                hedge_p20d: 0.06,
+                defend_p5d: 0.05,
+            },
+        );
+
+        assert_eq!(posture.posture, fc_domain::DecisionPosture::Prepare);
+        assert_eq!(
+            posture.trigger_codes,
+            vec!["prepare_external_structural".to_string()]
+        );
+        assert!(posture.blocker_codes.is_empty());
+    }
+
+    #[test]
+    fn posture_guidance_marks_quality_blocked_hedge_clause() {
+        let snapshot = RiskSnapshot {
+            as_of_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            overall_score: 49.0,
+            overall_level: RiskLevel::Watch,
+            structural_score: 44.0,
+            trigger_score: 54.0,
+            level_reason: "test".to_string(),
+            dimensions: Vec::new(),
+            top_contributors: Vec::new(),
+            data_quality_summary: DataQualitySummary {
+                overall_score: 62.0,
+                grade: QualityGrade::F,
+                stale_indicator_count: 2,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count: 1,
+            },
+            generated_at: Utc::now(),
+            method_version: "test".to_string(),
+        };
+        let probabilities = ProbabilityBlock {
+            p_5d: 0.01,
+            p_20d: 0.07,
+            p_60d: 0.10,
+        };
+        let posture = build_posture_guidance(
+            &snapshot,
+            &probabilities,
+            None,
+            0.58,
+            &test_data_trust(QualityGrade::F),
+            52.0,
+            41.0,
+            &[],
+            &quiet_jpy_carry(20.0),
+            &quiet_event_assessment(42.0),
+            &neutral_preferences(),
+            ProbabilityActionThresholds {
+                prepare_p60d: 0.12,
+                hedge_p20d: 0.06,
+                defend_p5d: 0.05,
+            },
+        );
+
+        assert_eq!(posture.posture, fc_domain::DecisionPosture::Normal);
+        assert!(posture.trigger_codes.is_empty());
+        assert_eq!(
+            posture.blocker_codes,
+            vec!["quality_blocked_hedge".to_string()]
+        );
+    }
+
+    #[test]
+    fn posture_guidance_requires_multi_signal_context_for_hedge_clause() {
+        let snapshot = RiskSnapshot {
+            as_of_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            overall_score: 48.0,
+            overall_level: RiskLevel::Watch,
+            structural_score: 46.0,
+            trigger_score: 53.0,
+            level_reason: "test".to_string(),
+            dimensions: Vec::new(),
+            top_contributors: Vec::new(),
+            data_quality_summary: DataQualitySummary {
+                overall_score: 88.0,
+                grade: QualityGrade::A,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count: 0,
+            },
+            generated_at: Utc::now(),
+            method_version: "test".to_string(),
+        };
+        let probabilities = ProbabilityBlock {
+            p_5d: 0.01,
+            p_20d: 0.18,
+            p_60d: 0.03,
+        };
+        let posture = build_posture_guidance(
+            &snapshot,
+            &probabilities,
+            None,
+            0.58,
+            &test_data_trust(QualityGrade::A),
+            42.0,
+            34.0,
+            &[],
+            &quiet_jpy_carry(18.0),
+            &quiet_event_assessment(25.0),
+            &neutral_preferences(),
+            ProbabilityActionThresholds {
+                prepare_p60d: 0.12,
+                hedge_p20d: 0.06,
+                defend_p5d: 0.05,
+            },
+        );
+
+        assert_eq!(posture.posture, fc_domain::DecisionPosture::Normal);
+        assert!(posture.trigger_codes.is_empty());
+    }
+
+    #[test]
+    fn posture_guidance_allows_hedge_when_short_and_medium_horizon_context_align() {
+        let snapshot = RiskSnapshot {
+            as_of_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            overall_score: 56.0,
+            overall_level: RiskLevel::Stress,
+            structural_score: 52.0,
+            trigger_score: 54.0,
+            level_reason: "test".to_string(),
+            dimensions: Vec::new(),
+            top_contributors: Vec::new(),
+            data_quality_summary: DataQualitySummary {
+                overall_score: 90.0,
+                grade: QualityGrade::A,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count: 0,
+            },
+            generated_at: Utc::now(),
+            method_version: "test".to_string(),
+        };
+        let probabilities = ProbabilityBlock {
+            p_5d: 0.01,
+            p_20d: 0.18,
+            p_60d: 0.08,
+        };
+        let posture = build_posture_guidance(
+            &snapshot,
+            &probabilities,
+            None,
+            0.60,
+            &test_data_trust(QualityGrade::A),
+            52.0,
+            42.0,
+            &[],
+            &quiet_jpy_carry(20.0),
+            &quiet_event_assessment(45.0),
+            &neutral_preferences(),
+            ProbabilityActionThresholds {
+                prepare_p60d: 0.12,
+                hedge_p20d: 0.06,
+                defend_p5d: 0.05,
+            },
+        );
+
+        assert_eq!(posture.posture, fc_domain::DecisionPosture::Hedge);
+        assert_eq!(
+            posture.trigger_codes,
+            vec!["hedge_p20d_context".to_string()]
+        );
+    }
+
+    #[test]
+    fn posture_guidance_blocks_hedge_when_short_horizon_lacks_overall_confirmation() {
+        let snapshot = RiskSnapshot {
+            as_of_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            overall_score: 56.5,
+            overall_level: RiskLevel::Stress,
+            structural_score: 52.0,
+            trigger_score: 54.0,
+            level_reason: "test".to_string(),
+            dimensions: Vec::new(),
+            top_contributors: Vec::new(),
+            data_quality_summary: DataQualitySummary {
+                overall_score: 90.0,
+                grade: QualityGrade::A,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count: 0,
+            },
+            generated_at: Utc::now(),
+            method_version: "test".to_string(),
+        };
+        let probabilities = ProbabilityBlock {
+            p_5d: 0.01,
+            p_20d: 0.18,
+            p_60d: 0.08,
+        };
+        let posture = build_posture_guidance(
+            &snapshot,
+            &probabilities,
+            None,
+            0.60,
+            &test_data_trust(QualityGrade::A),
+            37.0,
+            42.0,
+            &[],
+            &quiet_jpy_carry(20.0),
+            &quiet_event_assessment(25.0),
+            &neutral_preferences(),
+            ProbabilityActionThresholds {
+                prepare_p60d: 0.12,
+                hedge_p20d: 0.06,
+                defend_p5d: 0.05,
+            },
+        );
+
+        assert_eq!(posture.posture, fc_domain::DecisionPosture::Normal);
+        assert!(posture.trigger_codes.is_empty());
     }
 }

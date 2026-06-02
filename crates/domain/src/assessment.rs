@@ -152,6 +152,10 @@ pub struct PostureGuidance {
     pub reasons: Vec<String>,
     pub upgrade_condition: String,
     pub downgrade_condition: String,
+    #[serde(default)]
+    pub trigger_codes: Vec<String>,
+    #[serde(default)]
+    pub blocker_codes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -316,4 +320,8 @@ pub struct AssessmentHistoryPoint {
     pub posture: DecisionPosture,
     pub time_to_risk_bucket: TimeToRiskBucket,
     pub external_shock_score: f64,
+    #[serde(default)]
+    pub posture_trigger_codes: Vec<String>,
+    #[serde(default)]
+    pub posture_blocker_codes: Vec<String>,
 }

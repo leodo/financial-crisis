@@ -9,7 +9,8 @@ use fc_domain::{
     load_crisis_scenario_catalog, load_protected_stress_window_catalog, AlertEvent, AlertStatus,
     AlertType, AssessmentSnapshot, BacktestRollingAudit, BacktestRollingAuditEpisode,
     BacktestScenarioSummary, BacktestSignalSource, BacktestWindowPoint, DataMode, DataSource,
-    DecisionPosture, Frequency, FreshnessStatus, Indicator, ModelReleaseRecord, Observation,
+    DecisionPosture, Frequency, FreshnessStatus, HistoricalAssessmentPointRecord,
+    HistoricalReplayRunRecord, Indicator, ModelReleaseRecord, Observation, PostureGuidance,
     PredictionSnapshotRecord, ProbabilityBundle, ProtectedStressWindow, RiskContributor,
     RiskDimension, RiskDirection, RiskLevel, SourceHealth, SourcePriority, SourceStatus,
     TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
@@ -32,7 +33,7 @@ const ACTIONABLE_AUDIT_HORIZON_HEDGE_DAYS: i64 = 20;
 const ACTIONABLE_AUDIT_HORIZON_PREPARE_DAYS: i64 = 60;
 const ROLLING_AUDIT_EPISODE_LIMIT: usize = 12;
 const ROLLING_AUDIT_MIN_DATE: (i32, u32, u32) = (1990, 1, 2);
-const PREDICTION_SNAPSHOT_CACHE_VERSION: &str = "history_cache_v2_20260601";
+const PREDICTION_SNAPSHOT_CACHE_VERSION: &str = "history_cache_v3_20260601";
 const FORMAL_MAIN_FEATURE_SET_VERSION: &str = "feature_formal_v1_main_20260531";
 const FORMAL_MAIN_LABEL_VERSION: &str = "formal_label_v1_main";
 
@@ -50,6 +51,12 @@ pub struct HistoryQueryWindow {
     pub limit: Option<usize>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssessmentHistoryBuildMode {
+    Default,
+    StrictRebuild,
+}
+
 #[derive(Debug)]
 struct BuiltAppData {
     app_data: AppData,
@@ -60,6 +67,41 @@ struct BuiltAppData {
 struct HistoricalAssessmentOutput {
     history_points: Vec<fc_domain::AssessmentHistoryPoint>,
     prediction_snapshots: Vec<PredictionSnapshotRecord>,
+    replay_point_drafts: Vec<HistoricalReplayPointDraft>,
+}
+
+#[derive(Debug, Clone)]
+struct HistoricalReplayPointDraft {
+    entity_id: String,
+    market_scope: String,
+    release_id: Option<String>,
+    as_of_date: NaiveDate,
+    feature_snapshot_id: Option<String>,
+    feature_set_version: String,
+    label_version: String,
+    point_in_time_mode: String,
+    runtime_policy_version: String,
+    action_playbook_version: String,
+    overall_score: f64,
+    structural_score: f64,
+    trigger_score: f64,
+    external_shock_score: f64,
+    raw_p_5d: f64,
+    raw_p_20d: f64,
+    raw_p_60d: f64,
+    calibrated_p_5d: f64,
+    calibrated_p_20d: f64,
+    calibrated_p_60d: f64,
+    posture: String,
+    time_to_risk_bucket: String,
+    actionability_prepare: f64,
+    actionability_hedge: f64,
+    actionability_defend: f64,
+    posture_trigger_codes: Vec<String>,
+    posture_blocker_codes: Vec<String>,
+    coverage_score: f64,
+    freshness_status: String,
+    generated_at: chrono::DateTime<Utc>,
 }
 
 pub fn source_from_env() -> anyhow::Result<AppDataSource> {
@@ -79,9 +121,24 @@ pub async fn load_app_data(
     source: &AppDataSource,
     max_history_points: usize,
 ) -> anyhow::Result<AppData> {
+    load_app_data_with_history_mode(
+        source,
+        max_history_points,
+        AssessmentHistoryBuildMode::Default,
+    )
+    .await
+}
+
+pub async fn load_app_data_with_history_mode(
+    source: &AppDataSource,
+    max_history_points: usize,
+    history_build_mode: AssessmentHistoryBuildMode,
+) -> anyhow::Result<AppData> {
     match source {
         AppDataSource::Demo => Ok(build_demo_data(max_history_points)),
-        AppDataSource::Sqlite { path } => load_sqlite_app_data(path, max_history_points).await,
+        AppDataSource::Sqlite { path } => {
+            load_sqlite_app_data(path, max_history_points, history_build_mode).await
+        }
         AppDataSource::Postgres { database_url } => {
             load_postgres_app_data(database_url, max_history_points).await
         }
@@ -167,6 +224,7 @@ async fn load_postgres_app_data(
 async fn load_sqlite_app_data(
     sqlite_path: &str,
     max_history_points: usize,
+    history_build_mode: AssessmentHistoryBuildMode,
 ) -> anyhow::Result<AppData> {
     let as_of_date = Utc::now().date_naive();
     let store = SqliteStore::connect(sqlite_path).await?;
@@ -200,6 +258,7 @@ async fn load_sqlite_app_data(
         &user_preferences,
         as_of_date,
         max_history_points,
+        history_build_mode,
     )
     .await?;
     let built = build_app_data_from_inputs(
@@ -346,8 +405,11 @@ fn build_app_data_from_inputs(
         backtest_summary,
         ..assessment
     };
-    let current_history_point =
-        assessment_history_point_from_assessment(&assessment, &probability_trace);
+    let current_history_point = assessment_history_point_from_assessment(
+        &assessment,
+        &posture_guidance,
+        &probability_trace,
+    );
     match assessment_history.last_mut() {
         Some(last) if last.as_of_date == current_history_point.as_of_date => {
             *last = current_history_point;
@@ -357,6 +419,7 @@ fn build_app_data_from_inputs(
     let backtest_timeline = build_backtest_timeline(&assessment_history, use_transitional_bridge);
     let current_prediction_snapshot = prediction_snapshot_from_assessment(
         &assessment,
+        &posture_guidance,
         &probability_trace,
         serving_model.as_ref(),
     );
@@ -439,6 +502,7 @@ fn build_assessment_history_for_dates(
 ) -> HistoricalAssessmentOutput {
     let mut history_points = Vec::with_capacity(dates.len());
     let mut prediction_snapshots = Vec::with_capacity(dates.len());
+    let mut replay_point_drafts = Vec::with_capacity(dates.len());
     for as_of_date in dates.iter().copied() {
         let output = scoring.score(
             indicators,
@@ -455,7 +519,7 @@ fn build_assessment_history_for_dates(
             &[],
             use_transitional_actionable_bridge(serving_model),
         );
-        let (assessment, _, probability_trace) = build_assessment_snapshot(
+        let (assessment, posture_guidance, probability_trace) = build_assessment_snapshot(
             data_mode,
             &output.snapshot,
             &output.indicator_risks,
@@ -468,10 +532,18 @@ fn build_assessment_history_for_dates(
         );
         history_points.push(assessment_history_point_from_assessment(
             &assessment,
+            &posture_guidance,
             &probability_trace,
+        ));
+        replay_point_drafts.push(historical_replay_point_draft_from_assessment(
+            &assessment,
+            &posture_guidance,
+            &probability_trace,
+            serving_model,
         ));
         prediction_snapshots.push(prediction_snapshot_from_assessment(
             &assessment,
+            &posture_guidance,
             &probability_trace,
             serving_model,
         ));
@@ -480,6 +552,7 @@ fn build_assessment_history_for_dates(
     HistoricalAssessmentOutput {
         history_points,
         prediction_snapshots,
+        replay_point_drafts,
     }
 }
 
@@ -493,6 +566,7 @@ async fn load_sqlite_assessment_history(
     user_preferences: &UserRiskPreferences,
     as_of_date: NaiveDate,
     max_history_points: usize,
+    history_build_mode: AssessmentHistoryBuildMode,
 ) -> anyhow::Result<Vec<fc_domain::AssessmentHistoryPoint>> {
     let release_filter = serving_model.map(|context| context.release.manifest.release_id.as_str());
     let persisted_rows = store
@@ -512,18 +586,21 @@ async fn load_sqlite_assessment_history(
         .difference(&existing_dates)
         .copied()
         .collect::<Vec<_>>();
-    let full_formal_refresh = should_refresh_full_formal_history(
+    let full_history_refresh = should_refresh_full_release_history(
         serving_model,
         &persisted_rows,
         !missing_dates.is_empty(),
     );
 
-    if full_formal_refresh {
+    if matches!(
+        history_build_mode,
+        AssessmentHistoryBuildMode::StrictRebuild
+    ) {
         let rebuild_dates = target_dates.into_iter().collect::<Vec<_>>();
         tracing::info!(
             release_id = release_filter.unwrap_or("heuristic"),
             rebuild_dates = rebuild_dates.len(),
-            "rebuilding full formal history from raw observations because cached prediction snapshots are stale or incomplete"
+            "strictly rebuilding full release history from raw observations for current reload"
         );
         let rebuilt = build_assessment_history_for_dates(
             DataMode::Sqlite,
@@ -538,7 +615,38 @@ async fn load_sqlite_assessment_history(
         store
             .upsert_prediction_snapshots(&rebuilt.prediction_snapshots)
             .await?;
+        persist_historical_replay_output(store, observations, serving_model, &rebuilt).await?;
         return Ok(rebuilt.history_points);
+    }
+
+    if full_history_refresh {
+        let rebuild_dates = target_dates.into_iter().collect::<Vec<_>>();
+        tracing::info!(
+            release_id = release_filter.unwrap_or("heuristic"),
+            rebuild_dates = rebuild_dates.len(),
+            "rebuilding full release history from raw observations because cached prediction snapshots are stale or incomplete"
+        );
+        let rebuilt = build_assessment_history_for_dates(
+            DataMode::Sqlite,
+            &ScoringEngine::default(),
+            indicators,
+            observations,
+            Some(alerts),
+            serving_model,
+            user_preferences,
+            &rebuild_dates,
+        );
+        store
+            .upsert_prediction_snapshots(&rebuilt.prediction_snapshots)
+            .await?;
+        persist_historical_replay_output(store, observations, serving_model, &rebuilt).await?;
+        return Ok(rebuilt.history_points);
+    }
+
+    if let Some(cached_replay) =
+        load_cached_historical_replay_output(store, serving_model, &target_dates).await?
+    {
+        return Ok(cached_replay.history_points);
     }
 
     let mut historical =
@@ -558,9 +666,12 @@ async fn load_sqlite_assessment_history(
         store
             .upsert_prediction_snapshots(&computed.prediction_snapshots)
             .await?;
-        let mut combined = persisted_rows;
-        combined.extend(computed.prediction_snapshots);
-        historical = historical_output_from_prediction_snapshots(combined, release_filter);
+        let mut combined_snapshots = persisted_rows;
+        combined_snapshots.extend(computed.prediction_snapshots.clone());
+        historical = merge_historical_outputs(
+            historical_output_from_prediction_snapshots(combined_snapshots, release_filter),
+            computed,
+        );
     }
 
     let should_refresh_recent_formal_history = serving_model
@@ -590,12 +701,161 @@ async fn load_sqlite_assessment_history(
         store
             .upsert_prediction_snapshots(&recomputed.prediction_snapshots)
             .await?;
-        let mut combined = historical.prediction_snapshots;
-        combined.extend(recomputed.prediction_snapshots);
-        historical = historical_output_from_prediction_snapshots(combined, release_filter);
+        let mut combined_snapshots = historical.prediction_snapshots.clone();
+        combined_snapshots.extend(recomputed.prediction_snapshots.clone());
+        historical = merge_historical_outputs(
+            historical_output_from_prediction_snapshots(combined_snapshots, release_filter),
+            recomputed,
+        );
     }
 
     Ok(historical.history_points)
+}
+
+async fn persist_historical_replay_output(
+    store: &SqliteStore,
+    observations: &[Observation],
+    serving_model: Option<&ServingModelContext>,
+    output: &HistoricalAssessmentOutput,
+) -> anyhow::Result<()> {
+    let Some(first_point) = output.replay_point_drafts.first() else {
+        return Ok(());
+    };
+    let Some(last_point) = output.replay_point_drafts.last() else {
+        return Ok(());
+    };
+
+    let replay_run_id = Uuid::new_v4().to_string();
+    let protected_stress_window_catalog = load_protected_stress_window_catalog();
+    let created_at = output
+        .replay_point_drafts
+        .last()
+        .map(|point| point.generated_at)
+        .unwrap_or_else(Utc::now);
+    let run = HistoricalReplayRunRecord {
+        replay_run_id: replay_run_id.clone(),
+        release_id: first_point.release_id.clone(),
+        market_scope: first_point.market_scope.clone(),
+        from_date: first_point.as_of_date,
+        to_date: last_point.as_of_date,
+        history_cache_key: expected_prediction_snapshot_method_version(serving_model),
+        feature_set_version: first_point.feature_set_version.clone(),
+        label_version: first_point.label_version.clone(),
+        point_in_time_mode: first_point.point_in_time_mode.clone(),
+        runtime_policy_version: first_point.runtime_policy_version.clone(),
+        action_playbook_version: first_point.action_playbook_version.clone(),
+        protected_window_catalog_id: protected_stress_window_catalog.catalog_id,
+        source_watermark: historical_replay_source_watermark(observations),
+        status: "success".to_string(),
+        point_count: output.replay_point_drafts.len(),
+        failure_reason: None,
+        created_at,
+    };
+    let points = output
+        .replay_point_drafts
+        .iter()
+        .cloned()
+        .map(|point| HistoricalAssessmentPointRecord {
+            replay_run_id: replay_run_id.clone(),
+            entity_id: point.entity_id,
+            market_scope: point.market_scope,
+            release_id: point.release_id,
+            as_of_date: point.as_of_date,
+            feature_snapshot_id: point.feature_snapshot_id,
+            point_in_time_mode: point.point_in_time_mode,
+            runtime_policy_version: point.runtime_policy_version,
+            action_playbook_version: point.action_playbook_version,
+            overall_score: point.overall_score,
+            structural_score: point.structural_score,
+            trigger_score: point.trigger_score,
+            external_shock_score: point.external_shock_score,
+            raw_p_5d: point.raw_p_5d,
+            raw_p_20d: point.raw_p_20d,
+            raw_p_60d: point.raw_p_60d,
+            calibrated_p_5d: point.calibrated_p_5d,
+            calibrated_p_20d: point.calibrated_p_20d,
+            calibrated_p_60d: point.calibrated_p_60d,
+            posture: point.posture,
+            time_to_risk_bucket: point.time_to_risk_bucket,
+            actionability_prepare: point.actionability_prepare,
+            actionability_hedge: point.actionability_hedge,
+            actionability_defend: point.actionability_defend,
+            posture_trigger_codes: point.posture_trigger_codes,
+            posture_blocker_codes: point.posture_blocker_codes,
+            coverage_score: point.coverage_score,
+            freshness_status: point.freshness_status,
+            generated_at: point.generated_at,
+        })
+        .collect::<Vec<_>>();
+
+    store.upsert_historical_replay_run(&run).await?;
+    store
+        .replace_historical_assessment_points(&replay_run_id, &points)
+        .await?;
+    Ok(())
+}
+
+async fn load_cached_historical_replay_output(
+    store: &SqliteStore,
+    serving_model: Option<&ServingModelContext>,
+    target_dates: &BTreeSet<NaiveDate>,
+) -> anyhow::Result<Option<HistoricalAssessmentOutput>> {
+    let Some(from_date) = target_dates.first().copied() else {
+        return Ok(None);
+    };
+    let Some(to_date) = target_dates.last().copied() else {
+        return Ok(None);
+    };
+    let release_filter = serving_model.map(|context| context.release.manifest.release_id.as_str());
+    let history_cache_key = expected_prediction_snapshot_method_version(serving_model);
+    let Some(run) = store
+        .load_latest_historical_replay_run(
+            "financial_system",
+            release_filter,
+            &history_cache_key,
+            from_date,
+            to_date,
+        )
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    let points = store
+        .list_historical_assessment_points(
+            Some(&run.replay_run_id),
+            Some("financial_system"),
+            release_filter,
+            Some(from_date),
+            Some(to_date),
+            None,
+        )
+        .await?;
+    let available_dates = points
+        .iter()
+        .map(|point| point.as_of_date)
+        .collect::<BTreeSet<_>>();
+    if available_dates != *target_dates {
+        tracing::warn!(
+            replay_run_id = run.replay_run_id,
+            expected_dates = target_dates.len(),
+            available_dates = available_dates.len(),
+            "cached historical replay run does not fully cover target dates; falling back to legacy snapshot history"
+        );
+        return Ok(None);
+    }
+
+    Ok(Some(historical_output_from_replay_points(points)))
+}
+
+fn historical_replay_source_watermark(observations: &[Observation]) -> String {
+    observations
+        .iter()
+        .filter(|observation| observation.entity_id == "us")
+        .map(|observation| observation.as_of_date)
+        .max()
+        .map(|date| format!("us_observations={date}"))
+        .unwrap_or_else(|| "us_observations=missing".to_string())
 }
 
 fn historical_output_from_prediction_snapshots(
@@ -628,11 +888,77 @@ fn historical_output_from_prediction_snapshots(
     HistoricalAssessmentOutput {
         history_points,
         prediction_snapshots,
+        replay_point_drafts: Vec::new(),
+    }
+}
+
+fn historical_output_from_replay_points(
+    points: Vec<HistoricalAssessmentPointRecord>,
+) -> HistoricalAssessmentOutput {
+    let mut latest_by_date = BTreeMap::<NaiveDate, HistoricalAssessmentPointRecord>::new();
+    for point in points {
+        match latest_by_date.get(&point.as_of_date) {
+            Some(existing) if existing.generated_at >= point.generated_at => {}
+            _ => {
+                latest_by_date.insert(point.as_of_date, point);
+            }
+        }
+    }
+
+    let replay_points = latest_by_date.into_values().collect::<Vec<_>>();
+    let history_points = replay_points
+        .iter()
+        .map(assessment_history_point_from_historical_replay_point)
+        .collect::<Vec<_>>();
+
+    HistoricalAssessmentOutput {
+        history_points,
+        prediction_snapshots: Vec::new(),
+        replay_point_drafts: Vec::new(),
+    }
+}
+
+fn merge_historical_outputs(
+    base: HistoricalAssessmentOutput,
+    recomputed: HistoricalAssessmentOutput,
+) -> HistoricalAssessmentOutput {
+    let mut history_by_date = base
+        .history_points
+        .into_iter()
+        .map(|point| (point.as_of_date, point))
+        .collect::<BTreeMap<_, _>>();
+    for point in recomputed.history_points {
+        history_by_date.insert(point.as_of_date, point);
+    }
+
+    let mut snapshots_by_date = base
+        .prediction_snapshots
+        .into_iter()
+        .map(|snapshot| (snapshot.as_of_date, snapshot))
+        .collect::<BTreeMap<_, _>>();
+    for snapshot in recomputed.prediction_snapshots {
+        snapshots_by_date.insert(snapshot.as_of_date, snapshot);
+    }
+
+    let mut replay_points_by_date = base
+        .replay_point_drafts
+        .into_iter()
+        .map(|point| (point.as_of_date, point))
+        .collect::<BTreeMap<_, _>>();
+    for point in recomputed.replay_point_drafts {
+        replay_points_by_date.insert(point.as_of_date, point);
+    }
+
+    HistoricalAssessmentOutput {
+        history_points: history_by_date.into_values().collect(),
+        prediction_snapshots: snapshots_by_date.into_values().collect(),
+        replay_point_drafts: replay_points_by_date.into_values().collect(),
     }
 }
 
 fn prediction_snapshot_from_assessment(
     assessment: &AssessmentSnapshot,
+    posture_guidance: &PostureGuidance,
     probability_trace: &crate::assessment::ProbabilityComputationTrace,
     serving_model: Option<&ServingModelContext>,
 ) -> PredictionSnapshotRecord {
@@ -659,8 +985,65 @@ fn prediction_snapshot_from_assessment(
         coverage_score: assessment.data_trust.coverage_score,
         freshness_status: worst_freshness_status(&assessment.key_indicators).to_string(),
         method_version: expected_prediction_snapshot_method_version(serving_model),
+        posture_trigger_codes: posture_guidance.trigger_codes.clone(),
+        posture_blocker_codes: posture_guidance.blocker_codes.clone(),
         recorded_at: assessment.runtime.generated_at,
     }
+}
+
+fn historical_replay_point_draft_from_assessment(
+    assessment: &AssessmentSnapshot,
+    posture_guidance: &PostureGuidance,
+    probability_trace: &crate::assessment::ProbabilityComputationTrace,
+    serving_model: Option<&ServingModelContext>,
+) -> HistoricalReplayPointDraft {
+    HistoricalReplayPointDraft {
+        entity_id: assessment.entity_id.clone(),
+        market_scope: assessment.market_scope.clone(),
+        release_id: assessment.method.release_id.clone(),
+        as_of_date: assessment.as_of_date,
+        feature_snapshot_id: feature_snapshot_id_for_replay_point(assessment, serving_model),
+        feature_set_version: assessment.method.feature_set_version.clone(),
+        label_version: assessment.method.label_version.clone(),
+        point_in_time_mode: assessment.method.point_in_time_mode.clone(),
+        runtime_policy_version: history_runtime_policy_version(serving_model),
+        action_playbook_version: assessment.method.action_playbook_version.clone(),
+        overall_score: assessment.scores.overall_score,
+        structural_score: assessment.scores.structural_score,
+        trigger_score: assessment.scores.trigger_score,
+        external_shock_score: assessment.scores.external_shock_score,
+        raw_p_5d: probability_trace.raw_probabilities.p_5d,
+        raw_p_20d: probability_trace.raw_probabilities.p_20d,
+        raw_p_60d: probability_trace.raw_probabilities.p_60d,
+        calibrated_p_5d: assessment.probabilities.p_5d,
+        calibrated_p_20d: assessment.probabilities.p_20d,
+        calibrated_p_60d: assessment.probabilities.p_60d,
+        posture: decision_posture_code(assessment.posture).to_string(),
+        time_to_risk_bucket: time_to_risk_bucket_code(assessment.time_to_risk_bucket).to_string(),
+        actionability_prepare: assessment.actionability.prepare,
+        actionability_hedge: assessment.actionability.hedge,
+        actionability_defend: assessment.actionability.defend,
+        posture_trigger_codes: posture_guidance.trigger_codes.clone(),
+        posture_blocker_codes: posture_guidance.blocker_codes.clone(),
+        coverage_score: assessment.data_trust.coverage_score,
+        freshness_status: worst_freshness_status(&assessment.key_indicators).to_string(),
+        generated_at: assessment.runtime.generated_at,
+    }
+}
+
+fn feature_snapshot_id_for_replay_point(
+    assessment: &AssessmentSnapshot,
+    serving_model: Option<&ServingModelContext>,
+) -> Option<String> {
+    serving_model.as_ref()?;
+    Some(format!(
+        "{}:{}:{}:{}:{}",
+        assessment.market_scope,
+        assessment.entity_id,
+        assessment.as_of_date,
+        assessment.method.feature_set_version,
+        assessment.method.point_in_time_mode
+    ))
 }
 
 fn expected_prediction_snapshot_method_version(
@@ -714,12 +1097,12 @@ fn history_cache_key(
     )
 }
 
-fn should_refresh_full_formal_history(
+fn should_refresh_full_release_history(
     serving_model: Option<&ServingModelContext>,
     persisted_rows: &[PredictionSnapshotRecord],
     has_missing_dates: bool,
 ) -> bool {
-    if !is_formal_main_release(serving_model) {
+    if !uses_bundle_backed_history(serving_model) {
         return false;
     }
 
@@ -733,6 +1116,10 @@ fn should_refresh_full_formal_history(
         .any(|snapshot| snapshot.method_version != expected_method_version)
 }
 
+fn uses_bundle_backed_history(serving_model: Option<&ServingModelContext>) -> bool {
+    serving_model.is_some_and(|context| context.probability_bundle.is_some())
+}
+
 fn is_formal_main_release(serving_model: Option<&ServingModelContext>) -> bool {
     serving_model.is_some_and(|context| {
         context.release.manifest.feature_set_version == FORMAL_MAIN_FEATURE_SET_VERSION
@@ -743,6 +1130,7 @@ fn is_formal_main_release(serving_model: Option<&ServingModelContext>) -> bool {
 
 fn assessment_history_point_from_assessment(
     assessment: &AssessmentSnapshot,
+    posture_guidance: &PostureGuidance,
     probability_trace: &crate::assessment::ProbabilityComputationTrace,
 ) -> fc_domain::AssessmentHistoryPoint {
     fc_domain::AssessmentHistoryPoint {
@@ -757,6 +1145,8 @@ fn assessment_history_point_from_assessment(
         posture: assessment.posture,
         time_to_risk_bucket: assessment.time_to_risk_bucket,
         external_shock_score: assessment.scores.external_shock_score,
+        posture_trigger_codes: posture_guidance.trigger_codes.clone(),
+        posture_blocker_codes: posture_guidance.blocker_codes.clone(),
     }
 }
 
@@ -775,6 +1165,28 @@ fn assessment_history_point_from_prediction_snapshot(
         posture: parse_decision_posture_code(&snapshot.posture),
         time_to_risk_bucket: parse_time_to_risk_bucket_code(&snapshot.time_to_risk_bucket),
         external_shock_score: snapshot.external_shock_score,
+        posture_trigger_codes: snapshot.posture_trigger_codes.clone(),
+        posture_blocker_codes: snapshot.posture_blocker_codes.clone(),
+    }
+}
+
+fn assessment_history_point_from_historical_replay_point(
+    point: &HistoricalAssessmentPointRecord,
+) -> fc_domain::AssessmentHistoryPoint {
+    fc_domain::AssessmentHistoryPoint {
+        as_of_date: point.as_of_date,
+        overall_score: point.overall_score,
+        p_5d: point.calibrated_p_5d,
+        p_20d: point.calibrated_p_20d,
+        p_60d: point.calibrated_p_60d,
+        raw_p_5d: Some(point.raw_p_5d),
+        raw_p_20d: Some(point.raw_p_20d),
+        raw_p_60d: Some(point.raw_p_60d),
+        posture: parse_decision_posture_code(&point.posture),
+        time_to_risk_bucket: parse_time_to_risk_bucket_code(&point.time_to_risk_bucket),
+        external_shock_score: point.external_shock_score,
+        posture_trigger_codes: point.posture_trigger_codes.clone(),
+        posture_blocker_codes: point.posture_blocker_codes.clone(),
     }
 }
 
@@ -2243,6 +2655,18 @@ fn is_structural_warning_point(point: &fc_domain::AssessmentHistoryPoint) -> boo
             && point.external_shock_score >= 42.0)
 }
 
+fn has_strong_prepare_trigger_code(point: &fc_domain::AssessmentHistoryPoint) -> bool {
+    point.posture_trigger_codes.iter().any(|code| {
+        matches!(
+            code.as_str(),
+            "prepare_p60d_structural"
+                | "prepare_structural_downgrade"
+                | "prepare_carry_structural"
+                | "prepare_external_structural"
+        )
+    })
+}
+
 fn is_actionable_warning_point(
     point: &fc_domain::AssessmentHistoryPoint,
     use_transitional_bridge: bool,
@@ -2260,10 +2684,12 @@ fn is_actionable_warning_point(
                 && point.external_shock_score >= 44.0);
 
     let high_probability_prepare_signal = matches!(point.posture, DecisionPosture::Prepare)
-        && point.overall_score >= 60.0
         && point.p_20d >= 0.18
         && point.p_60d >= 0.45
-        && point.external_shock_score >= 46.0;
+        && ((point.overall_score >= 60.0 && point.external_shock_score >= 46.0)
+            || (point.overall_score >= 53.0
+                && !matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
+                && has_strong_prepare_trigger_code(point)));
     let high_probability_months_signal =
         matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
             && point.overall_score >= 62.0
@@ -2408,7 +2834,7 @@ mod tests {
     use super::{
         build_rolling_backtest_audit, expected_prediction_snapshot_method_version,
         historical_output_from_prediction_snapshots, is_actionable_warning_point,
-        should_refresh_full_formal_history, use_transitional_actionable_bridge,
+        should_refresh_full_release_history, use_transitional_actionable_bridge,
         ServingModelContext,
     };
 
@@ -2431,6 +2857,8 @@ mod tests {
             posture,
             time_to_risk_bucket,
             external_shock_score,
+            posture_trigger_codes: Vec::new(),
+            posture_blocker_codes: Vec::new(),
         }
     }
 
@@ -2464,6 +2892,8 @@ mod tests {
             coverage_score: 0.95,
             freshness_status: "fresh".to_string(),
             method_version: "score_v1".to_string(),
+            posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
+            posture_blocker_codes: Vec::new(),
             recorded_at: Utc
                 .with_ymd_and_hms(2026, 5, 31, recorded_at_hour, 0, 0)
                 .single()
@@ -2540,6 +2970,10 @@ mod tests {
             output.history_points[0].posture,
             fc_domain::DecisionPosture::Hedge
         );
+        assert_eq!(
+            output.history_points[0].posture_trigger_codes,
+            vec!["prepare_p60d_structural".to_string()]
+        );
     }
 
     #[test]
@@ -2582,6 +3016,48 @@ mod tests {
     }
 
     #[test]
+    fn actionable_warning_point_accepts_strong_prepare_clause_for_formal_main() {
+        let point = fc_domain::AssessmentHistoryPoint {
+            as_of_date: NaiveDate::from_ymd_opt(2007, 3, 1).unwrap(),
+            overall_score: 53.4,
+            p_5d: 0.03,
+            p_20d: 0.70,
+            p_60d: 0.73,
+            raw_p_5d: Some(0.02),
+            raw_p_20d: Some(0.68),
+            raw_p_60d: Some(0.70),
+            posture: DecisionPosture::Prepare,
+            time_to_risk_bucket: TimeToRiskBucket::Months,
+            external_shock_score: 38.5,
+            posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
+            posture_blocker_codes: Vec::new(),
+        };
+
+        assert!(is_actionable_warning_point(&point, false));
+    }
+
+    #[test]
+    fn actionable_warning_point_rejects_weak_prepare_clause_for_formal_main() {
+        let point = fc_domain::AssessmentHistoryPoint {
+            as_of_date: NaiveDate::from_ymd_opt(2007, 3, 1).unwrap(),
+            overall_score: 52.9,
+            p_5d: 0.03,
+            p_20d: 0.70,
+            p_60d: 0.73,
+            raw_p_5d: Some(0.02),
+            raw_p_20d: Some(0.68),
+            raw_p_60d: Some(0.70),
+            posture: DecisionPosture::Prepare,
+            time_to_risk_bucket: TimeToRiskBucket::Months,
+            external_shock_score: 38.5,
+            posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
+            posture_blocker_codes: Vec::new(),
+        };
+
+        assert!(!is_actionable_warning_point(&point, false));
+    }
+
+    #[test]
     fn rolling_audit_counts_catalog_protected_windows_as_stress() {
         let stress_windows = load_protected_stress_window_catalog();
         let history = vec![history_point(
@@ -2616,6 +3092,8 @@ mod tests {
             posture: DecisionPosture::Prepare,
             time_to_risk_bucket: TimeToRiskBucket::Months,
             external_shock_score: 49.0,
+            posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
+            posture_blocker_codes: Vec::new(),
         }];
 
         let audit = build_rolling_backtest_audit(&history, &[], false);
@@ -2626,7 +3104,7 @@ mod tests {
     }
 
     #[test]
-    fn formal_main_history_refreshes_when_cached_method_version_is_stale() {
+    fn bundle_backed_history_refreshes_when_cached_method_version_is_stale() {
         let serving_model = formal_serving_model_context();
         let mut persisted = vec![snapshot(
             NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
@@ -2637,7 +3115,7 @@ mod tests {
         )];
         persisted[0].method_version = "legacy-cache".to_string();
 
-        assert!(should_refresh_full_formal_history(
+        assert!(should_refresh_full_release_history(
             Some(&serving_model),
             &persisted,
             false,
@@ -2645,7 +3123,7 @@ mod tests {
     }
 
     #[test]
-    fn formal_main_history_keeps_cache_when_method_version_matches() {
+    fn bundle_backed_history_keeps_cache_when_method_version_matches() {
         let serving_model = formal_serving_model_context();
         let expected_method_version =
             expected_prediction_snapshot_method_version(Some(&serving_model));
@@ -2658,7 +3136,7 @@ mod tests {
         )];
         persisted[0].method_version = expected_method_version;
 
-        assert!(!should_refresh_full_formal_history(
+        assert!(!should_refresh_full_release_history(
             Some(&serving_model),
             &persisted,
             false,

@@ -9,17 +9,18 @@ use std::{
 use anyhow::{bail, Context};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
 use fc_domain::{
-    embedded_protected_stress_window_catalog, load_crisis_scenario_catalog, ActionabilityBundle,
-    ActionabilityEvaluationSummary, ActionabilityLevel, ActionabilityLevelBundle,
-    AssessmentHistoryPoint, AssessmentMethodVersions, AssessmentSnapshot, BacktestScenarioSummary,
+    embedded_protected_stress_window_catalog, load_crisis_scenario_catalog,
+    ActionEpisodeTemplateId, ActionabilityBundle, ActionabilityEvaluationSummary,
+    ActionabilityLevel, ActionabilityLevelBundle, AssessmentHistoryPoint, AssessmentMethodVersions,
+    AssessmentSnapshot, BacktestScenarioSummary, CrisisScenarioActionEpisodeOverrides,
     FeatureSnapshotRecord, FormalDatasetManifest, FormalDatasetRecord, FormalDatasetRowRecord,
     Frequency, HorizonEvaluationSummary, Indicator, IndicatorRisk, LogisticProbabilityModel,
     ModelReleaseManifest, ModelReleaseRecord, Observation, PlattCalibrationArtifact,
     PredictionSnapshotRecord, ProbabilityBundle, ProbabilityBundleEvaluation,
     ProbabilityCoefficient, ProbabilityFeatureStat, ProbabilityHorizonBundle,
-    ProtectedStressWindowCatalog, RiskDimension, FEATURE_BUCKET_MONTHS_OR_HIGHER,
-    FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER, FEATURE_COVERAGE_SCORE,
-    FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
+    ProtectedStressWindowCatalog, RegimeSeparationEvaluationSummary, RiskDimension,
+    FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER,
+    FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
     FEATURE_FRESHNESS_STALE_OR_MISSING, FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D,
     FEATURE_HEURISTIC_P_60D, FEATURE_OVERALL_SCORE, FORMAL_PROBABILITY_BUNDLE_FEATURES,
     TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES,
@@ -47,6 +48,7 @@ const DEFAULT_FORMAL_FEATURE_SET_VERSION: &str = "feature_formal_v1_main_2026053
 const DEFAULT_FORMAL_DATASET_ID: &str = "formal_v1_main_1990_daily";
 const DEFAULT_FORMAL_LABEL_VERSION: &str = "formal_label_v1_main";
 const DEFAULT_FORMAL_SCENARIO_SET_VERSION: &str = "scenario_v1_main";
+const DEFAULT_FORMAL_MAIN_CONTEXT_WINDOW_SET_ID: &str = "protected_stress_windows_v1";
 const FEATURE_SNAPSHOT_STATUS_READY: &str = "ready";
 const FEATURE_SNAPSHOT_STATUS_COVERAGE_OR_VISIBILITY_FAILED: &str = "coverage_or_visibility_failed";
 
@@ -543,6 +545,28 @@ impl ReleaseReviewOptions {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ApiReloadHistoryMode {
+    Default,
+    StrictRebuild,
+}
+
+impl ApiReloadHistoryMode {
+    fn as_query_value(self) -> Option<&'static str> {
+        match self {
+            Self::Default => None,
+            Self::StrictRebuild => Some("strict_rebuild"),
+        }
+    }
+
+    fn as_label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::StrictRebuild => "strict_rebuild",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct PredictionSnapshotQueryOptions {
     market_scope: Option<String>,
@@ -745,6 +769,7 @@ struct PipelineTrainOptions {
     dataset_id: String,
     dataset_version: Option<String>,
     dataset_key: Option<String>,
+    aux_dataset_keys: Vec<String>,
     query: PredictionSnapshotQueryOptions,
     output_dir: PathBuf,
     release_prefix: String,
@@ -758,6 +783,7 @@ impl PipelineTrainOptions {
         let mut dataset_id = DEFAULT_FORMAL_DATASET_ID.to_string();
         let mut dataset_version = None;
         let mut dataset_key = None;
+        let mut aux_dataset_keys = Vec::new();
         let mut query_args = Vec::new();
         let mut index = 0;
         while index < args.len() {
@@ -792,6 +818,14 @@ impl PipelineTrainOptions {
                             .clone(),
                     );
                 }
+                "--aux-dataset-key" => {
+                    index += 1;
+                    aux_dataset_keys.push(
+                        args.get(index)
+                            .with_context(|| "--aux-dataset-key requires a value")?
+                            .clone(),
+                    );
+                }
                 "--output-dir" => {
                     index += 1;
                     output_dir = PathBuf::from(
@@ -822,6 +856,7 @@ impl PipelineTrainOptions {
             dataset_id,
             dataset_version,
             dataset_key,
+            aux_dataset_keys,
             query: PredictionSnapshotQueryOptions::parse_with_default_limit(&query_args, None)?,
             output_dir,
             release_prefix,
@@ -1225,11 +1260,22 @@ impl FormalDatasetSummaryOptions {
 struct CrisisScenario {
     scenario_id: String,
     family: String,
+    training_role: String,
     pre_warning_start: NaiveDate,
     crisis_start: NaiveDate,
     acute_start: Option<NaiveDate>,
     crisis_end: NaiveDate,
     default_horizon_roles: Vec<u32>,
+    protected_window: bool,
+    protected_action_levels: Vec<ActionabilityLevel>,
+    episode_template_id: ActionEpisodeTemplateId,
+    action_episode_overrides: Option<CrisisScenarioActionEpisodeOverrides>,
+}
+
+#[derive(Debug, Clone)]
+struct FormalDatasetScenarioSets {
+    positive_scenarios: Vec<CrisisScenario>,
+    context_scenarios: Vec<CrisisScenario>,
 }
 
 impl AuditExportOptions {
@@ -1339,21 +1385,22 @@ struct ReleaseActionabilityLevelReview {
     positive_rate: f64,
     threshold: f64,
     predicted_positive_count: u32,
-    actual_positive_count: u32,
-    pre_start_positive_count: u32,
-    post_start_positive_count: u32,
-    pre_start_hit_count: u32,
-    post_start_hit_count: u32,
+    primary_positive_count: u32,
+    late_validation_row_count: u32,
+    protected_row_count: u32,
+    primary_hit_count: u32,
+    late_validation_hit_count: u32,
+    protected_hit_count: u32,
     false_positive_count: u32,
     scenario_count: u32,
-    advance_warning_scenario_count: u32,
-    late_confirmation_scenario_count: u32,
+    on_time_scenario_count: u32,
+    late_only_scenario_count: u32,
     missed_scenario_count: u32,
     precision_at_threshold: Option<f64>,
-    pre_start_recall_at_threshold: Option<f64>,
-    post_start_recall_at_threshold: Option<f64>,
-    advance_warning_rate: Option<f64>,
-    late_confirmation_rate: Option<f64>,
+    primary_recall_at_threshold: Option<f64>,
+    late_validation_capture_rate: Option<f64>,
+    on_time_rate: Option<f64>,
+    late_only_rate: Option<f64>,
     missed_rate: Option<f64>,
     note: String,
 }
@@ -1383,7 +1430,10 @@ struct ReleaseRuntimeReviewDiagnostics {
     history_point_count: usize,
     posture_distribution: Vec<ReleaseRuntimeCount>,
     time_bucket_distribution: Vec<ReleaseRuntimeCount>,
+    posture_trigger_distribution: Vec<ReleaseRuntimeClauseCount>,
+    posture_blocker_distribution: Vec<ReleaseRuntimeClauseCount>,
     regime_probability_summaries: Vec<ReleaseRuntimeRegimeProbabilitySummary>,
+    regime_separation_summaries: Vec<ReleaseRuntimeSeparationSummary>,
     runtime_thresholds: Option<RuntimeThresholdDiagnosticsWire>,
     points_at_or_above_prepare_p60d: Option<usize>,
     points_at_or_above_hedge_p20d: Option<usize>,
@@ -1392,14 +1442,52 @@ struct ReleaseRuntimeReviewDiagnostics {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct ReleaseRuntimeClauseCount {
+    posture: String,
+    clause: String,
+    count: usize,
+    share_of_posture: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct ReleaseRuntimeRegimeProbabilitySummary {
     horizon_days: u32,
     regime: String,
     row_count: usize,
     row_rate: f64,
+    avg_raw_probability: f64,
+    max_raw_probability: f64,
     avg_probability: f64,
     max_probability: f64,
+    raw_lift_vs_normal: Option<f64>,
+    calibrated_lift_vs_normal: Option<f64>,
+    raw_gap_vs_normal: Option<f64>,
+    calibrated_gap_vs_normal: Option<f64>,
+    calibration_gap_retention: Option<f64>,
     threshold_hit_count: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReleaseRuntimeSeparationSummary {
+    horizon_days: u32,
+    early_warning_regime: String,
+    normal_avg_probability: f64,
+    pre_warning_buffer_avg_probability: f64,
+    positive_window_avg_probability: f64,
+    in_crisis_avg_probability: f64,
+    post_crisis_cooldown_avg_probability: f64,
+    early_warning_raw_lift_vs_normal: Option<f64>,
+    early_warning_calibrated_lift_vs_normal: Option<f64>,
+    early_warning_gap_retention: Option<f64>,
+    positive_window_calibrated_lift_vs_normal: Option<f64>,
+    positive_window_gap_vs_normal: Option<f64>,
+    in_crisis_raw_lift_vs_normal: Option<f64>,
+    in_crisis_calibrated_lift_vs_normal: Option<f64>,
+    post_crisis_cooldown_calibrated_lift_vs_normal: Option<f64>,
+    post_crisis_cooldown_gap_vs_normal: Option<f64>,
+    max_non_normal_calibrated_lift_vs_normal: Option<f64>,
+    max_non_normal_threshold_hit_rate: Option<f64>,
+    diagnosis: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1418,10 +1506,14 @@ struct ReleaseReviewEnvelope {
     baseline_actionability_review: ReleaseActionabilityReview,
     candidate_actionability_review: ReleaseActionabilityReview,
     comparison: ReleaseReviewComparisonSummary,
+    probability_guard_regressions: Vec<String>,
+    probability_guard_passed: bool,
     operational_guard_regressions: Vec<String>,
     operational_guard_passed: bool,
     actionability_guard_regressions: Vec<String>,
     actionability_guard_passed: bool,
+    runtime_sanity_regressions: Vec<String>,
+    runtime_sanity_passed: bool,
     overall_guard_regressions: Vec<String>,
     overall_guard_passed: bool,
     recommendation: String,
@@ -1437,12 +1529,16 @@ struct FormalDatasetSplitSummary {
     positive_20d_rate: f64,
     positive_60d_count: usize,
     positive_60d_rate: f64,
-    action_positive_5d_count: usize,
-    action_positive_5d_rate: f64,
-    action_positive_20d_count: usize,
-    action_positive_20d_rate: f64,
-    action_positive_60d_count: usize,
-    action_positive_60d_rate: f64,
+    prepare_primary_count: usize,
+    prepare_primary_rate: f64,
+    hedge_primary_count: usize,
+    hedge_primary_rate: f64,
+    defend_primary_count: usize,
+    defend_primary_rate: f64,
+    late_validation_row_count: usize,
+    late_validation_row_rate: f64,
+    protected_row_count: usize,
+    protected_row_rate: f64,
     avg_coverage_score: f64,
     avg_core_feature_coverage: f64,
     avg_trigger_feature_coverage: f64,
@@ -1453,11 +1549,16 @@ struct FormalDatasetSplitSummary {
 #[derive(Debug, Clone, Serialize)]
 struct FormalDatasetScenarioSummary {
     scenario_id: String,
+    label: Option<String>,
     row_count: usize,
     split_count: usize,
     first_as_of_date: NaiveDate,
     last_as_of_date: NaiveDate,
     family: Option<String>,
+    training_role: Option<String>,
+    protected_window: Option<bool>,
+    episode_template_id: Option<String>,
+    default_horizon_roles: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1471,6 +1572,16 @@ struct FormalDatasetFamilySummary {
 struct FormalDatasetQualitySummary {
     grade: String,
     row_count: usize,
+}
+
+#[derive(Debug, Clone)]
+struct ScenarioSummaryMetadata {
+    label: String,
+    family: String,
+    training_role: String,
+    protected_window: bool,
+    episode_template_id: String,
+    default_horizon_roles: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1788,6 +1899,7 @@ async fn run_release_review(
         market_scope,
         &baseline_release.manifest.release_id,
         &options.api_reload_url,
+        ApiReloadHistoryMode::StrictRebuild,
         &options.updated_by,
         "baseline",
     )
@@ -1800,6 +1912,7 @@ async fn run_release_review(
         market_scope,
         &candidate_release.manifest.release_id,
         &options.api_reload_url,
+        ApiReloadHistoryMode::StrictRebuild,
         &options.updated_by,
         "candidate",
     )
@@ -1824,13 +1937,18 @@ async fn run_release_review(
 
     let baseline_actionability_review = build_release_actionability_review(baseline_release)?;
     let candidate_actionability_review = build_release_actionability_review(candidate_release)?;
+    let probability_regressions = compare_probability_guardrails(candidate_release)?;
     let candidate_has_actionability = candidate_actionability_review.enabled;
     let operational_regressions =
         compare_operational_guardrails(&baseline_assessment, &candidate_assessment);
     let actionability_regressions =
         compare_actionability_guardrails(&candidate_actionability_review);
+    let runtime_sanity_regressions =
+        compare_runtime_sanity_guardrails(&baseline_runtime_review, &candidate_runtime_review);
     let mut overall_regressions = operational_regressions.clone();
+    overall_regressions.extend(probability_regressions.iter().cloned());
     overall_regressions.extend(actionability_regressions.iter().cloned());
+    overall_regressions.extend(runtime_sanity_regressions.iter().cloned());
     let report = ReleaseReviewEnvelope {
         reviewed_at: Utc::now().to_rfc3339(),
         market_scope: market_scope.to_string(),
@@ -1846,15 +1964,19 @@ async fn run_release_review(
         candidate_runtime_review,
         baseline_actionability_review,
         candidate_actionability_review,
+        probability_guard_passed: probability_regressions.is_empty(),
         operational_guard_passed: operational_regressions.is_empty(),
         actionability_guard_passed: actionability_regressions.is_empty(),
+        runtime_sanity_passed: runtime_sanity_regressions.is_empty(),
         overall_guard_passed: overall_regressions.is_empty(),
         recommendation: build_release_review_recommendation(
             &overall_regressions,
             candidate_has_actionability,
         ),
         operational_guard_regressions: operational_regressions,
+        probability_guard_regressions: probability_regressions,
         actionability_guard_regressions: actionability_regressions,
+        runtime_sanity_regressions,
         overall_guard_regressions: overall_regressions,
     };
     write_release_review_report(&options.output_dir, &report)?;
@@ -1875,6 +1997,7 @@ async fn activate_release_for_review(
     market_scope: &str,
     release_id: &str,
     api_reload_url: &str,
+    history_mode: ApiReloadHistoryMode,
     updated_by: &str,
     stage: &str,
 ) -> anyhow::Result<()> {
@@ -1882,8 +2005,11 @@ async fn activate_release_for_review(
         .activate_model_release(market_scope, release_id, updated_by)
         .await?;
     println!("Review step {stage}: activated {release_id}.");
-    println!("Review step {stage}: reloading API runtime via {api_reload_url}.");
-    reload_api_runtime(api_reload_url).await?;
+    println!(
+        "Review step {stage}: reloading API runtime via {api_reload_url} (history_mode={}).",
+        history_mode.as_label()
+    );
+    reload_api_runtime_with_history_mode(api_reload_url, history_mode).await?;
     println!("Review step {stage}: runtime ready.");
     Ok(())
 }
@@ -2078,12 +2204,28 @@ async fn research_pipeline_train_probability(args: &[String]) -> anyhow::Result<
             "  eval             brier={:.4} log_loss={:.4} ece={:.4}",
             summary.brier_score, summary.log_loss, summary.ece
         );
+        println!(
+            "  regime_eval      usable_early_warning_horizons={} insufficient_early_warning_horizons={}",
+            summary.usable_early_warning_horizon_count,
+            summary.insufficient_early_warning_horizon_count,
+        );
+        for regime in &summary.regime_separation_summaries {
+            println!(
+                "  regime_horizon   {:>2}d early={} positive_window={} cooldown={} in_crisis={} diagnosis={}",
+                regime.horizon_days,
+                regime.early_warning_regime,
+                format_optional_multiplier(regime.positive_window_lift_vs_normal),
+                format_optional_multiplier(regime.post_crisis_cooldown_lift_vs_normal),
+                format_optional_multiplier(regime.in_crisis_lift_vs_normal),
+                regime.diagnosis,
+            );
+        }
     }
     if let Some(actionability) = artifacts.bundle.actionability.as_ref() {
         for level in &actionability.levels {
             if let Some(summary) = level.evaluation.actionability.as_ref() {
                 println!(
-                    "  actionability    {:>7} scenarios={} advance_warn={} late_confirm={} missed={}",
+                    "  actionability    {:>7} scenarios={} on_time={} late_only={} missed={}",
                     actionability_level_text(level.level),
                     summary.scenario_count,
                     format_pct(summary.advance_warning_rate.unwrap_or(0.0)),
@@ -2293,7 +2435,7 @@ async fn research_formal_dataset_build_main(args: &[String]) -> anyhow::Result<(
                 .find(|row| row.split_name == "evaluation")
                 .map(|row| row.as_of_date),
             row_count: rows.len(),
-            note: "Built from raw observations and point-in-time feature snapshots; persists both forward crisis labels and action-window labels so formal training can optimize for earlier executable warnings without losing the original crisis-start reference.".to_string(),
+            note: "Built from raw observations and point-in-time feature snapshots; persists forward crisis labels, bounded action-window proxy labels, and episode-native prepare/hedge/defend labels so formal training can optimize for earlier executable warnings without losing the original crisis-start reference.".to_string(),
         },
         created_at: generated_at,
     };
@@ -2729,22 +2871,37 @@ fn build_main_formal_dataset_rows_with_catalog(
     label_version: &str,
     scenario_set_version: &str,
 ) -> anyhow::Result<Vec<FormalDatasetRowRecord>> {
-    let scenarios = load_label_set_crisis_scenarios(scenario_set_version, label_version)?;
-    let min_date = NaiveDate::from_ymd_opt(1990, 1, 2).expect("valid date");
+    let scenario_sets = load_formal_dataset_scenario_sets(scenario_set_version, label_version)?;
+    let positive_scenarios = scenario_sets.positive_scenarios;
+    let context_scenarios = scenario_sets.context_scenarios;
+    let min_date = formal_dataset_min_date(label_version);
     let mut rows = snapshots
         .iter()
         .filter(|snapshot| snapshot.as_of_date >= min_date)
-        .filter(|snapshot| snapshot.visibility_status == FEATURE_SNAPSHOT_STATUS_READY)
-        .filter(|snapshot| snapshot.coverage_score >= 0.85)
-        .filter(|snapshot| snapshot.core_feature_coverage >= 0.90)
-        .filter(|snapshot| snapshot.trigger_feature_coverage >= 0.75)
-        .filter(|snapshot| snapshot.external_feature_coverage >= 0.70)
-        .filter(|snapshot| has_main_dataset_core_features(&snapshot.features))
+        .filter(|snapshot| formal_dataset_snapshot_is_usable(snapshot, label_version))
         .map(|snapshot| {
-            let primary_scenario = primary_scenario_for_date(snapshot.as_of_date, &scenarios);
-            let regime_5d = forward_crisis_training_regime(snapshot.as_of_date, &scenarios, 5);
-            let regime_20d = forward_crisis_training_regime(snapshot.as_of_date, &scenarios, 20);
-            let regime_60d = forward_crisis_training_regime(snapshot.as_of_date, &scenarios, 60);
+            let primary_scenario =
+                primary_scenario_for_date(snapshot.as_of_date, &context_scenarios);
+            let dominant_action_episode =
+                dominant_action_episode_for_date(snapshot.as_of_date, &context_scenarios);
+            let regime_5d = forward_crisis_training_regime_with_context(
+                snapshot.as_of_date,
+                &positive_scenarios,
+                &context_scenarios,
+                5,
+            );
+            let regime_20d = forward_crisis_training_regime_with_context(
+                snapshot.as_of_date,
+                &positive_scenarios,
+                &context_scenarios,
+                20,
+            );
+            let regime_60d = forward_crisis_training_regime_with_context(
+                snapshot.as_of_date,
+                &positive_scenarios,
+                &context_scenarios,
+                60,
+            );
             FormalDatasetRowRecord {
                 dataset_key: dataset_key.to_string(),
                 split_name: String::new(),
@@ -2761,24 +2918,104 @@ fn build_main_formal_dataset_rows_with_catalog(
                 primary_scenario_id: primary_scenario
                     .as_ref()
                     .map(|scenario| scenario.scenario_id.clone()),
-                scenario_family: primary_scenario.map(|scenario| scenario.family),
-                label_5d: forward_crisis_label(snapshot.as_of_date, &scenarios, 5),
-                label_20d: forward_crisis_label(snapshot.as_of_date, &scenarios, 20),
-                label_60d: forward_crisis_label(snapshot.as_of_date, &scenarios, 60),
+                scenario_family: primary_scenario
+                    .as_ref()
+                    .map(|scenario| scenario.family.clone()),
+                scenario_training_role: primary_scenario
+                    .as_ref()
+                    .map(|scenario| scenario.training_role.clone()),
+                label_5d: forward_crisis_label(snapshot.as_of_date, &positive_scenarios, 5),
+                label_20d: forward_crisis_label(snapshot.as_of_date, &positive_scenarios, 20),
+                label_60d: forward_crisis_label(snapshot.as_of_date, &positive_scenarios, 60),
                 regime_5d: probability_training_regime_name(regime_5d).to_string(),
                 regime_20d: probability_training_regime_name(regime_20d).to_string(),
                 regime_60d: probability_training_regime_name(regime_60d).to_string(),
-                action_label_5d: action_window_label(snapshot.as_of_date, &scenarios, 5),
-                action_label_20d: action_window_label(snapshot.as_of_date, &scenarios, 20),
-                action_label_60d: action_window_label(snapshot.as_of_date, &scenarios, 60),
+                action_label_5d: action_window_label(snapshot.as_of_date, &context_scenarios, 5),
+                action_label_20d: action_window_label(snapshot.as_of_date, &context_scenarios, 20),
+                action_label_60d: action_window_label(snapshot.as_of_date, &context_scenarios, 60),
+                prepare_episode_label: action_episode_label_for_level(
+                    snapshot.as_of_date,
+                    &context_scenarios,
+                    ActionabilityLevel::Prepare,
+                ),
+                hedge_episode_label: action_episode_label_for_level(
+                    snapshot.as_of_date,
+                    &context_scenarios,
+                    ActionabilityLevel::Hedge,
+                ),
+                defend_episode_label: action_episode_label_for_level(
+                    snapshot.as_of_date,
+                    &context_scenarios,
+                    ActionabilityLevel::Defend,
+                ),
+                primary_action_level: dominant_action_episode
+                    .as_ref()
+                    .filter(|selection| matches!(selection.phase, ActionEpisodePhase::Primary))
+                    .map(|selection| actionability_level_text(selection.level).to_string()),
+                action_episode_id: dominant_action_episode.as_ref().map(|selection| {
+                    format!(
+                        "{}:{}",
+                        selection.scenario_id,
+                        actionability_level_text(selection.level)
+                    )
+                }),
+                action_episode_phase: dominant_action_episode
+                    .as_ref()
+                    .map(|selection| selection.phase.as_str().to_string())
+                    .unwrap_or_else(|| ActionEpisodePhase::Outside.as_str().to_string()),
+                protected_action_window: dominant_action_episode
+                    .as_ref()
+                    .is_some_and(|selection| selection.protected_action_window),
                 features: snapshot.features.clone(),
                 created_at: Utc::now(),
             }
         })
         .collect::<Vec<_>>();
     rows.sort_by_key(|row| row.as_of_date);
-    assign_formal_dataset_splits(&mut rows, &scenarios);
+    assign_formal_dataset_splits(&mut rows, &context_scenarios, label_version);
     Ok(rows)
+}
+
+fn formal_dataset_min_date(label_version: &str) -> NaiveDate {
+    match label_version {
+        "formal_label_v1_ext_acute" => NaiveDate::from_ymd_opt(1987, 1, 1).expect("valid date"),
+        _ => NaiveDate::from_ymd_opt(1990, 1, 2).expect("valid date"),
+    }
+}
+
+fn formal_dataset_snapshot_is_usable(
+    snapshot: &FeatureSnapshotRecord,
+    label_version: &str,
+) -> bool {
+    match label_version {
+        "formal_label_v1_ext_stress" => {
+            snapshot.visibility_status == FEATURE_SNAPSHOT_STATUS_READY
+                && snapshot.coverage_score >= 0.75
+                && snapshot.core_feature_coverage >= 0.85
+                && snapshot.trigger_feature_coverage >= 0.80
+                && snapshot.external_feature_coverage >= 0.50
+                && has_main_dataset_core_features(&snapshot.features)
+        }
+        "formal_label_v1_ext_acute" => {
+            matches!(
+                snapshot.visibility_status.as_str(),
+                FEATURE_SNAPSHOT_STATUS_READY
+                    | FEATURE_SNAPSHOT_STATUS_COVERAGE_OR_VISIBILITY_FAILED
+            ) && snapshot.coverage_score >= 0.55
+                && snapshot.core_feature_coverage >= 0.60
+                && snapshot.trigger_feature_coverage >= 0.50
+                && snapshot.external_feature_coverage >= 0.50
+                && has_extension_acute_core_features(&snapshot.features)
+        }
+        _ => {
+            snapshot.visibility_status == FEATURE_SNAPSHOT_STATUS_READY
+                && snapshot.coverage_score >= 0.85
+                && snapshot.core_feature_coverage >= 0.90
+                && snapshot.trigger_feature_coverage >= 0.75
+                && snapshot.external_feature_coverage >= 0.70
+                && has_main_dataset_core_features(&snapshot.features)
+        }
+    }
 }
 
 fn formal_feature_dates(
@@ -3103,6 +3340,17 @@ fn has_main_dataset_core_features(features: &BTreeMap<String, f64>) -> bool {
     .all(|feature| features.contains_key(feature))
 }
 
+fn has_extension_acute_core_features(features: &BTreeMap<String, f64>) -> bool {
+    [
+        "us_curve_10y2y_level",
+        "us_baa_10y_spread_level",
+        "us_fed_funds_level",
+        "us_usdjpy_level",
+    ]
+    .into_iter()
+    .all(|feature| features.contains_key(feature))
+}
+
 fn feature_quality_grade(coverage_score: f64) -> &'static str {
     if coverage_score >= 0.9 {
         "a"
@@ -3117,10 +3365,82 @@ fn feature_quality_grade(coverage_score: f64) -> &'static str {
     }
 }
 
-fn assign_formal_dataset_splits(rows: &mut [FormalDatasetRowRecord], scenarios: &[CrisisScenario]) {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FormalDatasetSplitProfile {
+    Main,
+    ExtensionAcute,
+    ExtensionStress,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FormalDatasetSplitRequirements {
+    minimum_scenario_ranges: usize,
+    minimum_calibration_scenarios: usize,
+    minimum_evaluation_scenarios: usize,
+    require_forward_5d: bool,
+    require_forward_20d: bool,
+    require_forward_60d: bool,
+    require_prepare: bool,
+    require_hedge: bool,
+    require_defend: bool,
+}
+
+fn formal_dataset_split_profile(label_version: &str) -> FormalDatasetSplitProfile {
+    match label_version {
+        "formal_label_v1_ext_acute" => FormalDatasetSplitProfile::ExtensionAcute,
+        "formal_label_v1_ext_stress" => FormalDatasetSplitProfile::ExtensionStress,
+        _ => FormalDatasetSplitProfile::Main,
+    }
+}
+
+fn formal_dataset_split_requirements(label_version: &str) -> FormalDatasetSplitRequirements {
+    match formal_dataset_split_profile(label_version) {
+        FormalDatasetSplitProfile::Main => FormalDatasetSplitRequirements {
+            minimum_scenario_ranges: 3,
+            minimum_calibration_scenarios: 2,
+            minimum_evaluation_scenarios: 2,
+            require_forward_5d: true,
+            require_forward_20d: true,
+            require_forward_60d: true,
+            require_prepare: true,
+            require_hedge: true,
+            require_defend: true,
+        },
+        FormalDatasetSplitProfile::ExtensionAcute => FormalDatasetSplitRequirements {
+            minimum_scenario_ranges: 2,
+            minimum_calibration_scenarios: 2,
+            minimum_evaluation_scenarios: 1,
+            require_forward_5d: true,
+            require_forward_20d: true,
+            require_forward_60d: false,
+            require_prepare: false,
+            require_hedge: false,
+            require_defend: true,
+        },
+        FormalDatasetSplitProfile::ExtensionStress => FormalDatasetSplitRequirements {
+            minimum_scenario_ranges: 3,
+            minimum_calibration_scenarios: 2,
+            minimum_evaluation_scenarios: 2,
+            require_forward_5d: false,
+            require_forward_20d: true,
+            require_forward_60d: true,
+            require_prepare: true,
+            require_hedge: true,
+            require_defend: false,
+        },
+    }
+}
+
+fn assign_formal_dataset_splits(
+    rows: &mut [FormalDatasetRowRecord],
+    scenarios: &[CrisisScenario],
+    label_version: &str,
+) {
     let ranges = collect_formal_dataset_scenario_ranges(rows, scenarios);
-    let Ok((train_end, calibration_end)) = scenario_aware_formal_split_bounds(rows, &ranges)
-        .or_else(|_| chronological_split_bounds(rows.len()))
+    let split_requirements = formal_dataset_split_requirements(label_version);
+    let Ok((train_end, calibration_end)) =
+        scenario_aware_formal_split_bounds(rows, &ranges, split_requirements)
+            .or_else(|_| chronological_split_bounds(rows.len()))
     else {
         return;
     };
@@ -3140,9 +3460,13 @@ struct ScenarioRowRange {
 fn scenario_aware_formal_split_bounds(
     rows: &[FormalDatasetRowRecord],
     ranges: &[ScenarioRowRange],
+    split_requirements: FormalDatasetSplitRequirements,
 ) -> anyhow::Result<(usize, usize)> {
-    if ranges.len() < 3 {
-        bail!("fewer than 3 scenario ranges available for scenario-aware split");
+    if ranges.len() < split_requirements.minimum_scenario_ranges {
+        bail!(
+            "fewer than {} scenario ranges available for scenario-aware split",
+            split_requirements.minimum_scenario_ranges
+        );
     }
     let (baseline_train_end, baseline_calibration_end) = chronological_split_bounds(rows.len())?;
     let label_support = FormalSplitLabelSupport::from_rows(rows);
@@ -3163,16 +3487,26 @@ fn scenario_aware_formal_split_bounds(
                         scenario_count_for_split_range(ranges, train_end, calibration_end);
                     let evaluation_scenario_count =
                         scenario_count_for_split_range(ranges, calibration_end, rows.len());
-                    if calibration_scenario_count < 2 || evaluation_scenario_count < 2 {
+                    if calibration_scenario_count < split_requirements.minimum_calibration_scenarios
+                        || evaluation_scenario_count
+                            < split_requirements.minimum_evaluation_scenarios
+                    {
                         continue;
                     }
 
-                    if !label_support.split_has_required_label_support(0, train_end)
-                        || !label_support
-                            .split_has_required_label_support(train_end, calibration_end)
-                        || !label_support
-                            .split_has_required_label_support(calibration_end, rows.len())
-                    {
+                    if !label_support.split_has_required_label_support(
+                        0,
+                        train_end,
+                        split_requirements,
+                    ) || !label_support.split_has_required_label_support(
+                        train_end,
+                        calibration_end,
+                        split_requirements,
+                    ) || !label_support.split_has_required_label_support(
+                        calibration_end,
+                        rows.len(),
+                        split_requirements,
+                    ) {
                         continue;
                     }
 
@@ -3184,6 +3518,7 @@ fn scenario_aware_formal_split_bounds(
                             ranges,
                             calibration_end,
                             rows.len(),
+                            split_requirements,
                         );
                     let deviation_from_baseline = train_end.abs_diff(baseline_train_end)
                         + calibration_end.abs_diff(baseline_calibration_end);
@@ -3231,7 +3566,7 @@ fn scenario_aware_formal_split_bounds(
         .map(|(train_end, calibration_end, _, _, _)| (train_end, calibration_end))
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "no scenario-aware split preserves multi-scenario calibration/evaluation coverage together with forward/action label support"
+                "no scenario-aware split preserves multi-scenario calibration/evaluation coverage together with forward/action-episode label support"
             )
         })
 }
@@ -3240,37 +3575,36 @@ fn collect_formal_dataset_scenario_ranges(
     rows: &[FormalDatasetRowRecord],
     scenarios: &[CrisisScenario],
 ) -> Vec<ScenarioRowRange> {
-    scenarios
+    let family_by_id = scenarios
         .iter()
-        .filter_map(|scenario| {
-            let start_date = scenario_support_window_start_date(scenario);
-            let end_date = scenario_support_window_end_date(scenario);
-            let start_index = rows.partition_point(|row| row.as_of_date < start_date);
-            let end_exclusive = rows.partition_point(|row| row.as_of_date <= end_date);
-            (start_index < end_exclusive).then(|| ScenarioRowRange {
-                scenario_id: scenario.scenario_id.clone(),
-                family: scenario.family.clone(),
-                start_index,
-                end_index: end_exclusive.saturating_sub(1),
-            })
+        .map(|scenario| (scenario.scenario_id.as_str(), scenario.family.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut ranges = BTreeMap::<String, (usize, usize)>::new();
+    for (index, row) in rows.iter().enumerate() {
+        let Some(scenario_id) = row.primary_scenario_id.as_ref() else {
+            continue;
+        };
+        ranges
+            .entry(scenario_id.clone())
+            .and_modify(|range| range.1 = index)
+            .or_insert((index, index));
+    }
+
+    let mut summaries = ranges
+        .into_iter()
+        .map(|(scenario_id, (start_index, end_index))| ScenarioRowRange {
+            family: family_by_id
+                .get(scenario_id.as_str())
+                .cloned()
+                .or_else(|| rows[start_index].scenario_family.clone())
+                .unwrap_or_else(|| "unknown".to_string()),
+            scenario_id,
+            start_index,
+            end_index,
         })
-        .collect()
-}
-
-fn scenario_support_window_start_date(scenario: &CrisisScenario) -> NaiveDate {
-    [5_u32, 20, 60]
-        .into_iter()
-        .map(|horizon_days| action_window_start_date(scenario, horizon_days))
-        .min()
-        .unwrap_or(scenario.pre_warning_start)
-}
-
-fn scenario_support_window_end_date(scenario: &CrisisScenario) -> NaiveDate {
-    [5_u32, 20, 60]
-        .into_iter()
-        .map(|horizon_days| action_window_end_date(scenario, horizon_days))
-        .max()
-        .unwrap_or(scenario.crisis_end)
+        .collect::<Vec<_>>();
+    summaries.sort_by_key(|range| range.start_index);
+    summaries
 }
 
 #[derive(Debug, Clone)]
@@ -3278,9 +3612,9 @@ struct FormalSplitLabelSupport {
     forward_5d: Vec<usize>,
     forward_20d: Vec<usize>,
     forward_60d: Vec<usize>,
-    action_5d: Vec<usize>,
-    action_20d: Vec<usize>,
-    action_60d: Vec<usize>,
+    prepare_primary: Vec<usize>,
+    hedge_primary: Vec<usize>,
+    defend_primary: Vec<usize>,
 }
 
 impl FormalSplitLabelSupport {
@@ -3289,16 +3623,16 @@ impl FormalSplitLabelSupport {
             forward_5d: Vec::with_capacity(rows.len() + 1),
             forward_20d: Vec::with_capacity(rows.len() + 1),
             forward_60d: Vec::with_capacity(rows.len() + 1),
-            action_5d: Vec::with_capacity(rows.len() + 1),
-            action_20d: Vec::with_capacity(rows.len() + 1),
-            action_60d: Vec::with_capacity(rows.len() + 1),
+            prepare_primary: Vec::with_capacity(rows.len() + 1),
+            hedge_primary: Vec::with_capacity(rows.len() + 1),
+            defend_primary: Vec::with_capacity(rows.len() + 1),
         };
         support.forward_5d.push(0);
         support.forward_20d.push(0);
         support.forward_60d.push(0);
-        support.action_5d.push(0);
-        support.action_20d.push(0);
-        support.action_60d.push(0);
+        support.prepare_primary.push(0);
+        support.hedge_primary.push(0);
+        support.defend_primary.push(0);
         for row in rows {
             support.forward_5d.push(
                 support.forward_5d.last().copied().unwrap_or_default()
@@ -3312,30 +3646,41 @@ impl FormalSplitLabelSupport {
                 support.forward_60d.last().copied().unwrap_or_default()
                     + usize::from(row.label_60d > 0),
             );
-            support.action_5d.push(
-                support.action_5d.last().copied().unwrap_or_default()
-                    + usize::from(row.action_label_5d > 0),
+            support.prepare_primary.push(
+                support.prepare_primary.last().copied().unwrap_or_default()
+                    + usize::from(row.prepare_episode_label > 0),
             );
-            support.action_20d.push(
-                support.action_20d.last().copied().unwrap_or_default()
-                    + usize::from(row.action_label_20d > 0),
+            support.hedge_primary.push(
+                support.hedge_primary.last().copied().unwrap_or_default()
+                    + usize::from(row.hedge_episode_label > 0),
             );
-            support.action_60d.push(
-                support.action_60d.last().copied().unwrap_or_default()
-                    + usize::from(row.action_label_60d > 0),
+            support.defend_primary.push(
+                support.defend_primary.last().copied().unwrap_or_default()
+                    + usize::from(row.defend_episode_label > 0),
             );
         }
         support
     }
 
-    fn split_has_required_label_support(&self, start: usize, end: usize) -> bool {
+    fn split_has_required_label_support(
+        &self,
+        start: usize,
+        end: usize,
+        split_requirements: FormalDatasetSplitRequirements,
+    ) -> bool {
         end > start
-            && self.has_positive(&self.forward_5d, start, end)
-            && self.has_positive(&self.forward_20d, start, end)
-            && self.has_positive(&self.forward_60d, start, end)
-            && self.has_positive(&self.action_5d, start, end)
-            && self.has_positive(&self.action_20d, start, end)
-            && self.has_positive(&self.action_60d, start, end)
+            && (!split_requirements.require_forward_5d
+                || self.has_positive(&self.forward_5d, start, end))
+            && (!split_requirements.require_forward_20d
+                || self.has_positive(&self.forward_20d, start, end))
+            && (!split_requirements.require_forward_60d
+                || self.has_positive(&self.forward_60d, start, end))
+            && (!split_requirements.require_prepare
+                || self.has_positive(&self.prepare_primary, start, end))
+            && (!split_requirements.require_hedge
+                || self.has_positive(&self.hedge_primary, start, end))
+            && (!split_requirements.require_defend
+                || self.has_positive(&self.defend_primary, start, end))
     }
 
     fn has_positive(&self, prefix: &[usize], start: usize, end: usize) -> bool {
@@ -3359,20 +3704,40 @@ fn split_actionability_scenario_support_score(
     ranges: &[ScenarioRowRange],
     start: usize,
     end: usize,
+    split_requirements: FormalDatasetSplitRequirements,
 ) -> usize {
-    [5_u32, 20, 60]
-        .into_iter()
-        .map(|horizon_days| {
-            actionability_positive_scenario_count_for_split_range(
-                rows,
-                ranges,
-                start,
-                end,
-                horizon_days,
-            )
-            .min(2)
-        })
-        .sum()
+    let mut score = 0;
+    if split_requirements.require_prepare {
+        score += actionability_positive_scenario_count_for_split_range(
+            rows,
+            ranges,
+            start,
+            end,
+            ActionabilityLevel::Prepare,
+        )
+        .min(2);
+    }
+    if split_requirements.require_hedge {
+        score += actionability_positive_scenario_count_for_split_range(
+            rows,
+            ranges,
+            start,
+            end,
+            ActionabilityLevel::Hedge,
+        )
+        .min(2);
+    }
+    if split_requirements.require_defend {
+        score += actionability_positive_scenario_count_for_split_range(
+            rows,
+            ranges,
+            start,
+            end,
+            ActionabilityLevel::Defend,
+        )
+        .min(2);
+    }
+    score
 }
 
 fn actionability_positive_scenario_count_for_split_range(
@@ -3380,7 +3745,7 @@ fn actionability_positive_scenario_count_for_split_range(
     ranges: &[ScenarioRowRange],
     start: usize,
     end: usize,
-    horizon_days: u32,
+    level: ActionabilityLevel,
 ) -> usize {
     ranges
         .iter()
@@ -3390,18 +3755,17 @@ fn actionability_positive_scenario_count_for_split_range(
             overlap_start < overlap_end
                 && rows[overlap_start..overlap_end].iter().any(|row| {
                     row.primary_scenario_id.as_deref() == Some(range.scenario_id.as_str())
-                        && row_has_action_label(row, horizon_days)
+                        && row_has_action_episode_label(row, level)
                 })
         })
         .count()
 }
 
-fn row_has_action_label(row: &FormalDatasetRowRecord, horizon_days: u32) -> bool {
-    match horizon_days {
-        5 => row.action_label_5d > 0,
-        20 => row.action_label_20d > 0,
-        60 => row.action_label_60d > 0,
-        _ => false,
+fn row_has_action_episode_label(row: &FormalDatasetRowRecord, level: ActionabilityLevel) -> bool {
+    match level {
+        ActionabilityLevel::Prepare => row.prepare_episode_label > 0,
+        ActionabilityLevel::Hedge => row.hedge_episode_label > 0,
+        ActionabilityLevel::Defend => row.defend_episode_label > 0,
     }
 }
 
@@ -3442,20 +3806,136 @@ fn load_label_set_crisis_scenarios(
         );
     }
 
+    load_label_set_crisis_scenarios_from_catalog(&catalog, label_set_id)
+}
+
+fn load_formal_dataset_scenario_sets(
+    scenario_set_version: &str,
+    label_set_id: &str,
+) -> anyhow::Result<FormalDatasetScenarioSets> {
+    let catalog = load_crisis_scenario_catalog();
+    if catalog.catalog_id != scenario_set_version {
+        bail!(
+            "scenario set version {} is not available in the active catalog {}; set FC_SCENARIO_CATALOG_PATH to another catalog or use {}",
+            scenario_set_version,
+            catalog.catalog_id,
+            catalog.catalog_id
+        );
+    }
+
+    let positive_scenarios = load_label_set_crisis_scenarios_from_catalog(&catalog, label_set_id)?;
+    let mut context_scenarios = positive_scenarios.clone();
+    if label_set_id == DEFAULT_FORMAL_LABEL_VERSION {
+        let protected_context_scenarios = load_window_set_crisis_scenarios_from_catalog(
+            &catalog,
+            DEFAULT_FORMAL_MAIN_CONTEXT_WINDOW_SET_ID,
+        )?;
+        for scenario in protected_context_scenarios {
+            if context_scenarios
+                .iter()
+                .any(|existing| existing.scenario_id == scenario.scenario_id)
+            {
+                continue;
+            }
+            context_scenarios.push(scenario);
+        }
+        context_scenarios.sort_by_key(|scenario| scenario.crisis_start);
+    }
+
+    Ok(FormalDatasetScenarioSets {
+        positive_scenarios,
+        context_scenarios,
+    })
+}
+
+fn load_label_set_crisis_scenarios_from_catalog(
+    catalog: &fc_domain::CrisisScenarioCatalog,
+    label_set_id: &str,
+) -> anyhow::Result<Vec<CrisisScenario>> {
     let scenarios = catalog
         .scenarios_for_label_set(label_set_id)
         .with_context(|| format!("label set {label_set_id} was not found in scenario catalog"))?;
-
     Ok(scenarios
         .into_iter()
-        .map(|scenario| CrisisScenario {
-            scenario_id: scenario.scenario_id.clone(),
-            family: scenario_family_code(scenario.family).to_string(),
-            pre_warning_start: scenario.pre_warning_start,
-            crisis_start: scenario.crisis_start,
-            acute_start: scenario.acute_start,
-            crisis_end: scenario.crisis_end,
-            default_horizon_roles: scenario.default_horizon_roles.clone(),
+        .map(crisis_scenario_from_definition)
+        .collect())
+}
+
+fn load_window_set_crisis_scenarios_from_catalog(
+    catalog: &fc_domain::CrisisScenarioCatalog,
+    window_set_id: &str,
+) -> anyhow::Result<Vec<CrisisScenario>> {
+    let scenario_ids = catalog
+        .scenario_ids_for_window_set(window_set_id)
+        .with_context(|| format!("window set {window_set_id} was not found in scenario catalog"))?;
+    let mut scenarios = Vec::with_capacity(scenario_ids.len());
+    for scenario_id in scenario_ids {
+        let scenario = catalog
+            .scenarios
+            .iter()
+            .find(|scenario| scenario.scenario_id == *scenario_id)
+            .with_context(|| {
+                format!("window set {window_set_id} references unknown scenario {scenario_id}")
+            })?;
+        scenarios.push(crisis_scenario_from_definition(scenario));
+    }
+    Ok(scenarios)
+}
+
+fn crisis_scenario_from_definition(
+    scenario: &fc_domain::CrisisScenarioDefinition,
+) -> CrisisScenario {
+    CrisisScenario {
+        scenario_id: scenario.scenario_id.clone(),
+        family: scenario_family_code(scenario.family).to_string(),
+        training_role: scenario_training_role_code(scenario.training_role).to_string(),
+        pre_warning_start: scenario.pre_warning_start,
+        crisis_start: scenario.crisis_start,
+        acute_start: scenario.acute_start,
+        crisis_end: scenario.crisis_end,
+        default_horizon_roles: scenario.default_horizon_roles.clone(),
+        protected_window: scenario.protected_window,
+        protected_action_levels: scenario.protected_action_levels.clone(),
+        episode_template_id: scenario
+            .episode_template_id
+            .expect("validated scenario catalog must include episode_template_id"),
+        action_episode_overrides: scenario.action_episode_overrides.clone(),
+    }
+}
+
+fn load_formal_dataset_scenario_metadata(
+    scenario_set_version: &str,
+) -> anyhow::Result<BTreeMap<String, ScenarioSummaryMetadata>> {
+    let catalog = load_crisis_scenario_catalog();
+    if catalog.catalog_id != scenario_set_version {
+        bail!(
+            "scenario set version {} is not available in the active catalog {}; set FC_SCENARIO_CATALOG_PATH to another catalog or use {}",
+            scenario_set_version,
+            catalog.catalog_id,
+            catalog.catalog_id
+        );
+    }
+
+    Ok(catalog
+        .scenarios
+        .into_iter()
+        .map(|scenario| {
+            (
+                scenario.scenario_id.clone(),
+                ScenarioSummaryMetadata {
+                    label: scenario.label,
+                    family: scenario_family_code(scenario.family).to_string(),
+                    training_role: scenario_training_role_code(scenario.training_role).to_string(),
+                    protected_window: scenario.protected_window,
+                    episode_template_id: action_episode_template_code(
+                        scenario
+                            .episode_template_id
+                            .expect("validated scenario catalog must include episode_template_id"),
+                    )
+                    .to_string(),
+                    default_horizon_roles: scenario.default_horizon_roles,
+                },
+            )
         })
         .collect())
 }
@@ -3473,6 +3953,374 @@ fn scenario_family_code(family: fc_domain::CrisisScenarioFamily) -> &'static str
             "rate_shock_or_policy_dislocation"
         }
     }
+}
+
+fn scenario_training_role_code(role: fc_domain::CrisisScenarioTrainingRole) -> &'static str {
+    match role {
+        fc_domain::CrisisScenarioTrainingRole::Mandatory => "mandatory",
+        fc_domain::CrisisScenarioTrainingRole::CandidateOptional => "candidate_optional",
+        fc_domain::CrisisScenarioTrainingRole::ExtensionOnly => "extension_only",
+        fc_domain::CrisisScenarioTrainingRole::NoPositiveMain => "no_positive_main",
+    }
+}
+
+fn action_episode_template_code(template: ActionEpisodeTemplateId) -> &'static str {
+    match template {
+        ActionEpisodeTemplateId::AcuteMarketLiquidityCrash => "acute_market_liquidity_crash",
+        ActionEpisodeTemplateId::SystemicCreditBankingCrisis => "systemic_credit_banking_crisis",
+        ActionEpisodeTemplateId::MixedSystemicStress => "mixed_systemic_stress",
+        ActionEpisodeTemplateId::RateShockOrPolicyDislocation => "rate_shock_or_policy_dislocation",
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActionEpisodePhase {
+    Outside,
+    Cooldown,
+    LateValidation,
+    Primary,
+}
+
+impl ActionEpisodePhase {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Outside => "outside",
+            Self::Cooldown => "cooldown",
+            Self::LateValidation => "late_validation",
+            Self::Primary => "primary",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DateRange {
+    start: NaiveDate,
+    end: NaiveDate,
+}
+
+impl DateRange {
+    fn new(start: NaiveDate, end: NaiveDate) -> Option<Self> {
+        (start <= end).then_some(Self { start, end })
+    }
+
+    fn contains(self, as_of_date: NaiveDate) -> bool {
+        as_of_date >= self.start && as_of_date <= self.end
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ActionEpisodeWindow {
+    primary: Option<DateRange>,
+    late_validation: Option<DateRange>,
+    cooldown: Option<DateRange>,
+    protected_action_window: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ActionEpisodeSelection {
+    scenario_id: String,
+    level: ActionabilityLevel,
+    phase: ActionEpisodePhase,
+    protected_action_window: bool,
+    crisis_start: NaiveDate,
+}
+
+fn shift_date(date: NaiveDate, days: i64) -> NaiveDate {
+    date.checked_add_signed(Duration::days(days))
+        .unwrap_or(date)
+}
+
+fn next_day(date: NaiveDate) -> NaiveDate {
+    shift_date(date, 1)
+}
+
+fn action_level_rank(level: ActionabilityLevel) -> i32 {
+    match level {
+        ActionabilityLevel::Defend => 0,
+        ActionabilityLevel::Hedge => 1,
+        ActionabilityLevel::Prepare => 2,
+    }
+}
+
+fn action_episode_phase_rank(phase: ActionEpisodePhase) -> i32 {
+    match phase {
+        ActionEpisodePhase::Primary => 0,
+        ActionEpisodePhase::LateValidation => 1,
+        ActionEpisodePhase::Cooldown => 2,
+        ActionEpisodePhase::Outside => 3,
+    }
+}
+
+fn action_level_proxy_horizon_days(level: ActionabilityLevel) -> u32 {
+    match level {
+        ActionabilityLevel::Prepare => 60,
+        ActionabilityLevel::Hedge => 20,
+        ActionabilityLevel::Defend => 5,
+    }
+}
+
+fn actionability_level_for_proxy_horizon(horizon_days: u32) -> Option<ActionabilityLevel> {
+    match horizon_days {
+        60 => Some(ActionabilityLevel::Prepare),
+        20 => Some(ActionabilityLevel::Hedge),
+        5 => Some(ActionabilityLevel::Defend),
+        _ => None,
+    }
+}
+
+fn action_episode_override_for_level(
+    overrides: Option<&CrisisScenarioActionEpisodeOverrides>,
+    level: ActionabilityLevel,
+) -> Option<&fc_domain::ActionEpisodeWindowOverride> {
+    let overrides = overrides?;
+    match level {
+        ActionabilityLevel::Prepare => overrides.prepare.as_ref(),
+        ActionabilityLevel::Hedge => overrides.hedge.as_ref(),
+        ActionabilityLevel::Defend => overrides.defend.as_ref(),
+    }
+}
+
+fn action_episode_default_window(
+    scenario: &CrisisScenario,
+    level: ActionabilityLevel,
+) -> ActionEpisodeWindow {
+    let acute_start = scenario.acute_start.unwrap_or(scenario.crisis_start);
+    let (primary, late_validation) = match (scenario.episode_template_id, level) {
+        (ActionEpisodeTemplateId::SystemicCreditBankingCrisis, ActionabilityLevel::Prepare) => (
+            DateRange::new(
+                scenario.pre_warning_start,
+                shift_date(scenario.crisis_start, -21),
+            ),
+            DateRange::new(
+                shift_date(scenario.crisis_start, -20),
+                shift_date(scenario.crisis_start, -11),
+            ),
+        ),
+        (ActionEpisodeTemplateId::SystemicCreditBankingCrisis, ActionabilityLevel::Hedge) => (
+            DateRange::new(
+                shift_date(scenario.crisis_start, -20),
+                shift_date(scenario.crisis_start, -6),
+            ),
+            DateRange::new(
+                shift_date(scenario.crisis_start, -5),
+                shift_date(scenario.crisis_start, 3),
+            ),
+        ),
+        (ActionEpisodeTemplateId::SystemicCreditBankingCrisis, ActionabilityLevel::Defend) => (
+            DateRange::new(
+                shift_date(scenario.crisis_start, -5),
+                shift_date(acute_start, 3),
+            ),
+            DateRange::new(shift_date(acute_start, 4), shift_date(acute_start, 10)),
+        ),
+        (ActionEpisodeTemplateId::AcuteMarketLiquidityCrash, ActionabilityLevel::Prepare) => (
+            DateRange::new(
+                scenario.pre_warning_start.max(shift_date(acute_start, -20)),
+                shift_date(acute_start, -11),
+            ),
+            DateRange::new(shift_date(acute_start, -10), shift_date(acute_start, -7)),
+        ),
+        (ActionEpisodeTemplateId::AcuteMarketLiquidityCrash, ActionabilityLevel::Hedge) => (
+            DateRange::new(shift_date(acute_start, -10), shift_date(acute_start, -4)),
+            DateRange::new(shift_date(acute_start, -3), shift_date(acute_start, 1)),
+        ),
+        (ActionEpisodeTemplateId::AcuteMarketLiquidityCrash, ActionabilityLevel::Defend) => (
+            DateRange::new(shift_date(acute_start, -3), shift_date(acute_start, 2)),
+            DateRange::new(shift_date(acute_start, 3), shift_date(acute_start, 7)),
+        ),
+        (ActionEpisodeTemplateId::MixedSystemicStress, ActionabilityLevel::Prepare)
+        | (ActionEpisodeTemplateId::RateShockOrPolicyDislocation, ActionabilityLevel::Prepare) => (
+            DateRange::new(
+                scenario.pre_warning_start,
+                shift_date(scenario.crisis_start, -16),
+            ),
+            DateRange::new(
+                shift_date(scenario.crisis_start, -15),
+                shift_date(scenario.crisis_start, -8),
+            ),
+        ),
+        (ActionEpisodeTemplateId::MixedSystemicStress, ActionabilityLevel::Hedge) => (
+            DateRange::new(
+                shift_date(scenario.crisis_start, -15),
+                shift_date(scenario.crisis_start, -5),
+            ),
+            DateRange::new(
+                shift_date(scenario.crisis_start, -4),
+                shift_date(scenario.crisis_start, 3),
+            ),
+        ),
+        (ActionEpisodeTemplateId::RateShockOrPolicyDislocation, ActionabilityLevel::Hedge) => (
+            DateRange::new(
+                shift_date(scenario.crisis_start, -15),
+                shift_date(scenario.crisis_start, -5),
+            ),
+            DateRange::new(
+                shift_date(scenario.crisis_start, -4),
+                shift_date(scenario.crisis_start, 2),
+            ),
+        ),
+        (
+            ActionEpisodeTemplateId::MixedSystemicStress
+            | ActionEpisodeTemplateId::RateShockOrPolicyDislocation,
+            ActionabilityLevel::Defend,
+        ) => (None, None),
+    };
+    let cooldown = DateRange::new(
+        next_day(scenario.crisis_end),
+        shift_date(
+            scenario.crisis_end,
+            post_crisis_cooldown_days(action_level_proxy_horizon_days(level)),
+        ),
+    );
+
+    ActionEpisodeWindow {
+        primary,
+        late_validation,
+        cooldown,
+        protected_action_window: scenario.protected_window
+            && scenario.protected_action_levels.contains(&level),
+    }
+}
+
+fn action_episode_window(
+    scenario: &CrisisScenario,
+    level: ActionabilityLevel,
+) -> ActionEpisodeWindow {
+    let mut window = action_episode_default_window(scenario, level);
+    let Some(override_window) =
+        action_episode_override_for_level(scenario.action_episode_overrides.as_ref(), level)
+    else {
+        return window;
+    };
+
+    if override_window.enabled == Some(false) {
+        return ActionEpisodeWindow {
+            primary: None,
+            late_validation: None,
+            cooldown: None,
+            protected_action_window: window.protected_action_window,
+        };
+    }
+
+    if let (Some(primary_start), Some(primary_end)) =
+        (override_window.primary_start, override_window.primary_end)
+    {
+        window.primary = DateRange::new(primary_start, primary_end);
+    }
+    if let Some(late_validation_end) = override_window.late_validation_end {
+        window.late_validation = window
+            .primary
+            .and_then(|primary| DateRange::new(next_day(primary.end), late_validation_end));
+    }
+    if let Some(cooldown_end) = override_window.cooldown_end {
+        window.cooldown = DateRange::new(next_day(scenario.crisis_end), cooldown_end);
+    }
+
+    window
+}
+
+fn action_episode_phase_for_date(
+    as_of_date: NaiveDate,
+    scenario: &CrisisScenario,
+    level: ActionabilityLevel,
+) -> ActionEpisodePhase {
+    let window = action_episode_window(scenario, level);
+    if window
+        .primary
+        .is_some_and(|range| range.contains(as_of_date))
+    {
+        return ActionEpisodePhase::Primary;
+    }
+    if window
+        .late_validation
+        .is_some_and(|range| range.contains(as_of_date))
+    {
+        return ActionEpisodePhase::LateValidation;
+    }
+    if window
+        .cooldown
+        .is_some_and(|range| range.contains(as_of_date))
+    {
+        return ActionEpisodePhase::Cooldown;
+    }
+    ActionEpisodePhase::Outside
+}
+
+fn action_episode_label_for_level(
+    as_of_date: NaiveDate,
+    scenarios: &[CrisisScenario],
+    level: ActionabilityLevel,
+) -> u8 {
+    scenarios.iter().any(|scenario| {
+        matches!(
+            action_episode_phase_for_date(as_of_date, scenario, level),
+            ActionEpisodePhase::Primary
+        )
+    }) as u8
+}
+
+fn dominant_action_episode_for_date(
+    as_of_date: NaiveDate,
+    scenarios: &[CrisisScenario],
+) -> Option<ActionEpisodeSelection> {
+    [
+        ActionabilityLevel::Prepare,
+        ActionabilityLevel::Hedge,
+        ActionabilityLevel::Defend,
+    ]
+    .into_iter()
+    .flat_map(|level| {
+        scenarios.iter().filter_map(move |scenario| {
+            let phase = action_episode_phase_for_date(as_of_date, scenario, level);
+            (!matches!(phase, ActionEpisodePhase::Outside)).then_some(ActionEpisodeSelection {
+                scenario_id: scenario.scenario_id.clone(),
+                level,
+                phase,
+                protected_action_window: action_episode_window(scenario, level)
+                    .protected_action_window,
+                crisis_start: scenario.crisis_start,
+            })
+        })
+    })
+    .min_by_key(|selection| {
+        (
+            action_episode_phase_rank(selection.phase),
+            action_level_rank(selection.level),
+            (selection.crisis_start - as_of_date).num_days().abs(),
+        )
+    })
+}
+
+fn protected_context_phase_for_date(
+    as_of_date: NaiveDate,
+    positive_scenarios: &[CrisisScenario],
+    context_scenarios: &[CrisisScenario],
+) -> Option<ActionEpisodePhase> {
+    context_scenarios
+        .iter()
+        .filter(|scenario| {
+            scenario.protected_window
+                && !positive_scenarios
+                    .iter()
+                    .any(|positive| positive.scenario_id == scenario.scenario_id)
+        })
+        .flat_map(|scenario| {
+            scenario
+                .protected_action_levels
+                .iter()
+                .copied()
+                .filter_map(move |level| {
+                    let phase = action_episode_phase_for_date(as_of_date, scenario, level);
+                    (!matches!(phase, ActionEpisodePhase::Outside)).then_some((phase, scenario))
+                })
+        })
+        .min_by_key(|(phase, scenario)| {
+            (
+                action_episode_phase_rank(*phase),
+                (scenario.crisis_start - as_of_date).num_days().abs(),
+            )
+        })
+        .map(|(phase, _)| phase)
 }
 
 fn scenario_supports_horizon(scenario: &CrisisScenario, horizon_days: u32) -> bool {
@@ -3534,9 +4382,17 @@ fn action_window_label(
 }
 
 fn scenario_has_action_window(scenario: &CrisisScenario, as_of_date: NaiveDate) -> bool {
-    scenario.default_horizon_roles.iter().any(|horizon_days| {
-        as_of_date >= action_window_start_date(scenario, *horizon_days)
-            && as_of_date <= action_window_end_date(scenario, *horizon_days)
+    [
+        ActionabilityLevel::Prepare,
+        ActionabilityLevel::Hedge,
+        ActionabilityLevel::Defend,
+    ]
+    .into_iter()
+    .any(|level| {
+        !matches!(
+            action_episode_phase_for_date(as_of_date, scenario, level),
+            ActionEpisodePhase::Outside
+        )
     })
 }
 
@@ -3544,6 +4400,13 @@ fn primary_scenario_for_date(
     as_of_date: NaiveDate,
     scenarios: &[CrisisScenario],
 ) -> Option<CrisisScenario> {
+    if let Some(selection) = dominant_action_episode_for_date(as_of_date, scenarios) {
+        return scenarios
+            .iter()
+            .find(|scenario| scenario.scenario_id == selection.scenario_id)
+            .cloned();
+    }
+
     scenarios
         .iter()
         .filter(|scenario| scenario_has_action_window(scenario, as_of_date))
@@ -3609,7 +4472,7 @@ fn actionability_level_text(level: ActionabilityLevel) -> &'static str {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum ProbabilityTrainingRegime {
     Normal,
@@ -3641,6 +4504,7 @@ struct ProbabilityTrainingRow {
     features: BTreeMap<String, f64>,
     primary_scenario_id: Option<String>,
     scenario_family: Option<String>,
+    scenario_training_role: Option<String>,
     days_to_primary_crisis_start: Option<i64>,
     primary_scenario_supports_5d: bool,
     primary_scenario_supports_20d: bool,
@@ -3654,6 +4518,13 @@ struct ProbabilityTrainingRow {
     action_label_5d: u8,
     action_label_20d: u8,
     action_label_60d: u8,
+    prepare_episode_label: u8,
+    hedge_episode_label: u8,
+    defend_episode_label: u8,
+    primary_action_level: Option<String>,
+    action_episode_id: Option<String>,
+    action_episode_phase: String,
+    protected_action_window: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -3661,6 +4532,7 @@ struct ProbabilityTrainingRow {
 enum ProbabilityTargetLabelMode {
     ForwardCrisis,
     ActionWindow,
+    ActionEpisode,
 }
 
 impl ProbabilityTargetLabelMode {
@@ -3668,6 +4540,7 @@ impl ProbabilityTargetLabelMode {
         match self {
             Self::ForwardCrisis => "forward_crisis",
             Self::ActionWindow => "action_window",
+            Self::ActionEpisode => "action_episode",
         }
     }
 }
@@ -3681,7 +4554,28 @@ impl ProbabilityTrainingRow {
             (ProbabilityTargetLabelMode::ActionWindow, 5) => self.action_label_5d as f64,
             (ProbabilityTargetLabelMode::ActionWindow, 20) => self.action_label_20d as f64,
             (ProbabilityTargetLabelMode::ActionWindow, 60) => self.action_label_60d as f64,
+            (ProbabilityTargetLabelMode::ActionEpisode, 5) => self.defend_episode_label as f64,
+            (ProbabilityTargetLabelMode::ActionEpisode, 20) => self.hedge_episode_label as f64,
+            (ProbabilityTargetLabelMode::ActionEpisode, 60) => self.prepare_episode_label as f64,
             _ => 0.0,
+        }
+    }
+
+    fn action_episode_phase_for_horizon(&self, horizon_days: u32) -> ActionEpisodePhase {
+        let Some(level) = actionability_level_for_proxy_horizon(horizon_days) else {
+            return ActionEpisodePhase::Outside;
+        };
+        let Some(action_episode_id) = self.action_episode_id.as_deref() else {
+            return ActionEpisodePhase::Outside;
+        };
+        if !action_episode_id.ends_with(actionability_level_text(level)) {
+            return ActionEpisodePhase::Outside;
+        }
+        match self.action_episode_phase.as_str() {
+            "primary" => ActionEpisodePhase::Primary,
+            "late_validation" => ActionEpisodePhase::LateValidation,
+            "cooldown" => ActionEpisodePhase::Cooldown,
+            _ => ActionEpisodePhase::Outside,
         }
     }
 
@@ -3877,32 +4771,93 @@ async fn load_formal_training_dataset(
     store: &SqliteStore,
     options: &PipelineTrainOptions,
 ) -> anyhow::Result<ProbabilityTrainingInput> {
-    let dataset_key = resolve_formal_training_dataset_key(store, options).await?;
-    let dataset = store
-        .load_formal_dataset(&dataset_key)
+    let primary_dataset_key = resolve_formal_training_dataset_key(store, options).await?;
+    let mut dataset_keys = vec![primary_dataset_key.clone()];
+    for dataset_key in &options.aux_dataset_keys {
+        if !dataset_keys.contains(dataset_key) {
+            dataset_keys.push(dataset_key.clone());
+        }
+    }
+
+    let primary_dataset = store
+        .load_formal_dataset(&primary_dataset_key)
         .await?
-        .with_context(|| format!("formal dataset {dataset_key} was not found in SQLite"))?;
-    let mut rows = store
-        .list_formal_dataset_rows(&dataset_key, None, None)
-        .await?;
-    if let Some(from) = options.query.from {
-        rows.retain(|row| row.as_of_date >= from);
+        .with_context(|| format!("formal dataset {primary_dataset_key} was not found in SQLite"))?;
+
+    let mut combined_rows = Vec::<FormalDatasetRowRecord>::new();
+    let mut positive_by_id = BTreeMap::<String, CrisisScenario>::new();
+    let mut context_by_id = BTreeMap::<String, CrisisScenario>::new();
+
+    for dataset_key in &dataset_keys {
+        let dataset = store
+            .load_formal_dataset(dataset_key)
+            .await?
+            .with_context(|| format!("formal dataset {dataset_key} was not found in SQLite"))?;
+        if dataset.manifest.market_scope != primary_dataset.manifest.market_scope {
+            bail!(
+                "auxiliary formal dataset {dataset_key} has market scope {} but primary dataset {} uses {}; mixed-market training is not supported",
+                dataset.manifest.market_scope,
+                primary_dataset_key,
+                primary_dataset.manifest.market_scope
+            );
+        }
+        if dataset.manifest.point_in_time_mode != primary_dataset.manifest.point_in_time_mode {
+            bail!(
+                "auxiliary formal dataset {dataset_key} has point_in_time_mode {} but primary dataset {} uses {}; mixed PIT modes are not supported",
+                dataset.manifest.point_in_time_mode,
+                primary_dataset_key,
+                primary_dataset.manifest.point_in_time_mode
+            );
+        }
+        if dataset.manifest.feature_set_version != primary_dataset.manifest.feature_set_version {
+            bail!(
+                "auxiliary formal dataset {dataset_key} has feature_set_version {} but primary dataset {} uses {}; mixed feature sets are not supported",
+                dataset.manifest.feature_set_version,
+                primary_dataset_key,
+                primary_dataset.manifest.feature_set_version
+            );
+        }
+
+        let mut rows = store
+            .list_formal_dataset_rows(dataset_key, None, None)
+            .await?;
+        if let Some(from) = options.query.from {
+            rows.retain(|row| row.as_of_date >= from);
+        }
+        if let Some(to) = options.query.to {
+            rows.retain(|row| row.as_of_date <= to);
+        }
+        if rows.is_empty() {
+            bail!(
+                "formal dataset {dataset_key} has no rows after the requested date filters; widen --from/--to or choose a different auxiliary dataset"
+            );
+        }
+        combined_rows.extend(rows);
+
+        let scenario_sets = load_formal_dataset_scenario_sets(
+            &dataset.manifest.scenario_set_version,
+            &dataset.manifest.label_version,
+        )?;
+        for scenario in scenario_sets.positive_scenarios {
+            positive_by_id.insert(scenario.scenario_id.clone(), scenario);
+        }
+        for scenario in scenario_sets.context_scenarios {
+            context_by_id.insert(scenario.scenario_id.clone(), scenario);
+        }
     }
-    if let Some(to) = options.query.to {
-        rows.retain(|row| row.as_of_date <= to);
-    }
-    if rows.len() < 90 {
+
+    if combined_rows.len() < 90 {
         bail!(
-            "formal dataset {dataset_key} is too small after filters: {} rows found, at least 90 are required; backfill more free historical observations and rebuild the formal dataset, or use --dataset-source snapshot as a temporary fallback",
-            rows.len()
+            "formal dataset {} is too small after filters: {} rows found across {} dataset(s), at least 90 are required; backfill more free historical observations and rebuild the formal dataset, or use --dataset-source snapshot as a temporary fallback",
+            primary_dataset_key,
+            combined_rows.len(),
+            dataset_keys.len()
         );
     }
 
-    let scenarios = load_label_set_crisis_scenarios(
-        &dataset.manifest.scenario_set_version,
-        &dataset.manifest.label_version,
-    )?;
-    let scenario_by_id = scenarios
+    let positive_scenarios = positive_by_id.into_values().collect::<Vec<_>>();
+    let context_scenarios = context_by_id.into_values().collect::<Vec<_>>();
+    let scenario_by_id = context_scenarios
         .iter()
         .cloned()
         .map(|scenario| (scenario.scenario_id.clone(), scenario))
@@ -3924,6 +4879,10 @@ async fn load_formal_training_dataset(
             features: row.features.clone(),
             primary_scenario_id: row.primary_scenario_id.clone(),
             scenario_family: row.scenario_family.clone(),
+            scenario_training_role: row
+                .scenario_training_role
+                .clone()
+                .or_else(|| primary_scenario.map(|scenario| scenario.training_role.clone())),
             days_to_primary_crisis_start: primary_scenario
                 .map(|scenario| (scenario.crisis_start - row.as_of_date).num_days()),
             primary_scenario_supports_5d: primary_scenario
@@ -3935,47 +4894,84 @@ async fn load_formal_training_dataset(
             label_5d: row.label_5d,
             label_20d: row.label_20d,
             label_60d: row.label_60d,
-            regime_5d: forward_crisis_training_regime(row.as_of_date, &scenarios, 5),
-            regime_20d: forward_crisis_training_regime(row.as_of_date, &scenarios, 20),
-            regime_60d: forward_crisis_training_regime(row.as_of_date, &scenarios, 60),
+            regime_5d: forward_crisis_training_regime_with_context(
+                row.as_of_date,
+                &positive_scenarios,
+                &context_scenarios,
+                5,
+            ),
+            regime_20d: forward_crisis_training_regime_with_context(
+                row.as_of_date,
+                &positive_scenarios,
+                &context_scenarios,
+                20,
+            ),
+            regime_60d: forward_crisis_training_regime_with_context(
+                row.as_of_date,
+                &positive_scenarios,
+                &context_scenarios,
+                60,
+            ),
             action_label_5d: row.action_label_5d,
             action_label_20d: row.action_label_20d,
             action_label_60d: row.action_label_60d,
+            prepare_episode_label: row.prepare_episode_label,
+            hedge_episode_label: row.hedge_episode_label,
+            defend_episode_label: row.defend_episode_label,
+            primary_action_level: row.primary_action_level.clone(),
+            action_episode_id: row.action_episode_id.clone(),
+            action_episode_phase: row.action_episode_phase.clone(),
+            protected_action_window: row.protected_action_window,
         }
     };
 
-    let train_rows = rows
+    let mut train_rows = combined_rows
         .iter()
         .filter(|row| row.split_name == "train")
         .map(to_training_row)
         .collect::<Vec<_>>();
-    let calibration_rows = rows
+    let mut calibration_rows = combined_rows
         .iter()
         .filter(|row| row.split_name == "calibration")
         .map(to_training_row)
         .collect::<Vec<_>>();
-    let evaluation_rows = rows
+    let mut evaluation_rows = combined_rows
         .iter()
         .filter(|row| row.split_name == "evaluation")
         .map(to_training_row)
         .collect::<Vec<_>>();
 
+    train_rows.sort_by_key(|row| row.as_of_date);
+    calibration_rows.sort_by_key(|row| row.as_of_date);
+    evaluation_rows.sort_by_key(|row| row.as_of_date);
+
     if train_rows.is_empty() || calibration_rows.is_empty() || evaluation_rows.is_empty() {
         bail!(
-            "formal dataset {dataset_key} is missing one or more required splits after filters (train={}, calibration={}, evaluation={}); rebuild it from a broader historical range before training the formal bundle",
+            "formal dataset {} is missing one or more required splits after filters (train={}, calibration={}, evaluation={}); rebuild it from a broader historical range before training the formal bundle",
+            primary_dataset_key,
             train_rows.len(),
             calibration_rows.len(),
             evaluation_rows.len()
         );
     }
 
+    let dataset_label = if dataset_keys.len() == 1 {
+        primary_dataset_key.clone()
+    } else {
+        format!(
+            "{} + aux({})",
+            primary_dataset_key,
+            dataset_keys[1..].join(", ")
+        )
+    };
+
     Ok(ProbabilityTrainingInput {
         dataset_source: PipelineDatasetSource::Formal,
-        dataset_label: dataset_key,
-        market_scope: dataset.manifest.market_scope.clone(),
-        point_in_time_mode: dataset.manifest.point_in_time_mode.clone(),
-        feature_set_version: dataset.manifest.feature_set_version.clone(),
-        label_version: dataset.manifest.label_version.clone(),
+        dataset_label,
+        market_scope: primary_dataset.manifest.market_scope.clone(),
+        point_in_time_mode: primary_dataset.manifest.point_in_time_mode.clone(),
+        feature_set_version: primary_dataset.manifest.feature_set_version.clone(),
+        label_version: primary_dataset.manifest.label_version.clone(),
         feature_names: formal_feature_names(),
         train_rows,
         calibration_rows,
@@ -4072,12 +5068,12 @@ fn write_or_print_export(content: String, output_path: Option<&Path>) -> anyhow:
 
 fn render_snapshot_csv(snapshots: &[PredictionSnapshotRecord]) -> String {
     let mut csv = String::from(
-        "as_of_date,market_scope,release_id,probability_mode,release_status,point_in_time_mode,overall_score,external_shock_score,raw_p_5d,raw_p_20d,raw_p_60d,calibrated_p_5d,calibrated_p_20d,calibrated_p_60d,posture,time_to_risk_bucket,coverage_score,freshness_status,method_version,recorded_at\n",
+        "as_of_date,market_scope,release_id,probability_mode,release_status,point_in_time_mode,overall_score,external_shock_score,raw_p_5d,raw_p_20d,raw_p_60d,calibrated_p_5d,calibrated_p_20d,calibrated_p_60d,posture,time_to_risk_bucket,coverage_score,freshness_status,method_version,posture_trigger_codes,posture_blocker_codes,recorded_at\n",
     );
     for snapshot in snapshots {
         let _ = writeln!(
             csv,
-            "{},{},{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{},{},{:.6},{},{},{}",
+            "{},{},{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{},{},{:.6},{},{},{},{},{}",
             snapshot.as_of_date,
             snapshot.market_scope,
             snapshot.release_id.as_deref().unwrap_or(""),
@@ -4097,6 +5093,8 @@ fn render_snapshot_csv(snapshots: &[PredictionSnapshotRecord]) -> String {
             snapshot.coverage_score,
             snapshot.freshness_status,
             snapshot.method_version,
+            snapshot.posture_trigger_codes.join("|"),
+            snapshot.posture_blocker_codes.join("|"),
             snapshot.recorded_at.to_rfc3339()
         );
     }
@@ -4105,7 +5103,7 @@ fn render_snapshot_csv(snapshots: &[PredictionSnapshotRecord]) -> String {
 
 fn render_dataset_csv(dataset: &[ProbabilityTrainingRow], feature_names: &[String]) -> String {
     let mut header = String::from(
-        "as_of_date,market_scope,release_id,probability_mode,freshness_status,time_to_risk_bucket,split_name,label_5d,label_20d,label_60d,action_label_5d,action_label_20d,action_label_60d",
+        "as_of_date,market_scope,release_id,probability_mode,freshness_status,time_to_risk_bucket,split_name,primary_scenario_id,scenario_family,scenario_training_role,label_5d,label_20d,label_60d,action_label_5d,action_label_20d,action_label_60d,prepare_episode_label,hedge_episode_label,defend_episode_label,primary_action_level,action_episode_id,action_episode_phase,protected_action_window",
     );
     for feature in feature_names {
         header.push(',');
@@ -4115,23 +5113,32 @@ fn render_dataset_csv(dataset: &[ProbabilityTrainingRow], feature_names: &[Strin
 
     let mut csv = header;
     for row in dataset {
-        let _ = write!(
-            csv,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{}",
-            row.as_of_date,
-            row.market_scope,
-            row.release_id.as_deref().unwrap_or(""),
-            row.probability_mode.as_deref().unwrap_or(""),
-            row.freshness_status.as_deref().unwrap_or(""),
-            row.time_to_risk_bucket.as_deref().unwrap_or(""),
-            row.split_name.as_deref().unwrap_or(""),
-            row.label_5d,
-            row.label_20d,
-            row.label_60d,
-            row.action_label_5d,
-            row.action_label_20d,
-            row.action_label_60d
-        );
+        let columns = [
+            row.as_of_date.to_string(),
+            row.market_scope.clone(),
+            row.release_id.clone().unwrap_or_default(),
+            row.probability_mode.clone().unwrap_or_default(),
+            row.freshness_status.clone().unwrap_or_default(),
+            row.time_to_risk_bucket.clone().unwrap_or_default(),
+            row.split_name.clone().unwrap_or_default(),
+            row.primary_scenario_id.clone().unwrap_or_default(),
+            row.scenario_family.clone().unwrap_or_default(),
+            row.scenario_training_role.clone().unwrap_or_default(),
+            row.label_5d.to_string(),
+            row.label_20d.to_string(),
+            row.label_60d.to_string(),
+            row.action_label_5d.to_string(),
+            row.action_label_20d.to_string(),
+            row.action_label_60d.to_string(),
+            row.prepare_episode_label.to_string(),
+            row.hedge_episode_label.to_string(),
+            row.defend_episode_label.to_string(),
+            row.primary_action_level.clone().unwrap_or_default(),
+            row.action_episode_id.clone().unwrap_or_default(),
+            row.action_episode_phase.clone(),
+            (row.protected_action_window as u8).to_string(),
+        ];
+        csv.push_str(&columns.join(","));
         for feature in feature_names {
             let value = row.features.get(feature).copied().unwrap_or_default();
             let _ = write!(csv, ",{value:.6}");
@@ -4167,7 +5174,7 @@ async fn train_probability_pipeline(
             &training.train_rows,
             &training.calibration_rows,
             &training.evaluation_rows,
-            ProbabilityTargetLabelMode::ActionWindow,
+            ProbabilityTargetLabelMode::ActionEpisode,
         ) {
         let candidate = train_actionability_bundle(
             &training.train_rows,
@@ -4198,7 +5205,7 @@ async fn train_probability_pipeline(
             "Formal bundle trained from persisted formal dataset {} built from raw observations -> feature snapshots -> scenario labels; crisis-prior head uses forward-crisis labels, and {}.",
             training.dataset_label,
             if actionability.is_some() {
-                "actionability head uses bounded action-window labels when quality gates pass"
+                "actionability head uses episode-native prepare/hedge/defend labels when quality gates pass"
             } else {
                 "independent actionability head was omitted because evaluation quality gates did not pass, so runtime falls back to probability-context fusion"
             }
@@ -4307,16 +5314,21 @@ async fn train_probability_pipeline(
 fn build_pipeline_dataset_rows(
     snapshots: &[PredictionSnapshotRecord],
 ) -> Vec<ProbabilityTrainingRow> {
-    let scenarios = load_label_set_crisis_scenarios(
+    let scenario_sets = load_formal_dataset_scenario_sets(
         DEFAULT_FORMAL_SCENARIO_SET_VERSION,
         DEFAULT_FORMAL_LABEL_VERSION,
     )
     .expect("default scenario catalog must contain the main training label set");
+    let positive_scenarios = scenario_sets.positive_scenarios;
+    let context_scenarios = scenario_sets.context_scenarios;
     let mut rows = snapshots
         .iter()
         .map(|snapshot| {
             let features = pipeline_features_from_snapshot(snapshot);
-            let primary_scenario = primary_scenario_for_date(snapshot.as_of_date, &scenarios);
+            let primary_scenario =
+                primary_scenario_for_date(snapshot.as_of_date, &context_scenarios);
+            let dominant_action_episode =
+                dominant_action_episode_for_date(snapshot.as_of_date, &context_scenarios);
             ProbabilityTrainingRow {
                 as_of_date: snapshot.as_of_date,
                 market_scope: snapshot.market_scope.clone(),
@@ -4332,6 +5344,9 @@ fn build_pipeline_dataset_rows(
                 scenario_family: primary_scenario
                     .as_ref()
                     .map(|scenario| scenario.family.clone()),
+                scenario_training_role: primary_scenario
+                    .as_ref()
+                    .map(|scenario| scenario.training_role.clone()),
                 days_to_primary_crisis_start: primary_scenario
                     .as_ref()
                     .map(|scenario| (scenario.crisis_start - snapshot.as_of_date).num_days()),
@@ -4344,15 +5359,63 @@ fn build_pipeline_dataset_rows(
                 primary_scenario_supports_60d: primary_scenario
                     .as_ref()
                     .is_some_and(|scenario| scenario_supports_horizon(scenario, 60)),
-                label_5d: forward_crisis_label(snapshot.as_of_date, &scenarios, 5),
-                label_20d: forward_crisis_label(snapshot.as_of_date, &scenarios, 20),
-                label_60d: forward_crisis_label(snapshot.as_of_date, &scenarios, 60),
-                regime_5d: forward_crisis_training_regime(snapshot.as_of_date, &scenarios, 5),
-                regime_20d: forward_crisis_training_regime(snapshot.as_of_date, &scenarios, 20),
-                regime_60d: forward_crisis_training_regime(snapshot.as_of_date, &scenarios, 60),
-                action_label_5d: action_window_label(snapshot.as_of_date, &scenarios, 5),
-                action_label_20d: action_window_label(snapshot.as_of_date, &scenarios, 20),
-                action_label_60d: action_window_label(snapshot.as_of_date, &scenarios, 60),
+                label_5d: forward_crisis_label(snapshot.as_of_date, &positive_scenarios, 5),
+                label_20d: forward_crisis_label(snapshot.as_of_date, &positive_scenarios, 20),
+                label_60d: forward_crisis_label(snapshot.as_of_date, &positive_scenarios, 60),
+                regime_5d: forward_crisis_training_regime_with_context(
+                    snapshot.as_of_date,
+                    &positive_scenarios,
+                    &context_scenarios,
+                    5,
+                ),
+                regime_20d: forward_crisis_training_regime_with_context(
+                    snapshot.as_of_date,
+                    &positive_scenarios,
+                    &context_scenarios,
+                    20,
+                ),
+                regime_60d: forward_crisis_training_regime_with_context(
+                    snapshot.as_of_date,
+                    &positive_scenarios,
+                    &context_scenarios,
+                    60,
+                ),
+                action_label_5d: action_window_label(snapshot.as_of_date, &context_scenarios, 5),
+                action_label_20d: action_window_label(snapshot.as_of_date, &context_scenarios, 20),
+                action_label_60d: action_window_label(snapshot.as_of_date, &context_scenarios, 60),
+                prepare_episode_label: action_episode_label_for_level(
+                    snapshot.as_of_date,
+                    &context_scenarios,
+                    ActionabilityLevel::Prepare,
+                ),
+                hedge_episode_label: action_episode_label_for_level(
+                    snapshot.as_of_date,
+                    &context_scenarios,
+                    ActionabilityLevel::Hedge,
+                ),
+                defend_episode_label: action_episode_label_for_level(
+                    snapshot.as_of_date,
+                    &context_scenarios,
+                    ActionabilityLevel::Defend,
+                ),
+                primary_action_level: dominant_action_episode
+                    .as_ref()
+                    .filter(|selection| matches!(selection.phase, ActionEpisodePhase::Primary))
+                    .map(|selection| actionability_level_text(selection.level).to_string()),
+                action_episode_id: dominant_action_episode.as_ref().map(|selection| {
+                    format!(
+                        "{}:{}",
+                        selection.scenario_id,
+                        actionability_level_text(selection.level)
+                    )
+                }),
+                action_episode_phase: dominant_action_episode
+                    .as_ref()
+                    .map(|selection| selection.phase.as_str().to_string())
+                    .unwrap_or_else(|| ActionEpisodePhase::Outside.as_str().to_string()),
+                protected_action_window: dominant_action_episode
+                    .as_ref()
+                    .is_some_and(|selection| selection.protected_action_window),
             }
         })
         .collect::<Vec<_>>();
@@ -4487,6 +5550,26 @@ fn forward_crisis_training_regime(
     ProbabilityTrainingRegime::Normal
 }
 
+fn forward_crisis_training_regime_with_context(
+    as_of_date: NaiveDate,
+    positive_scenarios: &[CrisisScenario],
+    context_scenarios: &[CrisisScenario],
+    horizon_days: u32,
+) -> ProbabilityTrainingRegime {
+    let base_regime = forward_crisis_training_regime(as_of_date, positive_scenarios, horizon_days);
+    if !matches!(base_regime, ProbabilityTrainingRegime::Normal) || horizon_days < 20 {
+        return base_regime;
+    }
+
+    match protected_context_phase_for_date(as_of_date, positive_scenarios, context_scenarios) {
+        Some(ActionEpisodePhase::Primary | ActionEpisodePhase::LateValidation) => {
+            ProbabilityTrainingRegime::PreWarningBuffer
+        }
+        Some(ActionEpisodePhase::Cooldown) => ProbabilityTrainingRegime::PostCrisisCooldown,
+        _ => base_regime,
+    }
+}
+
 fn chronological_split(
     dataset: &[ProbabilityTrainingRow],
 ) -> anyhow::Result<(
@@ -4578,7 +5661,7 @@ fn train_actionability_bundle(
         model_version: format!("actionability_bundle_{release_suffix}"),
         calibration_version: format!("actionability_platt_{release_suffix}"),
         fusion_policy_version: "fusion_policy_v3_probability_context_gate_20260601".to_string(),
-        note: "Separate actionability head trained from bounded action-window labels to complement the crisis-prior horizons; runtime consumes threshold-aware confidence instead of treating raw action-window probabilities as direct posture signals.".to_string(),
+        note: "Separate actionability head trained from episode-native prepare/hedge/defend labels to complement the crisis-prior horizons; runtime consumes threshold-aware confidence instead of treating raw action probabilities as direct posture signals.".to_string(),
         levels,
     })
 }
@@ -4591,7 +5674,7 @@ fn train_actionability_level_bundle(
     level: ActionabilityLevel,
     proxy_horizon_days: u32,
 ) -> anyhow::Result<ActionabilityLevelBundle> {
-    let label_mode = ProbabilityTargetLabelMode::ActionWindow;
+    let label_mode = ProbabilityTargetLabelMode::ActionEpisode;
     ensure_positive_labels(train_rows, proxy_horizon_days, "train", label_mode)?;
     ensure_positive_labels(
         calibration_rows,
@@ -4716,8 +5799,50 @@ fn actionability_precision_floor_score(horizon_days: u32) -> i64 {
     }
 }
 
-fn actionability_prediction_count_ceiling(
-    summary: &ActionabilityEvaluationSummary,
+#[derive(Debug, Clone, Copy)]
+struct ActionabilityGuardrailPolicy {
+    min_scenario_count: u32,
+    min_precision_score: i64,
+    min_advance_warning_rate_score: Option<i64>,
+    max_late_confirmation_rate_score: Option<i64>,
+    max_missed_rate_score: i64,
+}
+
+fn actionability_guardrail_policy(
+    level: ActionabilityLevel,
+    horizon_days: u32,
+) -> ActionabilityGuardrailPolicy {
+    match level {
+        ActionabilityLevel::Prepare => ActionabilityGuardrailPolicy {
+            min_scenario_count: 2,
+            min_precision_score: actionability_precision_floor_score(horizon_days),
+            min_advance_warning_rate_score: Some(350),
+            max_late_confirmation_rate_score: Some(500),
+            max_missed_rate_score: 650,
+        },
+        ActionabilityLevel::Hedge => ActionabilityGuardrailPolicy {
+            min_scenario_count: 2,
+            min_precision_score: actionability_precision_floor_score(horizon_days),
+            min_advance_warning_rate_score: Some(250),
+            max_late_confirmation_rate_score: Some(500),
+            max_missed_rate_score: 650,
+        },
+        ActionabilityLevel::Defend => ActionabilityGuardrailPolicy {
+            min_scenario_count: 2,
+            min_precision_score: actionability_precision_floor_score(horizon_days),
+            min_advance_warning_rate_score: None,
+            max_late_confirmation_rate_score: Some(400),
+            max_missed_rate_score: 500,
+        },
+    }
+}
+
+fn percentage_score(value: Option<f64>) -> Option<i64> {
+    value.map(|rate| (rate * 1_000.0).round() as i64)
+}
+
+fn actionability_prediction_count_ceiling_from_actual_positive_count(
+    actual_positive_count: u32,
     horizon_days: u32,
 ) -> u32 {
     let multiple = match horizon_days {
@@ -4726,10 +5851,17 @@ fn actionability_prediction_count_ceiling(
         60 => 10_u32,
         _ => 8_u32,
     };
-    summary
-        .actual_positive_count
-        .max(1)
-        .saturating_mul(multiple)
+    actual_positive_count.max(1).saturating_mul(multiple)
+}
+
+fn actionability_prediction_count_ceiling(
+    summary: &ActionabilityEvaluationSummary,
+    horizon_days: u32,
+) -> u32 {
+    actionability_prediction_count_ceiling_from_actual_positive_count(
+        summary.actual_positive_count,
+        horizon_days,
+    )
 }
 
 fn actionability_bundle_quality_regressions(bundle: &ActionabilityBundle) -> Vec<String> {
@@ -4743,15 +5875,24 @@ fn actionability_bundle_quality_regressions(bundle: &ActionabilityBundle) -> Vec
             continue;
         };
 
+        let policy = actionability_guardrail_policy(level.level, level.proxy_horizon_days);
         let precision_score =
             (summary.precision_at_threshold.unwrap_or_default() * 1_000.0).round() as i64;
-        let precision_floor = actionability_precision_floor_score(level.proxy_horizon_days);
-        if precision_score < precision_floor {
+        if precision_score < policy.min_precision_score {
             regressions.push(format!(
                 "{} precision {:.1}% is below required {:.1}%",
                 actionability_level_text(level.level),
                 precision_score as f64 / 10.0,
-                precision_floor as f64 / 10.0
+                policy.min_precision_score as f64 / 10.0
+            ));
+        }
+
+        if summary.scenario_count < policy.min_scenario_count {
+            regressions.push(format!(
+                "{} scenario_count {} is below required {}",
+                actionability_level_text(level.level),
+                summary.scenario_count,
+                policy.min_scenario_count
             ));
         }
 
@@ -4759,12 +5900,51 @@ fn actionability_bundle_quality_regressions(bundle: &ActionabilityBundle) -> Vec
             actionability_prediction_count_ceiling(summary, level.proxy_horizon_days);
         if summary.predicted_positive_count > prediction_ceiling {
             regressions.push(format!(
-                "{} predicted positives {} exceed ceiling {} for {} actual positives",
+                "{} predicted positives {} exceed ceiling {} for {} primary episode rows",
                 actionability_level_text(level.level),
                 summary.predicted_positive_count,
                 prediction_ceiling,
                 summary.actual_positive_count
             ));
+        }
+
+        if summary.actual_positive_count > 0 {
+            if let Some(min_advance_warning_rate_score) = policy.min_advance_warning_rate_score {
+                let advance_warning_rate_score =
+                    percentage_score(summary.advance_warning_rate).unwrap_or_default();
+                if advance_warning_rate_score < min_advance_warning_rate_score {
+                    regressions.push(format!(
+                        "{} on_time_rate {:.1}% is below required {:.1}%",
+                        actionability_level_text(level.level),
+                        advance_warning_rate_score as f64 / 10.0,
+                        min_advance_warning_rate_score as f64 / 10.0
+                    ));
+                }
+            }
+
+            if let Some(max_late_confirmation_rate_score) = policy.max_late_confirmation_rate_score
+            {
+                let late_confirmation_rate_score =
+                    percentage_score(summary.late_confirmation_rate).unwrap_or_default();
+                if late_confirmation_rate_score > max_late_confirmation_rate_score {
+                    regressions.push(format!(
+                        "{} late_only_rate {:.1}% exceeds ceiling {:.1}%",
+                        actionability_level_text(level.level),
+                        late_confirmation_rate_score as f64 / 10.0,
+                        max_late_confirmation_rate_score as f64 / 10.0
+                    ));
+                }
+            }
+
+            let missed_rate_score = percentage_score(summary.missed_rate).unwrap_or_default();
+            if missed_rate_score > policy.max_missed_rate_score {
+                regressions.push(format!(
+                    "{} missed_rate {:.1}% exceeds ceiling {:.1}%",
+                    actionability_level_text(level.level),
+                    missed_rate_score as f64 / 10.0,
+                    policy.max_missed_rate_score as f64 / 10.0
+                ));
+            }
         }
     }
     regressions
@@ -4888,6 +6068,9 @@ fn train_horizon_bundle(
     let (calibration, evaluation_probabilities) = select_probability_calibration_strategy(
         &calibration_inputs,
         &calibration_labels,
+        &calibration_selection_rows,
+        horizon_days,
+        label_mode,
         &evaluation_raw_probabilities,
         calibration_candidate,
     );
@@ -4905,11 +6088,12 @@ fn train_horizon_bundle(
         &calibration_labels,
         horizon_days,
     );
-    let evaluation_labels = evaluation_rows
-        .iter()
-        .map(|row| row.label_for_horizon(label_mode, horizon_days))
-        .collect::<Vec<_>>();
-    let evaluation = evaluate_probabilities(&evaluation_probabilities, &evaluation_labels);
+    let evaluation = evaluate_probabilities_for_rows(
+        &evaluation_probabilities,
+        evaluation_rows,
+        horizon_days,
+        label_mode,
+    );
 
     Ok(ProbabilityHorizonBundle {
         horizon_days,
@@ -4953,31 +6137,59 @@ fn probability_row_is_calibration_eligible(
     }
 
     match label_mode {
-        ProbabilityTargetLabelMode::ActionWindow => true,
-        ProbabilityTargetLabelMode::ForwardCrisis => {
-            matches!(
+        ProbabilityTargetLabelMode::ActionWindow | ProbabilityTargetLabelMode::ActionEpisode => {
+            true
+        }
+        ProbabilityTargetLabelMode::ForwardCrisis => match horizon_days {
+            20 | 60 => matches!(
                 row.regime_for_horizon(horizon_days),
                 ProbabilityTrainingRegime::Normal
-            )
-        }
+                    | ProbabilityTrainingRegime::PreWarningBuffer
+                    | ProbabilityTrainingRegime::InCrisis
+                    | ProbabilityTrainingRegime::PostCrisisCooldown
+            ),
+            _ => matches!(
+                row.regime_for_horizon(horizon_days),
+                ProbabilityTrainingRegime::Normal
+            ),
+        },
     }
 }
 
 fn select_probability_calibration_strategy(
     calibration_raw_probabilities: &[f64],
     calibration_labels: &[f64],
+    calibration_rows: &[&ProbabilityTrainingRow],
+    horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
     evaluation_raw_probabilities: &[f64],
     calibration_candidate: PlattCalibrationArtifact,
 ) -> (Option<PlattCalibrationArtifact>, Vec<f64>) {
     let raw_summary = evaluate_probabilities(calibration_raw_probabilities, calibration_labels);
-    let raw_score = probability_calibration_selection_score(&raw_summary);
+    let raw_regime_separation = evaluate_regime_separation_summary_refs(
+        calibration_raw_probabilities,
+        calibration_rows,
+        horizon_days,
+        label_mode,
+    );
+    let raw_score =
+        probability_calibration_selection_score(&raw_summary, raw_regime_separation.as_ref());
 
     let calibration_probabilities = calibration_raw_probabilities
         .iter()
         .map(|raw_probability| apply_platt_calibration(*raw_probability, &calibration_candidate))
         .collect::<Vec<_>>();
     let calibrated_summary = evaluate_probabilities(&calibration_probabilities, calibration_labels);
-    let calibrated_score = probability_calibration_selection_score(&calibrated_summary);
+    let calibrated_regime_separation = evaluate_regime_separation_summary_refs(
+        &calibration_probabilities,
+        calibration_rows,
+        horizon_days,
+        label_mode,
+    );
+    let calibrated_score = probability_calibration_selection_score(
+        &calibrated_summary,
+        calibrated_regime_separation.as_ref(),
+    );
 
     let raw_ranking_reversed =
         probability_raw_ranking_is_reversed(calibration_raw_probabilities, calibration_labels);
@@ -4997,12 +6209,89 @@ fn select_probability_calibration_strategy(
     }
 }
 
-fn probability_calibration_selection_score(summary: &HorizonEvaluationSummary) -> (i64, i64, i64) {
+fn probability_calibration_selection_score(
+    summary: &HorizonEvaluationSummary,
+    regime_separation: Option<&RegimeSeparationEvaluationSummary>,
+) -> (i64, i64, i64, i64, i64, i64, i64, i64, i64) {
     (
+        probability_regime_diagnosis_score(regime_separation),
+        probability_regime_positive_window_lift_score(regime_separation),
+        probability_regime_positive_window_gap_score(regime_separation),
+        probability_regime_positive_window_minus_cooldown_score(regime_separation),
+        probability_regime_early_warning_lift_score(regime_separation),
+        probability_regime_max_non_normal_lift_score(regime_separation),
         -((summary.log_loss * 1_000_000.0).round() as i64),
         -((summary.brier_score * 1_000_000.0).round() as i64),
         -((summary.ece * 1_000_000.0).round() as i64),
     )
+}
+
+fn probability_regime_diagnosis_score(
+    regime_separation: Option<&RegimeSeparationEvaluationSummary>,
+) -> i64 {
+    match regime_separation.map(|summary| summary.diagnosis.as_str()) {
+        Some("usable_early_warning_separation") => 6,
+        Some("weak_regime_separation") => 5,
+        Some("mixed_or_unclear") => 4,
+        Some("late_only_no_early_warning") => 3,
+        Some("cooldown_bleed") => 2,
+        Some("cold_across_all_regimes") => 1,
+        Some(_) => 0,
+        None => 2,
+    }
+}
+
+fn probability_regime_positive_window_lift_score(
+    regime_separation: Option<&RegimeSeparationEvaluationSummary>,
+) -> i64 {
+    (regime_separation
+        .and_then(|summary| summary.positive_window_lift_vs_normal)
+        .unwrap_or_default()
+        * 1_000.0)
+        .round() as i64
+}
+
+fn probability_regime_positive_window_gap_score(
+    regime_separation: Option<&RegimeSeparationEvaluationSummary>,
+) -> i64 {
+    (regime_separation
+        .and_then(|summary| summary.positive_window_gap_vs_normal)
+        .unwrap_or_default()
+        * 1_000_000.0)
+        .round() as i64
+}
+
+fn probability_regime_positive_window_minus_cooldown_score(
+    regime_separation: Option<&RegimeSeparationEvaluationSummary>,
+) -> i64 {
+    let Some(summary) = regime_separation else {
+        return 0;
+    };
+    let positive_window = summary.positive_window_lift_vs_normal.unwrap_or_default();
+    let cooldown = summary
+        .post_crisis_cooldown_lift_vs_normal
+        .unwrap_or_default();
+    ((positive_window - cooldown) * 1_000.0).round() as i64
+}
+
+fn probability_regime_early_warning_lift_score(
+    regime_separation: Option<&RegimeSeparationEvaluationSummary>,
+) -> i64 {
+    (regime_separation
+        .and_then(|summary| summary.early_warning_lift_vs_normal)
+        .unwrap_or_default()
+        * 1_000.0)
+        .round() as i64
+}
+
+fn probability_regime_max_non_normal_lift_score(
+    regime_separation: Option<&RegimeSeparationEvaluationSummary>,
+) -> i64 {
+    (regime_separation
+        .and_then(|summary| summary.max_non_normal_lift_vs_normal)
+        .unwrap_or_default()
+        * 1_000.0)
+        .round() as i64
 }
 
 fn probability_raw_ranking_is_reversed(probabilities: &[f64], labels: &[f64]) -> bool {
@@ -5047,9 +6336,16 @@ fn select_probability_decision_threshold(
     thresholds.sort_by(f64::total_cmp);
     thresholds.dedup_by(|left, right| (*left - *right).abs() < 1e-6);
 
-    let positive_count = labels.iter().filter(|label| **label >= 0.5).count() as f64;
+    let actual_positive_count = labels.iter().filter(|label| **label >= 0.5).count() as u32;
+    let positive_count = actual_positive_count as f64;
+    let prediction_ceiling = probability_prediction_count_ceiling_from_actual_positive_count(
+        actual_positive_count,
+        horizon_days,
+    );
     let mut best_threshold = 0.3;
     let mut best_score = None::<(i64, i64, i64, i64)>;
+    let mut best_capped_threshold = None::<f64>;
+    let mut best_capped_score = None::<(i64, i64, i64, i64)>;
     for threshold in thresholds {
         let mut true_positive_count = 0_u32;
         let mut predicted_positive_count = 0_u32;
@@ -5086,6 +6382,12 @@ fn select_probability_decision_threshold(
             best_score = Some(score);
             best_threshold = threshold;
         }
+        if predicted_positive_count <= prediction_ceiling
+            && best_capped_score.is_none_or(|best| score > best)
+        {
+            best_capped_score = Some(score);
+            best_capped_threshold = Some(threshold);
+        }
     }
 
     let minimum_threshold = match horizon_days {
@@ -5095,7 +6397,20 @@ fn select_probability_decision_threshold(
         _ => 0.001,
     };
 
-    round3(best_threshold).clamp(minimum_threshold, 0.90)
+    round3(best_capped_threshold.unwrap_or(best_threshold)).clamp(minimum_threshold, 0.90)
+}
+
+fn probability_prediction_count_ceiling_from_actual_positive_count(
+    actual_positive_count: u32,
+    horizon_days: u32,
+) -> u32 {
+    let multiple = match horizon_days {
+        5 => 4_u32,
+        20 => 4_u32,
+        60 => 5_u32,
+        _ => 5_u32,
+    };
+    actual_positive_count.max(1).saturating_mul(multiple)
 }
 
 fn ensure_positive_labels(
@@ -5127,6 +6442,8 @@ fn fit_logistic_model(
         .iter()
         .map(|feature| build_feature_stat(rows, feature))
         .collect::<Vec<_>>();
+    let regime_pairwise_targets =
+        forward_crisis_regime_pairwise_targets(rows, &feature_stats, horizon_days, label_mode);
     let positive_class_weight = horizon_positive_class_weight(rows, horizon_days, label_mode);
     let mut intercept = initial_intercept(rows, horizon_days, positive_class_weight, label_mode);
     let mut weights = vec![0.0; feature_names.len()];
@@ -5144,7 +6461,7 @@ fn fit_logistic_model(
         for row in rows {
             let normalized = normalized_features(row, &feature_stats);
             let prediction = sigmoid(intercept + dot(&weights, &normalized));
-            let label = row.label_for_horizon(label_mode, horizon_days);
+            let label = probability_training_target_label(row, horizon_days, label_mode);
             let sample_weight =
                 logistic_sample_weight(row, horizon_days, positive_class_weight, label_mode);
             let error = (prediction - label) * sample_weight;
@@ -5153,11 +6470,32 @@ fn fit_logistic_model(
                 weight_gradients[index] += error * value;
             }
         }
+        apply_forward_crisis_sign_gradient(
+            &mut weight_gradients,
+            &weights,
+            feature_names,
+            sample_weight_sum,
+            horizon_days,
+            label_mode,
+        );
+        apply_regime_pairwise_gradient(
+            &mut weight_gradients,
+            &weights,
+            &regime_pairwise_targets,
+            sample_weight_sum,
+            horizon_days,
+        );
         intercept -= learning_rate * intercept_gradient / sample_weight_sum;
         for (index, weight) in weights.iter_mut().enumerate() {
             *weight -=
                 learning_rate * ((weight_gradients[index] / sample_weight_sum) + l2 * *weight);
         }
+        project_forward_crisis_sign_constraints(
+            &mut weights,
+            feature_names,
+            horizon_days,
+            label_mode,
+        );
     }
 
     LogisticProbabilityModel {
@@ -5171,6 +6509,274 @@ fn fit_logistic_model(
                 weight,
             })
             .collect(),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RegimePairwiseTarget {
+    left_centroid: Vec<f64>,
+    right_centroid: Vec<f64>,
+    margin: f64,
+    weight: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExpectedCoefficientSign {
+    Positive,
+    Negative,
+}
+
+fn forward_crisis_expected_coefficient_sign(
+    feature_name: &str,
+    horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
+) -> Option<ExpectedCoefficientSign> {
+    if label_mode != ProbabilityTargetLabelMode::ForwardCrisis || horizon_days < 20 {
+        return None;
+    }
+
+    match feature_name {
+        "overall_score"
+        | "structural_score"
+        | "trigger_score"
+        | "external_dimension_score"
+        | "us_vix_level"
+        | "us_vix_change_5d"
+        | "us_baa_10y_spread_level"
+        | "us_fed_funds_level"
+        | "us_nfci_level"
+        | "us_stlfsi_level"
+        | "us_unemployment_level" => Some(ExpectedCoefficientSign::Positive),
+        "us_curve_10y2y_level" | "us_housing_starts_level" => {
+            Some(ExpectedCoefficientSign::Negative)
+        }
+        _ => None,
+    }
+}
+
+fn forward_crisis_sign_constraint_strength(
+    horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
+) -> f64 {
+    if label_mode != ProbabilityTargetLabelMode::ForwardCrisis {
+        return 0.0;
+    }
+    match horizon_days {
+        20 => 0.55,
+        60 => 0.70,
+        _ => 0.0,
+    }
+}
+
+fn apply_forward_crisis_sign_gradient(
+    weight_gradients: &mut [f64],
+    weights: &[f64],
+    feature_names: &[String],
+    sample_weight_sum: f64,
+    horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
+) {
+    let strength = forward_crisis_sign_constraint_strength(horizon_days, label_mode);
+    if strength <= 0.0 {
+        return;
+    }
+
+    for ((gradient, weight), feature_name) in weight_gradients
+        .iter_mut()
+        .zip(weights.iter())
+        .zip(feature_names.iter())
+    {
+        let Some(expected_sign) =
+            forward_crisis_expected_coefficient_sign(feature_name, horizon_days, label_mode)
+        else {
+            continue;
+        };
+        let violates_sign = match expected_sign {
+            ExpectedCoefficientSign::Positive => *weight < 0.0,
+            ExpectedCoefficientSign::Negative => *weight > 0.0,
+        };
+        if violates_sign {
+            *gradient += *weight * sample_weight_sum * strength;
+        }
+    }
+}
+
+fn project_forward_crisis_sign_constraints(
+    weights: &mut [f64],
+    feature_names: &[String],
+    horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
+) {
+    if forward_crisis_sign_constraint_strength(horizon_days, label_mode) <= 0.0 {
+        return;
+    }
+
+    for (weight, feature_name) in weights.iter_mut().zip(feature_names.iter()) {
+        let Some(expected_sign) =
+            forward_crisis_expected_coefficient_sign(feature_name, horizon_days, label_mode)
+        else {
+            continue;
+        };
+        match expected_sign {
+            ExpectedCoefficientSign::Positive if *weight < 0.0 => *weight = 0.0,
+            ExpectedCoefficientSign::Negative if *weight > 0.0 => *weight = 0.0,
+            _ => {}
+        }
+    }
+}
+
+fn forward_crisis_regime_pairwise_targets(
+    rows: &[ProbabilityTrainingRow],
+    feature_stats: &[ProbabilityFeatureStat],
+    horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
+) -> Vec<RegimePairwiseTarget> {
+    if !matches!(label_mode, ProbabilityTargetLabelMode::ForwardCrisis) || horizon_days < 20 {
+        return Vec::new();
+    }
+
+    let target_specs = match horizon_days {
+        20 => vec![
+            (
+                ProbabilityTrainingRegime::PreWarningBuffer,
+                ProbabilityTrainingRegime::Normal,
+                0.85,
+                1.25,
+            ),
+            (
+                ProbabilityTrainingRegime::PositiveWindow,
+                ProbabilityTrainingRegime::Normal,
+                0.40,
+                0.85,
+            ),
+            (
+                ProbabilityTrainingRegime::PositiveWindow,
+                ProbabilityTrainingRegime::PreWarningBuffer,
+                0.35,
+                0.70,
+            ),
+            (
+                ProbabilityTrainingRegime::PreWarningBuffer,
+                ProbabilityTrainingRegime::PostCrisisCooldown,
+                0.70,
+                1.10,
+            ),
+            (
+                ProbabilityTrainingRegime::PositiveWindow,
+                ProbabilityTrainingRegime::PostCrisisCooldown,
+                0.45,
+                0.80,
+            ),
+        ],
+        60 => vec![
+            (
+                ProbabilityTrainingRegime::PreWarningBuffer,
+                ProbabilityTrainingRegime::Normal,
+                1.05,
+                1.30,
+            ),
+            (
+                ProbabilityTrainingRegime::PositiveWindow,
+                ProbabilityTrainingRegime::Normal,
+                0.65,
+                0.95,
+            ),
+            (
+                ProbabilityTrainingRegime::PositiveWindow,
+                ProbabilityTrainingRegime::PreWarningBuffer,
+                0.45,
+                0.60,
+            ),
+            (
+                ProbabilityTrainingRegime::PreWarningBuffer,
+                ProbabilityTrainingRegime::PostCrisisCooldown,
+                0.90,
+                1.30,
+            ),
+            (
+                ProbabilityTrainingRegime::PositiveWindow,
+                ProbabilityTrainingRegime::PostCrisisCooldown,
+                0.95,
+                1.00,
+            ),
+        ],
+        _ => Vec::new(),
+    };
+
+    target_specs
+        .into_iter()
+        .filter_map(|(left, right, margin, weight)| {
+            let left_centroid = regime_centroid(rows, feature_stats, horizon_days, left)?;
+            let right_centroid = regime_centroid(rows, feature_stats, horizon_days, right)?;
+            Some(RegimePairwiseTarget {
+                left_centroid,
+                right_centroid,
+                margin,
+                weight,
+            })
+        })
+        .collect()
+}
+
+fn regime_centroid(
+    rows: &[ProbabilityTrainingRow],
+    feature_stats: &[ProbabilityFeatureStat],
+    horizon_days: u32,
+    regime: ProbabilityTrainingRegime,
+) -> Option<Vec<f64>> {
+    let feature_len = feature_stats.len();
+    let mut sum = vec![0.0; feature_len];
+    let mut count = 0_usize;
+    for row in rows {
+        if row.regime_for_horizon(horizon_days) != regime {
+            continue;
+        }
+        let normalized = normalized_features(row, feature_stats);
+        for (index, value) in normalized.into_iter().enumerate() {
+            sum[index] += value;
+        }
+        count += 1;
+    }
+    (count > 0).then(|| {
+        sum.into_iter()
+            .map(|value| value / count as f64)
+            .collect::<Vec<_>>()
+    })
+}
+
+fn regime_pairwise_strength(horizon_days: u32) -> f64 {
+    match horizon_days {
+        20 => 0.80,
+        60 => 1.15,
+        _ => 0.0,
+    }
+}
+
+fn apply_regime_pairwise_gradient(
+    weight_gradients: &mut [f64],
+    weights: &[f64],
+    targets: &[RegimePairwiseTarget],
+    sample_weight_sum: f64,
+    horizon_days: u32,
+) {
+    if targets.is_empty() {
+        return;
+    }
+    let strength = regime_pairwise_strength(horizon_days);
+    if strength <= 0.0 {
+        return;
+    }
+    let scale = sample_weight_sum * strength / targets.len() as f64;
+    for target in targets {
+        let left_logit = dot(weights, &target.left_centroid);
+        let right_logit = dot(weights, &target.right_centroid);
+        let pressure = sigmoid(right_logit + target.margin - left_logit);
+        for (index, gradient) in weight_gradients.iter_mut().enumerate() {
+            *gradient += target.weight
+                * pressure
+                * (target.right_centroid[index] - target.left_centroid[index])
+                * scale;
+        }
     }
 }
 
@@ -5208,7 +6814,7 @@ fn initial_intercept(
     let weighted_positive = rows
         .iter()
         .map(|row| {
-            let label = row.label_for_horizon(label_mode, horizon_days);
+            let label = probability_training_target_label(row, horizon_days, label_mode);
             logistic_sample_weight(row, horizon_days, positive_class_weight, label_mode) * label
         })
         .sum::<f64>();
@@ -5227,27 +6833,36 @@ fn horizon_positive_class_weight(
     horizon_days: u32,
     label_mode: ProbabilityTargetLabelMode,
 ) -> f64 {
-    let positive_count = rows
-        .iter()
-        .filter(|row| row.label_for_horizon(label_mode, horizon_days) > 0.0)
-        .count() as f64;
+    let positive_units = match label_mode {
+        ProbabilityTargetLabelMode::ForwardCrisis => rows
+            .iter()
+            .filter(|row| row.label_for_horizon(label_mode, horizon_days) > 0.0)
+            .map(|row| forward_crisis_positive_sample_weight(row, horizon_days))
+            .sum::<f64>(),
+        _ => rows
+            .iter()
+            .filter(|row| row.label_for_horizon(label_mode, horizon_days) > 0.0)
+            .count() as f64,
+    };
     let negative_weight = rows
         .iter()
         .filter(|row| row.label_for_horizon(label_mode, horizon_days) <= 0.0)
         .map(|row| negative_sample_weight(row, horizon_days, label_mode))
         .sum::<f64>();
-    if positive_count <= 0.0 || negative_weight <= 0.0 {
+    if positive_units <= 0.0 || negative_weight <= 0.0 {
         return 1.0;
     }
 
-    let imbalance_weight = (negative_weight / positive_count).sqrt();
+    let imbalance_weight = (negative_weight / positive_units).sqrt();
     let (horizon_emphasis, cap) = match label_mode {
-        ProbabilityTargetLabelMode::ActionWindow => match horizon_days {
-            5 => (0.65, 6.0),
-            20 => (0.75, 7.0),
-            60 => (0.85, 8.0),
-            _ => (0.75, 7.0),
-        },
+        ProbabilityTargetLabelMode::ActionWindow | ProbabilityTargetLabelMode::ActionEpisode => {
+            match horizon_days {
+                5 => (0.65, 6.0),
+                20 => (0.75, 7.0),
+                60 => (0.85, 8.0),
+                _ => (0.75, 7.0),
+            }
+        }
         ProbabilityTargetLabelMode::ForwardCrisis => match horizon_days {
             5 => (0.9, 18.0),
             20 => (1.15, 18.0),
@@ -5258,6 +6873,41 @@ fn horizon_positive_class_weight(
     (imbalance_weight * horizon_emphasis).clamp(1.0, cap)
 }
 
+fn probability_training_target_label(
+    row: &ProbabilityTrainingRow,
+    horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
+) -> f64 {
+    let hard_label = row.label_for_horizon(label_mode, horizon_days);
+    if hard_label > 0.0 || label_mode != ProbabilityTargetLabelMode::ForwardCrisis {
+        return hard_label;
+    }
+
+    match row.regime_for_horizon(horizon_days) {
+        ProbabilityTrainingRegime::Normal => 0.0,
+        ProbabilityTrainingRegime::PreWarningBuffer => match horizon_days {
+            20 => 0.18,
+            60 => 0.26,
+            _ => 0.0,
+        },
+        ProbabilityTrainingRegime::PositiveWindow => match horizon_days {
+            20 => 0.24,
+            60 => 0.32,
+            _ => 0.0,
+        },
+        ProbabilityTrainingRegime::InCrisis => match horizon_days {
+            20 => 0.08,
+            60 => 0.12,
+            _ => 0.0,
+        },
+        ProbabilityTrainingRegime::PostCrisisCooldown => match horizon_days {
+            20 => 0.01,
+            60 => 0.02,
+            _ => 0.0,
+        },
+    }
+}
+
 fn logistic_sample_weight(
     row: &ProbabilityTrainingRow,
     horizon_days: u32,
@@ -5266,9 +6916,90 @@ fn logistic_sample_weight(
 ) -> f64 {
     let label = row.label_for_horizon(label_mode, horizon_days);
     if label > 0.0 {
-        (positive_class_weight * positive_sample_action_weight(row, horizon_days)).clamp(1.0, 36.0)
+        let positive_weight = match label_mode {
+            ProbabilityTargetLabelMode::ForwardCrisis => {
+                forward_crisis_positive_sample_weight(row, horizon_days)
+            }
+            _ => positive_sample_action_weight(row, horizon_days),
+        };
+        (positive_class_weight * positive_weight).clamp(1.0, 36.0)
     } else {
         negative_sample_weight(row, horizon_days, label_mode)
+    }
+}
+
+fn forward_crisis_regime_sample_weight(
+    horizon_days: u32,
+    regime: ProbabilityTrainingRegime,
+) -> f64 {
+    match regime {
+        ProbabilityTrainingRegime::Normal => 1.0,
+        ProbabilityTrainingRegime::PreWarningBuffer => match horizon_days {
+            5 => 0.90,
+            20 => 0.60,
+            60 => 0.50,
+            _ => 0.70,
+        },
+        ProbabilityTrainingRegime::PositiveWindow => match horizon_days {
+            5 => 2.0,
+            20 => 2.2,
+            60 => 1.8,
+            _ => 2.0,
+        },
+        ProbabilityTrainingRegime::InCrisis => match horizon_days {
+            5 => 1.15,
+            20 => 1.20,
+            60 => 1.15,
+            _ => 1.15,
+        },
+        ProbabilityTrainingRegime::PostCrisisCooldown => match horizon_days {
+            5 => 1.10,
+            20 => 1.35,
+            60 => 1.60,
+            _ => 1.25,
+        },
+    }
+}
+
+fn forward_crisis_positive_sample_weight(row: &ProbabilityTrainingRow, horizon_days: u32) -> f64 {
+    (forward_crisis_regime_sample_weight(horizon_days, row.regime_for_horizon(horizon_days))
+        * positive_sample_action_weight(row, horizon_days)
+        * scenario_training_role_weight_multiplier(
+            row.scenario_training_role.as_deref(),
+            horizon_days,
+        ))
+    .clamp(1.0, 12.0)
+}
+
+fn forward_crisis_negative_regime_sample_weight(
+    horizon_days: u32,
+    regime: ProbabilityTrainingRegime,
+) -> f64 {
+    match regime {
+        ProbabilityTrainingRegime::Normal => match horizon_days {
+            20 => 1.10,
+            60 => 1.15,
+            _ => 1.0,
+        },
+        ProbabilityTrainingRegime::PreWarningBuffer => match horizon_days {
+            5 => 0.90,
+            20 => 0.70,
+            60 => 0.60,
+            _ => 0.75,
+        },
+        ProbabilityTrainingRegime::PositiveWindow => 1.0,
+        ProbabilityTrainingRegime::InCrisis => match horizon_days {
+            5 => 1.15,
+            20 => 1.25,
+            60 => 1.20,
+            _ => 1.20,
+        },
+        ProbabilityTrainingRegime::PostCrisisCooldown => match horizon_days {
+            5 => 1.10,
+            20 => 1.45,
+            60 => 1.75,
+            _ => 1.40,
+        },
     }
 }
 
@@ -5300,23 +7031,82 @@ fn negative_sample_weight(
                 _ => 1.35,
             },
         },
-        ProbabilityTargetLabelMode::ForwardCrisis => match row.regime_for_horizon(horizon_days) {
-            ProbabilityTrainingRegime::Normal => 1.0,
-            ProbabilityTrainingRegime::PositiveWindow => 1.0,
-            ProbabilityTrainingRegime::PreWarningBuffer => match horizon_days {
-                5 => 0.35,
-                20 => 0.30,
-                60 => 0.25,
-                _ => 0.30,
-            },
-            ProbabilityTrainingRegime::InCrisis => 0.0,
-            ProbabilityTrainingRegime::PostCrisisCooldown => match horizon_days {
-                5 => 0.12,
-                20 => 0.18,
-                60 => 0.22,
-                _ => 0.20,
-            },
-        },
+        ProbabilityTargetLabelMode::ActionEpisode => {
+            if row.protected_action_window {
+                return 0.55;
+            }
+
+            match row.action_episode_phase.as_str() {
+                "late_validation" => match horizon_days {
+                    5 => 0.95,
+                    20 => 0.80,
+                    60 => 0.70,
+                    _ => 0.80,
+                },
+                "cooldown" => match horizon_days {
+                    5 => 0.70,
+                    20 => 0.65,
+                    60 => 0.60,
+                    _ => 0.65,
+                },
+                _ => match row.regime_for_horizon(horizon_days) {
+                    ProbabilityTrainingRegime::Normal => 1.0,
+                    ProbabilityTrainingRegime::PositiveWindow => 1.0,
+                    ProbabilityTrainingRegime::PreWarningBuffer => match horizon_days {
+                        5 => 0.85,
+                        20 => 0.75,
+                        60 => 0.65,
+                        _ => 0.75,
+                    },
+                    ProbabilityTrainingRegime::InCrisis => match horizon_days {
+                        5 => 1.15,
+                        20 => 1.05,
+                        60 => 0.95,
+                        _ => 1.0,
+                    },
+                    ProbabilityTrainingRegime::PostCrisisCooldown => match horizon_days {
+                        5 => 0.75,
+                        20 => 0.70,
+                        60 => 0.65,
+                        _ => 0.70,
+                    },
+                },
+            }
+        }
+        ProbabilityTargetLabelMode::ForwardCrisis => {
+            if row.protected_action_window {
+                return match row.action_episode_phase.as_str() {
+                    "primary" => match horizon_days {
+                        5 => 0.95,
+                        20 => 0.55,
+                        60 => 0.65,
+                        _ => 0.55,
+                    },
+                    "late_validation" => match horizon_days {
+                        5 => 0.95,
+                        20 => 0.70,
+                        60 => 0.80,
+                        _ => 0.65,
+                    },
+                    "cooldown" => match horizon_days {
+                        5 => 1.05,
+                        20 => 1.20,
+                        60 => 1.35,
+                        _ => 1.00,
+                    },
+                    _ => match horizon_days {
+                        5 => 0.95,
+                        20 => 0.80,
+                        60 => 0.90,
+                        _ => 0.75,
+                    },
+                };
+            }
+            forward_crisis_negative_regime_sample_weight(
+                horizon_days,
+                row.regime_for_horizon(horizon_days),
+            )
+        }
     }
 }
 
@@ -5359,20 +7149,37 @@ fn horizon_role_weight_multiplier(row: &ProbabilityTrainingRow, horizon_days: u3
     }
 }
 
+fn scenario_training_role_weight_multiplier(
+    scenario_training_role: Option<&str>,
+    horizon_days: u32,
+) -> f64 {
+    match (horizon_days, scenario_training_role) {
+        (_, Some("mandatory")) => 1.0,
+        (5, Some("candidate_optional")) => 1.10,
+        (20, Some("candidate_optional")) => 1.30,
+        (60, Some("candidate_optional")) => 1.45,
+        (5, Some("extension_only")) => 1.45,
+        (20, Some("extension_only")) => 1.65,
+        (60, Some("extension_only")) => 1.70,
+        (_, Some("no_positive_main")) => 1.0,
+        _ => 1.0,
+    }
+}
+
 fn scenario_family_weight_multiplier(scenario_family: Option<&str>, horizon_days: u32) -> f64 {
     match (horizon_days, scenario_family) {
-        (5, Some("acute_market_liquidity_crash")) => 1.35,
-        (5, Some("systemic_credit_banking_crisis")) => 0.75,
-        (5, Some("mixed_systemic_stress")) => 0.70,
-        (5, Some("rate_shock_or_policy_dislocation")) => 0.65,
-        (20, Some("acute_market_liquidity_crash")) => 1.15,
-        (20, Some("systemic_credit_banking_crisis")) => 1.20,
-        (20, Some("mixed_systemic_stress")) => 1.00,
-        (20, Some("rate_shock_or_policy_dislocation")) => 0.80,
-        (60, Some("acute_market_liquidity_crash")) => 0.65,
-        (60, Some("systemic_credit_banking_crisis")) => 1.35,
-        (60, Some("mixed_systemic_stress")) => 1.10,
-        (60, Some("rate_shock_or_policy_dislocation")) => 0.70,
+        (5, Some("acute_market_liquidity_crash")) => 1.50,
+        (5, Some("systemic_credit_banking_crisis")) => 0.80,
+        (5, Some("mixed_systemic_stress")) => 0.85,
+        (5, Some("rate_shock_or_policy_dislocation")) => 0.85,
+        (20, Some("acute_market_liquidity_crash")) => 1.30,
+        (20, Some("systemic_credit_banking_crisis")) => 1.15,
+        (20, Some("mixed_systemic_stress")) => 1.35,
+        (20, Some("rate_shock_or_policy_dislocation")) => 1.25,
+        (60, Some("acute_market_liquidity_crash")) => 0.85,
+        (60, Some("systemic_credit_banking_crisis")) => 1.25,
+        (60, Some("mixed_systemic_stress")) => 1.45,
+        (60, Some("rate_shock_or_policy_dislocation")) => 1.35,
         _ => 1.0,
     }
 }
@@ -5491,8 +7298,179 @@ fn evaluate_probabilities(probabilities: &[f64], labels: &[f64]) -> HorizonEvalu
             .then_some(true_positive as f64 / predicted_positive.len() as f64),
         recall_at_30pct: (actual_positive > 0)
             .then_some(true_positive as f64 / actual_positive as f64),
+        regime_separation: None,
         actionability: None,
     }
+}
+
+fn evaluate_probabilities_for_rows(
+    probabilities: &[f64],
+    rows: &[ProbabilityTrainingRow],
+    horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
+) -> HorizonEvaluationSummary {
+    let labels = rows
+        .iter()
+        .map(|row| row.label_for_horizon(label_mode, horizon_days))
+        .collect::<Vec<_>>();
+    let mut summary = evaluate_probabilities(probabilities, &labels);
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    summary.regime_separation =
+        evaluate_regime_separation_summary_refs(probabilities, &row_refs, horizon_days, label_mode);
+    summary
+}
+
+fn evaluate_regime_separation_summary_refs(
+    probabilities: &[f64],
+    rows: &[&ProbabilityTrainingRow],
+    horizon_days: u32,
+    label_mode: ProbabilityTargetLabelMode,
+) -> Option<RegimeSeparationEvaluationSummary> {
+    if label_mode != ProbabilityTargetLabelMode::ForwardCrisis
+        || probabilities.is_empty()
+        || rows.is_empty()
+    {
+        return None;
+    }
+
+    #[derive(Default, Clone, Copy)]
+    struct Bucket {
+        sample_count: u32,
+        probability_sum: f64,
+    }
+
+    let mut buckets = BTreeMap::<ProbabilityTrainingRegime, Bucket>::new();
+    for (probability, row) in probabilities.iter().zip(rows.iter().copied()) {
+        let bucket = buckets
+            .entry(row.regime_for_horizon(horizon_days))
+            .or_default();
+        bucket.sample_count += 1;
+        bucket.probability_sum += *probability;
+    }
+
+    let average_probability = |regime: ProbabilityTrainingRegime| {
+        buckets
+            .get(&regime)
+            .map(|bucket| safe_divide(bucket.probability_sum, bucket.sample_count as f64))
+    };
+    let sample_count = |regime: ProbabilityTrainingRegime| {
+        buckets.get(&regime).map_or(0, |bucket| bucket.sample_count)
+    };
+
+    let early_warning_regime = match horizon_days {
+        5 => ProbabilityTrainingRegime::PositiveWindow,
+        20 | 60 => ProbabilityTrainingRegime::PreWarningBuffer,
+        _ => ProbabilityTrainingRegime::PositiveWindow,
+    };
+    let normal_avg = average_probability(ProbabilityTrainingRegime::Normal)?;
+    let pre_warning_buffer_avg =
+        average_probability(ProbabilityTrainingRegime::PreWarningBuffer).unwrap_or(0.0);
+    let positive_window_avg =
+        average_probability(ProbabilityTrainingRegime::PositiveWindow).unwrap_or(0.0);
+    let early_warning_avg = average_probability(early_warning_regime).unwrap_or(0.0);
+    let in_crisis_avg = average_probability(ProbabilityTrainingRegime::InCrisis).unwrap_or(0.0);
+    let post_crisis_cooldown_avg =
+        average_probability(ProbabilityTrainingRegime::PostCrisisCooldown).unwrap_or(0.0);
+    let max_non_normal_avg = buckets
+        .iter()
+        .filter(|(regime, _)| **regime != ProbabilityTrainingRegime::Normal)
+        .map(|(_, bucket)| safe_divide(bucket.probability_sum, bucket.sample_count as f64))
+        .fold(0.0_f64, f64::max);
+    let pre_warning_buffer_lift_vs_normal = lift_vs_baseline(pre_warning_buffer_avg, normal_avg);
+    let positive_window_lift_vs_normal = lift_vs_baseline(positive_window_avg, normal_avg);
+    let early_warning_lift_vs_normal = lift_vs_baseline(early_warning_avg, normal_avg);
+    let in_crisis_lift_vs_normal = lift_vs_baseline(in_crisis_avg, normal_avg);
+    let post_crisis_cooldown_lift_vs_normal =
+        lift_vs_baseline(post_crisis_cooldown_avg, normal_avg);
+    let positive_window_gap_vs_normal = Some(round6(positive_window_avg - normal_avg));
+    let post_crisis_cooldown_gap_vs_normal = Some(round6(post_crisis_cooldown_avg - normal_avg));
+    let max_non_normal_lift_vs_normal = lift_vs_baseline(max_non_normal_avg, normal_avg);
+    let diagnosis = classify_probability_regime_separation(
+        horizon_days,
+        pre_warning_buffer_lift_vs_normal.unwrap_or_default(),
+        positive_window_lift_vs_normal.unwrap_or_default(),
+        early_warning_lift_vs_normal.unwrap_or_default(),
+        in_crisis_lift_vs_normal.unwrap_or_default(),
+        post_crisis_cooldown_lift_vs_normal.unwrap_or_default(),
+        positive_window_gap_vs_normal.unwrap_or_default(),
+        post_crisis_cooldown_gap_vs_normal.unwrap_or_default(),
+        max_non_normal_lift_vs_normal.unwrap_or_default(),
+    )
+    .to_string();
+
+    Some(RegimeSeparationEvaluationSummary {
+        horizon_days,
+        early_warning_regime: probability_training_regime_name(early_warning_regime).to_string(),
+        normal_sample_count: sample_count(ProbabilityTrainingRegime::Normal),
+        pre_warning_buffer_sample_count: sample_count(ProbabilityTrainingRegime::PreWarningBuffer),
+        positive_window_sample_count: sample_count(ProbabilityTrainingRegime::PositiveWindow),
+        early_warning_sample_count: sample_count(early_warning_regime),
+        in_crisis_sample_count: sample_count(ProbabilityTrainingRegime::InCrisis),
+        post_crisis_cooldown_sample_count: sample_count(
+            ProbabilityTrainingRegime::PostCrisisCooldown,
+        ),
+        normal_avg_probability: round6(normal_avg),
+        pre_warning_buffer_avg_probability: round6(pre_warning_buffer_avg),
+        positive_window_avg_probability: round6(positive_window_avg),
+        early_warning_avg_probability: round6(early_warning_avg),
+        in_crisis_avg_probability: round6(in_crisis_avg),
+        post_crisis_cooldown_avg_probability: round6(post_crisis_cooldown_avg),
+        max_non_normal_avg_probability: round6(max_non_normal_avg),
+        pre_warning_buffer_lift_vs_normal,
+        positive_window_lift_vs_normal,
+        early_warning_lift_vs_normal,
+        in_crisis_lift_vs_normal,
+        post_crisis_cooldown_lift_vs_normal,
+        positive_window_gap_vs_normal,
+        post_crisis_cooldown_gap_vs_normal,
+        max_non_normal_lift_vs_normal,
+        diagnosis,
+    })
+}
+
+fn regime_positive_window_gap_floor(horizon_days: u32) -> f64 {
+    match horizon_days {
+        5 => 0.005,
+        20 | 60 => 0.010,
+        _ => 0.010,
+    }
+}
+
+fn classify_probability_regime_separation(
+    horizon_days: u32,
+    pre_warning_buffer_lift_vs_normal: f64,
+    positive_window_lift_vs_normal: f64,
+    early_warning_lift_vs_normal: f64,
+    in_crisis_lift_vs_normal: f64,
+    post_crisis_cooldown_lift_vs_normal: f64,
+    positive_window_gap_vs_normal: f64,
+    post_crisis_cooldown_gap_vs_normal: f64,
+    max_non_normal_lift_vs_normal: f64,
+) -> &'static str {
+    if max_non_normal_lift_vs_normal < 1.15
+        && positive_window_lift_vs_normal < 1.15
+        && early_warning_lift_vs_normal < 1.15
+    {
+        return "cold_across_all_regimes";
+    }
+    if positive_window_lift_vs_normal < 1.15 && in_crisis_lift_vs_normal >= 1.5 {
+        return "late_only_no_early_warning";
+    }
+    if positive_window_lift_vs_normal >= 1.15
+        && post_crisis_cooldown_lift_vs_normal >= positive_window_lift_vs_normal
+        && post_crisis_cooldown_gap_vs_normal + 0.002 >= positive_window_gap_vs_normal
+    {
+        return "cooldown_bleed";
+    }
+    if positive_window_lift_vs_normal >= 1.5
+        && positive_window_gap_vs_normal >= regime_positive_window_gap_floor(horizon_days)
+    {
+        return "usable_early_warning_separation";
+    }
+    if max_non_normal_lift_vs_normal >= 1.15 || pre_warning_buffer_lift_vs_normal >= 1.15 {
+        return "weak_regime_separation";
+    }
+    "mixed_or_unclear"
 }
 
 #[derive(Default)]
@@ -5508,24 +7486,22 @@ fn evaluate_actionability_summary(
     horizon_days: u32,
     threshold: f64,
 ) -> ActionabilityEvaluationSummary {
+    let label_mode = ProbabilityTargetLabelMode::ActionEpisode;
     let mut predicted_positive_count = 0_u32;
     let mut actual_positive_count = 0_u32;
-    let mut pre_start_positive_count = 0_u32;
-    let mut post_start_positive_count = 0_u32;
-    let mut unclassified_positive_count = 0_u32;
-    let mut pre_start_hit_count = 0_u32;
-    let mut post_start_hit_count = 0_u32;
-    let mut unclassified_hit_count = 0_u32;
+    let mut primary_positive_count = 0_u32;
+    let mut late_validation_row_count = 0_u32;
+    let mut cooldown_row_count = 0_u32;
+    let mut primary_hit_count = 0_u32;
+    let mut late_validation_hit_count = 0_u32;
+    let mut cooldown_hit_count = 0_u32;
     let mut false_positive_count = 0_u32;
     let mut scenario_states = BTreeMap::<String, ActionabilityScenarioEvaluationState>::new();
 
     for (probability, row) in probabilities.iter().zip(rows) {
         let predicted_positive = *probability >= threshold;
-        let actual_positive =
-            row.label_for_horizon(ProbabilityTargetLabelMode::ActionWindow, horizon_days) >= 0.5;
-        let lead_days = row.days_to_primary_crisis_start;
-        let pre_start = lead_days.is_some_and(|days| days > 0);
-        let post_start = lead_days.is_some_and(|days| days <= 0);
+        let actual_positive = row.label_for_horizon(label_mode, horizon_days) >= 0.5;
+        let phase = row.action_episode_phase_for_horizon(horizon_days);
 
         if predicted_positive {
             predicted_positive_count += 1;
@@ -5533,36 +7509,38 @@ fn evaluate_actionability_summary(
 
         if actual_positive {
             actual_positive_count += 1;
-            if pre_start {
-                pre_start_positive_count += 1;
-            } else if post_start {
-                post_start_positive_count += 1;
-            } else {
-                unclassified_positive_count += 1;
-            }
-
+            primary_positive_count += 1;
             if let Some(scenario_id) = row.primary_scenario_id.as_ref() {
-                let state = scenario_states.entry(scenario_id.clone()).or_default();
-                state.saw_positive = true;
-                if predicted_positive {
-                    if pre_start {
-                        state.has_pre_start_hit = true;
-                    } else if post_start {
-                        state.has_post_start_hit = true;
-                    }
-                }
+                scenario_states
+                    .entry(scenario_id.clone())
+                    .or_default()
+                    .saw_positive = true;
+            }
+        } else {
+            match phase {
+                ActionEpisodePhase::LateValidation => late_validation_row_count += 1,
+                ActionEpisodePhase::Cooldown => cooldown_row_count += 1,
+                _ => {}
             }
         }
 
         if predicted_positive {
             if actual_positive {
-                if pre_start {
-                    pre_start_hit_count += 1;
-                } else if post_start {
-                    post_start_hit_count += 1;
-                } else {
-                    unclassified_hit_count += 1;
+                primary_hit_count += 1;
+                if let Some(scenario_id) = row.primary_scenario_id.as_ref() {
+                    let state = scenario_states.entry(scenario_id.clone()).or_default();
+                    state.saw_positive = true;
+                    state.has_pre_start_hit = true;
                 }
+            } else if matches!(phase, ActionEpisodePhase::LateValidation) {
+                late_validation_hit_count += 1;
+                if let Some(scenario_id) = row.primary_scenario_id.as_ref() {
+                    let state = scenario_states.entry(scenario_id.clone()).or_default();
+                    state.saw_positive = true;
+                    state.has_post_start_hit = true;
+                }
+            } else if matches!(phase, ActionEpisodePhase::Cooldown) {
+                cooldown_hit_count += 1;
             } else {
                 false_positive_count += 1;
             }
@@ -5582,7 +7560,7 @@ fn evaluate_actionability_summary(
         }
     }
 
-    let hit_count = pre_start_hit_count + post_start_hit_count + unclassified_hit_count;
+    let hit_count = primary_hit_count + late_validation_hit_count;
     let scenario_count =
         advance_warning_scenario_count + late_confirmation_scenario_count + missed_scenario_count;
 
@@ -5590,12 +7568,12 @@ fn evaluate_actionability_summary(
         threshold: round3(threshold),
         predicted_positive_count,
         actual_positive_count,
-        pre_start_positive_count,
-        post_start_positive_count,
-        unclassified_positive_count,
-        pre_start_hit_count,
-        post_start_hit_count,
-        unclassified_hit_count,
+        pre_start_positive_count: primary_positive_count,
+        post_start_positive_count: late_validation_row_count,
+        unclassified_positive_count: cooldown_row_count,
+        pre_start_hit_count: primary_hit_count,
+        post_start_hit_count: late_validation_hit_count,
+        unclassified_hit_count: cooldown_hit_count,
         false_positive_count,
         scenario_count,
         advance_warning_scenario_count,
@@ -5603,10 +7581,11 @@ fn evaluate_actionability_summary(
         missed_scenario_count,
         precision_at_threshold: (predicted_positive_count > 0)
             .then_some(round3(hit_count as f64 / predicted_positive_count as f64)),
-        pre_start_recall_at_threshold: (pre_start_positive_count > 0)
-            .then_some(round3(pre_start_hit_count as f64 / pre_start_positive_count as f64)),
-        post_start_recall_at_threshold: (post_start_positive_count > 0)
-            .then_some(round3(post_start_hit_count as f64 / post_start_positive_count as f64)),
+        pre_start_recall_at_threshold: (primary_positive_count > 0)
+            .then_some(round3(primary_hit_count as f64 / primary_positive_count as f64)),
+        post_start_recall_at_threshold: (late_validation_row_count > 0).then_some(round3(
+            late_validation_hit_count as f64 / late_validation_row_count as f64,
+        )),
         advance_warning_rate: (scenario_count > 0)
             .then_some(round3(
                 advance_warning_scenario_count as f64 / scenario_count as f64,
@@ -5617,7 +7596,7 @@ fn evaluate_actionability_summary(
             )),
         missed_rate: (scenario_count > 0)
             .then_some(round3(missed_scenario_count as f64 / scenario_count as f64)),
-        note: "Pre-start hit means the action signal fired before crisis_start; post-start hit means it only appeared on or after crisis_start within the bounded action window.".to_string(),
+        note: "Primary means the episode-native action window fired on time; post-start metrics now represent late-validation tracking rather than crisis-start proxy labels.".to_string(),
     }
 }
 
@@ -5672,12 +7651,37 @@ fn summarize_bundle_evaluation(
         .map(|horizon| horizon.evaluation.ece * horizon.evaluation.sample_count as f64)
         .sum::<f64>()
         / total_samples;
+    let regime_separation_summaries = horizons
+        .iter()
+        .filter_map(|horizon| horizon.evaluation.regime_separation.clone())
+        .collect::<Vec<_>>();
+    let usable_early_warning_horizon_count = regime_separation_summaries
+        .iter()
+        .filter(|summary| summary.diagnosis == "usable_early_warning_separation")
+        .count() as u32;
+    let insufficient_early_warning_horizon_count = regime_separation_summaries
+        .iter()
+        .filter(|summary| {
+            matches!(
+                summary.diagnosis.as_str(),
+                "cold_across_all_regimes"
+                    | "late_only_no_early_warning"
+                    | "mixed_or_unclear"
+                    | "cooldown_bleed"
+            )
+        })
+        .count() as u32;
     ProbabilityBundleEvaluation {
         sample_count: total_samples as u32,
         brier_score: weighted_brier,
         log_loss: weighted_log_loss,
         ece: weighted_ece,
-        note: "Weighted average across 5d / 20d / 60d evaluation slices.".to_string(),
+        regime_separation_summaries,
+        usable_early_warning_horizon_count,
+        insufficient_early_warning_horizon_count,
+        note: format!(
+            "Weighted average across 5d / 20d / 60d evaluation slices. Usable early-warning horizons: {usable_early_warning_horizon_count}. Insufficient or cooldown-bleed horizons: {insufficient_early_warning_horizon_count}."
+        ),
     }
 }
 
@@ -6691,6 +8695,10 @@ fn build_release_runtime_review_diagnostics(
             fc_domain::TimeToRiskBucket::Weeks => "weeks",
             fc_domain::TimeToRiskBucket::Now => "now",
         }));
+    let posture_trigger_distribution =
+        summarize_posture_clause_counts(history, |point| &point.posture_trigger_codes);
+    let posture_blocker_distribution =
+        summarize_posture_clause_counts(history, |point| &point.posture_blocker_codes);
     let (
         points_at_or_above_prepare_p60d,
         points_at_or_above_hedge_p20d,
@@ -6745,13 +8753,23 @@ fn build_release_runtime_review_diagnostics(
             Vec::new()
         }
     };
+    let regime_separation_summaries =
+        summarize_release_runtime_regime_separation(&regime_probability_summaries);
+    if !regime_separation_summaries.is_empty() {
+        notes.push(render_release_runtime_separation_note(
+            &regime_separation_summaries,
+        ));
+    }
 
     ReleaseRuntimeReviewDiagnostics {
         release_id: release_id.to_string(),
         history_point_count: history.len(),
         posture_distribution,
         time_bucket_distribution,
+        posture_trigger_distribution,
+        posture_blocker_distribution,
         regime_probability_summaries,
+        regime_separation_summaries,
         runtime_thresholds: method.runtime_thresholds.clone(),
         points_at_or_above_prepare_p60d,
         points_at_or_above_hedge_p20d,
@@ -6794,17 +8812,19 @@ fn summarize_release_runtime_regime_probabilities(
     #[derive(Default)]
     struct Accumulator {
         row_count: usize,
-        probability_sum: f64,
-        max_probability: f64,
+        raw_probability_sum: f64,
+        max_raw_probability: f64,
+        calibrated_probability_sum: f64,
+        max_calibrated_probability: f64,
         threshold_hit_count: usize,
     }
 
     let mut buckets = BTreeMap::<(u32, String), Accumulator>::new();
     for point in history {
-        for (horizon_days, probability) in [
-            (5_u32, point.p_5d),
-            (20_u32, point.p_20d),
-            (60_u32, point.p_60d),
+        for (horizon_days, raw_probability, calibrated_probability) in [
+            (5_u32, point.raw_p_5d.unwrap_or(point.p_5d), point.p_5d),
+            (20_u32, point.raw_p_20d.unwrap_or(point.p_20d), point.p_20d),
+            (60_u32, point.raw_p_60d.unwrap_or(point.p_60d), point.p_60d),
         ] {
             let regime = probability_training_regime_name(forward_crisis_training_regime(
                 point.as_of_date,
@@ -6815,35 +8835,279 @@ fn summarize_release_runtime_regime_probabilities(
                 .entry((horizon_days, regime.to_string()))
                 .or_default();
             bucket.row_count += 1;
-            bucket.probability_sum += probability;
-            bucket.max_probability = bucket.max_probability.max(probability);
+            bucket.raw_probability_sum += raw_probability;
+            bucket.max_raw_probability = bucket.max_raw_probability.max(raw_probability);
+            bucket.calibrated_probability_sum += calibrated_probability;
+            bucket.max_calibrated_probability = bucket
+                .max_calibrated_probability
+                .max(calibrated_probability);
             if let Some(threshold) =
                 runtime_probability_threshold_for_horizon(runtime_thresholds, horizon_days)
             {
-                if probability >= threshold {
+                if calibrated_probability >= threshold {
                     bucket.threshold_hit_count += 1;
                 }
             }
         }
     }
 
+    let normal_baselines = buckets
+        .iter()
+        .filter_map(|((horizon_days, regime), bucket)| {
+            if regime != "normal" {
+                return None;
+            }
+            Some((
+                *horizon_days,
+                (
+                    safe_divide(bucket.raw_probability_sum, bucket.row_count as f64),
+                    safe_divide(bucket.calibrated_probability_sum, bucket.row_count as f64),
+                ),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+
     buckets
         .into_iter()
-        .map(
-            |((horizon_days, regime), bucket)| ReleaseRuntimeRegimeProbabilitySummary {
+        .map(|((horizon_days, regime), bucket)| {
+            let avg_raw_probability =
+                safe_divide(bucket.raw_probability_sum, bucket.row_count as f64);
+            let avg_calibrated_probability =
+                safe_divide(bucket.calibrated_probability_sum, bucket.row_count as f64);
+            let (
+                raw_lift_vs_normal,
+                calibrated_lift_vs_normal,
+                raw_gap_vs_normal,
+                calibrated_gap_vs_normal,
+                calibration_gap_retention,
+            ) = if let Some((normal_avg_raw, normal_avg_calibrated)) =
+                normal_baselines.get(&horizon_days).copied()
+            {
+                let raw_gap = avg_raw_probability - normal_avg_raw;
+                let calibrated_gap = avg_calibrated_probability - normal_avg_calibrated;
+                (
+                    lift_vs_baseline(avg_raw_probability, normal_avg_raw),
+                    lift_vs_baseline(avg_calibrated_probability, normal_avg_calibrated),
+                    Some(round6(raw_gap)),
+                    Some(round6(calibrated_gap)),
+                    gap_retention_ratio(raw_gap, calibrated_gap),
+                )
+            } else {
+                (None, None, None, None, None)
+            };
+
+            ReleaseRuntimeRegimeProbabilitySummary {
                 horizon_days,
                 regime,
                 row_count: bucket.row_count,
                 row_rate: round6(safe_ratio(bucket.row_count, history.len())),
-                avg_probability: round6(safe_divide(
-                    bucket.probability_sum,
-                    bucket.row_count as f64,
-                )),
-                max_probability: round6(bucket.max_probability),
+                avg_raw_probability: round6(avg_raw_probability),
+                max_raw_probability: round6(bucket.max_raw_probability),
+                avg_probability: round6(avg_calibrated_probability),
+                max_probability: round6(bucket.max_calibrated_probability),
+                raw_lift_vs_normal,
+                calibrated_lift_vs_normal,
+                raw_gap_vs_normal,
+                calibrated_gap_vs_normal,
+                calibration_gap_retention,
                 threshold_hit_count: runtime_thresholds.map(|_| bucket.threshold_hit_count),
-            },
-        )
+            }
+        })
         .collect()
+}
+
+fn summarize_release_runtime_regime_separation(
+    summaries: &[ReleaseRuntimeRegimeProbabilitySummary],
+) -> Vec<ReleaseRuntimeSeparationSummary> {
+    let mut by_horizon = BTreeMap::<u32, Vec<&ReleaseRuntimeRegimeProbabilitySummary>>::new();
+    for summary in summaries {
+        by_horizon
+            .entry(summary.horizon_days)
+            .or_default()
+            .push(summary);
+    }
+
+    by_horizon
+        .into_iter()
+        .filter_map(|(horizon_days, rows)| {
+            let normal = rows.iter().copied().find(|row| row.regime == "normal")?;
+            let pre_warning_buffer = rows
+                .iter()
+                .copied()
+                .find(|row| row.regime == "pre_warning_buffer");
+            let positive_window = rows
+                .iter()
+                .copied()
+                .find(|row| row.regime == "positive_window");
+            let max_non_normal = rows
+                .iter()
+                .copied()
+                .filter(|row| row.regime != "normal")
+                .max_by(|left, right| {
+                    left.avg_probability
+                        .partial_cmp(&right.avg_probability)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })?;
+            let early_warning_regime_name = early_warning_regime_name(horizon_days);
+            let early_warning = rows
+                .iter()
+                .copied()
+                .find(|row| row.regime == early_warning_regime_name);
+            let in_crisis = rows.iter().copied().find(|row| row.regime == "in_crisis");
+            let post_crisis_cooldown = rows
+                .iter()
+                .copied()
+                .find(|row| row.regime == "post_crisis_cooldown");
+            let max_non_normal_threshold_hit_rate = max_non_normal
+                .threshold_hit_count
+                .map(|count| round6(safe_divide(count as f64, max_non_normal.row_count as f64)));
+            let diagnosis = classify_regime_separation(
+                horizon_days,
+                early_warning
+                    .and_then(|row| row.raw_lift_vs_normal)
+                    .unwrap_or_default(),
+                early_warning
+                    .and_then(|row| row.calibrated_lift_vs_normal)
+                    .unwrap_or_default(),
+                early_warning.and_then(|row| row.calibration_gap_retention),
+                positive_window
+                    .and_then(|row| row.calibrated_lift_vs_normal)
+                    .unwrap_or_default(),
+                positive_window
+                    .and_then(|row| row.calibrated_gap_vs_normal)
+                    .unwrap_or_default(),
+                in_crisis
+                    .and_then(|row| row.calibrated_lift_vs_normal)
+                    .unwrap_or_default(),
+                post_crisis_cooldown
+                    .and_then(|row| row.calibrated_lift_vs_normal)
+                    .unwrap_or_default(),
+                post_crisis_cooldown
+                    .and_then(|row| row.calibrated_gap_vs_normal)
+                    .unwrap_or_default(),
+                max_non_normal.calibrated_lift_vs_normal.unwrap_or_default(),
+                max_non_normal_threshold_hit_rate.unwrap_or_default(),
+            )
+            .to_string();
+
+            Some(ReleaseRuntimeSeparationSummary {
+                horizon_days,
+                early_warning_regime: early_warning_regime_name.to_string(),
+                normal_avg_probability: normal.avg_probability,
+                pre_warning_buffer_avg_probability: pre_warning_buffer
+                    .map(|row| row.avg_probability)
+                    .unwrap_or_default(),
+                positive_window_avg_probability: positive_window
+                    .map(|row| row.avg_probability)
+                    .unwrap_or_default(),
+                in_crisis_avg_probability: in_crisis
+                    .map(|row| row.avg_probability)
+                    .unwrap_or_default(),
+                post_crisis_cooldown_avg_probability: post_crisis_cooldown
+                    .map(|row| row.avg_probability)
+                    .unwrap_or_default(),
+                early_warning_raw_lift_vs_normal: early_warning
+                    .and_then(|row| row.raw_lift_vs_normal),
+                early_warning_calibrated_lift_vs_normal: early_warning
+                    .and_then(|row| row.calibrated_lift_vs_normal),
+                early_warning_gap_retention: early_warning
+                    .and_then(|row| row.calibration_gap_retention),
+                positive_window_calibrated_lift_vs_normal: positive_window
+                    .and_then(|row| row.calibrated_lift_vs_normal),
+                positive_window_gap_vs_normal: positive_window
+                    .and_then(|row| row.calibrated_gap_vs_normal),
+                in_crisis_raw_lift_vs_normal: in_crisis.and_then(|row| row.raw_lift_vs_normal),
+                in_crisis_calibrated_lift_vs_normal: in_crisis
+                    .and_then(|row| row.calibrated_lift_vs_normal),
+                post_crisis_cooldown_calibrated_lift_vs_normal: post_crisis_cooldown
+                    .and_then(|row| row.calibrated_lift_vs_normal),
+                post_crisis_cooldown_gap_vs_normal: post_crisis_cooldown
+                    .and_then(|row| row.calibrated_gap_vs_normal),
+                max_non_normal_calibrated_lift_vs_normal: max_non_normal.calibrated_lift_vs_normal,
+                max_non_normal_threshold_hit_rate,
+                diagnosis,
+            })
+        })
+        .collect()
+}
+
+fn early_warning_regime_name(horizon_days: u32) -> &'static str {
+    match horizon_days {
+        5 => "positive_window",
+        20 | 60 => "pre_warning_buffer",
+        _ => "positive_window",
+    }
+}
+
+fn classify_regime_separation(
+    horizon_days: u32,
+    early_warning_raw_lift: f64,
+    early_warning_calibrated_lift: f64,
+    early_warning_gap_retention: Option<f64>,
+    positive_window_calibrated_lift: f64,
+    positive_window_gap_vs_normal: f64,
+    in_crisis_calibrated_lift: f64,
+    post_crisis_cooldown_calibrated_lift: f64,
+    post_crisis_cooldown_gap_vs_normal: f64,
+    max_non_normal_calibrated_lift: f64,
+    max_non_normal_threshold_hit_rate: f64,
+) -> &'static str {
+    if max_non_normal_calibrated_lift < 1.15
+        && early_warning_raw_lift < 1.15
+        && positive_window_calibrated_lift < 1.15
+    {
+        return "cold_across_all_regimes";
+    }
+    if early_warning_raw_lift >= 1.5
+        && early_warning_calibrated_lift < 1.15
+        && early_warning_gap_retention.unwrap_or_default() < 0.35
+    {
+        return "calibration_crushed_early_warning";
+    }
+    if positive_window_calibrated_lift < 1.15 && in_crisis_calibrated_lift >= 1.5 {
+        return "late_only_no_early_warning";
+    }
+    if positive_window_calibrated_lift >= 1.15
+        && post_crisis_cooldown_calibrated_lift >= positive_window_calibrated_lift
+        && post_crisis_cooldown_gap_vs_normal + 0.002 >= positive_window_gap_vs_normal
+    {
+        return "cooldown_bleed";
+    }
+    if max_non_normal_calibrated_lift >= 1.5 && max_non_normal_threshold_hit_rate <= 0.01 {
+        return "separated_but_below_runtime_floor";
+    }
+    if positive_window_calibrated_lift >= 1.5
+        && positive_window_gap_vs_normal >= regime_positive_window_gap_floor(horizon_days)
+    {
+        return "usable_early_warning_separation";
+    }
+    if max_non_normal_calibrated_lift >= 1.15 || early_warning_calibrated_lift >= 1.15 {
+        return "weak_regime_separation";
+    }
+    "mixed_or_unclear"
+}
+
+fn render_release_runtime_separation_note(summaries: &[ReleaseRuntimeSeparationSummary]) -> String {
+    let joined = summaries
+        .iter()
+        .map(|summary| format!("{}d={}", summary.horizon_days, summary.diagnosis))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("Runtime separation summary: {joined}.")
+}
+
+fn lift_vs_baseline(value: f64, baseline: f64) -> Option<f64> {
+    if baseline.abs() <= f64::EPSILON {
+        return None;
+    }
+    Some(round6(value / baseline))
+}
+
+fn gap_retention_ratio(raw_gap: f64, calibrated_gap: f64) -> Option<f64> {
+    if raw_gap.abs() <= f64::EPSILON {
+        return None;
+    }
+    Some(round6(calibrated_gap / raw_gap))
 }
 
 fn runtime_probability_threshold_for_horizon(
@@ -6874,6 +9138,59 @@ fn summarize_named_counts<'a>(names: impl Iterator<Item = &'a str>) -> Vec<Relea
             .then_with(|| left.name.cmp(&right.name))
     });
     rows
+}
+
+fn summarize_posture_clause_counts<F>(
+    history: &[AssessmentHistoryPoint],
+    accessor: F,
+) -> Vec<ReleaseRuntimeClauseCount>
+where
+    F: Fn(&AssessmentHistoryPoint) -> &[String],
+{
+    let posture_totals = history
+        .iter()
+        .fold(BTreeMap::<String, usize>::new(), |mut acc, point| {
+            *acc.entry(runtime_posture_name(point).to_string())
+                .or_default() += 1;
+            acc
+        });
+    let mut counts = BTreeMap::<(String, String), usize>::new();
+    for point in history {
+        let posture = runtime_posture_name(point).to_string();
+        for clause in accessor(point) {
+            *counts.entry((posture.clone(), clause.clone())).or_default() += 1;
+        }
+    }
+
+    let mut rows = counts
+        .into_iter()
+        .map(|((posture, clause), count)| {
+            let posture_total = posture_totals.get(&posture).copied().unwrap_or_default();
+            ReleaseRuntimeClauseCount {
+                posture,
+                clause,
+                count,
+                share_of_posture: round6(safe_ratio(count, posture_total)),
+            }
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.posture.cmp(&right.posture))
+            .then_with(|| left.clause.cmp(&right.clause))
+    });
+    rows
+}
+
+fn runtime_posture_name(point: &AssessmentHistoryPoint) -> &'static str {
+    match point.posture {
+        fc_domain::DecisionPosture::Normal => "normal",
+        fc_domain::DecisionPosture::Prepare => "prepare",
+        fc_domain::DecisionPosture::Hedge => "hedge",
+        fc_domain::DecisionPosture::Defend => "defend",
+    }
 }
 
 fn build_release_actionability_review(
@@ -6911,21 +9228,22 @@ fn build_release_actionability_review(
                 positive_rate: level.evaluation.positive_rate,
                 threshold: evaluation.threshold,
                 predicted_positive_count: evaluation.predicted_positive_count,
-                actual_positive_count: evaluation.actual_positive_count,
-                pre_start_positive_count: evaluation.pre_start_positive_count,
-                post_start_positive_count: evaluation.post_start_positive_count,
-                pre_start_hit_count: evaluation.pre_start_hit_count,
-                post_start_hit_count: evaluation.post_start_hit_count,
+                primary_positive_count: evaluation.actual_positive_count,
+                late_validation_row_count: evaluation.post_start_positive_count,
+                protected_row_count: evaluation.unclassified_positive_count,
+                primary_hit_count: evaluation.pre_start_hit_count,
+                late_validation_hit_count: evaluation.post_start_hit_count,
+                protected_hit_count: evaluation.unclassified_hit_count,
                 false_positive_count: evaluation.false_positive_count,
                 scenario_count: evaluation.scenario_count,
-                advance_warning_scenario_count: evaluation.advance_warning_scenario_count,
-                late_confirmation_scenario_count: evaluation.late_confirmation_scenario_count,
+                on_time_scenario_count: evaluation.advance_warning_scenario_count,
+                late_only_scenario_count: evaluation.late_confirmation_scenario_count,
                 missed_scenario_count: evaluation.missed_scenario_count,
                 precision_at_threshold: evaluation.precision_at_threshold,
-                pre_start_recall_at_threshold: evaluation.pre_start_recall_at_threshold,
-                post_start_recall_at_threshold: evaluation.post_start_recall_at_threshold,
-                advance_warning_rate: evaluation.advance_warning_rate,
-                late_confirmation_rate: evaluation.late_confirmation_rate,
+                primary_recall_at_threshold: evaluation.pre_start_recall_at_threshold,
+                late_validation_capture_rate: evaluation.post_start_recall_at_threshold,
+                on_time_rate: evaluation.advance_warning_rate,
+                late_only_rate: evaluation.late_confirmation_rate,
                 missed_rate: evaluation.missed_rate,
                 note: evaluation.note,
             }
@@ -6956,23 +9274,133 @@ fn compare_actionability_guardrails(review: &ReleaseActionabilityReview) -> Vec<
     let mut regressions = Vec::new();
     for level in &review.levels {
         let level_name = actionability_level_text(level.level);
-        if level.scenario_count < 2 {
+        let policy = actionability_guardrail_policy(level.level, level.proxy_horizon_days);
+
+        if level.scenario_count < policy.min_scenario_count {
             regressions.push(format!(
-                "actionability {level_name} scenario_count is {} (<2), so the evaluation slice is too narrow for go/no-go",
-                level.scenario_count
+                "actionability {level_name} scenario_count is {} (<{}), so the evaluation slice is too narrow for go/no-go",
+                level.scenario_count, policy.min_scenario_count
             ));
         }
-        if level.actual_positive_count > 0
-            && level.pre_start_hit_count == 0
-            && level.post_start_hit_count == 0
+
+        let precision_score =
+            (level.precision_at_threshold.unwrap_or_default() * 1_000.0).round() as i64;
+        if precision_score < policy.min_precision_score {
+            regressions.push(format!(
+                "actionability {level_name} precision {:.1}% is below required {:.1}%",
+                precision_score as f64 / 10.0,
+                policy.min_precision_score as f64 / 10.0
+            ));
+        }
+
+        let prediction_ceiling = actionability_prediction_count_ceiling_from_actual_positive_count(
+            level.primary_positive_count,
+            level.proxy_horizon_days,
+        );
+        if level.predicted_positive_count > prediction_ceiling {
+            regressions.push(format!(
+                "actionability {level_name} predicted positives {} exceed ceiling {} for {} primary episode rows",
+                level.predicted_positive_count,
+                prediction_ceiling,
+                level.primary_positive_count
+            ));
+        }
+
+        if level.primary_positive_count > 0
+            && level.primary_hit_count == 0
+            && level.late_validation_hit_count == 0
         {
             regressions.push(format!(
-                "actionability {level_name} produced no hits in {} labeled evaluation positives",
-                level.actual_positive_count
+                "actionability {level_name} produced no primary or late-validation hits across {} primary episode rows",
+                level.primary_positive_count
             ));
+        }
+
+        if level.primary_positive_count > 0 {
+            if let Some(min_advance_warning_rate_score) = policy.min_advance_warning_rate_score {
+                let on_time_rate_score = percentage_score(level.on_time_rate).unwrap_or_default();
+                if on_time_rate_score < min_advance_warning_rate_score {
+                    regressions.push(format!(
+                        "actionability {level_name} on_time_rate {:.1}% is below required {:.1}%",
+                        on_time_rate_score as f64 / 10.0,
+                        min_advance_warning_rate_score as f64 / 10.0
+                    ));
+                }
+            }
+
+            if let Some(max_late_confirmation_rate_score) = policy.max_late_confirmation_rate_score
+            {
+                let late_only_rate_score =
+                    percentage_score(level.late_only_rate).unwrap_or_default();
+                if late_only_rate_score > max_late_confirmation_rate_score {
+                    regressions.push(format!(
+                        "actionability {level_name} late_only_rate {:.1}% exceeds ceiling {:.1}%",
+                        late_only_rate_score as f64 / 10.0,
+                        max_late_confirmation_rate_score as f64 / 10.0
+                    ));
+                }
+            }
+
+            let missed_rate_score = percentage_score(level.missed_rate).unwrap_or_default();
+            if missed_rate_score > policy.max_missed_rate_score {
+                regressions.push(format!(
+                    "actionability {level_name} missed_rate {:.1}% exceeds ceiling {:.1}%",
+                    missed_rate_score as f64 / 10.0,
+                    policy.max_missed_rate_score as f64 / 10.0
+                ));
+            }
         }
     }
     regressions
+}
+
+fn compare_probability_guardrails(release: &ModelReleaseRecord) -> anyhow::Result<Vec<String>> {
+    if release.manifest.probability_mode == "heuristic_mvp" {
+        return Ok(vec![format!(
+            "release {} has no formal probability bundle evaluation, so it cannot satisfy formal promotion guard",
+            release.manifest.release_id
+        )]);
+    }
+
+    let bundle = read_probability_bundle(Path::new(&release.manifest.bundle_uri))?;
+    let Some(summary) = bundle.evaluation.as_ref() else {
+        return Ok(vec![format!(
+            "release {} bundle is missing aggregate probability evaluation summary",
+            release.manifest.release_id
+        )]);
+    };
+
+    let mut regressions = Vec::new();
+    if summary.usable_early_warning_horizon_count == 0 {
+        regressions.push(format!(
+            "probability head has zero usable early-warning horizons in bundle evaluation"
+        ));
+    }
+
+    for horizon in &summary.regime_separation_summaries {
+        if horizon.horizon_days == 20
+            && horizon.positive_window_avg_probability <= horizon.normal_avg_probability
+        {
+            regressions.push(format!(
+                "20d positive_window avg {} is at or below normal {} in bundle evaluation",
+                format_pct(horizon.positive_window_avg_probability),
+                format_pct(horizon.normal_avg_probability),
+            ));
+        }
+        if matches!(horizon.horizon_days, 20 | 60)
+            && matches!(
+                horizon.diagnosis.as_str(),
+                "cooldown_bleed" | "cold_across_all_regimes"
+            )
+        {
+            regressions.push(format!(
+                "{}d regime diagnosis is {} in bundle evaluation",
+                horizon.horizon_days, horizon.diagnosis
+            ));
+        }
+    }
+
+    Ok(regressions)
 }
 
 fn compare_operational_guardrails(
@@ -7012,6 +9440,95 @@ fn compare_operational_guardrails(
     }
 
     regressions
+}
+
+fn compare_runtime_sanity_guardrails(
+    baseline: &ReleaseRuntimeReviewDiagnostics,
+    candidate: &ReleaseRuntimeReviewDiagnostics,
+) -> Vec<String> {
+    let mut regressions = Vec::new();
+    let usable_early_warning_horizon_count = candidate
+        .regime_separation_summaries
+        .iter()
+        .filter(|summary| summary.diagnosis == "usable_early_warning_separation")
+        .count();
+
+    if usable_early_warning_horizon_count == 0 {
+        regressions.push(format!(
+            "candidate {} has zero usable early-warning horizons in runtime regime audit",
+            candidate.release_id
+        ));
+    }
+
+    for summary in &candidate.regime_separation_summaries {
+        if summary.horizon_days == 20
+            && summary.positive_window_avg_probability <= summary.normal_avg_probability
+        {
+            regressions.push(format!(
+                "candidate {} keeps 20d positive_window avg {} at or below normal {} in runtime history",
+                candidate.release_id,
+                format_pct(summary.positive_window_avg_probability),
+                format_pct(summary.normal_avg_probability),
+            ));
+        }
+        if matches!(summary.horizon_days, 20 | 60) && summary.diagnosis == "cooldown_bleed" {
+            regressions.push(format!(
+                "candidate {} shows cooldown_bleed on {}d runtime regime audit: cooldown {} vs positive_window {}",
+                candidate.release_id,
+                summary.horizon_days,
+                format_pct(summary.post_crisis_cooldown_avg_probability),
+                format_pct(summary.positive_window_avg_probability),
+            ));
+        }
+    }
+
+    if release_has_cold_runtime_history(candidate) {
+        regressions.push(format!(
+            "candidate {} stayed all-normal across {} history points, hit zero runtime probability floors, and still showed no usable early-warning regime separation",
+            candidate.release_id, candidate.history_point_count
+        ));
+    }
+
+    if release_has_cold_runtime_history(baseline) {
+        regressions.push(format!(
+            "baseline {} is also all-normal / zero-floor-hit, so relative guardrails alone are not a sufficient promotion test",
+            baseline.release_id
+        ));
+    }
+
+    regressions
+}
+
+fn release_has_cold_runtime_history(diagnostics: &ReleaseRuntimeReviewDiagnostics) -> bool {
+    let all_normal = diagnostics.posture_distribution.len() == 1
+        && diagnostics.posture_distribution.first().is_some_and(|row| {
+            row.name == "normal" && row.count == diagnostics.history_point_count
+        });
+    let zero_floor_hits = diagnostics.runtime_thresholds.is_some()
+        && [
+            diagnostics
+                .points_at_or_above_prepare_p60d
+                .unwrap_or_default(),
+            diagnostics
+                .points_at_or_above_hedge_p20d
+                .unwrap_or_default(),
+            diagnostics
+                .points_at_or_above_defend_p5d
+                .unwrap_or_default(),
+        ]
+        .into_iter()
+        .all(|count| count == 0);
+    let no_usable_early_warning = !diagnostics
+        .regime_separation_summaries
+        .iter()
+        .any(|summary| {
+            matches!(
+                summary.diagnosis.as_str(),
+                "usable_early_warning_separation" | "separated_but_below_runtime_floor"
+            )
+        });
+
+    all_normal && zero_floor_hits && no_usable_early_warning
 }
 
 fn print_operational_guardrail_summary(
@@ -7099,16 +9616,20 @@ fn build_release_review_recommendation(
     regressions: &[String],
     candidate_has_actionability: bool,
 ) -> String {
+    let baseline_cold_only = regressions.len() == 1
+        && regressions[0].contains("relative guardrails alone are not a sufficient promotion test");
     if regressions.is_empty() {
         if candidate_has_actionability {
-            "候选版通过当前运行时与动作层护栏，可进入下一轮人工复核。仍需结合标签质量、样本覆盖和前端解释能力决定是否晋升。".to_string()
+            "候选版通过当前概率头、运行时与动作层护栏，可进入下一轮人工复核。仍需结合标签质量、样本覆盖和前端解释能力决定是否晋升。".to_string()
         } else {
-            "候选版通过当前运行时护栏，可进入下一轮人工复核。仍需结合标签质量、样本覆盖和前端解释能力决定是否晋升。".to_string()
+            "候选版通过当前概率头与运行时护栏，可进入下一轮人工复核。仍需结合标签质量、样本覆盖和前端解释能力决定是否晋升。".to_string()
         }
+    } else if baseline_cold_only {
+        "候选版已经通过当前概率头、相对运行时护栏与动作精度约束，当前唯一阻塞是 baseline 仍属于全程 normal 的冷模型，因此这次 review 还不能直接支持“替代默认正式版”。更合适的结论是：该候选版可以视为新的 active_experimental 研究基线，但要晋升为默认正式版，仍需补足绝对提前量门槛与样本/标签治理证据。".to_string()
     } else if candidate_has_actionability {
-        "候选版未通过当前运行时 / 动作层护栏，不应替代当前默认线上版本。应先修正训练目标、标签口径、样本切分或样本治理，再重新训练复核。".to_string()
+        "候选版未通过当前概率头 / 运行时 / 动作层护栏，不应替代当前默认线上版本。应先修正训练目标、标签口径、样本切分或样本治理，再重新训练复核。".to_string()
     } else {
-        "候选版未通过当前运行时护栏，不应替代当前默认线上版本。应先修正训练目标、标签口径或样本治理，再重新训练复核。".to_string()
+        "候选版未通过当前概率头 / 运行时护栏，不应替代当前默认线上版本。应先修正训练目标、标签口径或样本治理，再重新训练复核。".to_string()
     }
 }
 
@@ -7290,12 +9811,35 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
         }
     }
     let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "### Probability Guard");
+    let _ = writeln!(markdown);
+    if report.probability_guard_regressions.is_empty() {
+        let _ = writeln!(
+            markdown,
+            "- No probability-head guard regressions detected."
+        );
+    } else {
+        for regression in &report.probability_guard_regressions {
+            let _ = writeln!(markdown, "- {regression}");
+        }
+    }
+    let _ = writeln!(markdown);
     let _ = writeln!(markdown, "### Actionability Guard");
     let _ = writeln!(markdown);
     if report.actionability_guard_regressions.is_empty() {
         let _ = writeln!(markdown, "- No actionability guard regressions detected.");
     } else {
         for regression in &report.actionability_guard_regressions {
+            let _ = writeln!(markdown, "- {regression}");
+        }
+    }
+    let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "### Runtime Sanity Guard");
+    let _ = writeln!(markdown);
+    if report.runtime_sanity_regressions.is_empty() {
+        let _ = writeln!(markdown, "- No runtime sanity regressions detected.");
+    } else {
+        for regression in &report.runtime_sanity_regressions {
             let _ = writeln!(markdown, "- {regression}");
         }
     }
@@ -7338,26 +9882,27 @@ fn render_release_actionability_review_markdown(
     let _ = writeln!(markdown);
     let _ = writeln!(
         markdown,
-        "| Level | Scenarios | Advance Warn | Late Confirm | Missed | Pre-start Recall | Post-start Recall | Precision | Pred+ | Actual+ | FP |"
+        "| Level | Scenarios | On Time | Late Only | Missed | Primary Recall | Late Validation | Precision | Pred+ | Primary+ | Protected Hits | FP |"
     );
     let _ = writeln!(
         markdown,
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
     );
     for level in &review.levels {
         let _ = writeln!(
             markdown,
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
             actionability_level_text(level.level),
             level.scenario_count,
-            format_optional_pct(level.advance_warning_rate),
-            format_optional_pct(level.late_confirmation_rate),
+            format_optional_pct(level.on_time_rate),
+            format_optional_pct(level.late_only_rate),
             format_optional_pct(level.missed_rate),
-            format_optional_pct(level.pre_start_recall_at_threshold),
-            format_optional_pct(level.post_start_recall_at_threshold),
+            format_optional_pct(level.primary_recall_at_threshold),
+            format_optional_pct(level.late_validation_capture_rate),
             format_optional_pct(level.precision_at_threshold),
             level.predicted_positive_count,
-            level.actual_positive_count,
+            level.primary_positive_count,
+            level.protected_hit_count,
             level.false_positive_count
         );
     }
@@ -7416,23 +9961,95 @@ fn render_release_runtime_review_markdown(
     for row in &diagnostics.time_bucket_distribution {
         let _ = writeln!(markdown, "| {} | {} |", row.name, row.count);
     }
+    if !diagnostics.posture_trigger_distribution.is_empty() {
+        let _ = writeln!(markdown);
+        let _ = writeln!(
+            markdown,
+            "| Posture | Trigger clause | Count | Share of posture |"
+        );
+        let _ = writeln!(markdown, "| --- | --- | --- | --- |");
+        for row in &diagnostics.posture_trigger_distribution {
+            let _ = writeln!(
+                markdown,
+                "| {} | {} | {} | {} |",
+                row.posture,
+                row.clause,
+                row.count,
+                format_pct(row.share_of_posture),
+            );
+        }
+    }
+    if !diagnostics.posture_blocker_distribution.is_empty() {
+        let _ = writeln!(markdown);
+        let _ = writeln!(
+            markdown,
+            "| Posture | Blocker clause | Count | Share of posture |"
+        );
+        let _ = writeln!(markdown, "| --- | --- | --- | --- |");
+        for row in &diagnostics.posture_blocker_distribution {
+            let _ = writeln!(
+                markdown,
+                "| {} | {} | {} | {} |",
+                row.posture,
+                row.clause,
+                row.count,
+                format_pct(row.share_of_posture),
+            );
+        }
+    }
+    if !diagnostics.regime_separation_summaries.is_empty() {
+        let _ = writeln!(markdown);
+        let _ = writeln!(
+            markdown,
+            "| Horizon | Early regime | Normal P | Positive-window P | Cooldown P | Early raw lift | Early calibrated lift | Positive-window lift | Cooldown lift | Gap retention | Diagnosis |"
+        );
+        let _ = writeln!(
+            markdown,
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+        );
+        for row in &diagnostics.regime_separation_summaries {
+            let _ = writeln!(
+                markdown,
+                "| {}d | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                row.horizon_days,
+                row.early_warning_regime,
+                format_pct(row.normal_avg_probability),
+                format_pct(row.positive_window_avg_probability),
+                format_pct(row.post_crisis_cooldown_avg_probability),
+                format_optional_multiplier(row.early_warning_raw_lift_vs_normal),
+                format_optional_multiplier(row.early_warning_calibrated_lift_vs_normal),
+                format_optional_multiplier(row.positive_window_calibrated_lift_vs_normal),
+                format_optional_multiplier(row.post_crisis_cooldown_calibrated_lift_vs_normal),
+                format_optional_ratio(row.early_warning_gap_retention),
+                row.diagnosis,
+            );
+        }
+    }
     if !diagnostics.regime_probability_summaries.is_empty() {
         let _ = writeln!(markdown);
         let _ = writeln!(
             markdown,
-            "| Horizon | Regime | Rows | Share | Avg P | Max P | Floor hits |"
+            "| Horizon | Regime | Rows | Share | Avg raw P | Max raw P | Avg calibrated P | Max calibrated P | Raw lift vs normal | Calibrated lift vs normal | Gap retention | Floor hits |"
         );
-        let _ = writeln!(markdown, "| --- | --- | --- | --- | --- | --- | --- |");
+        let _ = writeln!(
+            markdown,
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+        );
         for row in &diagnostics.regime_probability_summaries {
             let _ = writeln!(
                 markdown,
-                "| {}d | {} | {} | {} | {} | {} | {} |",
+                "| {}d | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
                 row.horizon_days,
                 row.regime,
                 row.row_count,
                 format_pct(row.row_rate),
+                format_pct(row.avg_raw_probability),
+                format_pct(row.max_raw_probability),
                 format_pct(row.avg_probability),
                 format_pct(row.max_probability),
+                format_optional_multiplier(row.raw_lift_vs_normal),
+                format_optional_multiplier(row.calibrated_lift_vs_normal),
+                format_optional_ratio(row.calibration_gap_retention),
                 row.threshold_hit_count
                     .map(|value| value.to_string())
                     .unwrap_or_else(|| "-".to_string()),
@@ -7464,15 +10081,24 @@ fn print_release_review_summary(report: &ReleaseReviewEnvelope) {
             .longest_false_positive_episode_days
             .candidate
     );
+    if report.probability_guard_regressions.is_empty() {
+        println!("Probability guard summary:");
+        println!("  no bundle-level probability guard regressions");
+    } else {
+        println!("Probability guard summary:");
+        for regression in &report.probability_guard_regressions {
+            println!("  - {regression}");
+        }
+    }
     if report.candidate_actionability_review.enabled {
         println!("Actionability guard summary:");
         for level in &report.candidate_actionability_review.levels {
             println!(
-                "  {:>7} scenarios={} advance_warn={} late_confirm={} missed={}",
+                "  {:>7} scenarios={} on_time={} late_only={} missed={}",
                 actionability_level_text(level.level),
                 level.scenario_count,
-                format_optional_pct(level.advance_warning_rate),
-                format_optional_pct(level.late_confirmation_rate),
+                format_optional_pct(level.on_time_rate),
+                format_optional_pct(level.late_only_rate),
                 format_optional_pct(level.missed_rate),
             );
         }
@@ -7489,13 +10115,20 @@ fn build_formal_dataset_summary(
         &dataset.manifest.scenario_set_version,
         &dataset.manifest.label_version,
     )?;
+    let scenario_metadata =
+        load_formal_dataset_scenario_metadata(&dataset.manifest.scenario_set_version)?;
     let scenario_ranges = collect_formal_dataset_scenario_ranges(rows, &scenarios);
     let split_summaries = summarize_formal_dataset_splits(rows, &scenario_ranges);
-    let scenario_summaries = summarize_formal_dataset_scenarios(rows, &scenario_ranges);
+    let scenario_summaries =
+        summarize_formal_dataset_scenarios(rows, &scenario_ranges, &scenario_metadata);
     let family_summaries = summarize_formal_dataset_families(rows);
     let quality_summaries = summarize_formal_dataset_quality(rows);
     let regime_summaries = summarize_formal_dataset_regimes(rows, &scenarios);
-    let recommendation = build_formal_dataset_recommendation(&split_summaries, rows.len());
+    let recommendation = build_formal_dataset_recommendation(
+        &dataset.manifest.label_version,
+        &split_summaries,
+        rows.len(),
+    );
 
     Ok(FormalDatasetSummaryEnvelope {
         generated_at: Utc::now().to_rfc3339(),
@@ -7539,21 +10172,40 @@ fn summarize_formal_dataset_splits(
                 positive_20d_rate: round6(forward_label_rate(&split_rows, 20)),
                 positive_60d_count: split_rows.iter().filter(|row| row.label_60d > 0).count(),
                 positive_60d_rate: round6(forward_label_rate(&split_rows, 60)),
-                action_positive_5d_count: split_rows
+                prepare_primary_count: split_rows
                     .iter()
-                    .filter(|row| row.action_label_5d > 0)
+                    .filter(|row| row.prepare_episode_label > 0)
                     .count(),
-                action_positive_5d_rate: round6(action_label_rate(&split_rows, 5)),
-                action_positive_20d_count: split_rows
+                prepare_primary_rate: round6(action_episode_primary_rate(
+                    &split_rows,
+                    ActionabilityLevel::Prepare,
+                )),
+                hedge_primary_count: split_rows
                     .iter()
-                    .filter(|row| row.action_label_20d > 0)
+                    .filter(|row| row.hedge_episode_label > 0)
                     .count(),
-                action_positive_20d_rate: round6(action_label_rate(&split_rows, 20)),
-                action_positive_60d_count: split_rows
+                hedge_primary_rate: round6(action_episode_primary_rate(
+                    &split_rows,
+                    ActionabilityLevel::Hedge,
+                )),
+                defend_primary_count: split_rows
                     .iter()
-                    .filter(|row| row.action_label_60d > 0)
+                    .filter(|row| row.defend_episode_label > 0)
                     .count(),
-                action_positive_60d_rate: round6(action_label_rate(&split_rows, 60)),
+                defend_primary_rate: round6(action_episode_primary_rate(
+                    &split_rows,
+                    ActionabilityLevel::Defend,
+                )),
+                late_validation_row_count: split_rows
+                    .iter()
+                    .filter(|row| row.action_episode_phase == "late_validation")
+                    .count(),
+                late_validation_row_rate: round6(late_validation_row_rate(&split_rows)),
+                protected_row_count: split_rows
+                    .iter()
+                    .filter(|row| row.protected_action_window)
+                    .count(),
+                protected_row_rate: round6(protected_action_window_rate(&split_rows)),
                 avg_coverage_score: round3(avg_metric(&split_rows, |row| row.coverage_score)),
                 avg_core_feature_coverage: round3(avg_metric(&split_rows, |row| {
                     row.core_feature_coverage
@@ -7577,20 +10229,33 @@ fn summarize_formal_dataset_splits(
 fn summarize_formal_dataset_scenarios(
     rows: &[FormalDatasetRowRecord],
     scenario_ranges: &[ScenarioRowRange],
+    scenario_metadata: &BTreeMap<String, ScenarioSummaryMetadata>,
 ) -> Vec<FormalDatasetScenarioSummary> {
     scenario_ranges
         .iter()
-        .map(|range| FormalDatasetScenarioSummary {
-            family: Some(range.family.clone()),
-            split_count: rows[range.start_index..=range.end_index]
-                .iter()
-                .map(|row| row.split_name.as_str())
-                .collect::<BTreeSet<_>>()
-                .len(),
-            row_count: range.end_index.saturating_sub(range.start_index) + 1,
-            first_as_of_date: rows[range.start_index].as_of_date,
-            last_as_of_date: rows[range.end_index].as_of_date,
-            scenario_id: range.scenario_id.clone(),
+        .map(|range| {
+            let metadata = scenario_metadata.get(&range.scenario_id);
+            FormalDatasetScenarioSummary {
+                scenario_id: range.scenario_id.clone(),
+                label: metadata.map(|item| item.label.clone()),
+                row_count: range.end_index.saturating_sub(range.start_index) + 1,
+                split_count: rows[range.start_index..=range.end_index]
+                    .iter()
+                    .map(|row| row.split_name.as_str())
+                    .collect::<BTreeSet<_>>()
+                    .len(),
+                first_as_of_date: rows[range.start_index].as_of_date,
+                last_as_of_date: rows[range.end_index].as_of_date,
+                family: metadata
+                    .map(|item| item.family.clone())
+                    .or_else(|| Some(range.family.clone())),
+                training_role: metadata.map(|item| item.training_role.clone()),
+                protected_window: metadata.map(|item| item.protected_window),
+                episode_template_id: metadata.map(|item| item.episode_template_id.clone()),
+                default_horizon_roles: metadata
+                    .map(|item| item.default_horizon_roles.clone())
+                    .unwrap_or_default(),
+            }
         })
         .collect()
 }
@@ -7671,6 +10336,7 @@ fn summarize_formal_dataset_regimes(
 }
 
 fn build_formal_dataset_recommendation(
+    label_version: &str,
     split_summaries: &[FormalDatasetSplitSummary],
     total_rows: usize,
 ) -> String {
@@ -7680,13 +10346,51 @@ fn build_formal_dataset_recommendation(
     if total_rows < 5_000 {
         return "样本量仍偏小，先继续补历史数据，再用这版数据集训练正式候选版。".to_string();
     }
+    match formal_dataset_split_profile(label_version) {
+        FormalDatasetSplitProfile::ExtensionAcute => {
+            let Some(evaluation) = evaluation else {
+                return "缺少 evaluation split，当前还不能稳定比较 1987/1998 的急性冲击表现。"
+                    .to_string();
+            };
+            if evaluation.scenario_count < 1 || evaluation.defend_primary_count == 0 {
+                return "evaluation 仍未覆盖足够的 acute 尾段主正例，先继续重做 split 或补齐 1987/1998 proxy 覆盖。".to_string();
+            }
+            if evaluation.prepare_primary_count == 0 || evaluation.hedge_primary_count == 0 {
+                return "这套扩展 acute 数据集已经能用于 1987/1998 的 5d/20d 与急性尾段类比，但 evaluation 还不足以单独评估完整的 prepare/hedge/defend episode 头。".to_string();
+            }
+            return "这套扩展 acute 数据集已经可以用于 1987/1998 的 5d/20d 历史类比与短窗研究；它是研究包，不应用作正式主模型上线判断。".to_string();
+        }
+        FormalDatasetSplitProfile::ExtensionStress => {
+            let Some(evaluation) = evaluation else {
+                return "缺少 evaluation split，当前还不能稳定比较 protected stress 扩展场景。"
+                    .to_string();
+            };
+            if evaluation.scenario_count < 1
+                || evaluation.prepare_primary_count == 0
+                || evaluation.hedge_primary_count == 0
+            {
+                return "evaluation 的 protected stress / extension 主正例仍偏少，先继续重做 split，再把它用于扩展研究和 posture 对照。".to_string();
+            }
+            if evaluation.protected_row_count < 1 {
+                return "evaluation 还没有 protected stress 尾段样本，当前不适合拿它判断受保护压力窗口是否稳定。".to_string();
+            }
+            return "这套扩展 stress 数据集已经可以用于 protected stress、历史对照和扩展训练研究；它不是正式主模型 go/no-go 的单独依据。".to_string();
+        }
+        FormalDatasetSplitProfile::Main => {}
+    }
     if let Some(evaluation) = evaluation {
-        if evaluation.action_positive_20d_count < 10 || evaluation.action_positive_60d_count < 10 {
-            return "evaluation 的 action-window 正样本仍偏少，当前更适合作研究版比较，不适合直接给正式模型做上线判断。".to_string();
+        if evaluation.hedge_primary_count < 10 || evaluation.prepare_primary_count < 10 {
+            return "evaluation 的 episode-native 主正例仍偏少，当前更适合作研究版比较，不适合直接给正式模型做上线判断。".to_string();
+        }
+        if evaluation.late_validation_row_count < 5 {
+            return "evaluation 的 late-validation 样本仍偏少，动作头很难判断“过晚确认”到底是偶然还是系统性问题。".to_string();
+        }
+        if evaluation.protected_row_count < 5 {
+            return "evaluation 的 protected stress 样本仍偏少，当前还不适合把 protected/cooldown 行为当成稳定结论。".to_string();
         }
         if evaluation.scenario_count < 2 {
             return format!(
-                "evaluation split 的动作标签目前只覆盖 {} 个场景，动作头评估很不稳；应先扩历史场景或重做 split，再用它判断 formal 候选版优劣。",
+                "evaluation split 的 episode-native 动作标签目前只覆盖 {} 个场景，动作头评估很不稳；应先扩历史场景或重做 split，再用它判断 formal 候选版优劣。",
                 evaluation.scenario_count
             );
         }
@@ -7710,15 +10414,26 @@ fn forward_label_rate(rows: &[&FormalDatasetRowRecord], horizon_days: u32) -> f6
     positives as f64 / rows.len() as f64
 }
 
-fn action_label_rate(rows: &[&FormalDatasetRowRecord], horizon_days: u32) -> f64 {
+fn action_episode_primary_rate(rows: &[&FormalDatasetRowRecord], level: ActionabilityLevel) -> f64 {
     let positives = rows
         .iter()
-        .filter(|row| match horizon_days {
-            5 => row.action_label_5d > 0,
-            20 => row.action_label_20d > 0,
-            60 => row.action_label_60d > 0,
-            _ => false,
-        })
+        .filter(|row| row_has_action_episode_label(row, level))
+        .count();
+    positives as f64 / rows.len() as f64
+}
+
+fn late_validation_row_rate(rows: &[&FormalDatasetRowRecord]) -> f64 {
+    let positives = rows
+        .iter()
+        .filter(|row| row.action_episode_phase == "late_validation")
+        .count();
+    positives as f64 / rows.len() as f64
+}
+
+fn protected_action_window_rate(rows: &[&FormalDatasetRowRecord]) -> f64 {
+    let positives = rows
+        .iter()
+        .filter(|row| row.protected_action_window)
         .count();
     positives as f64 / rows.len() as f64
 }
@@ -7786,16 +10501,16 @@ fn render_formal_dataset_summary_markdown(summary: &FormalDatasetSummaryEnvelope
     let _ = writeln!(markdown);
     let _ = writeln!(
         markdown,
-        "| Split | Rows | Forward 5d+ | Forward 20d+ | Forward 60d+ | Action 5d+ | Action 20d+ | Action 60d+ | Avg Coverage | Core | Trigger | External | Scenarios |"
+        "| Split | Rows | Forward 5d+ | Forward 20d+ | Forward 60d+ | Prepare Primary | Hedge Primary | Defend Primary | Late Validation | Protected | Avg Coverage | Core | Trigger | External | Scenarios |"
     );
     let _ = writeln!(
         markdown,
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
     );
     for split in &summary.split_summaries {
         let _ = writeln!(
             markdown,
-            "| {} | {} | {} ({}) | {} ({}) | {} ({}) | {} ({}) | {} ({}) | {} ({}) | {:.1}% | {:.1}% | {:.1}% | {:.1}% | {} |",
+            "| {} | {} | {} ({}) | {} ({}) | {} ({}) | {} ({}) | {} ({}) | {} ({}) | {} ({}) | {} ({}) | {:.1}% | {:.1}% | {:.1}% | {:.1}% | {} |",
             split.split_name,
             split.row_count,
             split.positive_5d_count,
@@ -7804,12 +10519,16 @@ fn render_formal_dataset_summary_markdown(summary: &FormalDatasetSummaryEnvelope
             format_pct(split.positive_20d_rate),
             split.positive_60d_count,
             format_pct(split.positive_60d_rate),
-            split.action_positive_5d_count,
-            format_pct(split.action_positive_5d_rate),
-            split.action_positive_20d_count,
-            format_pct(split.action_positive_20d_rate),
-            split.action_positive_60d_count,
-            format_pct(split.action_positive_60d_rate),
+            split.prepare_primary_count,
+            format_pct(split.prepare_primary_rate),
+            split.hedge_primary_count,
+            format_pct(split.hedge_primary_rate),
+            split.defend_primary_count,
+            format_pct(split.defend_primary_rate),
+            split.late_validation_row_count,
+            format_pct(split.late_validation_row_rate),
+            split.protected_row_count,
+            format_pct(split.protected_row_rate),
             split.avg_coverage_score * 100.0,
             split.avg_core_feature_coverage * 100.0,
             split.avg_trigger_feature_coverage * 100.0,
@@ -7820,14 +10539,38 @@ fn render_formal_dataset_summary_markdown(summary: &FormalDatasetSummaryEnvelope
     let _ = writeln!(markdown);
     let _ = writeln!(markdown, "## Scenario Coverage");
     let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "| Scenario | Family | Rows | Splits | Range |");
-    let _ = writeln!(markdown, "| --- | --- | --- | --- | --- |");
+    let _ = writeln!(
+        markdown,
+        "| Scenario | Label | Family | Role | Protected | Horizons | Template | Rows | Splits | Range |"
+    );
+    let _ = writeln!(
+        markdown,
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+    );
     for scenario in &summary.scenario_summaries {
+        let default_horizon_roles = if scenario.default_horizon_roles.is_empty() {
+            "-".to_string()
+        } else {
+            scenario
+                .default_horizon_roles
+                .iter()
+                .map(|value| format!("{value}d"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
         let _ = writeln!(
             markdown,
-            "| {} | {} | {} | {} | {} -> {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} -> {} |",
             scenario.scenario_id,
+            scenario.label.as_deref().unwrap_or("-"),
             scenario.family.as_deref().unwrap_or("-"),
+            scenario.training_role.as_deref().unwrap_or("-"),
+            scenario
+                .protected_window
+                .map(|value| if value { "yes" } else { "no" })
+                .unwrap_or("-"),
+            default_horizon_roles,
+            scenario.episode_template_id.as_deref().unwrap_or("-"),
             scenario.row_count,
             scenario.split_count,
             scenario.first_as_of_date,
@@ -7877,7 +10620,7 @@ fn print_formal_dataset_summary(summary: &FormalDatasetSummaryEnvelope) {
     );
     for split in &summary.split_summaries {
         println!(
-            "  split={} rows={} forward[5d={}({}) 20d={}({}) 60d={}({})] action[5d={}({}) 20d={}({}) 60d={}({})] avg_coverage={:.1}%",
+            "  split={} rows={} forward[5d={}({}) 20d={}({}) 60d={}({})] action[prepare={}({}) hedge={}({}) defend={}({}) late_validation={}({}) protected={}({})] avg_coverage={:.1}%",
             split.split_name,
             split.row_count,
             split.positive_5d_count,
@@ -7886,12 +10629,16 @@ fn print_formal_dataset_summary(summary: &FormalDatasetSummaryEnvelope) {
             format_pct(split.positive_20d_rate),
             split.positive_60d_count,
             format_pct(split.positive_60d_rate),
-            split.action_positive_5d_count,
-            format_pct(split.action_positive_5d_rate),
-            split.action_positive_20d_count,
-            format_pct(split.action_positive_20d_rate),
-            split.action_positive_60d_count,
-            format_pct(split.action_positive_60d_rate),
+            split.prepare_primary_count,
+            format_pct(split.prepare_primary_rate),
+            split.hedge_primary_count,
+            format_pct(split.hedge_primary_rate),
+            split.defend_primary_count,
+            format_pct(split.defend_primary_rate),
+            split.late_validation_row_count,
+            format_pct(split.late_validation_row_rate),
+            split.protected_row_count,
+            format_pct(split.protected_row_rate),
             split.avg_coverage_score * 100.0
         );
     }
@@ -8186,6 +10933,18 @@ fn format_optional_pct(value: Option<f64>) -> String {
     value.map(format_pct).unwrap_or_else(|| "—".to_string())
 }
 
+fn format_optional_multiplier(value: Option<f64>) -> String {
+    value
+        .map(|value| format!("{value:.2}x"))
+        .unwrap_or_else(|| "—".to_string())
+}
+
+fn format_optional_ratio(value: Option<f64>) -> String {
+    value
+        .map(|value| format!("{value:.2}"))
+        .unwrap_or_else(|| "—".to_string())
+}
+
 fn format_signed_pct_delta(value: f64) -> String {
     format!("{:+.1}pp", value * 100.0)
 }
@@ -8272,10 +11031,23 @@ fn simple_hash(input: &str) -> String {
 }
 
 async fn reload_api_runtime(url: &str) -> anyhow::Result<()> {
+    reload_api_runtime_with_history_mode(url, ApiReloadHistoryMode::Default).await
+}
+
+async fn reload_api_runtime_with_history_mode(
+    url: &str,
+    history_mode: ApiReloadHistoryMode,
+) -> anyhow::Result<()> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(1_200))
         .build()?;
-    let response = client.post(url).send().await?;
+    let request = client.post(url);
+    let request = if let Some(history_mode) = history_mode.as_query_value() {
+        request.query(&[("history_mode", history_mode)])
+    } else {
+        request
+    };
+    let response = request.send().await?;
     if !response.status().is_success() {
         bail!("reload endpoint returned {}", response.status());
     }
@@ -8316,7 +11088,7 @@ fn print_help() {
       Roll back the selected market scope to an earlier release and optionally reload the API runtime.
 
   cargo run -p fc-worker -- research release review --candidate-release-id ID [--baseline-release-id ID] [--market-scope SCOPE] [--api-reload-url URL] [--output-dir DIR] [--updated-by NAME]
-      Temporarily switch the running API between baseline and candidate releases, export a JSON + Markdown comparison report, then restore the original active release.
+      Temporarily switch the running API between baseline and candidate releases. Review reloads now default to strict_rebuild raw history replay before exporting JSON + Markdown, then restore the original active release.
 
   cargo run -p fc-worker -- research snapshot list [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N]
       List persisted prediction snapshots stored in SQLite for audit and release-review work.
@@ -8342,10 +11114,10 @@ fn print_help() {
   cargo run -p fc-worker -- research dataset summarize-main [--market-scope SCOPE] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--output-dir DIR]
       Summarize a persisted formal dataset, export JSON + Markdown stats, and show split/scenario/coverage diagnostics before training.
 
-  cargo run -p fc-worker -- research pipeline train-probability [--dataset-source formal|snapshot] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--release-prefix PREFIX]
-      Train a formal probability bundle. By default it uses the latest persisted formal dataset; pass --dataset-source snapshot to fall back to the old prediction-snapshot transitional path.
+  cargo run -p fc-worker -- research pipeline train-probability [--dataset-source formal|snapshot] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--release-prefix PREFIX]
+      Train a formal probability bundle. By default it uses the latest persisted formal dataset; pass one or more --aux-dataset-key values to append extension/protected datasets, or --dataset-source snapshot to fall back to the old prediction-snapshot transitional path.
 
-  cargo run -p fc-worker -- research pipeline bootstrap-formal-release [--dataset-source formal|snapshot] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--release-prefix PREFIX] [--no-activate] [--no-reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
+  cargo run -p fc-worker -- research pipeline bootstrap-formal-release [--dataset-source formal|snapshot] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--release-prefix PREFIX] [--no-activate] [--no-reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
       Train a formal bundle, publish it into SQLite as a model release, optionally activate it, and optionally reload the API runtime. Default source is the latest persisted formal dataset.
 
   cargo run -p fc-worker -- refresh latest-free [--fast-lookback-days N] [--slow-lookback-years N] [--fred-chunk-days N] [--skip-world-bank] [--include-gdelt] [--no-reload-api] [--api-reload-url URL]
@@ -8388,20 +11160,28 @@ mod tests {
 
     use chrono::{NaiveDate, TimeZone, Utc};
     use fc_domain::{
-        ActionabilityBundle, ActionabilityEvaluationSummary, ActionabilityLevelBundle,
+        ActionEpisodeTemplateId, ActionabilityBundle, ActionabilityEvaluationSummary,
+        ActionabilityLevelBundle, AssessmentHistoryPoint, DecisionPosture, FeatureSnapshotRecord,
         FormalDatasetRowRecord, Frequency, HorizonEvaluationSummary, LogisticProbabilityModel,
-        Observation, PlattCalibrationArtifact,
+        ModelReleaseManifest, ModelReleaseRecord, Observation, PlattCalibrationArtifact,
+        ProbabilityBundle, ProbabilityBundleEvaluation, RegimeSeparationEvaluationSummary,
+        TimeToRiskBucket,
     };
 
     use super::{
         action_window_label, actionability_bundle_quality_regressions,
-        compare_actionability_guardrails, evaluate_actionability_summary, fit_platt_calibration,
-        forward_crisis_label, forward_crisis_training_regime, negative_sample_weight,
+        classify_probability_regime_separation, classify_regime_separation,
+        compare_actionability_guardrails, compare_probability_guardrails,
+        evaluate_actionability_summary, fit_platt_calibration, formal_dataset_split_requirements,
+        forward_crisis_label, forward_crisis_regime_pairwise_targets,
+        forward_crisis_regime_sample_weight, forward_crisis_training_regime,
+        forward_crisis_training_regime_with_context, negative_sample_weight,
         observation_is_visible_for_date, positive_sample_action_weight,
         probability_calibration_selection_rows, round3, scenario_aware_formal_split_bounds,
         scenario_count_for_index_range, select_actionability_calibration_strategy,
         select_actionability_decision_threshold, select_probability_calibration_strategy,
-        select_probability_decision_threshold, ActionabilityLevel, AuditExportOptions,
+        select_probability_decision_threshold, summarize_release_runtime_regime_probabilities,
+        summarize_release_runtime_regime_separation, ActionabilityLevel, AuditExportOptions,
         CrisisScenario, FeatureSnapshotBuildOptions, FormalDatasetBuildOptions,
         FormalDatasetSummaryOptions, FormalSplitLabelSupport, PipelineDatasetSource,
         PipelineTrainOptions, PointInTimeMode, PredictionSnapshotQueryOptions,
@@ -8431,6 +11211,126 @@ mod tests {
             publication_time,
             quality_score: 90.0,
             quality_flags: Vec::new(),
+        }
+    }
+
+    fn test_release_with_bundle(bundle: &ProbabilityBundle) -> ModelReleaseRecord {
+        let bundle_path = std::env::temp_dir().join(format!(
+            "fc-probability-guard-{}.json",
+            Utc::now()
+                .timestamp_nanos_opt()
+                .unwrap_or_default()
+                .unsigned_abs()
+        ));
+        std::fs::write(&bundle_path, serde_json::to_string_pretty(bundle).unwrap()).unwrap();
+        ModelReleaseRecord {
+            manifest: ModelReleaseManifest {
+                release_id: bundle.bundle_id.clone(),
+                market_scope: bundle.market_scope.clone(),
+                status: "approved".to_string(),
+                probability_mode: bundle.probability_mode.clone(),
+                serving_status: "healthy".to_string(),
+                bundle_uri: bundle_path.to_string_lossy().to_string(),
+                feature_set_version: "feature_formal_v1_main_20260531".to_string(),
+                label_version: "formal_label_v1_main".to_string(),
+                prob_model_version: "prob".to_string(),
+                calibration_version: "calib".to_string(),
+                posture_policy_version: "posture".to_string(),
+                action_playbook_version: "playbook".to_string(),
+                point_in_time_mode: "best_effort".to_string(),
+                training_range_start: None,
+                training_range_end: None,
+                calibration_range_start: None,
+                calibration_range_end: None,
+                evaluation_range_start: None,
+                evaluation_range_end: None,
+                brier_score: Some(0.1),
+                log_loss: Some(0.2),
+                ece: Some(0.1),
+                note: "test".to_string(),
+            },
+            created_at: Utc::now(),
+            activated_at: None,
+            retired_at: None,
+        }
+    }
+
+    fn synthetic_runtime_scenarios() -> Vec<CrisisScenario> {
+        vec![CrisisScenario {
+            scenario_id: "synthetic".to_string(),
+            family: "systemic_credit_banking_crisis".to_string(),
+            training_role: "mandatory".to_string(),
+            pre_warning_start: NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
+            crisis_start: NaiveDate::from_ymd_opt(2000, 2, 1).unwrap(),
+            acute_start: None,
+            crisis_end: NaiveDate::from_ymd_opt(2000, 2, 20).unwrap(),
+            default_horizon_roles: vec![20, 60],
+            protected_window: false,
+            protected_action_levels: Vec::new(),
+            episode_template_id: ActionEpisodeTemplateId::SystemicCreditBankingCrisis,
+            action_episode_overrides: None,
+        }]
+    }
+
+    fn runtime_history_point(
+        as_of_date: NaiveDate,
+        raw_probability: f64,
+        calibrated_probability: f64,
+    ) -> AssessmentHistoryPoint {
+        AssessmentHistoryPoint {
+            as_of_date,
+            overall_score: 50.0,
+            p_5d: calibrated_probability,
+            p_20d: calibrated_probability,
+            p_60d: calibrated_probability,
+            raw_p_5d: Some(raw_probability),
+            raw_p_20d: Some(raw_probability),
+            raw_p_60d: Some(raw_probability),
+            posture: DecisionPosture::Normal,
+            time_to_risk_bucket: TimeToRiskBucket::Normal,
+            external_shock_score: 20.0,
+            posture_trigger_codes: Vec::new(),
+            posture_blocker_codes: Vec::new(),
+        }
+    }
+
+    fn forward_crisis_row(
+        as_of_date: NaiveDate,
+        label_20d: u8,
+        regime_20d: ProbabilityTrainingRegime,
+    ) -> ProbabilityTrainingRow {
+        ProbabilityTrainingRow {
+            as_of_date,
+            market_scope: "financial_system".to_string(),
+            release_id: None,
+            probability_mode: Some("formal_bundle_v1".to_string()),
+            freshness_status: Some("fresh".to_string()),
+            time_to_risk_bucket: Some("test".to_string()),
+            split_name: Some("calibration".to_string()),
+            features: BTreeMap::new(),
+            primary_scenario_id: Some("scenario_a".to_string()),
+            scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+            scenario_training_role: None,
+            days_to_primary_crisis_start: Some(10),
+            primary_scenario_supports_5d: true,
+            primary_scenario_supports_20d: true,
+            primary_scenario_supports_60d: true,
+            label_5d: 0,
+            label_20d,
+            label_60d: 0,
+            regime_5d: ProbabilityTrainingRegime::Normal,
+            regime_20d,
+            regime_60d: ProbabilityTrainingRegime::Normal,
+            action_label_5d: 0,
+            action_label_20d: 0,
+            action_label_60d: 0,
+            prepare_episode_label: 0,
+            hedge_episode_label: 0,
+            defend_episode_label: 0,
+            primary_action_level: None,
+            action_episode_id: None,
+            action_episode_phase: "outside".to_string(),
+            protected_action_window: false,
         }
     }
 
@@ -8611,6 +11511,90 @@ mod tests {
     }
 
     #[test]
+    fn extension_acute_dataset_min_date_allows_pre1990_history() {
+        assert_eq!(
+            super::formal_dataset_min_date("formal_label_v1_ext_acute"),
+            NaiveDate::from_ymd_opt(1987, 1, 1).unwrap()
+        );
+        assert_eq!(
+            super::formal_dataset_min_date("formal_label_v1_main"),
+            NaiveDate::from_ymd_opt(1990, 1, 2).unwrap()
+        );
+    }
+
+    #[test]
+    fn extension_acute_dataset_allows_proxy_feature_gate_without_vix() {
+        let snapshot = FeatureSnapshotRecord {
+            as_of_date: NaiveDate::from_ymd_opt(1987, 10, 19).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            feature_set_version: "feature_formal_v1_main_20260531".to_string(),
+            point_in_time_mode: "best_effort".to_string(),
+            visibility_status: "coverage_or_visibility_failed".to_string(),
+            latest_visible_at: Some(Utc::now()),
+            coverage_score: 0.56,
+            core_feature_coverage: 0.625,
+            trigger_feature_coverage: 0.50,
+            external_feature_coverage: 0.50,
+            feature_count: 4,
+            features: [
+                ("us_curve_10y2y_level".to_string(), -0.2),
+                ("us_baa_10y_spread_level".to_string(), 2.8),
+                ("us_fed_funds_level".to_string(), 6.5),
+                ("us_usdjpy_level".to_string(), 0.0068),
+            ]
+            .into_iter()
+            .collect(),
+            created_at: Utc::now(),
+        };
+
+        assert!(super::formal_dataset_snapshot_is_usable(
+            &snapshot,
+            "formal_label_v1_ext_acute"
+        ));
+        assert!(!super::formal_dataset_snapshot_is_usable(
+            &snapshot,
+            "formal_label_v1_main"
+        ));
+    }
+
+    #[test]
+    fn extension_stress_dataset_allows_1990s_partial_coverage_gate() {
+        let snapshot = FeatureSnapshotRecord {
+            as_of_date: NaiveDate::from_ymd_opt(1993, 1, 5).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            feature_set_version: "feature_formal_v1_main_20260531".to_string(),
+            point_in_time_mode: "best_effort".to_string(),
+            visibility_status: "ready".to_string(),
+            latest_visible_at: Some(Utc::now()),
+            coverage_score: 0.785,
+            core_feature_coverage: 0.875,
+            trigger_feature_coverage: 0.833,
+            external_feature_coverage: 0.50,
+            feature_count: 4,
+            features: [
+                ("us_vix_level".to_string(), 12.0),
+                ("us_curve_10y2y_level".to_string(), 1.2),
+                ("us_baa_10y_spread_level".to_string(), 2.1),
+                ("us_fed_funds_level".to_string(), 3.0),
+            ]
+            .into_iter()
+            .collect(),
+            created_at: Utc::now(),
+        };
+
+        assert!(super::formal_dataset_snapshot_is_usable(
+            &snapshot,
+            "formal_label_v1_ext_stress"
+        ));
+        assert!(!super::formal_dataset_snapshot_is_usable(
+            &snapshot,
+            "formal_label_v1_main"
+        ));
+    }
+
+    #[test]
     fn parses_formal_dataset_summary_options() {
         let args = vec![
             "--dataset-id".to_string(),
@@ -8633,6 +11617,7 @@ mod tests {
         assert_eq!(options.dataset_id, "formal_v1_main_1990_daily");
         assert_eq!(options.dataset_version, None);
         assert_eq!(options.dataset_key, None);
+        assert!(options.aux_dataset_keys.is_empty());
         assert_eq!(options.release_prefix, "us_formal_main");
     }
 
@@ -8652,6 +11637,30 @@ mod tests {
         assert_eq!(
             options.query.market_scope.as_deref(),
             Some("financial_system")
+        );
+    }
+
+    #[test]
+    fn parses_pipeline_train_aux_dataset_keys() {
+        let args = vec![
+            "--dataset-key".to_string(),
+            "formal_v1_main_1990_daily:20260601T172759".to_string(),
+            "--aux-dataset-key".to_string(),
+            "formal_v1_ext_stress_1990_daily:20260601T162655".to_string(),
+            "--aux-dataset-key".to_string(),
+            "formal_v1_ext_acute_pre1990:20260601T163102".to_string(),
+        ];
+        let options = PipelineTrainOptions::parse(&args).unwrap();
+        assert_eq!(
+            options.dataset_key.as_deref(),
+            Some("formal_v1_main_1990_daily:20260601T172759")
+        );
+        assert_eq!(
+            options.aux_dataset_keys,
+            vec![
+                "formal_v1_ext_stress_1990_daily:20260601T162655".to_string(),
+                "formal_v1_ext_acute_pre1990:20260601T163102".to_string()
+            ]
         );
     }
 
@@ -8702,20 +11711,30 @@ mod tests {
         let acute_only = CrisisScenario {
             scenario_id: "acute".to_string(),
             family: "acute_market_liquidity_crash".to_string(),
+            training_role: "mandatory".to_string(),
             pre_warning_start: NaiveDate::from_ymd_opt(2020, 1, 24).unwrap(),
             crisis_start: NaiveDate::from_ymd_opt(2020, 2, 24).unwrap(),
             acute_start: Some(NaiveDate::from_ymd_opt(2020, 3, 9).unwrap()),
             crisis_end: NaiveDate::from_ymd_opt(2020, 4, 30).unwrap(),
             default_horizon_roles: vec![5, 20],
+            protected_window: false,
+            protected_action_levels: Vec::new(),
+            episode_template_id: ActionEpisodeTemplateId::AcuteMarketLiquidityCrash,
+            action_episode_overrides: None,
         };
         let systemic_only = CrisisScenario {
             scenario_id: "systemic".to_string(),
             family: "systemic_credit_banking_crisis".to_string(),
+            training_role: "mandatory".to_string(),
             pre_warning_start: NaiveDate::from_ymd_opt(2023, 2, 1).unwrap(),
             crisis_start: NaiveDate::from_ymd_opt(2023, 3, 8).unwrap(),
             acute_start: Some(NaiveDate::from_ymd_opt(2023, 3, 10).unwrap()),
             crisis_end: NaiveDate::from_ymd_opt(2023, 5, 15).unwrap(),
             default_horizon_roles: vec![20, 60],
+            protected_window: false,
+            protected_action_levels: Vec::new(),
+            episode_template_id: ActionEpisodeTemplateId::SystemicCreditBankingCrisis,
+            action_episode_overrides: None,
         };
 
         assert_eq!(
@@ -8757,20 +11776,30 @@ mod tests {
         let systemic = CrisisScenario {
             scenario_id: "systemic".to_string(),
             family: "systemic_credit_banking_crisis".to_string(),
+            training_role: "mandatory".to_string(),
             pre_warning_start: NaiveDate::from_ymd_opt(2007, 2, 27).unwrap(),
             crisis_start: NaiveDate::from_ymd_opt(2007, 8, 1).unwrap(),
             acute_start: Some(NaiveDate::from_ymd_opt(2008, 9, 15).unwrap()),
             crisis_end: NaiveDate::from_ymd_opt(2009, 6, 30).unwrap(),
             default_horizon_roles: vec![20, 60],
+            protected_window: false,
+            protected_action_levels: Vec::new(),
+            episode_template_id: ActionEpisodeTemplateId::SystemicCreditBankingCrisis,
+            action_episode_overrides: None,
         };
         let acute = CrisisScenario {
             scenario_id: "acute".to_string(),
             family: "acute_market_liquidity_crash".to_string(),
+            training_role: "mandatory".to_string(),
             pre_warning_start: NaiveDate::from_ymd_opt(2020, 1, 24).unwrap(),
             crisis_start: NaiveDate::from_ymd_opt(2020, 2, 24).unwrap(),
             acute_start: Some(NaiveDate::from_ymd_opt(2020, 3, 9).unwrap()),
             crisis_end: NaiveDate::from_ymd_opt(2020, 4, 30).unwrap(),
             default_horizon_roles: vec![5, 20],
+            protected_window: false,
+            protected_action_levels: Vec::new(),
+            episode_template_id: ActionEpisodeTemplateId::AcuteMarketLiquidityCrash,
+            action_episode_overrides: None,
         };
 
         assert_eq!(
@@ -8812,11 +11841,16 @@ mod tests {
         let systemic = CrisisScenario {
             scenario_id: "systemic".to_string(),
             family: "systemic_credit_banking_crisis".to_string(),
+            training_role: "mandatory".to_string(),
             pre_warning_start: NaiveDate::from_ymd_opt(2007, 2, 27).unwrap(),
             crisis_start: NaiveDate::from_ymd_opt(2007, 8, 1).unwrap(),
             acute_start: Some(NaiveDate::from_ymd_opt(2008, 9, 15).unwrap()),
             crisis_end: NaiveDate::from_ymd_opt(2009, 6, 30).unwrap(),
             default_horizon_roles: vec![20, 60],
+            protected_window: false,
+            protected_action_levels: Vec::new(),
+            episode_template_id: ActionEpisodeTemplateId::SystemicCreditBankingCrisis,
+            action_episode_overrides: None,
         };
 
         assert_eq!(
@@ -8862,6 +11896,40 @@ mod tests {
     }
 
     #[test]
+    fn protected_context_promotes_main_regime_buffer_without_changing_positive_labels() {
+        let scenario_sets = super::load_formal_dataset_scenario_sets(
+            super::DEFAULT_FORMAL_SCENARIO_SET_VERSION,
+            super::DEFAULT_FORMAL_LABEL_VERSION,
+        )
+        .unwrap();
+        let protected_date = NaiveDate::from_ymd_opt(2021, 11, 15).unwrap();
+        let cooldown_date = NaiveDate::from_ymd_opt(2022, 11, 10).unwrap();
+
+        assert_eq!(
+            forward_crisis_label(protected_date, &scenario_sets.positive_scenarios, 20),
+            0
+        );
+        assert_eq!(
+            forward_crisis_training_regime_with_context(
+                protected_date,
+                &scenario_sets.positive_scenarios,
+                &scenario_sets.context_scenarios,
+                20,
+            ),
+            ProbabilityTrainingRegime::PreWarningBuffer
+        );
+        assert_eq!(
+            forward_crisis_training_regime_with_context(
+                cooldown_date,
+                &scenario_sets.positive_scenarios,
+                &scenario_sets.context_scenarios,
+                20,
+            ),
+            ProbabilityTrainingRegime::PostCrisisCooldown
+        );
+    }
+
+    #[test]
     fn forward_crisis_negative_weights_and_calibration_scope_follow_regime() {
         let positive_row = ProbabilityTrainingRow {
             as_of_date: NaiveDate::from_ymd_opt(2020, 2, 20).unwrap(),
@@ -8874,6 +11942,7 @@ mod tests {
             features: BTreeMap::new(),
             primary_scenario_id: Some("scenario_a".to_string()),
             scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+            scenario_training_role: None,
             days_to_primary_crisis_start: Some(10),
             primary_scenario_supports_5d: true,
             primary_scenario_supports_20d: true,
@@ -8887,6 +11956,13 @@ mod tests {
             action_label_5d: 0,
             action_label_20d: 1,
             action_label_60d: 0,
+            prepare_episode_label: 0,
+            hedge_episode_label: 1,
+            defend_episode_label: 0,
+            primary_action_level: Some("hedge".to_string()),
+            action_episode_id: Some("scenario_a:hedge".to_string()),
+            action_episode_phase: "primary".to_string(),
+            protected_action_window: false,
         };
         let mut normal_negative = positive_row.clone();
         normal_negative.label_20d = 0;
@@ -8916,14 +11992,15 @@ mod tests {
                 20,
                 ProbabilityTargetLabelMode::ForwardCrisis,
             ),
-            1.0
+            1.10
         );
-        assert!(
+        assert_eq!(
             negative_sample_weight(
                 &buffer_negative,
                 20,
                 ProbabilityTargetLabelMode::ForwardCrisis,
-            ) < 1.0
+            ),
+            0.70
         );
         assert_eq!(
             negative_sample_weight(
@@ -8931,7 +12008,53 @@ mod tests {
                 20,
                 ProbabilityTargetLabelMode::ForwardCrisis,
             ),
-            0.0
+            1.25
+        );
+        assert_eq!(
+            negative_sample_weight(
+                &cooldown_negative,
+                20,
+                ProbabilityTargetLabelMode::ForwardCrisis,
+            ),
+            1.45
+        );
+        let mut protected_negative = normal_negative.clone();
+        protected_negative.primary_scenario_id = Some("scenario_protected".to_string());
+        protected_negative.scenario_family = Some("mixed_systemic_stress".to_string());
+        protected_negative.protected_action_window = true;
+        assert_eq!(
+            negative_sample_weight(
+                &protected_negative,
+                20,
+                ProbabilityTargetLabelMode::ForwardCrisis,
+            ),
+            0.55
+        );
+        assert_eq!(
+            negative_sample_weight(
+                &protected_negative,
+                60,
+                ProbabilityTargetLabelMode::ForwardCrisis,
+            ),
+            0.65
+        );
+        let mut protected_cooldown_negative = protected_negative.clone();
+        protected_cooldown_negative.action_episode_phase = "cooldown".to_string();
+        assert_eq!(
+            negative_sample_weight(
+                &protected_cooldown_negative,
+                20,
+                ProbabilityTargetLabelMode::ForwardCrisis,
+            ),
+            1.20
+        );
+        assert_eq!(
+            negative_sample_weight(
+                &protected_cooldown_negative,
+                60,
+                ProbabilityTargetLabelMode::ForwardCrisis,
+            ),
+            1.35
         );
         assert_eq!(
             negative_sample_weight(
@@ -8969,14 +12092,265 @@ mod tests {
             20,
             ProbabilityTargetLabelMode::ForwardCrisis,
         );
-        assert_eq!(selection.len(), 2);
+        assert_eq!(selection.len(), 4);
         assert_eq!(
             selection
                 .iter()
-                .filter(|row| row.label_20d > 0
-                    || matches!(row.regime_20d, ProbabilityTrainingRegime::Normal))
+                .filter(|row| {
+                    row.label_20d > 0
+                        || matches!(
+                            row.regime_20d,
+                            ProbabilityTrainingRegime::Normal
+                                | ProbabilityTrainingRegime::PreWarningBuffer
+                                | ProbabilityTrainingRegime::InCrisis
+                        )
+                })
                 .count(),
-            2
+            4
+        );
+        assert_eq!(
+            forward_crisis_regime_sample_weight(20, ProbabilityTrainingRegime::PositiveWindow),
+            2.2
+        );
+    }
+
+    #[test]
+    fn formal_main_context_scenarios_include_protected_window_set() {
+        let scenario_sets = super::load_formal_dataset_scenario_sets(
+            super::DEFAULT_FORMAL_SCENARIO_SET_VERSION,
+            super::DEFAULT_FORMAL_LABEL_VERSION,
+        )
+        .unwrap();
+        let positive_ids = scenario_sets
+            .positive_scenarios
+            .iter()
+            .map(|scenario| scenario.scenario_id.as_str())
+            .collect::<BTreeSet<_>>();
+        let context_ids = scenario_sets
+            .context_scenarios
+            .iter()
+            .map(|scenario| scenario.scenario_id.as_str())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(positive_ids.len(), 3);
+        assert!(positive_ids.contains("us_gfc_2008"));
+        assert!(positive_ids.contains("us_covid_liquidity_2020"));
+        assert!(positive_ids.contains("us_regional_banks_2023"));
+
+        assert!(context_ids.len() > positive_ids.len());
+        assert!(context_ids.contains("us_dotcom_unwind_2000"));
+        assert!(context_ids.contains("us_funding_stress_2011"));
+        assert!(context_ids.contains("us_rate_shock_2022"));
+    }
+
+    #[test]
+    fn forward_crisis_pairwise_targets_push_buffer_centroid_above_normal() {
+        let make_row =
+            |feature_value: f64, regime_20d: ProbabilityTrainingRegime, label_20d: u8| {
+                let mut features = BTreeMap::new();
+                features.insert("stress".to_string(), feature_value);
+                ProbabilityTrainingRow {
+                    as_of_date: NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+                    market_scope: "financial_system".to_string(),
+                    release_id: None,
+                    probability_mode: Some("formal_bundle_v1".to_string()),
+                    freshness_status: Some("a".to_string()),
+                    time_to_risk_bucket: Some("weeks".to_string()),
+                    split_name: Some("train".to_string()),
+                    features,
+                    primary_scenario_id: Some("scenario".to_string()),
+                    scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+                    scenario_training_role: None,
+                    days_to_primary_crisis_start: Some(10),
+                    primary_scenario_supports_5d: false,
+                    primary_scenario_supports_20d: true,
+                    primary_scenario_supports_60d: true,
+                    label_5d: 0,
+                    label_20d,
+                    label_60d: 0,
+                    regime_5d: ProbabilityTrainingRegime::Normal,
+                    regime_20d,
+                    regime_60d: ProbabilityTrainingRegime::Normal,
+                    action_label_5d: 0,
+                    action_label_20d: label_20d,
+                    action_label_60d: 0,
+                    prepare_episode_label: 0,
+                    hedge_episode_label: 0,
+                    defend_episode_label: 0,
+                    primary_action_level: None,
+                    action_episode_id: None,
+                    action_episode_phase: "outside".to_string(),
+                    protected_action_window: false,
+                }
+            };
+
+        let rows = vec![
+            make_row(0.0, ProbabilityTrainingRegime::Normal, 0),
+            make_row(0.1, ProbabilityTrainingRegime::Normal, 0),
+            make_row(0.8, ProbabilityTrainingRegime::PreWarningBuffer, 0),
+            make_row(0.9, ProbabilityTrainingRegime::PreWarningBuffer, 0),
+            make_row(1.2, ProbabilityTrainingRegime::PositiveWindow, 1),
+            make_row(1.1, ProbabilityTrainingRegime::PositiveWindow, 1),
+            make_row(1.0, ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+        ];
+        let feature_stats = vec![super::build_feature_stat(&rows, "stress")];
+        let targets = forward_crisis_regime_pairwise_targets(
+            &rows,
+            &feature_stats,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert!(!targets.is_empty());
+        assert!(targets.len() >= 5);
+        let mut gradients = vec![0.0];
+        super::apply_regime_pairwise_gradient(&mut gradients, &[0.0], &targets, 100.0, 20);
+        assert!(gradients[0] < 0.0);
+    }
+
+    #[test]
+    fn forward_crisis_sign_gradient_pushes_wrong_direction_coefficients_toward_zero() {
+        let feature_names = vec![
+            "us_baa_10y_spread_level".to_string(),
+            "us_curve_10y2y_level".to_string(),
+            "us_stlfsi_level".to_string(),
+        ];
+        let weights = vec![-0.8, 0.5, -0.4];
+        let mut gradients = vec![0.0; weights.len()];
+
+        super::apply_forward_crisis_sign_gradient(
+            &mut gradients,
+            &weights,
+            &feature_names,
+            100.0,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert!(gradients[0] < 0.0);
+        assert!(gradients[1] > 0.0);
+        assert!(gradients[2] < 0.0);
+    }
+
+    #[test]
+    fn forward_crisis_sign_projection_clips_wrong_direction_coefficients() {
+        let feature_names = vec![
+            "us_baa_10y_spread_level".to_string(),
+            "us_curve_10y2y_level".to_string(),
+            "structural_score".to_string(),
+            "us_usdjpy_change_20d".to_string(),
+        ];
+        let mut weights = vec![-0.8, 0.5, -0.2, -0.7];
+
+        super::project_forward_crisis_sign_constraints(
+            &mut weights,
+            &feature_names,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert_eq!(weights[0], 0.0);
+        assert_eq!(weights[1], 0.0);
+        assert_eq!(weights[2], 0.0);
+        assert_eq!(weights[3], -0.7);
+    }
+
+    #[test]
+    fn forward_crisis_training_target_softens_buffer_and_cooldown_negatives() {
+        let build_row = |regime_20d: ProbabilityTrainingRegime,
+                         regime_60d: ProbabilityTrainingRegime,
+                         label_20d: u8,
+                         label_60d: u8| ProbabilityTrainingRow {
+            as_of_date: NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+            market_scope: "financial_system".to_string(),
+            release_id: None,
+            probability_mode: Some("formal_bundle_v1".to_string()),
+            freshness_status: Some("a".to_string()),
+            time_to_risk_bucket: Some("weeks".to_string()),
+            split_name: Some("train".to_string()),
+            features: BTreeMap::new(),
+            primary_scenario_id: Some("scenario".to_string()),
+            scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+            scenario_training_role: None,
+            days_to_primary_crisis_start: Some(25),
+            primary_scenario_supports_5d: false,
+            primary_scenario_supports_20d: true,
+            primary_scenario_supports_60d: true,
+            label_5d: 0,
+            label_20d,
+            label_60d,
+            regime_5d: ProbabilityTrainingRegime::Normal,
+            regime_20d,
+            regime_60d,
+            action_label_5d: 0,
+            action_label_20d: 0,
+            action_label_60d: 0,
+            prepare_episode_label: 0,
+            hedge_episode_label: 0,
+            defend_episode_label: 0,
+            primary_action_level: None,
+            action_episode_id: None,
+            action_episode_phase: "outside".to_string(),
+            protected_action_window: false,
+        };
+
+        let buffer_row = build_row(
+            ProbabilityTrainingRegime::PreWarningBuffer,
+            ProbabilityTrainingRegime::PreWarningBuffer,
+            0,
+            0,
+        );
+        let cooldown_row = build_row(
+            ProbabilityTrainingRegime::PostCrisisCooldown,
+            ProbabilityTrainingRegime::PostCrisisCooldown,
+            0,
+            0,
+        );
+        let positive_row = build_row(
+            ProbabilityTrainingRegime::PositiveWindow,
+            ProbabilityTrainingRegime::PositiveWindow,
+            1,
+            1,
+        );
+
+        assert_eq!(
+            super::probability_training_target_label(
+                &buffer_row,
+                20,
+                ProbabilityTargetLabelMode::ForwardCrisis
+            ),
+            0.18
+        );
+        assert_eq!(
+            super::probability_training_target_label(
+                &buffer_row,
+                60,
+                ProbabilityTargetLabelMode::ForwardCrisis
+            ),
+            0.26
+        );
+        assert_eq!(
+            super::probability_training_target_label(
+                &cooldown_row,
+                20,
+                ProbabilityTargetLabelMode::ForwardCrisis
+            ),
+            0.01
+        );
+        assert_eq!(
+            super::probability_training_target_label(
+                &cooldown_row,
+                60,
+                ProbabilityTargetLabelMode::ForwardCrisis
+            ),
+            0.02
+        );
+        assert_eq!(
+            super::probability_training_target_label(
+                &positive_row,
+                20,
+                ProbabilityTargetLabelMode::ForwardCrisis
+            ),
+            1.0
         );
     }
 
@@ -8993,6 +12367,7 @@ mod tests {
             features: BTreeMap::new(),
             primary_scenario_id: Some("us_gfc_2008".to_string()),
             scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+            scenario_training_role: Some("mandatory".to_string()),
             days_to_primary_crisis_start: Some(57),
             primary_scenario_supports_5d: false,
             primary_scenario_supports_20d: true,
@@ -9006,6 +12381,13 @@ mod tests {
             action_label_5d: 0,
             action_label_20d: 1,
             action_label_60d: 1,
+            prepare_episode_label: 1,
+            hedge_episode_label: 1,
+            defend_episode_label: 0,
+            primary_action_level: Some("hedge".to_string()),
+            action_episode_id: Some("us_gfc_2008:hedge".to_string()),
+            action_episode_phase: "primary".to_string(),
+            protected_action_window: false,
         };
         let misaligned = ProbabilityTrainingRow {
             as_of_date: NaiveDate::from_ymd_opt(2020, 2, 20).unwrap(),
@@ -9018,6 +12400,7 @@ mod tests {
             features: BTreeMap::new(),
             primary_scenario_id: Some("us_covid_liquidity_2020".to_string()),
             scenario_family: Some("acute_market_liquidity_crash".to_string()),
+            scenario_training_role: Some("mandatory".to_string()),
             days_to_primary_crisis_start: Some(4),
             primary_scenario_supports_5d: true,
             primary_scenario_supports_20d: true,
@@ -9031,12 +12414,115 @@ mod tests {
             action_label_5d: 1,
             action_label_20d: 1,
             action_label_60d: 0,
+            prepare_episode_label: 0,
+            hedge_episode_label: 1,
+            defend_episode_label: 1,
+            primary_action_level: Some("defend".to_string()),
+            action_episode_id: Some("us_covid_liquidity_2020:defend".to_string()),
+            action_episode_phase: "primary".to_string(),
+            protected_action_window: false,
         };
 
         assert!(
             positive_sample_action_weight(&aligned, 60)
                 > positive_sample_action_weight(&misaligned, 60)
         );
+    }
+
+    #[test]
+    fn forward_crisis_positive_weight_boosts_extension_role_on_supported_horizon() {
+        let mandatory = ProbabilityTrainingRow {
+            as_of_date: NaiveDate::from_ymd_opt(2007, 6, 5).unwrap(),
+            market_scope: "financial_system".to_string(),
+            release_id: None,
+            probability_mode: Some("formal_bundle_v1".to_string()),
+            freshness_status: Some("a".to_string()),
+            time_to_risk_bucket: Some("us_gfc_2008".to_string()),
+            split_name: Some("train".to_string()),
+            features: BTreeMap::new(),
+            primary_scenario_id: Some("us_gfc_2008".to_string()),
+            scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+            scenario_training_role: Some("mandatory".to_string()),
+            days_to_primary_crisis_start: Some(48),
+            primary_scenario_supports_5d: false,
+            primary_scenario_supports_20d: true,
+            primary_scenario_supports_60d: true,
+            label_5d: 0,
+            label_20d: 0,
+            label_60d: 1,
+            regime_5d: ProbabilityTrainingRegime::Normal,
+            regime_20d: ProbabilityTrainingRegime::PreWarningBuffer,
+            regime_60d: ProbabilityTrainingRegime::PositiveWindow,
+            action_label_5d: 0,
+            action_label_20d: 1,
+            action_label_60d: 1,
+            prepare_episode_label: 1,
+            hedge_episode_label: 1,
+            defend_episode_label: 0,
+            primary_action_level: Some("hedge".to_string()),
+            action_episode_id: Some("us_gfc_2008:hedge".to_string()),
+            action_episode_phase: "primary".to_string(),
+            protected_action_window: false,
+        };
+        let extension = ProbabilityTrainingRow {
+            as_of_date: NaiveDate::from_ymd_opt(2011, 6, 20).unwrap(),
+            market_scope: "financial_system".to_string(),
+            release_id: None,
+            probability_mode: Some("formal_bundle_v1".to_string()),
+            freshness_status: Some("a".to_string()),
+            time_to_risk_bucket: Some("us_funding_stress_2011".to_string()),
+            split_name: Some("train".to_string()),
+            features: BTreeMap::new(),
+            primary_scenario_id: Some("us_funding_stress_2011".to_string()),
+            scenario_family: Some("mixed_systemic_stress".to_string()),
+            scenario_training_role: Some("extension_only".to_string()),
+            days_to_primary_crisis_start: Some(39),
+            primary_scenario_supports_5d: false,
+            primary_scenario_supports_20d: true,
+            primary_scenario_supports_60d: true,
+            label_5d: 0,
+            label_20d: 0,
+            label_60d: 1,
+            regime_5d: ProbabilityTrainingRegime::Normal,
+            regime_20d: ProbabilityTrainingRegime::PreWarningBuffer,
+            regime_60d: ProbabilityTrainingRegime::PositiveWindow,
+            action_label_5d: 0,
+            action_label_20d: 1,
+            action_label_60d: 1,
+            prepare_episode_label: 1,
+            hedge_episode_label: 1,
+            defend_episode_label: 0,
+            primary_action_level: Some("hedge".to_string()),
+            action_episode_id: Some("us_funding_stress_2011:hedge".to_string()),
+            action_episode_phase: "primary".to_string(),
+            protected_action_window: true,
+        };
+
+        assert!(
+            super::forward_crisis_positive_sample_weight(&extension, 60)
+                > super::forward_crisis_positive_sample_weight(&mandatory, 60)
+        );
+    }
+
+    #[test]
+    fn render_dataset_csv_includes_scenario_role_columns() {
+        let mut row = forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 2, 20).unwrap(),
+            1,
+            ProbabilityTrainingRegime::PositiveWindow,
+        );
+        row.scenario_training_role = Some("mandatory".to_string());
+        row.features.insert("stress".to_string(), 0.42);
+
+        let csv = super::render_dataset_csv(&[row], &[String::from("stress")]);
+        let mut lines = csv.lines();
+        let header = lines.next().unwrap_or_default();
+        let first_row = lines.next().unwrap_or_default();
+
+        assert!(header.contains("primary_scenario_id"));
+        assert!(header.contains("scenario_family"));
+        assert!(header.contains("scenario_training_role"));
+        assert!(first_row.contains(",scenario_a,systemic_credit_banking_crisis,mandatory,"));
     }
 
     #[test]
@@ -9060,6 +12546,7 @@ mod tests {
                     features,
                     primary_scenario_id: Some(scenario_id.to_string()),
                     scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+                    scenario_training_role: None,
                     days_to_primary_crisis_start: Some(lead_days),
                     primary_scenario_supports_5d: true,
                     primary_scenario_supports_20d: true,
@@ -9077,6 +12564,17 @@ mod tests {
                     action_label_5d: 0,
                     action_label_20d: action_label,
                     action_label_60d: 0,
+                    prepare_episode_label: 0,
+                    hedge_episode_label: u8::from(lead_days > 0),
+                    defend_episode_label: 0,
+                    primary_action_level: (lead_days > 0).then_some("hedge".to_string()),
+                    action_episode_id: Some(format!("{scenario_id}:hedge")),
+                    action_episode_phase: if lead_days > 0 {
+                        "primary".to_string()
+                    } else {
+                        "late_validation".to_string()
+                    },
+                    protected_action_window: false,
                 }
             };
 
@@ -9091,6 +12589,7 @@ mod tests {
             features: BTreeMap::new(),
             primary_scenario_id: None,
             scenario_family: None,
+            scenario_training_role: None,
             days_to_primary_crisis_start: None,
             primary_scenario_supports_5d: false,
             primary_scenario_supports_20d: false,
@@ -9104,6 +12603,13 @@ mod tests {
             action_label_5d: 0,
             action_label_20d: 0,
             action_label_60d: 0,
+            prepare_episode_label: 0,
+            hedge_episode_label: 0,
+            defend_episode_label: 0,
+            primary_action_level: None,
+            action_episode_id: None,
+            action_episode_phase: "outside".to_string(),
+            protected_action_window: false,
         };
 
         let rows = vec![
@@ -9120,7 +12626,7 @@ mod tests {
         let summary = evaluate_actionability_summary(&probabilities, &rows, 20, 0.3);
 
         assert_eq!(summary.predicted_positive_count, 4);
-        assert_eq!(summary.actual_positive_count, 6);
+        assert_eq!(summary.actual_positive_count, 3);
         assert_eq!(summary.pre_start_positive_count, 3);
         assert_eq!(summary.post_start_positive_count, 3);
         assert_eq!(summary.pre_start_hit_count, 1);
@@ -9157,6 +12663,7 @@ mod tests {
             features: BTreeMap::new(),
             primary_scenario_id: Some(scenario_id.to_string()),
             scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+            scenario_training_role: None,
             days_to_primary_crisis_start: Some(lead_days),
             primary_scenario_supports_5d: true,
             primary_scenario_supports_20d: true,
@@ -9170,6 +12677,17 @@ mod tests {
             action_label_5d: 0,
             action_label_20d: 1,
             action_label_60d: 0,
+            prepare_episode_label: 0,
+            hedge_episode_label: u8::from(lead_days > 0),
+            defend_episode_label: 0,
+            primary_action_level: (lead_days > 0).then_some("hedge".to_string()),
+            action_episode_id: Some(format!("{scenario_id}:hedge")),
+            action_episode_phase: if lead_days > 0 {
+                "primary".to_string()
+            } else {
+                "late_validation".to_string()
+            },
+            protected_action_window: false,
         };
         let rows = vec![
             build_row("scenario_a", 8),
@@ -9202,6 +12720,7 @@ mod tests {
             features: BTreeMap::new(),
             primary_scenario_id: Some(scenario_id.to_string()),
             scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+            scenario_training_role: None,
             days_to_primary_crisis_start: Some(lead_days),
             primary_scenario_supports_5d: true,
             primary_scenario_supports_20d: true,
@@ -9215,6 +12734,17 @@ mod tests {
             action_label_5d: 0,
             action_label_20d: 1,
             action_label_60d: 0,
+            prepare_episode_label: 0,
+            hedge_episode_label: u8::from(lead_days > 0),
+            defend_episode_label: 0,
+            primary_action_level: (lead_days > 0).then_some("hedge".to_string()),
+            action_episode_id: Some(format!("{scenario_id}:hedge")),
+            action_episode_phase: if lead_days > 0 {
+                "primary".to_string()
+            } else {
+                "late_validation".to_string()
+            },
+            protected_action_window: false,
         };
         let build_false_positive_row = |day: u32| ProbabilityTrainingRow {
             as_of_date: NaiveDate::from_ymd_opt(2020, 4, day).unwrap(),
@@ -9227,6 +12757,7 @@ mod tests {
             features: BTreeMap::new(),
             primary_scenario_id: None,
             scenario_family: None,
+            scenario_training_role: None,
             days_to_primary_crisis_start: None,
             primary_scenario_supports_5d: false,
             primary_scenario_supports_20d: false,
@@ -9240,6 +12771,13 @@ mod tests {
             action_label_5d: 0,
             action_label_20d: 0,
             action_label_60d: 0,
+            prepare_episode_label: 0,
+            hedge_episode_label: 0,
+            defend_episode_label: 0,
+            primary_action_level: None,
+            action_episode_id: None,
+            action_episode_phase: "outside".to_string(),
+            protected_action_window: false,
         };
 
         let mut rows = vec![
@@ -9285,6 +12823,7 @@ mod tests {
                     ece: 0.0,
                     precision_at_30pct: None,
                     recall_at_30pct: None,
+                    regime_separation: None,
                     actionability: Some(ActionabilityEvaluationSummary {
                         threshold: 0.05,
                         predicted_positive_count: 1751,
@@ -9318,6 +12857,7 @@ mod tests {
             features: BTreeMap::new(),
             primary_scenario_id: Some(scenario_id.to_string()),
             scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+            scenario_training_role: None,
             days_to_primary_crisis_start: Some(lead_days),
             primary_scenario_supports_5d: true,
             primary_scenario_supports_20d: true,
@@ -9331,6 +12871,17 @@ mod tests {
             action_label_5d: 0,
             action_label_20d: 1,
             action_label_60d: 0,
+            prepare_episode_label: 0,
+            hedge_episode_label: u8::from(lead_days > 0),
+            defend_episode_label: 0,
+            primary_action_level: (lead_days > 0).then_some("hedge".to_string()),
+            action_episode_id: Some(format!("{scenario_id}:hedge")),
+            action_episode_phase: if lead_days > 0 {
+                "primary".to_string()
+            } else {
+                "late_validation".to_string()
+            },
+            protected_action_window: false,
         };
         let rows = vec![
             build_row("scenario_a", 8),
@@ -9364,6 +12915,29 @@ mod tests {
     fn probability_calibration_strategy_rejects_inverting_fit() {
         let raw_probabilities = vec![0.82, 0.71, 0.24, 0.11];
         let labels = vec![1.0, 1.0, 0.0, 0.0];
+        let calibration_rows = vec![
+            forward_crisis_row(
+                NaiveDate::from_ymd_opt(2020, 1, 5).unwrap(),
+                1,
+                ProbabilityTrainingRegime::PositiveWindow,
+            ),
+            forward_crisis_row(
+                NaiveDate::from_ymd_opt(2020, 1, 6).unwrap(),
+                1,
+                ProbabilityTrainingRegime::PositiveWindow,
+            ),
+            forward_crisis_row(
+                NaiveDate::from_ymd_opt(2020, 1, 20).unwrap(),
+                0,
+                ProbabilityTrainingRegime::Normal,
+            ),
+            forward_crisis_row(
+                NaiveDate::from_ymd_opt(2020, 1, 21).unwrap(),
+                0,
+                ProbabilityTrainingRegime::Normal,
+            ),
+        ];
+        let calibration_row_refs = calibration_rows.iter().collect::<Vec<_>>();
         let calibration_candidate = PlattCalibrationArtifact {
             alpha: -1.4,
             beta: -3.0,
@@ -9374,6 +12948,9 @@ mod tests {
         let (calibration, evaluation_probabilities) = select_probability_calibration_strategy(
             &raw_probabilities,
             &labels,
+            &calibration_row_refs,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
             &raw_probabilities,
             calibration_candidate,
         );
@@ -9386,12 +12963,38 @@ mod tests {
     fn probability_calibration_strategy_keeps_inverting_fit_for_reversed_raw_ranking() {
         let raw_probabilities = vec![0.11, 0.24, 0.71, 0.82];
         let labels = vec![1.0, 1.0, 0.0, 0.0];
+        let calibration_rows = vec![
+            forward_crisis_row(
+                NaiveDate::from_ymd_opt(2020, 1, 5).unwrap(),
+                1,
+                ProbabilityTrainingRegime::PositiveWindow,
+            ),
+            forward_crisis_row(
+                NaiveDate::from_ymd_opt(2020, 1, 6).unwrap(),
+                1,
+                ProbabilityTrainingRegime::PositiveWindow,
+            ),
+            forward_crisis_row(
+                NaiveDate::from_ymd_opt(2020, 1, 20).unwrap(),
+                0,
+                ProbabilityTrainingRegime::Normal,
+            ),
+            forward_crisis_row(
+                NaiveDate::from_ymd_opt(2020, 1, 21).unwrap(),
+                0,
+                ProbabilityTrainingRegime::Normal,
+            ),
+        ];
+        let calibration_row_refs = calibration_rows.iter().collect::<Vec<_>>();
         let calibration_candidate = fit_platt_calibration(&raw_probabilities, &labels);
         assert!(calibration_candidate.alpha < 0.0);
 
         let (calibration, evaluation_probabilities) = select_probability_calibration_strategy(
             &raw_probabilities,
             &labels,
+            &calibration_row_refs,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
             &raw_probabilities,
             calibration_candidate.clone(),
         );
@@ -9402,6 +13005,62 @@ mod tests {
         );
         assert_ne!(evaluation_probabilities, raw_probabilities);
         assert!(evaluation_probabilities[0] > evaluation_probabilities[2]);
+    }
+
+    #[test]
+    fn probability_calibration_strategy_keeps_raw_when_calibration_flattens_early_warning() {
+        let calibration_rows = vec![
+            forward_crisis_row(
+                NaiveDate::from_ymd_opt(2020, 1, 5).unwrap(),
+                1,
+                ProbabilityTrainingRegime::PositiveWindow,
+            ),
+            forward_crisis_row(
+                NaiveDate::from_ymd_opt(2020, 1, 7).unwrap(),
+                1,
+                ProbabilityTrainingRegime::PositiveWindow,
+            ),
+            forward_crisis_row(
+                NaiveDate::from_ymd_opt(2020, 1, 12).unwrap(),
+                0,
+                ProbabilityTrainingRegime::PreWarningBuffer,
+            ),
+            forward_crisis_row(
+                NaiveDate::from_ymd_opt(2020, 1, 20).unwrap(),
+                0,
+                ProbabilityTrainingRegime::Normal,
+            ),
+            forward_crisis_row(
+                NaiveDate::from_ymd_opt(2020, 2, 3).unwrap(),
+                0,
+                ProbabilityTrainingRegime::InCrisis,
+            ),
+        ];
+        let calibration_row_refs = calibration_rows.iter().collect::<Vec<_>>();
+        let raw_probabilities = vec![0.72, 0.68, 0.44, 0.12, 0.61];
+        let labels = calibration_rows
+            .iter()
+            .map(|row| row.label_20d as f64)
+            .collect::<Vec<_>>();
+        let flattening_calibration = PlattCalibrationArtifact {
+            alpha: 0.02,
+            beta: -4.2,
+            min_input: 0.12,
+            max_input: 0.72,
+        };
+
+        let (calibration, evaluation_probabilities) = select_probability_calibration_strategy(
+            &raw_probabilities,
+            &labels,
+            &calibration_row_refs,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+            &raw_probabilities,
+            flattening_calibration,
+        );
+
+        assert!(calibration.is_none());
+        assert_eq!(evaluation_probabilities, raw_probabilities);
     }
 
     #[test]
@@ -9437,6 +13096,209 @@ mod tests {
     }
 
     #[test]
+    fn probability_decision_threshold_raises_cutoff_when_low_threshold_is_overbroad() {
+        let probabilities = vec![0.38, 0.36, 0.35, 0.34, 0.33, 0.32, 0.31, 0.30, 0.29, 0.28];
+        let labels = vec![1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+        let threshold = select_probability_decision_threshold(&probabilities, &labels, 20);
+
+        assert!(threshold >= 0.35);
+        assert!(threshold > 0.30);
+    }
+
+    #[test]
+    fn runtime_regime_separation_detects_calibration_crush() {
+        let scenarios = synthetic_runtime_scenarios();
+        let history = vec![
+            runtime_history_point(NaiveDate::from_ymd_opt(1999, 12, 20).unwrap(), 0.10, 0.020),
+            runtime_history_point(NaiveDate::from_ymd_opt(2000, 1, 5).unwrap(), 0.30, 0.021),
+            runtime_history_point(NaiveDate::from_ymd_opt(2000, 1, 20).unwrap(), 0.45, 0.022),
+            runtime_history_point(NaiveDate::from_ymd_opt(2000, 2, 5).unwrap(), 0.55, 0.023),
+        ];
+
+        let summaries = summarize_release_runtime_regime_probabilities(&history, &scenarios, None);
+        let separation = summarize_release_runtime_regime_separation(&summaries);
+        let row20 = separation
+            .iter()
+            .find(|row| row.horizon_days == 20)
+            .expect("20d summary");
+
+        assert_eq!(row20.early_warning_regime, "pre_warning_buffer");
+        assert_eq!(row20.diagnosis, "calibration_crushed_early_warning");
+        assert!(
+            row20
+                .early_warning_raw_lift_vs_normal
+                .expect("raw lift should exist")
+                >= 2.9
+        );
+        assert!(
+            row20
+                .early_warning_calibrated_lift_vs_normal
+                .expect("calibrated lift should exist")
+                < 1.1
+        );
+        assert!(
+            row20
+                .early_warning_gap_retention
+                .expect("gap retention should exist")
+                < 0.1
+        );
+    }
+
+    #[test]
+    fn runtime_regime_classifier_flags_cooldown_bleed() {
+        let diagnosis = classify_regime_separation(
+            20,
+            1.7,
+            1.6,
+            Some(0.9),
+            1.55,
+            0.014,
+            1.3,
+            1.58,
+            0.015,
+            1.58,
+            0.05,
+        );
+
+        assert_eq!(diagnosis, "cooldown_bleed");
+    }
+
+    #[test]
+    fn offline_regime_classifier_uses_positive_window_gap_not_only_buffer_lift() {
+        let diagnosis =
+            classify_probability_regime_separation(20, 1.6, 1.52, 1.6, 1.2, 1.1, 0.012, 0.004, 1.6);
+
+        assert_eq!(diagnosis, "usable_early_warning_separation");
+    }
+
+    #[test]
+    fn probability_guardrails_reject_zero_usable_early_warning_horizons() {
+        let bundle = ProbabilityBundle {
+            bundle_id: "candidate_guard_zero".to_string(),
+            market_scope: "financial_system".to_string(),
+            probability_mode: "formal_bundle_v1".to_string(),
+            created_at: Utc::now(),
+            feature_names: Vec::new(),
+            monotonic_min_gap_5d_to_20d: 0.0,
+            monotonic_min_gap_20d_to_60d: 0.0,
+            note: "test".to_string(),
+            horizons: Vec::new(),
+            evaluation: Some(ProbabilityBundleEvaluation {
+                sample_count: 100,
+                brier_score: 0.1,
+                log_loss: 0.2,
+                ece: 0.1,
+                regime_separation_summaries: vec![RegimeSeparationEvaluationSummary {
+                    horizon_days: 20,
+                    early_warning_regime: "pre_warning_buffer".to_string(),
+                    normal_sample_count: 50,
+                    pre_warning_buffer_sample_count: 10,
+                    positive_window_sample_count: 10,
+                    early_warning_sample_count: 10,
+                    in_crisis_sample_count: 10,
+                    post_crisis_cooldown_sample_count: 10,
+                    normal_avg_probability: 0.02,
+                    pre_warning_buffer_avg_probability: 0.025,
+                    positive_window_avg_probability: 0.019,
+                    early_warning_avg_probability: 0.025,
+                    in_crisis_avg_probability: 0.04,
+                    post_crisis_cooldown_avg_probability: 0.03,
+                    max_non_normal_avg_probability: 0.04,
+                    pre_warning_buffer_lift_vs_normal: Some(1.25),
+                    positive_window_lift_vs_normal: Some(0.95),
+                    early_warning_lift_vs_normal: Some(1.25),
+                    in_crisis_lift_vs_normal: Some(2.0),
+                    post_crisis_cooldown_lift_vs_normal: Some(1.5),
+                    positive_window_gap_vs_normal: Some(-0.001),
+                    post_crisis_cooldown_gap_vs_normal: Some(0.01),
+                    max_non_normal_lift_vs_normal: Some(2.0),
+                    diagnosis: "cold_across_all_regimes".to_string(),
+                }],
+                usable_early_warning_horizon_count: 0,
+                insufficient_early_warning_horizon_count: 1,
+                note: "test".to_string(),
+            }),
+            actionability: None,
+        };
+        let release = test_release_with_bundle(&bundle);
+        let bundle_path = release.manifest.bundle_uri.clone();
+
+        let regressions = compare_probability_guardrails(&release).unwrap();
+
+        let _ = std::fs::remove_file(bundle_path);
+        assert!(regressions
+            .iter()
+            .any(|item| item.contains("zero usable early-warning horizons")));
+        assert!(regressions
+            .iter()
+            .any(|item| item.contains("20d positive_window avg")));
+        assert!(regressions
+            .iter()
+            .any(|item| item.contains("cold_across_all_regimes")));
+    }
+
+    #[test]
+    fn probability_guardrails_reject_cooldown_bleed_on_medium_horizons() {
+        let bundle = ProbabilityBundle {
+            bundle_id: "candidate_guard_cooldown".to_string(),
+            market_scope: "financial_system".to_string(),
+            probability_mode: "formal_bundle_v1".to_string(),
+            created_at: Utc::now(),
+            feature_names: Vec::new(),
+            monotonic_min_gap_5d_to_20d: 0.0,
+            monotonic_min_gap_20d_to_60d: 0.0,
+            note: "test".to_string(),
+            horizons: Vec::new(),
+            evaluation: Some(ProbabilityBundleEvaluation {
+                sample_count: 100,
+                brier_score: 0.1,
+                log_loss: 0.2,
+                ece: 0.1,
+                regime_separation_summaries: vec![RegimeSeparationEvaluationSummary {
+                    horizon_days: 60,
+                    early_warning_regime: "pre_warning_buffer".to_string(),
+                    normal_sample_count: 50,
+                    pre_warning_buffer_sample_count: 10,
+                    positive_window_sample_count: 10,
+                    early_warning_sample_count: 10,
+                    in_crisis_sample_count: 10,
+                    post_crisis_cooldown_sample_count: 10,
+                    normal_avg_probability: 0.03,
+                    pre_warning_buffer_avg_probability: 0.05,
+                    positive_window_avg_probability: 0.065,
+                    early_warning_avg_probability: 0.05,
+                    in_crisis_avg_probability: 0.06,
+                    post_crisis_cooldown_avg_probability: 0.068,
+                    max_non_normal_avg_probability: 0.068,
+                    pre_warning_buffer_lift_vs_normal: Some(1.67),
+                    positive_window_lift_vs_normal: Some(2.17),
+                    early_warning_lift_vs_normal: Some(1.67),
+                    in_crisis_lift_vs_normal: Some(2.0),
+                    post_crisis_cooldown_lift_vs_normal: Some(2.27),
+                    positive_window_gap_vs_normal: Some(0.035),
+                    post_crisis_cooldown_gap_vs_normal: Some(0.038),
+                    max_non_normal_lift_vs_normal: Some(2.27),
+                    diagnosis: "cooldown_bleed".to_string(),
+                }],
+                usable_early_warning_horizon_count: 1,
+                insufficient_early_warning_horizon_count: 1,
+                note: "test".to_string(),
+            }),
+            actionability: None,
+        };
+        let release = test_release_with_bundle(&bundle);
+        let bundle_path = release.manifest.bundle_uri.clone();
+
+        let regressions = compare_probability_guardrails(&release).unwrap();
+
+        let _ = std::fs::remove_file(bundle_path);
+        assert!(regressions
+            .iter()
+            .any(|item| item.contains("cooldown_bleed")));
+    }
+
+    #[test]
     fn probability_decision_threshold_keeps_5d_floor_conservative() {
         let probabilities = vec![0.0086, 0.0082, 0.0079, 0.0034, 0.0028, 0.0021];
         let labels = vec![1.0, 1.0, 1.0, 0.0, 0.0, 0.0];
@@ -9461,21 +13323,22 @@ mod tests {
                 positive_rate: 0.03,
                 threshold: 0.3,
                 predicted_positive_count: 0,
-                actual_positive_count: 12,
-                pre_start_positive_count: 8,
-                post_start_positive_count: 4,
-                pre_start_hit_count: 0,
-                post_start_hit_count: 0,
+                primary_positive_count: 12,
+                late_validation_row_count: 4,
+                protected_row_count: 0,
+                primary_hit_count: 0,
+                late_validation_hit_count: 0,
+                protected_hit_count: 0,
                 false_positive_count: 0,
                 scenario_count: 1,
-                advance_warning_scenario_count: 0,
-                late_confirmation_scenario_count: 0,
+                on_time_scenario_count: 0,
+                late_only_scenario_count: 0,
                 missed_scenario_count: 1,
                 precision_at_threshold: None,
-                pre_start_recall_at_threshold: Some(0.0),
-                post_start_recall_at_threshold: Some(0.0),
-                advance_warning_rate: Some(0.0),
-                late_confirmation_rate: Some(0.0),
+                primary_recall_at_threshold: Some(0.0),
+                late_validation_capture_rate: Some(0.0),
+                on_time_rate: Some(0.0),
+                late_only_rate: Some(0.0),
                 missed_rate: Some(1.0),
                 note: "test".to_string(),
             }],
@@ -9485,9 +13348,60 @@ mod tests {
         };
 
         let regressions = compare_actionability_guardrails(&review);
-        assert_eq!(regressions.len(), 2);
-        assert!(regressions[0].contains("scenario_count"));
-        assert!(regressions[1].contains("produced no hits"));
+        assert!(regressions
+            .iter()
+            .any(|item| item.contains("scenario_count")));
+        assert!(regressions
+            .iter()
+            .any(|item| item.contains("produced no primary or late-validation hits")));
+        assert!(regressions.iter().any(|item| item.contains("on_time_rate")));
+        assert!(regressions.iter().any(|item| item.contains("missed_rate")));
+    }
+
+    #[test]
+    fn actionability_guardrails_apply_level_specific_rate_thresholds() {
+        let review = ReleaseActionabilityReview {
+            release_id: "candidate".to_string(),
+            enabled: true,
+            model_version: Some("actionability_bundle_test".to_string()),
+            calibration_version: Some("actionability_platt_test".to_string()),
+            fusion_policy_version: Some("fusion_policy_test".to_string()),
+            levels: vec![ReleaseActionabilityLevelReview {
+                level: ActionabilityLevel::Defend,
+                proxy_horizon_days: 5,
+                sample_count: 120,
+                positive_rate: 0.04,
+                threshold: 0.12,
+                predicted_positive_count: 5,
+                primary_positive_count: 10,
+                late_validation_row_count: 7,
+                protected_row_count: 0,
+                primary_hit_count: 1,
+                late_validation_hit_count: 3,
+                protected_hit_count: 0,
+                false_positive_count: 1,
+                scenario_count: 3,
+                on_time_scenario_count: 0,
+                late_only_scenario_count: 2,
+                missed_scenario_count: 1,
+                precision_at_threshold: Some(0.2),
+                primary_recall_at_threshold: Some(0.33),
+                late_validation_capture_rate: Some(0.43),
+                on_time_rate: Some(0.0),
+                late_only_rate: Some(0.67),
+                missed_rate: Some(0.33),
+                note: "test".to_string(),
+            }],
+            guard_regressions: Vec::new(),
+            guard_passed: true,
+            note: "test".to_string(),
+        };
+
+        let regressions = compare_actionability_guardrails(&review);
+        assert!(regressions
+            .iter()
+            .any(|item| item.contains("late_only_rate")));
+        assert!(!regressions.iter().any(|item| item.contains("on_time_rate")));
     }
 
     #[test]
@@ -9519,6 +13433,7 @@ mod tests {
                     primary_scenario_id: scenario_id.map(str::to_string),
                     scenario_family: scenario_id
                         .map(|_| "systemic_credit_banking_crisis".to_string()),
+                    scenario_training_role: scenario_id.map(|_| "mandatory".to_string()),
                     label_5d: u8::from(matches!(index, 56..=59 | 106..=109 | 156..=159)),
                     label_20d: u8::from(matches!(index, 52..=59 | 102..=109 | 152..=159)),
                     label_60d: u8::from(matches!(index, 44..=59 | 94..=109 | 144..=159)),
@@ -9528,6 +13443,17 @@ mod tests {
                     action_label_5d: u8::from(matches!(index, 55..=59 | 105..=109 | 155..=159)),
                     action_label_20d: u8::from(matches!(index, 50..=59 | 100..=109 | 150..=159)),
                     action_label_60d: u8::from(matches!(index, 42..=59 | 92..=109 | 142..=159)),
+                    prepare_episode_label: u8::from(
+                        matches!(index, 42..=59 | 92..=109 | 142..=159),
+                    ),
+                    hedge_episode_label: u8::from(matches!(index, 50..=59 | 100..=109 | 150..=159)),
+                    defend_episode_label: u8::from(
+                        matches!(index, 55..=59 | 105..=109 | 155..=159),
+                    ),
+                    primary_action_level: None,
+                    action_episode_id: None,
+                    action_episode_phase: "outside".to_string(),
+                    protected_action_window: false,
                     features: BTreeMap::new(),
                     created_at: Utc::now(),
                 }
@@ -9555,8 +13481,9 @@ mod tests {
             },
         ];
 
+        let split_requirements = formal_dataset_split_requirements("formal_label_v1_main");
         let (train_end, calibration_end) =
-            scenario_aware_formal_split_bounds(&rows, &ranges).unwrap();
+            scenario_aware_formal_split_bounds(&rows, &ranges, split_requirements).unwrap();
         assert!((56..=59).contains(&train_end));
         assert!((106..=109).contains(&calibration_end));
 
@@ -9597,8 +13524,220 @@ mod tests {
         );
 
         let label_support = FormalSplitLabelSupport::from_rows(&rows);
-        assert!(label_support.split_has_required_label_support(0, train_end));
-        assert!(label_support.split_has_required_label_support(train_end, calibration_end));
-        assert!(label_support.split_has_required_label_support(calibration_end, rows.len()));
+        assert!(label_support.split_has_required_label_support(0, train_end, split_requirements));
+        assert!(label_support.split_has_required_label_support(
+            train_end,
+            calibration_end,
+            split_requirements
+        ));
+        assert!(label_support.split_has_required_label_support(
+            calibration_end,
+            rows.len(),
+            split_requirements
+        ));
+    }
+
+    #[test]
+    fn extension_acute_split_allows_two_scenarios_with_single_scenario_evaluation() {
+        let rows = (0..220)
+            .map(|index| {
+                let scenario_id = match index {
+                    40..=69 => Some("acute_a"),
+                    150..=179 => Some("acute_b"),
+                    _ => None,
+                };
+                FormalDatasetRowRecord {
+                    dataset_key: "dataset".to_string(),
+                    split_name: String::new(),
+                    entity_id: "us".to_string(),
+                    market_scope: "financial_system".to_string(),
+                    as_of_date: NaiveDate::from_ymd_opt(2000, 1, 1)
+                        .unwrap()
+                        .checked_add_signed(chrono::Duration::days(index as i64))
+                        .unwrap(),
+                    point_in_time_mode: "best_effort".to_string(),
+                    latest_visible_at: None,
+                    coverage_score: 1.0,
+                    core_feature_coverage: 1.0,
+                    trigger_feature_coverage: 1.0,
+                    external_feature_coverage: 1.0,
+                    sample_quality_grade: "a".to_string(),
+                    primary_scenario_id: scenario_id.map(str::to_string),
+                    scenario_family: scenario_id
+                        .map(|_| "acute_market_liquidity_crash".to_string()),
+                    scenario_training_role: scenario_id.map(|_| "extension_only".to_string()),
+                    label_5d: u8::from(matches!(index, 62..=69 | 172..=179)),
+                    label_20d: u8::from(matches!(index, 50..=69 | 160..=179)),
+                    label_60d: 0,
+                    regime_5d: "normal".to_string(),
+                    regime_20d: "normal".to_string(),
+                    regime_60d: "normal".to_string(),
+                    action_label_5d: u8::from(matches!(index, 62..=69 | 172..=179)),
+                    action_label_20d: u8::from(matches!(index, 50..=69 | 160..=179)),
+                    action_label_60d: 0,
+                    prepare_episode_label: u8::from(matches!(index, 48..=69 | 158..=179)),
+                    hedge_episode_label: u8::from(matches!(index, 56..=69 | 166..=179)),
+                    defend_episode_label: u8::from(matches!(index, 62..=69 | 172..=179)),
+                    primary_action_level: None,
+                    action_episode_id: None,
+                    action_episode_phase: "outside".to_string(),
+                    protected_action_window: false,
+                    features: BTreeMap::new(),
+                    created_at: Utc::now(),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let ranges = vec![
+            ScenarioRowRange {
+                scenario_id: "acute_a".to_string(),
+                family: "acute_market_liquidity_crash".to_string(),
+                start_index: 40,
+                end_index: 69,
+            },
+            ScenarioRowRange {
+                scenario_id: "acute_b".to_string(),
+                family: "acute_market_liquidity_crash".to_string(),
+                start_index: 150,
+                end_index: 179,
+            },
+        ];
+
+        let split_requirements = formal_dataset_split_requirements("formal_label_v1_ext_acute");
+        let (train_end, calibration_end) =
+            scenario_aware_formal_split_bounds(&rows, &ranges, split_requirements).unwrap();
+
+        assert!((62..=69).contains(&train_end));
+        assert!((172..=179).contains(&calibration_end));
+
+        let label_support = FormalSplitLabelSupport::from_rows(&rows);
+        assert!(label_support.split_has_required_label_support(0, train_end, split_requirements));
+        assert!(label_support.split_has_required_label_support(
+            train_end,
+            calibration_end,
+            split_requirements
+        ));
+        assert!(label_support.split_has_required_label_support(
+            calibration_end,
+            rows.len(),
+            split_requirements
+        ));
+
+        assert_eq!(
+            scenario_count_for_index_range(&rows, calibration_end, rows.len()),
+            1
+        );
+    }
+
+    #[test]
+    fn extension_stress_split_uses_20d_60d_prepare_hedge_requirements() {
+        let rows = (0..260)
+            .map(|index| {
+                let scenario_id = match index {
+                    30..=59 => Some("stress_a"),
+                    90..=119 => Some("stress_b"),
+                    150..=179 => Some("stress_c"),
+                    210..=239 => Some("stress_d"),
+                    _ => None,
+                };
+                FormalDatasetRowRecord {
+                    dataset_key: "dataset".to_string(),
+                    split_name: String::new(),
+                    entity_id: "us".to_string(),
+                    market_scope: "financial_system".to_string(),
+                    as_of_date: NaiveDate::from_ymd_opt(2000, 1, 1)
+                        .unwrap()
+                        .checked_add_signed(chrono::Duration::days(index as i64))
+                        .unwrap(),
+                    point_in_time_mode: "best_effort".to_string(),
+                    latest_visible_at: None,
+                    coverage_score: 1.0,
+                    core_feature_coverage: 1.0,
+                    trigger_feature_coverage: 1.0,
+                    external_feature_coverage: 1.0,
+                    sample_quality_grade: "a".to_string(),
+                    primary_scenario_id: scenario_id.map(str::to_string),
+                    scenario_family: scenario_id.map(|_| "mixed_systemic_stress".to_string()),
+                    scenario_training_role: scenario_id.map(|_| "extension_only".to_string()),
+                    label_5d: 0,
+                    label_20d: u8::from(
+                        matches!(index, 42..=59 | 102..=119 | 162..=179 | 222..=239),
+                    ),
+                    label_60d: u8::from(
+                        matches!(index, 34..=59 | 94..=119 | 154..=179 | 214..=239),
+                    ),
+                    regime_5d: "normal".to_string(),
+                    regime_20d: "normal".to_string(),
+                    regime_60d: "normal".to_string(),
+                    action_label_5d: 0,
+                    action_label_20d: u8::from(
+                        matches!(index, 42..=59 | 102..=119 | 162..=179 | 222..=239),
+                    ),
+                    action_label_60d: u8::from(
+                        matches!(index, 34..=59 | 94..=119 | 154..=179 | 214..=239),
+                    ),
+                    prepare_episode_label: u8::from(
+                        matches!(index, 34..=59 | 94..=119 | 154..=179 | 214..=239),
+                    ),
+                    hedge_episode_label: u8::from(
+                        matches!(index, 42..=59 | 102..=119 | 162..=179 | 222..=239),
+                    ),
+                    defend_episode_label: 0,
+                    primary_action_level: None,
+                    action_episode_id: None,
+                    action_episode_phase: "outside".to_string(),
+                    protected_action_window: true,
+                    features: BTreeMap::new(),
+                    created_at: Utc::now(),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let ranges = vec![
+            ScenarioRowRange {
+                scenario_id: "stress_a".to_string(),
+                family: "mixed_systemic_stress".to_string(),
+                start_index: 30,
+                end_index: 59,
+            },
+            ScenarioRowRange {
+                scenario_id: "stress_b".to_string(),
+                family: "mixed_systemic_stress".to_string(),
+                start_index: 90,
+                end_index: 119,
+            },
+            ScenarioRowRange {
+                scenario_id: "stress_c".to_string(),
+                family: "mixed_systemic_stress".to_string(),
+                start_index: 150,
+                end_index: 179,
+            },
+            ScenarioRowRange {
+                scenario_id: "stress_d".to_string(),
+                family: "mixed_systemic_stress".to_string(),
+                start_index: 210,
+                end_index: 239,
+            },
+        ];
+
+        let split_requirements = formal_dataset_split_requirements("formal_label_v1_ext_stress");
+        let (train_end, calibration_end) =
+            scenario_aware_formal_split_bounds(&rows, &ranges, split_requirements).unwrap();
+
+        assert!((42..=59).contains(&train_end));
+        assert!((162..=179).contains(&calibration_end));
+
+        let label_support = FormalSplitLabelSupport::from_rows(&rows);
+        assert!(label_support.split_has_required_label_support(0, train_end, split_requirements));
+        assert!(label_support.split_has_required_label_support(
+            train_end,
+            calibration_end,
+            split_requirements
+        ));
+        assert!(label_support.split_has_required_label_support(
+            calibration_end,
+            rows.len(),
+            split_requirements
+        ));
     }
 }

@@ -248,6 +248,8 @@ CREATE TABLE IF NOT EXISTS analytics_prediction_snapshots (
     coverage_score REAL NOT NULL,
     freshness_status TEXT NOT NULL,
     method_version TEXT NOT NULL,
+    posture_trigger_codes_json TEXT NOT NULL DEFAULT '[]',
+    posture_blocker_codes_json TEXT NOT NULL DEFAULT '[]',
     recorded_at TEXT NOT NULL
 );
 
@@ -305,6 +307,7 @@ CREATE TABLE IF NOT EXISTS analytics_formal_dataset_rows (
     sample_quality_grade TEXT NOT NULL,
     primary_scenario_id TEXT,
     scenario_family TEXT,
+    scenario_training_role TEXT,
     label_5d INTEGER NOT NULL,
     label_20d INTEGER NOT NULL,
     label_60d INTEGER NOT NULL,
@@ -314,8 +317,68 @@ CREATE TABLE IF NOT EXISTS analytics_formal_dataset_rows (
     action_label_5d INTEGER NOT NULL DEFAULT 0,
     action_label_20d INTEGER NOT NULL DEFAULT 0,
     action_label_60d INTEGER NOT NULL DEFAULT 0,
+    prepare_episode_label INTEGER NOT NULL DEFAULT 0,
+    hedge_episode_label INTEGER NOT NULL DEFAULT 0,
+    defend_episode_label INTEGER NOT NULL DEFAULT 0,
+    primary_action_level TEXT,
+    action_episode_id TEXT,
+    action_episode_phase TEXT NOT NULL DEFAULT 'outside',
+    protected_action_window INTEGER NOT NULL DEFAULT 0,
     features_json TEXT NOT NULL,
     created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS analytics_historical_replay_runs (
+    replay_run_id TEXT PRIMARY KEY,
+    release_id TEXT REFERENCES analytics_model_releases(release_id) ON DELETE SET NULL,
+    market_scope TEXT NOT NULL,
+    from_date TEXT NOT NULL,
+    to_date TEXT NOT NULL,
+    history_cache_key TEXT NOT NULL,
+    feature_set_version TEXT NOT NULL,
+    label_version TEXT NOT NULL,
+    point_in_time_mode TEXT NOT NULL,
+    runtime_policy_version TEXT NOT NULL,
+    action_playbook_version TEXT NOT NULL,
+    protected_window_catalog_id TEXT NOT NULL,
+    source_watermark TEXT NOT NULL,
+    status TEXT NOT NULL,
+    point_count INTEGER NOT NULL,
+    failure_reason TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS analytics_historical_assessment_points (
+    replay_point_id TEXT PRIMARY KEY,
+    replay_run_id TEXT NOT NULL REFERENCES analytics_historical_replay_runs(replay_run_id) ON DELETE CASCADE,
+    entity_id TEXT NOT NULL,
+    market_scope TEXT NOT NULL,
+    release_id TEXT REFERENCES analytics_model_releases(release_id) ON DELETE SET NULL,
+    as_of_date TEXT NOT NULL,
+    feature_snapshot_id TEXT,
+    point_in_time_mode TEXT NOT NULL,
+    runtime_policy_version TEXT NOT NULL,
+    action_playbook_version TEXT NOT NULL,
+    overall_score REAL NOT NULL,
+    structural_score REAL NOT NULL,
+    trigger_score REAL NOT NULL,
+    external_shock_score REAL NOT NULL,
+    raw_p_5d REAL NOT NULL,
+    raw_p_20d REAL NOT NULL,
+    raw_p_60d REAL NOT NULL,
+    calibrated_p_5d REAL NOT NULL,
+    calibrated_p_20d REAL NOT NULL,
+    calibrated_p_60d REAL NOT NULL,
+    posture TEXT NOT NULL,
+    time_to_risk_bucket TEXT NOT NULL,
+    actionability_prepare REAL NOT NULL,
+    actionability_hedge REAL NOT NULL,
+    actionability_defend REAL NOT NULL,
+    posture_trigger_codes_json TEXT NOT NULL DEFAULT '[]',
+    posture_blocker_codes_json TEXT NOT NULL DEFAULT '[]',
+    coverage_score REAL NOT NULL,
+    freshness_status TEXT NOT NULL,
+    generated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS alerts_events (
@@ -373,6 +436,18 @@ CREATE INDEX IF NOT EXISTS idx_analytics_formal_datasets_scope_version
 
 CREATE INDEX IF NOT EXISTS idx_analytics_formal_dataset_rows_dataset_split_date
     ON analytics_formal_dataset_rows(dataset_key, split_name, as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_historical_replay_runs_scope_release_created
+    ON analytics_historical_replay_runs(market_scope, release_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_historical_replay_runs_cache
+    ON analytics_historical_replay_runs(history_cache_key, from_date, to_date, status);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_historical_assessment_points_run_date
+    ON analytics_historical_assessment_points(replay_run_id, as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_historical_assessment_points_scope_release_date
+    ON analytics_historical_assessment_points(market_scope, release_id, as_of_date DESC);
 
 CREATE INDEX IF NOT EXISTS idx_alerts_events_status
     ON alerts_events(status, level, triggered_as_of_date DESC);

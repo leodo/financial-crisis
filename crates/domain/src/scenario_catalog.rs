@@ -3,6 +3,8 @@ use std::{collections::HashSet, env, fs};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
+use crate::ActionabilityLevel;
+
 const CRISIS_SCENARIO_CATALOG_ENV: &str = "FC_SCENARIO_CATALOG_PATH";
 const EMBEDDED_SCENARIO_CATALOG_PATH: &str = "embedded:config/research_crisis_scenarios.us.json";
 const EMBEDDED_SCENARIO_CATALOG_JSON: &str =
@@ -26,6 +28,32 @@ pub enum CrisisScenarioTrainingRole {
     NoPositiveMain,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionEpisodeTemplateId {
+    AcuteMarketLiquidityCrash,
+    SystemicCreditBankingCrisis,
+    MixedSystemicStress,
+    RateShockOrPolicyDislocation,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ActionEpisodeWindowOverride {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    pub primary_start: Option<NaiveDate>,
+    pub primary_end: Option<NaiveDate>,
+    pub late_validation_end: Option<NaiveDate>,
+    pub cooldown_end: Option<NaiveDate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CrisisScenarioActionEpisodeOverrides {
+    pub prepare: Option<ActionEpisodeWindowOverride>,
+    pub hedge: Option<ActionEpisodeWindowOverride>,
+    pub defend: Option<ActionEpisodeWindowOverride>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrisisScenarioDefinition {
     pub scenario_id: String,
@@ -38,7 +66,13 @@ pub struct CrisisScenarioDefinition {
     pub crisis_end: NaiveDate,
     pub default_horizon_roles: Vec<u32>,
     pub training_role: CrisisScenarioTrainingRole,
+    #[serde(default)]
+    pub episode_template_id: Option<ActionEpisodeTemplateId>,
+    #[serde(default)]
+    pub action_episode_overrides: Option<CrisisScenarioActionEpisodeOverrides>,
     pub protected_window: bool,
+    #[serde(default)]
+    pub protected_action_levels: Vec<ActionabilityLevel>,
     pub evidence_basis: String,
 }
 
@@ -143,6 +177,15 @@ fn parse_catalog(
 ) -> Result<CrisisScenarioCatalog, String> {
     let mut parsed: CrisisScenarioCatalogFile =
         serde_json::from_str(raw).map_err(|error| format!("解析危机场景目录失败: {error}"))?;
+    for scenario in &mut parsed.scenarios {
+        if scenario.episode_template_id.is_none() {
+            scenario.episode_template_id = Some(default_action_episode_template(scenario.family));
+        }
+        if scenario.protected_window && scenario.protected_action_levels.is_empty() {
+            scenario.protected_action_levels =
+                vec![ActionabilityLevel::Prepare, ActionabilityLevel::Hedge];
+        }
+    }
     validate_scenarios(&parsed.scenarios)?;
     validate_label_sets(&parsed.label_sets, &parsed.scenarios)?;
     validate_window_sets(&parsed.window_sets, &parsed.scenarios)?;
@@ -160,6 +203,21 @@ fn parse_catalog(
         window_sets: parsed.window_sets,
         scenarios: parsed.scenarios,
     })
+}
+
+fn default_action_episode_template(family: CrisisScenarioFamily) -> ActionEpisodeTemplateId {
+    match family {
+        CrisisScenarioFamily::AcuteMarketLiquidityCrash => {
+            ActionEpisodeTemplateId::AcuteMarketLiquidityCrash
+        }
+        CrisisScenarioFamily::SystemicCreditBankingCrisis => {
+            ActionEpisodeTemplateId::SystemicCreditBankingCrisis
+        }
+        CrisisScenarioFamily::MixedSystemicStress => ActionEpisodeTemplateId::MixedSystemicStress,
+        CrisisScenarioFamily::RateShockOrPolicyDislocation => {
+            ActionEpisodeTemplateId::RateShockOrPolicyDislocation
+        }
+    }
 }
 
 fn validate_scenarios(scenarios: &[CrisisScenarioDefinition]) -> Result<(), String> {
@@ -214,6 +272,92 @@ fn validate_scenarios(scenarios: &[CrisisScenarioDefinition]) -> Result<(), Stri
             return Err(format!(
                 "场景 {} 的 default_horizon_roles 只能包含 5、20、60。",
                 scenario.scenario_id
+            ));
+        }
+        if scenario.episode_template_id.is_none() {
+            return Err(format!(
+                "场景 {} 缺少 episode_template_id。",
+                scenario.scenario_id
+            ));
+        }
+        let mut protected_levels = HashSet::new();
+        for level in &scenario.protected_action_levels {
+            if !protected_levels.insert(*level) {
+                return Err(format!(
+                    "场景 {} 的 protected_action_levels 存在重复动作层级。",
+                    scenario.scenario_id
+                ));
+            }
+        }
+        if let Some(overrides) = scenario.action_episode_overrides.as_ref() {
+            validate_action_episode_override(
+                &scenario.scenario_id,
+                "prepare",
+                overrides.prepare.as_ref(),
+            )?;
+            validate_action_episode_override(
+                &scenario.scenario_id,
+                "hedge",
+                overrides.hedge.as_ref(),
+            )?;
+            validate_action_episode_override(
+                &scenario.scenario_id,
+                "defend",
+                overrides.defend.as_ref(),
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_action_episode_override(
+    scenario_id: &str,
+    level_name: &str,
+    override_window: Option<&ActionEpisodeWindowOverride>,
+) -> Result<(), String> {
+    let Some(override_window) = override_window else {
+        return Ok(());
+    };
+
+    if let (Some(primary_start), Some(primary_end)) =
+        (override_window.primary_start, override_window.primary_end)
+    {
+        if primary_start > primary_end {
+            return Err(format!(
+                "场景 {} 的 {} action episode override 中 primary_start 晚于 primary_end。",
+                scenario_id, level_name
+            ));
+        }
+    }
+
+    if override_window.primary_start.is_some() ^ override_window.primary_end.is_some() {
+        return Err(format!(
+            "场景 {} 的 {} action episode override 必须同时提供 primary_start 和 primary_end。",
+            scenario_id, level_name
+        ));
+    }
+
+    if let (Some(primary_end), Some(late_validation_end)) = (
+        override_window.primary_end,
+        override_window.late_validation_end,
+    ) {
+        if late_validation_end < primary_end {
+            return Err(format!(
+                "场景 {} 的 {} action episode override 中 late_validation_end 早于 primary_end。",
+                scenario_id, level_name
+            ));
+        }
+    }
+
+    if let (Some(late_validation_end), Some(cooldown_end)) = (
+        override_window.late_validation_end,
+        override_window.cooldown_end,
+    ) {
+        if cooldown_end < late_validation_end {
+            return Err(format!(
+                "场景 {} 的 {} action episode override 中 cooldown_end 早于 late_validation_end。",
+                scenario_id, level_name
             ));
         }
     }
@@ -291,6 +435,8 @@ fn validate_scenario_refs<'a>(
 
 #[cfg(test)]
 mod tests {
+    use crate::ActionabilityLevel;
+
     use super::{embedded_crisis_scenario_catalog, CrisisScenarioTrainingRole};
 
     #[test]
@@ -313,5 +459,19 @@ mod tests {
             .scenarios_for_label_set("formal_label_v1_ext_acute")
             .expect("extension label set");
         assert_eq!(ext.len(), 2);
+        let protected_ext = catalog
+            .scenarios_for_label_set("formal_label_v1_ext_stress")
+            .expect("protected extension label set");
+        assert_eq!(protected_ext.len(), 4);
+        let protected = catalog
+            .scenarios
+            .iter()
+            .find(|scenario| scenario.scenario_id == "us_funding_stress_2011")
+            .expect("protected scenario");
+        assert_eq!(
+            protected.protected_action_levels,
+            vec![ActionabilityLevel::Prepare, ActionabilityLevel::Hedge]
+        );
+        assert!(protected.episode_template_id.is_some());
     }
 }

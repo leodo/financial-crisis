@@ -206,7 +206,7 @@ not active_default
 随后又补做了一轮更严格的复核：
 
 - API 不再继续盲信旧的 `prediction snapshots`；
-- 对 formal main release，如果历史缓存版本失配，会基于原始观测全量重建该 release 的历史评估轨迹；
+- 对带有 bundle-backed 概率模型的 active release，如果历史缓存版本失配，会基于原始观测全量重建该 release 的历史评估轨迹；
 - 再重新跑 `release review`。
 
 结果仍然没有改变：
@@ -234,9 +234,14 @@ not active_default
 因此本轮先修了缓存口径：
 
 - `analytics_prediction_snapshots.method_version` 现在额外包含 `runtime_policy=...`
-- 只要 formal runtime 阈值发生变化，就会强制重建该 release 的历史评估轨迹
+- 只要 bundle-backed release 的 runtime 阈值或缓存版本发生变化，就会强制重建该 release 的历史评估轨迹
 
 修复缓存后再重跑 review，结果和“旧缓存口径”完全不同：
+
+后续又补了一层 posture clause 持久化复核：
+
+- `posture_trigger_codes` / `posture_blocker_codes` 已写入 `prediction snapshots` 并能随 SQLite round-trip 保留；
+- 对当前 active baseline `us_formal_transitional_20260531T094603` 和候选 `us_formal_pit_scensplit4regime4_20260601T055211` 再跑 runtime review 后，`posture_trigger_distribution=[]` 已确认是“全历史均为 normal”的模型输出结果，而不是 clause 丢失。
 
 - 旧缓存口径下，候选曾表现为：
   - `timely_warning_rate`: `22.2% -> 55.6%`
@@ -643,11 +648,235 @@ No-Go for replacing transitional baseline
 因此下一步的工程重点要再收窄一层：
 
 1. 不要继续主要投入在 runtime floor 微调；
-2. 需要给 runtime / release review 增加 clause-level posture 审计，明确到底是哪条 serving 规则把 baseline 推成 `prepare`；
+2. runtime / release review 现在已经能输出 clause-level posture 审计，并能确认 baseline / candidate 当前并没有留下可用的非 `normal` 历史；
 3. formal main 训练目标必须显式要求：
    - `positive_window` 相对 `normal` 有正向拉升；
    - `in_crisis / cooldown` 不要和真正的“危机前数周窗口”混成一个概率水平；
 4. 在没有看到 `pre_warning / positive_window` 与 `normal` 拉开之前，任何新候选版都不应进入默认线上版本讨论。
+
+### 7.9 2026-06-01 runtime sanity guard 补充：relative pass 不再等于可上线
+
+在上一轮诊断里，`us_formal_pit_scensplit4regime4_20260601T055211` 虽然已经被证明：
+
+- `13331` 个历史点全部是 `normal`
+- `prepare / hedge / defend` 三条 runtime probability floor 命中数全部为 `0`
+- `5d=calibration_crushed_early_warning`
+- `20d=cold_across_all_regimes`
+- `60d=mixed_or_unclear`
+
+但旧版 `release review` 仍然会给出 `guard_passed=true`，原因只是：
+
+- baseline `us_formal_transitional_20260531T094603` 也同样偏冷；
+- 旧护栏只看“candidate 是否比 baseline 更差”，没有拦截“baseline 和 candidate 同样都不具备可执行预警能力”的情况。
+
+因此本轮又补了一条 `runtime sanity guard`：
+
+- 如果 candidate 全历史始终 `normal`
+- 且三个 runtime floor 命中数全部为 `0`
+- 且 regime separation 里没有任何可用的 early-warning 诊断
+
+那么 candidate 不能再因为“和 baseline 一样差”而被误判通过。
+
+按这个新护栏重跑 `us_formal_transitional_20260531T094603 vs us_formal_pit_scensplit4regime4_20260601T055211` 后：
+
+- `overall_guard_passed=false`
+- `runtime_sanity_regressions` 会明确写出：
+  - candidate 全历史 all-normal / zero-floor-hit / no usable early-warning separation
+  - baseline 也同样 all-normal / zero-floor-hit，因此 relative guardrails 不是充分晋升依据
+
+这一步的意义不是“把候选版打回去”这么简单，而是：
+
+- 当前 active baseline 也不能再被当成一个可靠的正式概率基线；
+- 后续研究必须以“绝对可执行性”而不是“相对不更差”作为 release 晋升门槛；
+- 在主概率头没有重新学出可区分的 pre-warning / positive-window 信号之前，不应再讨论默认上线。
+
+### 7.10 2026-06-02 formal main 重建候选 `us_formal_main_20260601T163415`
+
+本轮已经基于最新主数据集重新跑了一次 formal main：
+
+- dataset: `formal_v1_main_1990_daily:20260601T163337`
+- release: `us_formal_main_20260601T163415`
+- baseline: `us_formal_transitional_20260531T094603`
+- review: `reports/release-review/2026-06-01-us_formal_transitional_20260531T094603-vs-us_formal_main_20260601T163415-release-review.md`
+
+先看 dataset summary：
+
+- `evaluation` 已经不再只有单场景，`2020 / 2023` 都进入了评估段；
+- 但 `train` 仍然主要由 `2008` 主导；
+- `protected` 行仍然是 `0`，说明 formal main 还没有把 protected stress 当成正式上下文样本。
+
+再看训练输出：
+
+- actionability 头直接被禁用；
+- `usable_early_warning_horizons=0`
+- `5d=cold_across_all_regimes`
+- `20d=weak_regime_separation`
+- `60d=cooldown_bleed`
+
+release review 的结论也一致：
+
+- `guard_passed=false`
+- `probability head has zero usable early-warning horizons in bundle evaluation`
+- `60d regime diagnosis is cooldown_bleed in bundle evaluation`
+- `candidate us_formal_main_20260601T163415 has zero usable early-warning horizons in runtime regime audit`
+
+因此这次候选版说明的不是“formal main 完全没法跑”，而是：
+
+1. 现有主线代码链路已经可以完整重建、训练、发布候选、跑 strict-rebuild review；
+2. 但 formal main 的样本治理仍不足以支撑 `20d/60d` 形成稳定的 pre-warning separation；
+3. 下一轮最该做的是 formal main 与 `candidate_optional / protected stress` 的关系设计，而不是继续换一版阈值或校准。
+
+### 7.11 2026-06-02 formal main protected context 第一阶段已接入，但仍未过关
+
+本轮继续推进了 formal main 主线，不再停留在设计文档：
+
+- formal main dataset 已接入 `protected_stress_windows_v1`
+- 主数据集 `formal_v1_main_1990_daily:20260601T170716` / `20260601T172759` 的 `protected` 行已不再为 `0`
+- `2000 / 2011 / 2022` 已进入 formal main 的 context / split / actionability 语义
+
+但最新候选版：
+
+- `us_formal_main_20260601T173113`
+
+在 strict-rebuild release review 下仍然失败：
+
+- `guard_passed=false`
+- `probability head has zero usable early-warning horizons in bundle evaluation`
+- `20d regime diagnosis is cold_across_all_regimes in bundle evaluation`
+- `60d regime diagnosis is cooldown_bleed in bundle evaluation`
+
+这次复核的意义是把一个关键不确定性打掉：
+
+- 之前可以怀疑“是不是因为 formal main 完全没吃到 protected context”
+- 现在这个疑点已经排除
+
+也就是说，主线当前剩余问题已经更收敛：
+
+1. 不是扩展历史样本没接进来；
+2. 也不是 release review 没走 strict rebuild；
+3. 而是当前 `ForwardCrisis` 目标函数 + 线性头，仍不足以把 `20d/60d` 从偏冷状态拉出来。
+
+因此下一轮优先级必须继续下沉到训练目标本身：
+
+1. 更强的 protected-context / pre-warning separation
+2. 如仍失败，再评估 horizon-specific feature 选择或更强目标函数
+3. 不再继续主要投入在 serving 阈值或单纯 sample-weight 微调
+
+### 7.12 2026-06-02 runtime 误报压缩后，主瓶颈切到“绝对提前量”
+
+在后续一轮 runtime 收紧里，formal main 候选版 `us_formal_main_20260601T184003` 的状态已经明显变化：
+
+- `20d / 60d` bundle evaluation 仍保持 `usable_early_warning_separation`
+- runtime `longest_false_positive_episode_days`: `38 -> 5`
+- runtime `actionable_precision`: `37.6% -> 66.7%`
+
+说明两个结论已经成立：
+
+1. 当前 candidate 不再是“长误报段失控”的状态；
+2. runtime posture 收敛已经能把 `2022-11 ~ 2023-01` 这类高压未爆发阶段，与真正纯噪声更好地区分开。
+
+但新的瓶颈也更明确了：
+
+- `timely_warning_rate` 同时从 `30.0%` 回落到 `10.0%`
+- 当前场景级 backtests 里，真正形成动作级提前量的仍只有 `2023 美国区域银行危机`；`1990-1993 / 2000 / 2008 / 2011 / 2020 / 2022` 这些场景仍是 missed
+
+也就是说，这一轮把“误报过宽”压住了，但也把“可执行提前离场”压得偏保守。
+
+因此当前最准确的项目判断是：
+
+- 这版 candidate 已经更接近 `active_experimental` 的研究基线；
+- 但仍不满足 `active_default`，因为绝对提前量还不够稳，不能支持“危机前数周就能从容处置仓位”的目标。
+
+### 7.13 2026-06-02 `main + ext_stress + ext_acute` 组合训练能力已打通，但仍未解决 runtime 提前量
+
+本轮又推进了一步工程能力，而不是只停留在分析：
+
+- `research pipeline train-probability` / `bootstrap-formal-release`
+- 已支持 `--aux-dataset-key`
+- 可以把主数据集与扩展压力/急性样本一起送进同一轮 formal 训练
+
+首个组合候选版：
+
+- `us_formal_main_extmix_20260601T215225`
+
+其 bundle evaluation 有两个好消息：
+
+- `5d / 20d / 60d` 都出现了 `usable_early_warning_separation`
+- 说明 `1987 / 1998 / 2011 / 2022` 这类扩展样本至少已经进入了训练目标视野，不再只是“有文档但喂不到模型里”
+
+但 strict rebuild runtime review 的结论仍然偏保守：
+
+- `timely_warning_rate = 10.0%`
+- `actionable_precision = 70.0%`（随后在放宽 strong prepare 审计口径后回落到 `63.2%`）
+- `longest_false_positive_episode_days = 5`（随后在放宽 strong prepare 审计口径后被拉到 `30`）
+
+这一步说明的不是“组合训练没意义”，而是：
+
+1. 数据集组合输入能力已经不再是瓶颈；
+2. 但把扩展样本接进训练，并不等于模型真的学会了这些场景；
+3. 下一轮必须直接处理“扩展场景在目标函数与样本权重里为什么仍然学不进去”，而不是继续停留在数据 plumbing 或审计口径层面。
+
+### 7.14 2026-06-02 `scenario_training_role` 已正式下沉到训练行与权重，但尚未完成复核
+
+本轮又补上了一块之前缺失的“工程语义闭环”：
+
+- formal dataset row / SQLite / dataset CSV 已新增 `scenario_training_role`
+- `load_formal_training_dataset(...)` 对旧 row 也会从 `scenario catalog` 回填 role，避免历史 dataset 因缺字段而白跑
+- `ForwardCrisis` 概率头的正例权重，已开始同时看：
+  - `scenario_training_role`
+  - `scenario_family`
+  - `default_horizon_roles`
+
+这一步的意义很直接：
+
+1. 之前 `ext_stress / ext_acute` 能接进同一轮训练，但权重逻辑并不知道哪些是 `mandatory`、哪些只是 `candidate_optional / extension_only`
+2. 现在模型至少终于拿到了“这些样本在训练里应该多重看待”的显式信号
+3. 但这仍只是训练前提，不等于 runtime 已经恢复可执行提前量
+
+因此当前状态应理解为：
+
+- “扩展场景角色元数据缺失” 这个瓶颈已经解除；
+- 下一步必须立刻重训并重跑 strict review；
+- 如果 `extmix2` 仍然只在 bundle evaluation 有分离、但 runtime 依旧只会报 `2023`，那就说明剩余瓶颈已经进一步收敛到目标函数本身，而不再是样本角色治理。
+
+### 7.15 2026-06-02 `extmix2 / extmix3 / extmix4` 连续复核后，可以确认“权重微调”已接近收益上限
+
+本轮在同一组 `main + ext_stress + ext_acute` 数据上，连续做了三次更深入的训练侧修正：
+
+1. `extmix2`
+   - 引入 `scenario_training_role`
+   - 让 `ForwardCrisis` 正例权重同时看 `training_role + family + default_horizon_roles`
+2. `extmix3`
+   - 提高 `20d/60d pre_warning_buffer / positive_window` soft label
+   - 降低 `20d/60d cooldown` soft label
+   - 强化 `positive_window > normal / cooldown` 的 pairwise margin
+3. `extmix4`
+   - 继续提高 `20d/60d normal / cooldown` 负样本惩罚
+   - 尤其针对 runtime 里“normal 太高、cooldown 压不下去”的形态
+
+结果很一致：
+
+| Candidate | timely_warning_rate | actionable_precision | longest_false_positive_episode_days | runtime diagnosis |
+| --- | --- | --- | --- | --- |
+| `extmix2` | `10.0%` | `60.8%` | `30` | `5d weak / 20d cold / 60d weak` |
+| `extmix3` | `10.0%` | `62.5%` | `30` | `5d weak / 20d weak / 60d weak` |
+| `extmix4` | `10.0%` | `62.5%` | `30` | 与 `extmix3` 基本相同 |
+
+这说明：
+
+1. 当前代码里“让样本角色更明确、把 pairwise 和 soft-label 再拧一圈”已经不是主要阻塞；
+2. 模型可以在 bundle evaluation 学出 separation，但这层 separation 无法稳定穿透到 runtime；
+3. 下一轮如果还只是继续调 sample-weight / soft-label / pairwise margin，大概率只会重复得到同类结果。
+
+因此从现在开始，下一步应升级为：
+
+- 重新设计目标函数或模型形态；
+- 而不是继续把当前线性头当作主要突破口。
+
+更直白地说：
+
+- 当前剩余瓶颈已经不是“参数还没调够”；
+- 而是“这套模型形态对你要的那类提前离场能力，表达力可能不够”。
 
 ## 12. 结论
 

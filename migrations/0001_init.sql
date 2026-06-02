@@ -317,6 +317,8 @@ CREATE TABLE IF NOT EXISTS audit.prediction_snapshots (
     coverage_score DOUBLE PRECISION NOT NULL,
     freshness_status TEXT NOT NULL,
     method_version TEXT NOT NULL,
+    posture_trigger_codes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    posture_blocker_codes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -374,14 +376,75 @@ CREATE TABLE IF NOT EXISTS audit.formal_dataset_rows (
     sample_quality_grade TEXT NOT NULL,
     primary_scenario_id TEXT,
     scenario_family TEXT,
+    scenario_training_role TEXT,
     label_5d SMALLINT NOT NULL,
     label_20d SMALLINT NOT NULL,
     label_60d SMALLINT NOT NULL,
     action_label_5d SMALLINT NOT NULL DEFAULT 0,
     action_label_20d SMALLINT NOT NULL DEFAULT 0,
     action_label_60d SMALLINT NOT NULL DEFAULT 0,
+    prepare_episode_label SMALLINT NOT NULL DEFAULT 0,
+    hedge_episode_label SMALLINT NOT NULL DEFAULT 0,
+    defend_episode_label SMALLINT NOT NULL DEFAULT 0,
+    primary_action_level TEXT,
+    action_episode_id TEXT,
+    action_episode_phase TEXT NOT NULL DEFAULT 'outside',
+    protected_action_window SMALLINT NOT NULL DEFAULT 0,
     features_json JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS audit.historical_replay_runs (
+    replay_run_id TEXT PRIMARY KEY,
+    release_id TEXT REFERENCES audit.model_releases(release_id) ON DELETE SET NULL,
+    market_scope TEXT NOT NULL,
+    from_date DATE NOT NULL,
+    to_date DATE NOT NULL,
+    history_cache_key TEXT NOT NULL,
+    feature_set_version TEXT NOT NULL,
+    label_version TEXT NOT NULL,
+    point_in_time_mode TEXT NOT NULL,
+    runtime_policy_version TEXT NOT NULL,
+    action_playbook_version TEXT NOT NULL,
+    protected_window_catalog_id TEXT NOT NULL,
+    source_watermark TEXT NOT NULL,
+    status TEXT NOT NULL,
+    point_count INTEGER NOT NULL,
+    failure_reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS audit.historical_assessment_points (
+    replay_point_id TEXT PRIMARY KEY,
+    replay_run_id TEXT NOT NULL REFERENCES audit.historical_replay_runs(replay_run_id) ON DELETE CASCADE,
+    entity_id TEXT NOT NULL,
+    market_scope TEXT NOT NULL,
+    release_id TEXT REFERENCES audit.model_releases(release_id) ON DELETE SET NULL,
+    as_of_date DATE NOT NULL,
+    feature_snapshot_id TEXT,
+    point_in_time_mode TEXT NOT NULL,
+    runtime_policy_version TEXT NOT NULL,
+    action_playbook_version TEXT NOT NULL,
+    overall_score DOUBLE PRECISION NOT NULL,
+    structural_score DOUBLE PRECISION NOT NULL,
+    trigger_score DOUBLE PRECISION NOT NULL,
+    external_shock_score DOUBLE PRECISION NOT NULL,
+    raw_p_5d DOUBLE PRECISION NOT NULL,
+    raw_p_20d DOUBLE PRECISION NOT NULL,
+    raw_p_60d DOUBLE PRECISION NOT NULL,
+    calibrated_p_5d DOUBLE PRECISION NOT NULL,
+    calibrated_p_20d DOUBLE PRECISION NOT NULL,
+    calibrated_p_60d DOUBLE PRECISION NOT NULL,
+    posture TEXT NOT NULL,
+    time_to_risk_bucket TEXT NOT NULL,
+    actionability_prepare DOUBLE PRECISION NOT NULL,
+    actionability_hedge DOUBLE PRECISION NOT NULL,
+    actionability_defend DOUBLE PRECISION NOT NULL,
+    posture_trigger_codes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    posture_blocker_codes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    coverage_score DOUBLE PRECISION NOT NULL,
+    freshness_status TEXT NOT NULL,
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS audit.config_changes (
@@ -427,3 +490,15 @@ CREATE INDEX IF NOT EXISTS idx_formal_datasets_scope_version
 
 CREATE INDEX IF NOT EXISTS idx_formal_dataset_rows_dataset_split_date
     ON audit.formal_dataset_rows (dataset_key, split_name, as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_historical_replay_runs_scope_release_created
+    ON audit.historical_replay_runs (market_scope, release_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_historical_replay_runs_cache
+    ON audit.historical_replay_runs (history_cache_key, from_date, to_date, status);
+
+CREATE INDEX IF NOT EXISTS idx_historical_assessment_points_run_date
+    ON audit.historical_assessment_points (replay_run_id, as_of_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_historical_assessment_points_scope_release_date
+    ON audit.historical_assessment_points (market_scope, release_id, as_of_date DESC);

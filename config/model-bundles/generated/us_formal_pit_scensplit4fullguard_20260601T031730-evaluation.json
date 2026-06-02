@@ -1,0 +1,1211 @@
+{
+  "release_id": "us_formal_pit_scensplit4fullguard_20260601T031730",
+  "dataset_source": "formal",
+  "dataset_label": "formal_v1_main_1990_daily:20260601Tscensplit4",
+  "target_label_mode": "forward_crisis",
+  "market_scope": "financial_system",
+  "feature_names": [
+    "overall_score",
+    "structural_score",
+    "trigger_score",
+    "external_dimension_score",
+    "coverage_score",
+    "us_vix_level",
+    "us_vix_change_5d",
+    "us_curve_10y2y_level",
+    "us_baa_10y_spread_level",
+    "us_fed_funds_level",
+    "us_nfci_level",
+    "us_stlfsi_level",
+    "us_unemployment_level",
+    "us_housing_starts_level",
+    "us_usdjpy_level",
+    "us_usdjpy_change_20d"
+  ],
+  "training_samples": 3913,
+  "calibration_samples": 4192,
+  "evaluation_samples": 2269,
+  "horizons": [
+    {
+      "horizon_days": 5,
+      "raw_model": {
+        "intercept": -5.032639821787267,
+        "feature_stats": [
+          {
+            "name": "overall_score",
+            "mean": 0.5213723485816503,
+            "std_dev": 0.07297920839310165,
+            "fill_value": 0.5213723485816503
+          },
+          {
+            "name": "structural_score",
+            "mean": 0.6522967032967039,
+            "std_dev": 0.08639679961529276,
+            "fill_value": 0.6522967032967039
+          },
+          {
+            "name": "trigger_score",
+            "mean": 0.36145566061845136,
+            "std_dev": 0.10879430831799676,
+            "fill_value": 0.36145566061845136
+          },
+          {
+            "name": "external_dimension_score",
+            "mean": 0.552706602606696,
+            "std_dev": 0.16208286429224364,
+            "fill_value": 0.552706602606696
+          },
+          {
+            "name": "coverage_score",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "us_vix_level",
+            "mean": 20.783161257347288,
+            "std_dev": 6.77829236077937,
+            "fill_value": 20.783161257347288
+          },
+          {
+            "name": "us_vix_change_5d",
+            "mean": 0.0017940199335548036,
+            "std_dev": 2.607495114234917,
+            "fill_value": 0.0017940199335548036
+          },
+          {
+            "name": "us_curve_10y2y_level",
+            "mean": 0.870718119090207,
+            "std_dev": 0.9288284724455288,
+            "fill_value": 0.870718119090207
+          },
+          {
+            "name": "us_baa_10y_spread_level",
+            "mean": 2.342596473294151,
+            "std_dev": 0.580440543106363,
+            "fill_value": 2.342596473294151
+          },
+          {
+            "name": "us_fed_funds_level",
+            "mean": 3.6850805008944403,
+            "std_dev": 1.8084737222585687,
+            "fill_value": 3.6850805008944403
+          },
+          {
+            "name": "us_nfci_level",
+            "mean": -0.3721234347048295,
+            "std_dev": 0.3771597377362022,
+            "fill_value": -0.3721234347048295
+          },
+          {
+            "name": "us_stlfsi_level",
+            "mean": 0.09302629695885402,
+            "std_dev": 0.7819902848879251,
+            "fill_value": 0.09302629695885402
+          },
+          {
+            "name": "us_unemployment_level",
+            "mean": 4.934909276769743,
+            "std_dev": 0.6680606121804881,
+            "fill_value": 4.934909276769743
+          },
+          {
+            "name": "us_housing_starts_level",
+            "mean": 1671.3595706618962,
+            "std_dev": 283.65696442881443,
+            "fill_value": 1671.3595706618962
+          },
+          {
+            "name": "us_usdjpy_level",
+            "mean": 115.98109123434733,
+            "std_dev": 8.781462959250238,
+            "fill_value": 115.98109123434733
+          },
+          {
+            "name": "us_usdjpy_change_20d",
+            "mean": -0.16293125479172021,
+            "std_dev": 3.6744035323164868,
+            "fill_value": -0.16293125479172021
+          }
+        ],
+        "coefficients": [
+          {
+            "name": "overall_score",
+            "weight": -0.027489800477198314
+          },
+          {
+            "name": "structural_score",
+            "weight": 0.11400984801839176
+          },
+          {
+            "name": "trigger_score",
+            "weight": -0.15450518450863882
+          },
+          {
+            "name": "external_dimension_score",
+            "weight": -0.02305523470058625
+          },
+          {
+            "name": "coverage_score",
+            "weight": 0.0
+          },
+          {
+            "name": "us_vix_level",
+            "weight": 0.05701149695709415
+          },
+          {
+            "name": "us_vix_change_5d",
+            "weight": 0.7879639524126436
+          },
+          {
+            "name": "us_curve_10y2y_level",
+            "weight": -0.12558241931493896
+          },
+          {
+            "name": "us_baa_10y_spread_level",
+            "weight": -0.31764380413693183
+          },
+          {
+            "name": "us_fed_funds_level",
+            "weight": 0.2215333419982889
+          },
+          {
+            "name": "us_nfci_level",
+            "weight": -0.02039546728091376
+          },
+          {
+            "name": "us_stlfsi_level",
+            "weight": -0.36592769166450273
+          },
+          {
+            "name": "us_unemployment_level",
+            "weight": 0.06546373554680442
+          },
+          {
+            "name": "us_housing_starts_level",
+            "weight": -0.5196691390182172
+          },
+          {
+            "name": "us_usdjpy_level",
+            "weight": 0.08214505478792601
+          },
+          {
+            "name": "us_usdjpy_change_20d",
+            "weight": -0.4282643822575459
+          }
+        ]
+      },
+      "calibration": {
+        "alpha": 0.812615557125252,
+        "beta": -5.388923908413072,
+        "min_input": 6.52724959866036e-8,
+        "max_input": 0.9943436041258475
+      },
+      "evaluation": {
+        "sample_count": 2269,
+        "positive_rate": 0.0022036139268400176,
+        "brier_score": 0.0022055103233531567,
+        "log_loss": 0.016551557079508568,
+        "ece": 0.0024699185699525454,
+        "precision_at_30pct": null,
+        "recall_at_30pct": 0.0,
+        "actionability": null
+      }
+    },
+    {
+      "horizon_days": 20,
+      "raw_model": {
+        "intercept": -4.337423834689102,
+        "feature_stats": [
+          {
+            "name": "overall_score",
+            "mean": 0.5213723485816503,
+            "std_dev": 0.07297920839310165,
+            "fill_value": 0.5213723485816503
+          },
+          {
+            "name": "structural_score",
+            "mean": 0.6522967032967039,
+            "std_dev": 0.08639679961529276,
+            "fill_value": 0.6522967032967039
+          },
+          {
+            "name": "trigger_score",
+            "mean": 0.36145566061845136,
+            "std_dev": 0.10879430831799676,
+            "fill_value": 0.36145566061845136
+          },
+          {
+            "name": "external_dimension_score",
+            "mean": 0.552706602606696,
+            "std_dev": 0.16208286429224364,
+            "fill_value": 0.552706602606696
+          },
+          {
+            "name": "coverage_score",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "us_vix_level",
+            "mean": 20.783161257347288,
+            "std_dev": 6.77829236077937,
+            "fill_value": 20.783161257347288
+          },
+          {
+            "name": "us_vix_change_5d",
+            "mean": 0.0017940199335548036,
+            "std_dev": 2.607495114234917,
+            "fill_value": 0.0017940199335548036
+          },
+          {
+            "name": "us_curve_10y2y_level",
+            "mean": 0.870718119090207,
+            "std_dev": 0.9288284724455288,
+            "fill_value": 0.870718119090207
+          },
+          {
+            "name": "us_baa_10y_spread_level",
+            "mean": 2.342596473294151,
+            "std_dev": 0.580440543106363,
+            "fill_value": 2.342596473294151
+          },
+          {
+            "name": "us_fed_funds_level",
+            "mean": 3.6850805008944403,
+            "std_dev": 1.8084737222585687,
+            "fill_value": 3.6850805008944403
+          },
+          {
+            "name": "us_nfci_level",
+            "mean": -0.3721234347048295,
+            "std_dev": 0.3771597377362022,
+            "fill_value": -0.3721234347048295
+          },
+          {
+            "name": "us_stlfsi_level",
+            "mean": 0.09302629695885402,
+            "std_dev": 0.7819902848879251,
+            "fill_value": 0.09302629695885402
+          },
+          {
+            "name": "us_unemployment_level",
+            "mean": 4.934909276769743,
+            "std_dev": 0.6680606121804881,
+            "fill_value": 4.934909276769743
+          },
+          {
+            "name": "us_housing_starts_level",
+            "mean": 1671.3595706618962,
+            "std_dev": 283.65696442881443,
+            "fill_value": 1671.3595706618962
+          },
+          {
+            "name": "us_usdjpy_level",
+            "mean": 115.98109123434733,
+            "std_dev": 8.781462959250238,
+            "fill_value": 115.98109123434733
+          },
+          {
+            "name": "us_usdjpy_change_20d",
+            "mean": -0.16293125479172021,
+            "std_dev": 3.6744035323164868,
+            "fill_value": -0.16293125479172021
+          }
+        ],
+        "coefficients": [
+          {
+            "name": "overall_score",
+            "weight": -0.2860598306501426
+          },
+          {
+            "name": "structural_score",
+            "weight": -0.043584995053426966
+          },
+          {
+            "name": "trigger_score",
+            "weight": -0.3868458194743605
+          },
+          {
+            "name": "external_dimension_score",
+            "weight": 0.007696765191467549
+          },
+          {
+            "name": "coverage_score",
+            "weight": 0.0
+          },
+          {
+            "name": "us_vix_level",
+            "weight": -0.003085967609351537
+          },
+          {
+            "name": "us_vix_change_5d",
+            "weight": 0.5219105623196186
+          },
+          {
+            "name": "us_curve_10y2y_level",
+            "weight": 0.05760137095021442
+          },
+          {
+            "name": "us_baa_10y_spread_level",
+            "weight": -0.9022829537542135
+          },
+          {
+            "name": "us_fed_funds_level",
+            "weight": 0.47554268080211387
+          },
+          {
+            "name": "us_nfci_level",
+            "weight": 0.2464114618361076
+          },
+          {
+            "name": "us_stlfsi_level",
+            "weight": -0.8615445952223911
+          },
+          {
+            "name": "us_unemployment_level",
+            "weight": 0.3889827247688796
+          },
+          {
+            "name": "us_housing_starts_level",
+            "weight": -1.564067158077352
+          },
+          {
+            "name": "us_usdjpy_level",
+            "weight": 0.4327346533324321
+          },
+          {
+            "name": "us_usdjpy_change_20d",
+            "weight": -0.8083582071503707
+          }
+        ]
+      },
+      "calibration": null,
+      "evaluation": {
+        "sample_count": 2269,
+        "positive_rate": 0.00881445570736007,
+        "brier_score": 0.2561972013412652,
+        "log_loss": 0.7502731067811979,
+        "ece": 0.35519679961815687,
+        "precision_at_30pct": 0.0,
+        "recall_at_30pct": 0.0,
+        "actionability": null
+      }
+    },
+    {
+      "horizon_days": 60,
+      "raw_model": {
+        "intercept": -3.926260066739885,
+        "feature_stats": [
+          {
+            "name": "overall_score",
+            "mean": 0.5213723485816503,
+            "std_dev": 0.07297920839310165,
+            "fill_value": 0.5213723485816503
+          },
+          {
+            "name": "structural_score",
+            "mean": 0.6522967032967039,
+            "std_dev": 0.08639679961529276,
+            "fill_value": 0.6522967032967039
+          },
+          {
+            "name": "trigger_score",
+            "mean": 0.36145566061845136,
+            "std_dev": 0.10879430831799676,
+            "fill_value": 0.36145566061845136
+          },
+          {
+            "name": "external_dimension_score",
+            "mean": 0.552706602606696,
+            "std_dev": 0.16208286429224364,
+            "fill_value": 0.552706602606696
+          },
+          {
+            "name": "coverage_score",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "us_vix_level",
+            "mean": 20.783161257347288,
+            "std_dev": 6.77829236077937,
+            "fill_value": 20.783161257347288
+          },
+          {
+            "name": "us_vix_change_5d",
+            "mean": 0.0017940199335548036,
+            "std_dev": 2.607495114234917,
+            "fill_value": 0.0017940199335548036
+          },
+          {
+            "name": "us_curve_10y2y_level",
+            "mean": 0.870718119090207,
+            "std_dev": 0.9288284724455288,
+            "fill_value": 0.870718119090207
+          },
+          {
+            "name": "us_baa_10y_spread_level",
+            "mean": 2.342596473294151,
+            "std_dev": 0.580440543106363,
+            "fill_value": 2.342596473294151
+          },
+          {
+            "name": "us_fed_funds_level",
+            "mean": 3.6850805008944403,
+            "std_dev": 1.8084737222585687,
+            "fill_value": 3.6850805008944403
+          },
+          {
+            "name": "us_nfci_level",
+            "mean": -0.3721234347048295,
+            "std_dev": 0.3771597377362022,
+            "fill_value": -0.3721234347048295
+          },
+          {
+            "name": "us_stlfsi_level",
+            "mean": 0.09302629695885402,
+            "std_dev": 0.7819902848879251,
+            "fill_value": 0.09302629695885402
+          },
+          {
+            "name": "us_unemployment_level",
+            "mean": 4.934909276769743,
+            "std_dev": 0.6680606121804881,
+            "fill_value": 4.934909276769743
+          },
+          {
+            "name": "us_housing_starts_level",
+            "mean": 1671.3595706618962,
+            "std_dev": 283.65696442881443,
+            "fill_value": 1671.3595706618962
+          },
+          {
+            "name": "us_usdjpy_level",
+            "mean": 115.98109123434733,
+            "std_dev": 8.781462959250238,
+            "fill_value": 115.98109123434733
+          },
+          {
+            "name": "us_usdjpy_change_20d",
+            "mean": -0.16293125479172021,
+            "std_dev": 3.6744035323164868,
+            "fill_value": -0.16293125479172021
+          }
+        ],
+        "coefficients": [
+          {
+            "name": "overall_score",
+            "weight": -0.5370382592256701
+          },
+          {
+            "name": "structural_score",
+            "weight": -0.07177326635355241
+          },
+          {
+            "name": "trigger_score",
+            "weight": -0.7285094676933573
+          },
+          {
+            "name": "external_dimension_score",
+            "weight": -0.321030164277043
+          },
+          {
+            "name": "coverage_score",
+            "weight": 0.0
+          },
+          {
+            "name": "us_vix_level",
+            "weight": 0.06032654875017418
+          },
+          {
+            "name": "us_vix_change_5d",
+            "weight": 0.367829570004391
+          },
+          {
+            "name": "us_curve_10y2y_level",
+            "weight": 0.13412713614959726
+          },
+          {
+            "name": "us_baa_10y_spread_level",
+            "weight": -0.9894610485685029
+          },
+          {
+            "name": "us_fed_funds_level",
+            "weight": 0.5533907295966578
+          },
+          {
+            "name": "us_nfci_level",
+            "weight": 0.23072477800007293
+          },
+          {
+            "name": "us_stlfsi_level",
+            "weight": -0.804776279613272
+          },
+          {
+            "name": "us_unemployment_level",
+            "weight": 0.08945752920659437
+          },
+          {
+            "name": "us_housing_starts_level",
+            "weight": -1.867339322469215
+          },
+          {
+            "name": "us_usdjpy_level",
+            "weight": 0.4854327856744495
+          },
+          {
+            "name": "us_usdjpy_change_20d",
+            "weight": -0.18370324299704902
+          }
+        ]
+      },
+      "calibration": null,
+      "evaluation": {
+        "sample_count": 2269,
+        "positive_rate": 0.026443367122080213,
+        "brier_score": 0.41778052104247526,
+        "log_loss": 1.4890212232603977,
+        "ece": 0.46251234800318586,
+        "precision_at_30pct": 0.016813450760608487,
+        "recall_at_30pct": 0.35,
+        "actionability": null
+      }
+    }
+  ],
+  "actionability": {
+    "model_version": "actionability_bundle_20260601T031730",
+    "calibration_version": "actionability_platt_20260601T031730",
+    "fusion_policy_version": "fusion_policy_v2_threshold_margin_20260601",
+    "note": "Separate actionability head trained from bounded action-window labels to complement the crisis-prior horizons; runtime consumes threshold-aware confidence instead of treating raw action-window probabilities as direct posture signals.",
+    "levels": [
+      {
+        "level": "prepare",
+        "proxy_horizon_days": 60,
+        "target_label_mode": "action_window",
+        "decision_threshold": 0.05,
+        "raw_model": {
+          "intercept": -3.405087860558884,
+          "feature_stats": [
+            {
+              "name": "overall_score",
+              "mean": 0.5213723485816503,
+              "std_dev": 0.07297920839310165,
+              "fill_value": 0.5213723485816503
+            },
+            {
+              "name": "structural_score",
+              "mean": 0.6522967032967039,
+              "std_dev": 0.08639679961529276,
+              "fill_value": 0.6522967032967039
+            },
+            {
+              "name": "trigger_score",
+              "mean": 0.36145566061845136,
+              "std_dev": 0.10879430831799676,
+              "fill_value": 0.36145566061845136
+            },
+            {
+              "name": "external_dimension_score",
+              "mean": 0.552706602606696,
+              "std_dev": 0.16208286429224364,
+              "fill_value": 0.552706602606696
+            },
+            {
+              "name": "coverage_score",
+              "mean": 0.0,
+              "std_dev": 1e-6,
+              "fill_value": 0.0
+            },
+            {
+              "name": "us_vix_level",
+              "mean": 20.783161257347288,
+              "std_dev": 6.77829236077937,
+              "fill_value": 20.783161257347288
+            },
+            {
+              "name": "us_vix_change_5d",
+              "mean": 0.0017940199335548036,
+              "std_dev": 2.607495114234917,
+              "fill_value": 0.0017940199335548036
+            },
+            {
+              "name": "us_curve_10y2y_level",
+              "mean": 0.870718119090207,
+              "std_dev": 0.9288284724455288,
+              "fill_value": 0.870718119090207
+            },
+            {
+              "name": "us_baa_10y_spread_level",
+              "mean": 2.342596473294151,
+              "std_dev": 0.580440543106363,
+              "fill_value": 2.342596473294151
+            },
+            {
+              "name": "us_fed_funds_level",
+              "mean": 3.6850805008944403,
+              "std_dev": 1.8084737222585687,
+              "fill_value": 3.6850805008944403
+            },
+            {
+              "name": "us_nfci_level",
+              "mean": -0.3721234347048295,
+              "std_dev": 0.3771597377362022,
+              "fill_value": -0.3721234347048295
+            },
+            {
+              "name": "us_stlfsi_level",
+              "mean": 0.09302629695885402,
+              "std_dev": 0.7819902848879251,
+              "fill_value": 0.09302629695885402
+            },
+            {
+              "name": "us_unemployment_level",
+              "mean": 4.934909276769743,
+              "std_dev": 0.6680606121804881,
+              "fill_value": 4.934909276769743
+            },
+            {
+              "name": "us_housing_starts_level",
+              "mean": 1671.3595706618962,
+              "std_dev": 283.65696442881443,
+              "fill_value": 1671.3595706618962
+            },
+            {
+              "name": "us_usdjpy_level",
+              "mean": 115.98109123434733,
+              "std_dev": 8.781462959250238,
+              "fill_value": 115.98109123434733
+            },
+            {
+              "name": "us_usdjpy_change_20d",
+              "mean": -0.16293125479172021,
+              "std_dev": 3.6744035323164868,
+              "fill_value": -0.16293125479172021
+            }
+          ],
+          "coefficients": [
+            {
+              "name": "overall_score",
+              "weight": -0.3722260322919838
+            },
+            {
+              "name": "structural_score",
+              "weight": 0.06679029208866681
+            },
+            {
+              "name": "trigger_score",
+              "weight": -0.6177399251768158
+            },
+            {
+              "name": "external_dimension_score",
+              "weight": 0.08926326632437316
+            },
+            {
+              "name": "coverage_score",
+              "weight": 0.0
+            },
+            {
+              "name": "us_vix_level",
+              "weight": 0.2861278003163469
+            },
+            {
+              "name": "us_vix_change_5d",
+              "weight": -0.005274396010607256
+            },
+            {
+              "name": "us_curve_10y2y_level",
+              "weight": -0.15755199829599326
+            },
+            {
+              "name": "us_baa_10y_spread_level",
+              "weight": -1.4463019830178492
+            },
+            {
+              "name": "us_fed_funds_level",
+              "weight": 0.5152714841677731
+            },
+            {
+              "name": "us_nfci_level",
+              "weight": 0.283033004295979
+            },
+            {
+              "name": "us_stlfsi_level",
+              "weight": -0.5217004216071138
+            },
+            {
+              "name": "us_unemployment_level",
+              "weight": -0.13932449045592502
+            },
+            {
+              "name": "us_housing_starts_level",
+              "weight": -2.003949328676439
+            },
+            {
+              "name": "us_usdjpy_level",
+              "weight": 0.2935057918558669
+            },
+            {
+              "name": "us_usdjpy_change_20d",
+              "weight": -0.45851388146086963
+            }
+          ]
+        },
+        "calibration": null,
+        "evaluation": {
+          "sample_count": 2269,
+          "positive_rate": 0.03393565447333627,
+          "brier_score": 0.44343922980391093,
+          "log_loss": 1.503726108753945,
+          "ece": 0.4939268590973549,
+          "precision_at_30pct": 0.04791344667697063,
+          "recall_at_30pct": 0.8051948051948052,
+          "actionability": {
+            "threshold": 0.05,
+            "predicted_positive_count": 1751,
+            "actual_positive_count": 77,
+            "pre_start_positive_count": 35,
+            "post_start_positive_count": 33,
+            "unclassified_positive_count": 9,
+            "pre_start_hit_count": 35,
+            "post_start_hit_count": 31,
+            "unclassified_hit_count": 0,
+            "false_positive_count": 1685,
+            "scenario_count": 2,
+            "advance_warning_scenario_count": 1,
+            "late_confirmation_scenario_count": 0,
+            "missed_scenario_count": 1,
+            "precision_at_threshold": 0.038,
+            "pre_start_recall_at_threshold": 1.0,
+            "post_start_recall_at_threshold": 0.939,
+            "advance_warning_rate": 0.5,
+            "late_confirmation_rate": 0.0,
+            "missed_rate": 0.5,
+            "note": "Pre-start hit means the action signal fired before crisis_start; post-start hit means it only appeared on or after crisis_start within the bounded action window."
+          }
+        }
+      },
+      {
+        "level": "hedge",
+        "proxy_horizon_days": 20,
+        "target_label_mode": "action_window",
+        "decision_threshold": 0.05,
+        "raw_model": {
+          "intercept": -3.76085416374944,
+          "feature_stats": [
+            {
+              "name": "overall_score",
+              "mean": 0.5213723485816503,
+              "std_dev": 0.07297920839310165,
+              "fill_value": 0.5213723485816503
+            },
+            {
+              "name": "structural_score",
+              "mean": 0.6522967032967039,
+              "std_dev": 0.08639679961529276,
+              "fill_value": 0.6522967032967039
+            },
+            {
+              "name": "trigger_score",
+              "mean": 0.36145566061845136,
+              "std_dev": 0.10879430831799676,
+              "fill_value": 0.36145566061845136
+            },
+            {
+              "name": "external_dimension_score",
+              "mean": 0.552706602606696,
+              "std_dev": 0.16208286429224364,
+              "fill_value": 0.552706602606696
+            },
+            {
+              "name": "coverage_score",
+              "mean": 0.0,
+              "std_dev": 1e-6,
+              "fill_value": 0.0
+            },
+            {
+              "name": "us_vix_level",
+              "mean": 20.783161257347288,
+              "std_dev": 6.77829236077937,
+              "fill_value": 20.783161257347288
+            },
+            {
+              "name": "us_vix_change_5d",
+              "mean": 0.0017940199335548036,
+              "std_dev": 2.607495114234917,
+              "fill_value": 0.0017940199335548036
+            },
+            {
+              "name": "us_curve_10y2y_level",
+              "mean": 0.870718119090207,
+              "std_dev": 0.9288284724455288,
+              "fill_value": 0.870718119090207
+            },
+            {
+              "name": "us_baa_10y_spread_level",
+              "mean": 2.342596473294151,
+              "std_dev": 0.580440543106363,
+              "fill_value": 2.342596473294151
+            },
+            {
+              "name": "us_fed_funds_level",
+              "mean": 3.6850805008944403,
+              "std_dev": 1.8084737222585687,
+              "fill_value": 3.6850805008944403
+            },
+            {
+              "name": "us_nfci_level",
+              "mean": -0.3721234347048295,
+              "std_dev": 0.3771597377362022,
+              "fill_value": -0.3721234347048295
+            },
+            {
+              "name": "us_stlfsi_level",
+              "mean": 0.09302629695885402,
+              "std_dev": 0.7819902848879251,
+              "fill_value": 0.09302629695885402
+            },
+            {
+              "name": "us_unemployment_level",
+              "mean": 4.934909276769743,
+              "std_dev": 0.6680606121804881,
+              "fill_value": 4.934909276769743
+            },
+            {
+              "name": "us_housing_starts_level",
+              "mean": 1671.3595706618962,
+              "std_dev": 283.65696442881443,
+              "fill_value": 1671.3595706618962
+            },
+            {
+              "name": "us_usdjpy_level",
+              "mean": 115.98109123434733,
+              "std_dev": 8.781462959250238,
+              "fill_value": 115.98109123434733
+            },
+            {
+              "name": "us_usdjpy_change_20d",
+              "mean": -0.16293125479172021,
+              "std_dev": 3.6744035323164868,
+              "fill_value": -0.16293125479172021
+            }
+          ],
+          "coefficients": [
+            {
+              "name": "overall_score",
+              "weight": -0.285701922512825
+            },
+            {
+              "name": "structural_score",
+              "weight": 0.04910692239659298
+            },
+            {
+              "name": "trigger_score",
+              "weight": -0.4635740925639486
+            },
+            {
+              "name": "external_dimension_score",
+              "weight": 0.08985750547877398
+            },
+            {
+              "name": "coverage_score",
+              "weight": 0.0
+            },
+            {
+              "name": "us_vix_level",
+              "weight": 0.5570872965921047
+            },
+            {
+              "name": "us_vix_change_5d",
+              "weight": 0.17956065796331175
+            },
+            {
+              "name": "us_curve_10y2y_level",
+              "weight": 0.0466224030435407
+            },
+            {
+              "name": "us_baa_10y_spread_level",
+              "weight": -1.4427587144133012
+            },
+            {
+              "name": "us_fed_funds_level",
+              "weight": 0.550255897300858
+            },
+            {
+              "name": "us_nfci_level",
+              "weight": 0.2636862588217985
+            },
+            {
+              "name": "us_stlfsi_level",
+              "weight": -0.715567457531608
+            },
+            {
+              "name": "us_unemployment_level",
+              "weight": 0.3392295139832392
+            },
+            {
+              "name": "us_housing_starts_level",
+              "weight": -1.7498229537946253
+            },
+            {
+              "name": "us_usdjpy_level",
+              "weight": 0.2915905865836282
+            },
+            {
+              "name": "us_usdjpy_change_20d",
+              "weight": -0.6337324571172587
+            }
+          ]
+        },
+        "calibration": null,
+        "evaluation": {
+          "sample_count": 2269,
+          "positive_rate": 0.0251211987659762,
+          "brier_score": 0.31421963386125895,
+          "log_loss": 0.9044910119224147,
+          "ece": 0.39557189152703603,
+          "precision_at_30pct": 0.005766062602965404,
+          "recall_at_30pct": 0.12280701754385964,
+          "actionability": {
+            "threshold": 0.05,
+            "predicted_positive_count": 1827,
+            "actual_positive_count": 57,
+            "pre_start_positive_count": 35,
+            "post_start_positive_count": 22,
+            "unclassified_positive_count": 0,
+            "pre_start_hit_count": 35,
+            "post_start_hit_count": 20,
+            "unclassified_hit_count": 0,
+            "false_positive_count": 1772,
+            "scenario_count": 2,
+            "advance_warning_scenario_count": 1,
+            "late_confirmation_scenario_count": 0,
+            "missed_scenario_count": 1,
+            "precision_at_threshold": 0.03,
+            "pre_start_recall_at_threshold": 1.0,
+            "post_start_recall_at_threshold": 0.909,
+            "advance_warning_rate": 0.5,
+            "late_confirmation_rate": 0.0,
+            "missed_rate": 0.5,
+            "note": "Pre-start hit means the action signal fired before crisis_start; post-start hit means it only appeared on or after crisis_start within the bounded action window."
+          }
+        }
+      },
+      {
+        "level": "defend",
+        "proxy_horizon_days": 5,
+        "target_label_mode": "action_window",
+        "decision_threshold": 0.05,
+        "raw_model": {
+          "intercept": -5.135520777450574,
+          "feature_stats": [
+            {
+              "name": "overall_score",
+              "mean": 0.5213723485816503,
+              "std_dev": 0.07297920839310165,
+              "fill_value": 0.5213723485816503
+            },
+            {
+              "name": "structural_score",
+              "mean": 0.6522967032967039,
+              "std_dev": 0.08639679961529276,
+              "fill_value": 0.6522967032967039
+            },
+            {
+              "name": "trigger_score",
+              "mean": 0.36145566061845136,
+              "std_dev": 0.10879430831799676,
+              "fill_value": 0.36145566061845136
+            },
+            {
+              "name": "external_dimension_score",
+              "mean": 0.552706602606696,
+              "std_dev": 0.16208286429224364,
+              "fill_value": 0.552706602606696
+            },
+            {
+              "name": "coverage_score",
+              "mean": 0.0,
+              "std_dev": 1e-6,
+              "fill_value": 0.0
+            },
+            {
+              "name": "us_vix_level",
+              "mean": 20.783161257347288,
+              "std_dev": 6.77829236077937,
+              "fill_value": 20.783161257347288
+            },
+            {
+              "name": "us_vix_change_5d",
+              "mean": 0.0017940199335548036,
+              "std_dev": 2.607495114234917,
+              "fill_value": 0.0017940199335548036
+            },
+            {
+              "name": "us_curve_10y2y_level",
+              "mean": 0.870718119090207,
+              "std_dev": 0.9288284724455288,
+              "fill_value": 0.870718119090207
+            },
+            {
+              "name": "us_baa_10y_spread_level",
+              "mean": 2.342596473294151,
+              "std_dev": 0.580440543106363,
+              "fill_value": 2.342596473294151
+            },
+            {
+              "name": "us_fed_funds_level",
+              "mean": 3.6850805008944403,
+              "std_dev": 1.8084737222585687,
+              "fill_value": 3.6850805008944403
+            },
+            {
+              "name": "us_nfci_level",
+              "mean": -0.3721234347048295,
+              "std_dev": 0.3771597377362022,
+              "fill_value": -0.3721234347048295
+            },
+            {
+              "name": "us_stlfsi_level",
+              "mean": 0.09302629695885402,
+              "std_dev": 0.7819902848879251,
+              "fill_value": 0.09302629695885402
+            },
+            {
+              "name": "us_unemployment_level",
+              "mean": 4.934909276769743,
+              "std_dev": 0.6680606121804881,
+              "fill_value": 4.934909276769743
+            },
+            {
+              "name": "us_housing_starts_level",
+              "mean": 1671.3595706618962,
+              "std_dev": 283.65696442881443,
+              "fill_value": 1671.3595706618962
+            },
+            {
+              "name": "us_usdjpy_level",
+              "mean": 115.98109123434733,
+              "std_dev": 8.781462959250238,
+              "fill_value": 115.98109123434733
+            },
+            {
+              "name": "us_usdjpy_change_20d",
+              "mean": -0.16293125479172021,
+              "std_dev": 3.6744035323164868,
+              "fill_value": -0.16293125479172021
+            }
+          ],
+          "coefficients": [
+            {
+              "name": "overall_score",
+              "weight": 0.13193280175387584
+            },
+            {
+              "name": "structural_score",
+              "weight": 0.0801410671036279
+            },
+            {
+              "name": "trigger_score",
+              "weight": 0.12169077352231929
+            },
+            {
+              "name": "external_dimension_score",
+              "weight": 0.049806856850168224
+            },
+            {
+              "name": "coverage_score",
+              "weight": 0.0
+            },
+            {
+              "name": "us_vix_level",
+              "weight": -0.11573501581866522
+            },
+            {
+              "name": "us_vix_change_5d",
+              "weight": 0.534107228138649
+            },
+            {
+              "name": "us_curve_10y2y_level",
+              "weight": -0.23737075297025648
+            },
+            {
+              "name": "us_baa_10y_spread_level",
+              "weight": 0.17515388136754126
+            },
+            {
+              "name": "us_fed_funds_level",
+              "weight": -0.08585479310461418
+            },
+            {
+              "name": "us_nfci_level",
+              "weight": 0.7099130647817234
+            },
+            {
+              "name": "us_stlfsi_level",
+              "weight": -0.07992215415010472
+            },
+            {
+              "name": "us_unemployment_level",
+              "weight": 0.8041023120860543
+            },
+            {
+              "name": "us_housing_starts_level",
+              "weight": -0.32821353347403187
+            },
+            {
+              "name": "us_usdjpy_level",
+              "weight": 0.04005886641470435
+            },
+            {
+              "name": "us_usdjpy_change_20d",
+              "weight": -0.23346016893899427
+            }
+          ]
+        },
+        "calibration": null,
+        "evaluation": {
+          "sample_count": 2269,
+          "positive_rate": 0.00881445570736007,
+          "brier_score": 0.058079666099377474,
+          "log_loss": 0.29405879252856215,
+          "ece": 0.06266251816471474,
+          "precision_at_30pct": 0.006802721088435374,
+          "recall_at_30pct": 0.05,
+          "actionability": {
+            "threshold": 0.05,
+            "predicted_positive_count": 229,
+            "actual_positive_count": 20,
+            "pre_start_positive_count": 8,
+            "post_start_positive_count": 12,
+            "unclassified_positive_count": 0,
+            "pre_start_hit_count": 0,
+            "post_start_hit_count": 1,
+            "unclassified_hit_count": 0,
+            "false_positive_count": 228,
+            "scenario_count": 2,
+            "advance_warning_scenario_count": 0,
+            "late_confirmation_scenario_count": 1,
+            "missed_scenario_count": 1,
+            "precision_at_threshold": 0.004,
+            "pre_start_recall_at_threshold": 0.0,
+            "post_start_recall_at_threshold": 0.083,
+            "advance_warning_rate": 0.0,
+            "late_confirmation_rate": 0.5,
+            "missed_rate": 0.5,
+            "note": "Pre-start hit means the action signal fired before crisis_start; post-start hit means it only appeared on or after crisis_start within the bounded action window."
+          }
+        }
+      }
+    ]
+  },
+  "summary": {
+    "sample_count": 6807,
+    "brier_score": 0.22539441090236456,
+    "log_loss": 0.7519486290403681,
+    "ece": 0.2733930220637651,
+    "note": "Weighted average across 5d / 20d / 60d evaluation slices."
+  }
+}
