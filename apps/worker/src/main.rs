@@ -6507,12 +6507,20 @@ fn fit_logistic_model(
     horizon_days: u32,
     label_mode: ProbabilityTargetLabelMode,
 ) -> LogisticProbabilityModel {
+    let uses_interaction_tail = feature_names.iter().any(|feature_name| {
+        feature_name.contains("interaction__") || feature_name.contains("tail_")
+    });
     let feature_stats = feature_names
         .iter()
         .map(|feature| build_feature_stat(rows, feature))
         .collect::<Vec<_>>();
-    let regime_pairwise_targets =
-        forward_crisis_regime_pairwise_targets(rows, &feature_stats, horizon_days, label_mode);
+    let regime_pairwise_targets = forward_crisis_regime_pairwise_targets(
+        rows,
+        &feature_stats,
+        horizon_days,
+        label_mode,
+        uses_interaction_tail,
+    );
     let positive_class_weight = horizon_positive_class_weight(rows, horizon_days, label_mode);
     let mut intercept = initial_intercept(rows, horizon_days, positive_class_weight, label_mode);
     let mut weights = vec![0.0; feature_names.len()];
@@ -6553,6 +6561,7 @@ fn fit_logistic_model(
             &regime_pairwise_targets,
             sample_weight_sum,
             horizon_days,
+            uses_interaction_tail,
         );
         intercept -= learning_rate * intercept_gradient / sample_weight_sum;
         for (index, weight) in weights.iter_mut().enumerate() {
@@ -6569,9 +6578,7 @@ fn fit_logistic_model(
 
     LogisticProbabilityModel {
         intercept,
-        feature_transform: if feature_names.iter().any(|feature_name| {
-            feature_name.contains("interaction__") || feature_name.contains("tail_")
-        }) {
+        feature_transform: if uses_interaction_tail {
             PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1.to_string()
         } else {
             PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1.to_string()
@@ -6706,74 +6713,95 @@ fn forward_crisis_regime_pairwise_targets(
     feature_stats: &[ProbabilityFeatureStat],
     horizon_days: u32,
     label_mode: ProbabilityTargetLabelMode,
+    uses_interaction_tail: bool,
 ) -> Vec<RegimePairwiseTarget> {
-    if !matches!(label_mode, ProbabilityTargetLabelMode::ForwardCrisis) || horizon_days < 20 {
+    if !matches!(label_mode, ProbabilityTargetLabelMode::ForwardCrisis) {
         return Vec::new();
     }
 
     let target_specs = match horizon_days {
+        5 if uses_interaction_tail => vec![
+            (
+                ProbabilityTrainingRegime::PositiveWindow,
+                ProbabilityTrainingRegime::Normal,
+                0.45,
+                1.35,
+            ),
+            (
+                ProbabilityTrainingRegime::PositiveWindow,
+                ProbabilityTrainingRegime::PostCrisisCooldown,
+                0.30,
+                1.05,
+            ),
+            (
+                ProbabilityTrainingRegime::PreWarningBuffer,
+                ProbabilityTrainingRegime::Normal,
+                0.15,
+                0.50,
+            ),
+        ],
         20 => vec![
             (
                 ProbabilityTrainingRegime::PreWarningBuffer,
                 ProbabilityTrainingRegime::Normal,
-                0.85,
-                1.25,
+                if uses_interaction_tail { 1.00 } else { 0.85 },
+                if uses_interaction_tail { 1.40 } else { 1.25 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
                 ProbabilityTrainingRegime::Normal,
-                0.40,
-                0.85,
+                if uses_interaction_tail { 0.55 } else { 0.40 },
+                if uses_interaction_tail { 1.00 } else { 0.85 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
                 ProbabilityTrainingRegime::PreWarningBuffer,
-                0.35,
-                0.70,
+                if uses_interaction_tail { 0.40 } else { 0.35 },
+                if uses_interaction_tail { 0.80 } else { 0.70 },
             ),
             (
                 ProbabilityTrainingRegime::PreWarningBuffer,
                 ProbabilityTrainingRegime::PostCrisisCooldown,
-                0.70,
-                1.10,
+                if uses_interaction_tail { 0.90 } else { 0.70 },
+                if uses_interaction_tail { 1.25 } else { 1.10 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
                 ProbabilityTrainingRegime::PostCrisisCooldown,
-                0.45,
-                0.80,
+                if uses_interaction_tail { 0.70 } else { 0.45 },
+                if uses_interaction_tail { 1.05 } else { 0.80 },
             ),
         ],
         60 => vec![
             (
                 ProbabilityTrainingRegime::PreWarningBuffer,
                 ProbabilityTrainingRegime::Normal,
-                1.05,
-                1.30,
+                if uses_interaction_tail { 1.25 } else { 1.05 },
+                if uses_interaction_tail { 1.55 } else { 1.30 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
                 ProbabilityTrainingRegime::Normal,
-                0.65,
-                0.95,
+                if uses_interaction_tail { 0.85 } else { 0.65 },
+                if uses_interaction_tail { 1.20 } else { 0.95 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
                 ProbabilityTrainingRegime::PreWarningBuffer,
-                0.45,
-                0.60,
+                if uses_interaction_tail { 0.60 } else { 0.45 },
+                if uses_interaction_tail { 0.80 } else { 0.60 },
             ),
             (
                 ProbabilityTrainingRegime::PreWarningBuffer,
                 ProbabilityTrainingRegime::PostCrisisCooldown,
-                0.90,
-                1.30,
+                if uses_interaction_tail { 1.15 } else { 0.90 },
+                if uses_interaction_tail { 1.60 } else { 1.30 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
                 ProbabilityTrainingRegime::PostCrisisCooldown,
-                0.95,
-                1.00,
+                if uses_interaction_tail { 1.20 } else { 0.95 },
+                if uses_interaction_tail { 1.30 } else { 1.00 },
             ),
         ],
         _ => Vec::new(),
@@ -6820,10 +6848,13 @@ fn regime_centroid(
     })
 }
 
-fn regime_pairwise_strength(horizon_days: u32) -> f64 {
-    match horizon_days {
-        20 => 0.80,
-        60 => 1.15,
+fn regime_pairwise_strength(horizon_days: u32, uses_interaction_tail: bool) -> f64 {
+    match (horizon_days, uses_interaction_tail) {
+        (5, true) => 0.70,
+        (20, true) => 1.00,
+        (60, true) => 1.35,
+        (20, false) => 0.80,
+        (60, false) => 1.15,
         _ => 0.0,
     }
 }
@@ -6834,11 +6865,12 @@ fn apply_regime_pairwise_gradient(
     targets: &[RegimePairwiseTarget],
     sample_weight_sum: f64,
     horizon_days: u32,
+    uses_interaction_tail: bool,
 ) {
     if targets.is_empty() {
         return;
     }
-    let strength = regime_pairwise_strength(horizon_days);
+    let strength = regime_pairwise_strength(horizon_days, uses_interaction_tail);
     if strength <= 0.0 {
         return;
     }
@@ -12296,11 +12328,12 @@ mod tests {
             &feature_stats,
             20,
             ProbabilityTargetLabelMode::ForwardCrisis,
+            false,
         );
         assert!(!targets.is_empty());
         assert!(targets.len() >= 5);
         let mut gradients = vec![0.0];
-        super::apply_regime_pairwise_gradient(&mut gradients, &[0.0], &targets, 100.0, 20);
+        super::apply_regime_pairwise_gradient(&mut gradients, &[0.0], &targets, 100.0, 20, false);
         assert!(gradients[0] < 0.0);
     }
 

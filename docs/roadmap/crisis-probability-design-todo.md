@@ -269,7 +269,9 @@
    - [ ] 在 `interaction_tail_v1` 上继续压缩 `5d normal leakage`，避免 `5d normal_avg_probability >= positive_window_avg_probability`
    - [ ] 在 `interaction_tail_v1` 上压缩 `60d normal / cooldown` months 过宽问题，优先减少 `p_60d>=prepare` 的大范围命中
    - [ ] 复核 `interaction_tail_v1` 的 calibration / decision-threshold 选择是否把 `prepare_p60d` 拉得过高（当前 runtime floor 已到 `68.9%`）
-   - [ ] 产出 `interaction_tail_extmix2`，重新跑 strict rebuild review，重点检查 `1990-1993 / 1998 / 2000 / 2008 / 2011 / 2020 / 2022 / 2023`
+   - [x] 产出 `interaction_tail_extmix2` 并重跑 strict rebuild review；结果是 `actionable_precision` 从 `63.8%` 提到 `65.8%`、`longest_false_positive_episode_days` 从 `21` 降到 `19`，但 `timely_warning_rate` 仍停在 `10.0%`
+   - [ ] 拆解 `prepare_carry_structural / prepare_p60d_structural / prepare_structural_downgrade` 的 overfire，判断剩余误报是概率头问题还是 runtime posture 融合问题
+   - [ ] 复盘 `interaction_tail_extmix2` 为什么离线 `5d usable separation` 没有穿透到 runtime，优先看 `5d` label / calibration / posture clause 是否口径错位
    - [ ] 只有当 `interaction_tail_v1` 连续两轮仍无法提升 `timely_warning_rate` 且无法压下误报段时，再进入 `family_conditional_v1` 细分设计与 PoC
 3. Raw PIT history replay 闭环
    - [x] 新增 historical replay run / point 存储结构

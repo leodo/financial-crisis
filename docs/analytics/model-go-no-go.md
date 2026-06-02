@@ -954,6 +954,45 @@ runtime regime 诊断也已经和前一轮明显不同：
 - **但它当前仍不能替代默认线上版本**
 - **下一轮应优先修正 `5d normal leakage` 与 `60d/20d runtime overfire`，而不是回头继续做纯权重微调**
 
+### 7.18 2026-06-02 `interaction_tail_extmix2`：离线继续变好，但 runtime 仍卡在 `timely_warning_rate=10%`
+
+在首版 `interaction_tail_extmix1` 的基础上，又补了一轮更强的 regime pairwise 约束，产出：
+
+- `us_formal_interaction_tail_extmix2_20260602T022315`
+
+新的 bundle evaluation 继续改善：
+
+- `5d / 20d / 60d` 仍全部是 `usable_early_warning_separation`
+- 且 `5d` 的离线 `positive_window lift` 明显抬高
+
+但 strict rebuild runtime review 的结果只出现了“精度改善、误报缩短”，没有恢复绝对提前量：
+
+- `timely_warning_rate: 10.0% -> 10.0%`
+- `actionable_precision: 63.8% -> 65.8%`
+- `longest_false_positive_episode_days: 21 -> 19`
+
+runtime 诊断说明两件事：
+
+1. `5d` 依然是 `weak_regime_separation`
+2. `20d / 60d` 虽然仍是 `usable_early_warning_separation`，但 `prepare` 触发仍偏宽
+
+而且这次 review 还暴露了一个更具体的新瓶颈：
+
+- `prepare_carry_structural` 占 `prepare` posture 的 `80.3%`
+- `prepare_p60d_structural` 占 `57.2%`
+- `prepare_structural_downgrade` 占 `46.5%`
+
+这意味着当前剩余问题已经不再只是概率头本身，还包括：
+
+1. runtime posture 融合里，`carry + structural + downgrade` 这组 prepare clause 偏宽；
+2. `5d` 的 label / calibration / runtime 口径仍没把 `normal` 压到足够低；
+3. 因此继续单纯强化离线 pairwise，并不能自动换来更高的 `timely_warning_rate`。
+
+所以从 `extmix2` 开始，下一轮任务需要明确拆成两条并行主线：
+
+- 继续优化 `interaction_tail_v1` 本身的 `5d` 与 `60d cooldown/normal` 形态；
+- 同时审计 runtime `prepare` clause，避免结构性高压阶段被过宽地推入 months posture。
+
 ## 12. 结论
 
 从这一步开始，项目里出现“formal bundle”不再自动等于“正式模型”。

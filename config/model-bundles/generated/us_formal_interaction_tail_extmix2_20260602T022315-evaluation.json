@@ -1,0 +1,1338 @@
+{
+  "release_id": "us_formal_interaction_tail_extmix2_20260602T022315",
+  "dataset_source": "formal",
+  "dataset_label": "formal_v1_main_1990_daily:20260601T172759 + aux(formal_v1_ext_stress_1990_daily:20260601T162655, formal_v1_ext_acute_pre1990:20260601T163102)",
+  "model_family": "interaction_tail_v1",
+  "feature_transform": "interaction_tail_v1",
+  "target_label_mode": "forward_crisis",
+  "market_scope": "financial_system",
+  "feature_names": [
+    "overall_score",
+    "structural_score",
+    "trigger_score",
+    "external_dimension_score",
+    "coverage_score",
+    "us_vix_level",
+    "us_vix_change_5d",
+    "us_curve_10y2y_level",
+    "us_baa_10y_spread_level",
+    "us_fed_funds_level",
+    "us_nfci_level",
+    "us_stlfsi_level",
+    "us_unemployment_level",
+    "us_housing_starts_level",
+    "us_usdjpy_level",
+    "us_usdjpy_change_20d",
+    "interaction__overall_score__us_vix_level",
+    "interaction__structural_score__trigger_score",
+    "interaction__trigger_score__us_vix_level",
+    "interaction__trigger_score__us_usdjpy_change_20d",
+    "interaction__external_dimension_score__us_usdjpy_level",
+    "interaction__us_curve_10y2y_level__us_fed_funds_level",
+    "interaction__us_nfci_level__us_stlfsi_level",
+    "interaction__us_baa_10y_spread_level__us_vix_level",
+    "tail_pos__us_vix_level__24",
+    "tail_pos__us_vix_level__32",
+    "tail_pos__us_baa_10y_spread_level__2",
+    "tail_pos__us_stlfsi_level__1",
+    "tail_pos__us_usdjpy_level__145",
+    "tail_abs_pos__us_usdjpy_change_20d__4",
+    "tail_neg__us_curve_10y2y_level__0",
+    "tail_pos__overall_score__55",
+    "tail_pos__structural_score__52",
+    "tail_pos__trigger_score__50",
+    "tail_pos__external_dimension_score__50"
+  ],
+  "training_samples": 5774,
+  "calibration_samples": 10255,
+  "evaluation_samples": 22019,
+  "horizons": [
+    {
+      "horizon_days": 5,
+      "decision_threshold": 0.03,
+      "raw_model": {
+        "intercept": -5.44523527161237,
+        "feature_transform": "interaction_tail_v1",
+        "feature_stats": [
+          {
+            "name": "overall_score",
+            "mean": 0.4970767232421195,
+            "std_dev": 0.09429408026589384,
+            "fill_value": 0.4970767232421195
+          },
+          {
+            "name": "structural_score",
+            "mean": 0.6405557672324222,
+            "std_dev": 0.11221677703121094,
+            "fill_value": 0.6405557672324222
+          },
+          {
+            "name": "trigger_score",
+            "mean": 0.3218098372012476,
+            "std_dev": 0.1369228879443772,
+            "fill_value": 0.3218098372012476
+          },
+          {
+            "name": "external_dimension_score",
+            "mean": 0.5641452777970202,
+            "std_dev": 0.16416185197559385,
+            "fill_value": 0.5641452777970202
+          },
+          {
+            "name": "coverage_score",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "us_vix_level",
+            "mean": 20.39996189816412,
+            "std_dev": 9.82319479641154,
+            "fill_value": 20.39996189816412
+          },
+          {
+            "name": "us_vix_change_5d",
+            "mean": -0.03509352268791143,
+            "std_dev": 2.8936645767910028,
+            "fill_value": -0.03509352268791143
+          },
+          {
+            "name": "us_curve_10y2y_level",
+            "mean": 1.0686976099757566,
+            "std_dev": 0.9209315179533077,
+            "fill_value": 1.0686976099757566
+          },
+          {
+            "name": "us_baa_10y_spread_level",
+            "mean": 2.3931832351922364,
+            "std_dev": 0.8431254319270064,
+            "fill_value": 2.3931832351922364
+          },
+          {
+            "name": "us_fed_funds_level",
+            "mean": 4.006028749567044,
+            "std_dev": 2.1733690077040944,
+            "fill_value": 4.006028749567044
+          },
+          {
+            "name": "us_nfci_level",
+            "mean": -0.2301872185659856,
+            "std_dev": 0.6742534316534252,
+            "fill_value": -0.2301872185659856
+          },
+          {
+            "name": "us_stlfsi_level",
+            "mean": 0.2875248527883612,
+            "std_dev": 1.2492888292319444,
+            "fill_value": 0.2875248527883612
+          },
+          {
+            "name": "us_unemployment_level",
+            "mean": 5.565691028749586,
+            "std_dev": 1.2090864701397133,
+            "fill_value": 5.565691028749586
+          },
+          {
+            "name": "us_housing_starts_level",
+            "mean": 1497.167821267752,
+            "std_dev": 392.77385795797073,
+            "fill_value": 1497.167821267752
+          },
+          {
+            "name": "us_usdjpy_level",
+            "mean": 120.03317284378267,
+            "std_dev": 14.111098238648209,
+            "fill_value": 120.03317284378267
+          },
+          {
+            "name": "us_usdjpy_change_20d",
+            "mean": -0.45145306546588,
+            "std_dev": 3.8817586356489002,
+            "fill_value": -0.45145306546588
+          },
+          {
+            "name": "interaction__overall_score__us_vix_level",
+            "mean": 10.753848482854155,
+            "std_dev": 6.894722178840182,
+            "fill_value": 10.753848482854155
+          },
+          {
+            "name": "interaction__structural_score__trigger_score",
+            "mean": 0.20873583581572458,
+            "std_dev": 0.10271041701371554,
+            "fill_value": 0.20873583581572458
+          },
+          {
+            "name": "interaction__trigger_score__us_vix_level",
+            "mean": 7.122570400069275,
+            "std_dev": 5.436465176866285,
+            "fill_value": 7.122570400069275
+          },
+          {
+            "name": "interaction__trigger_score__us_usdjpy_change_20d",
+            "mean": -0.1334292500865958,
+            "std_dev": 1.4911006418565462,
+            "fill_value": -0.1334292500865958
+          },
+          {
+            "name": "interaction__external_dimension_score__us_usdjpy_level",
+            "mean": 67.97697278353633,
+            "std_dev": 22.49868685436278,
+            "fill_value": 67.97697278353633
+          },
+          {
+            "name": "interaction__us_curve_10y2y_level__us_fed_funds_level",
+            "mean": 2.8108922237616993,
+            "std_dev": 2.829752399001936,
+            "fill_value": 2.8108922237616993
+          },
+          {
+            "name": "interaction__us_nfci_level__us_stlfsi_level",
+            "mean": 0.6342964409767902,
+            "std_dev": 2.750238482251213,
+            "fill_value": 0.6342964409767902
+          },
+          {
+            "name": "interaction__us_baa_10y_spread_level__us_vix_level",
+            "mean": 54.748425995843405,
+            "std_dev": 52.92444486048818,
+            "fill_value": 54.748425995843405
+          },
+          {
+            "name": "tail_pos__us_vix_level__24",
+            "mean": 2.160833044683066,
+            "std_dev": 5.895528838560038,
+            "fill_value": 2.160833044683066
+          },
+          {
+            "name": "tail_pos__us_vix_level__32",
+            "mean": 0.8480706615864221,
+            "std_dev": 4.085951463299345,
+            "fill_value": 0.8480706615864221
+          },
+          {
+            "name": "tail_pos__us_baa_10y_spread_level__2",
+            "mean": 0.48931243505368716,
+            "std_dev": 0.7719005611712816,
+            "fill_value": 0.48931243505368716
+          },
+          {
+            "name": "tail_pos__us_stlfsi_level__1",
+            "mean": 0.21039715968133,
+            "std_dev": 0.9033554999723808,
+            "fill_value": 0.21039715968133
+          },
+          {
+            "name": "tail_pos__us_usdjpy_level__145",
+            "mean": 0.4335174922064429,
+            "std_dev": 1.9103365150998037,
+            "fill_value": 0.4335174922064429
+          },
+          {
+            "name": "tail_abs_pos__us_usdjpy_change_20d__4",
+            "mean": 0.6053585036369942,
+            "std_dev": 1.5589391830658226,
+            "fill_value": 0.6053585036369942
+          },
+          {
+            "name": "tail_neg__us_curve_10y2y_level__0",
+            "mean": 0.02070315206096294,
+            "std_dev": 0.07312243435308764,
+            "fill_value": 0.02070315206096294
+          },
+          {
+            "name": "tail_pos__overall_score__55",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "tail_pos__structural_score__52",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "tail_pos__trigger_score__50",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "tail_pos__external_dimension_score__50",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          }
+        ],
+        "coefficients": [
+          {
+            "name": "overall_score",
+            "weight": 0.03249306156920439
+          },
+          {
+            "name": "structural_score",
+            "weight": -0.35537553956736817
+          },
+          {
+            "name": "trigger_score",
+            "weight": 0.4002780377613284
+          },
+          {
+            "name": "external_dimension_score",
+            "weight": -0.12205288969100242
+          },
+          {
+            "name": "coverage_score",
+            "weight": 0.0
+          },
+          {
+            "name": "us_vix_level",
+            "weight": 0.1423917404827465
+          },
+          {
+            "name": "us_vix_change_5d",
+            "weight": 0.5534671552350853
+          },
+          {
+            "name": "us_curve_10y2y_level",
+            "weight": -0.22695523839687903
+          },
+          {
+            "name": "us_baa_10y_spread_level",
+            "weight": -0.6111176676708537
+          },
+          {
+            "name": "us_fed_funds_level",
+            "weight": 0.7118454132492453
+          },
+          {
+            "name": "us_nfci_level",
+            "weight": 0.8341047408302843
+          },
+          {
+            "name": "us_stlfsi_level",
+            "weight": -0.3805974412429107
+          },
+          {
+            "name": "us_unemployment_level",
+            "weight": -0.14223854497564345
+          },
+          {
+            "name": "us_housing_starts_level",
+            "weight": -0.2804090648737269
+          },
+          {
+            "name": "us_usdjpy_level",
+            "weight": 0.3761823346841516
+          },
+          {
+            "name": "us_usdjpy_change_20d",
+            "weight": -0.5319073441668343
+          },
+          {
+            "name": "interaction__overall_score__us_vix_level",
+            "weight": 0.25037316659110936
+          },
+          {
+            "name": "interaction__structural_score__trigger_score",
+            "weight": 0.0642005011322419
+          },
+          {
+            "name": "interaction__trigger_score__us_vix_level",
+            "weight": 0.16910783198016602
+          },
+          {
+            "name": "interaction__trigger_score__us_usdjpy_change_20d",
+            "weight": -0.38722243342914353
+          },
+          {
+            "name": "interaction__external_dimension_score__us_usdjpy_level",
+            "weight": -0.07020483175345114
+          },
+          {
+            "name": "interaction__us_curve_10y2y_level__us_fed_funds_level",
+            "weight": 0.4724731979582678
+          },
+          {
+            "name": "interaction__us_nfci_level__us_stlfsi_level",
+            "weight": 0.0025121383889051305
+          },
+          {
+            "name": "interaction__us_baa_10y_spread_level__us_vix_level",
+            "weight": -0.04237211043741387
+          },
+          {
+            "name": "tail_pos__us_vix_level__24",
+            "weight": -0.025942106002010912
+          },
+          {
+            "name": "tail_pos__us_vix_level__32",
+            "weight": -0.030342735158626455
+          },
+          {
+            "name": "tail_pos__us_baa_10y_spread_level__2",
+            "weight": -0.5195110515583354
+          },
+          {
+            "name": "tail_pos__us_stlfsi_level__1",
+            "weight": -0.04922515600811334
+          },
+          {
+            "name": "tail_pos__us_usdjpy_level__145",
+            "weight": -0.5767584835455225
+          },
+          {
+            "name": "tail_abs_pos__us_usdjpy_change_20d__4",
+            "weight": -0.7582594651406838
+          },
+          {
+            "name": "tail_neg__us_curve_10y2y_level__0",
+            "weight": -0.1295177971734113
+          },
+          {
+            "name": "tail_pos__overall_score__55",
+            "weight": 0.0
+          },
+          {
+            "name": "tail_pos__structural_score__52",
+            "weight": 0.0
+          },
+          {
+            "name": "tail_pos__trigger_score__50",
+            "weight": 0.0
+          },
+          {
+            "name": "tail_pos__external_dimension_score__50",
+            "weight": 0.0
+          }
+        ]
+      },
+      "calibration": null,
+      "evaluation": {
+        "sample_count": 22019,
+        "positive_rate": 0.0009083064626004814,
+        "brier_score": 0.0026501337152529357,
+        "log_loss": 0.017109304483294143,
+        "ece": 0.009171828553238663,
+        "precision_at_30pct": 0.05128205128205128,
+        "recall_at_30pct": 0.2,
+        "regime_separation": {
+          "horizon_days": 5,
+          "early_warning_regime": "positive_window",
+          "normal_sample_count": 18959,
+          "pre_warning_buffer_sample_count": 24,
+          "positive_window_sample_count": 60,
+          "early_warning_sample_count": 60,
+          "in_crisis_sample_count": 2794,
+          "post_crisis_cooldown_sample_count": 182,
+          "normal_avg_probability": 0.008373,
+          "pre_warning_buffer_avg_probability": 0.172875,
+          "positive_window_avg_probability": 0.076417,
+          "early_warning_avg_probability": 0.076417,
+          "in_crisis_avg_probability": 0.019339,
+          "post_crisis_cooldown_avg_probability": 0.002489,
+          "max_non_normal_avg_probability": 0.172875,
+          "pre_warning_buffer_lift_vs_normal": 20.647916,
+          "positive_window_lift_vs_normal": 9.127166,
+          "early_warning_lift_vs_normal": 9.127166,
+          "in_crisis_lift_vs_normal": 2.309806,
+          "post_crisis_cooldown_lift_vs_normal": 0.297333,
+          "positive_window_gap_vs_normal": 0.068045,
+          "post_crisis_cooldown_gap_vs_normal": -0.005883,
+          "max_non_normal_lift_vs_normal": 20.647916,
+          "diagnosis": "usable_early_warning_separation"
+        },
+        "actionability": null
+      }
+    },
+    {
+      "horizon_days": 20,
+      "decision_threshold": 0.522,
+      "raw_model": {
+        "intercept": -3.932142349637253,
+        "feature_transform": "interaction_tail_v1",
+        "feature_stats": [
+          {
+            "name": "overall_score",
+            "mean": 0.4970767232421195,
+            "std_dev": 0.09429408026589384,
+            "fill_value": 0.4970767232421195
+          },
+          {
+            "name": "structural_score",
+            "mean": 0.6405557672324222,
+            "std_dev": 0.11221677703121094,
+            "fill_value": 0.6405557672324222
+          },
+          {
+            "name": "trigger_score",
+            "mean": 0.3218098372012476,
+            "std_dev": 0.1369228879443772,
+            "fill_value": 0.3218098372012476
+          },
+          {
+            "name": "external_dimension_score",
+            "mean": 0.5641452777970202,
+            "std_dev": 0.16416185197559385,
+            "fill_value": 0.5641452777970202
+          },
+          {
+            "name": "coverage_score",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "us_vix_level",
+            "mean": 20.39996189816412,
+            "std_dev": 9.82319479641154,
+            "fill_value": 20.39996189816412
+          },
+          {
+            "name": "us_vix_change_5d",
+            "mean": -0.03509352268791143,
+            "std_dev": 2.8936645767910028,
+            "fill_value": -0.03509352268791143
+          },
+          {
+            "name": "us_curve_10y2y_level",
+            "mean": 1.0686976099757566,
+            "std_dev": 0.9209315179533077,
+            "fill_value": 1.0686976099757566
+          },
+          {
+            "name": "us_baa_10y_spread_level",
+            "mean": 2.3931832351922364,
+            "std_dev": 0.8431254319270064,
+            "fill_value": 2.3931832351922364
+          },
+          {
+            "name": "us_fed_funds_level",
+            "mean": 4.006028749567044,
+            "std_dev": 2.1733690077040944,
+            "fill_value": 4.006028749567044
+          },
+          {
+            "name": "us_nfci_level",
+            "mean": -0.2301872185659856,
+            "std_dev": 0.6742534316534252,
+            "fill_value": -0.2301872185659856
+          },
+          {
+            "name": "us_stlfsi_level",
+            "mean": 0.2875248527883612,
+            "std_dev": 1.2492888292319444,
+            "fill_value": 0.2875248527883612
+          },
+          {
+            "name": "us_unemployment_level",
+            "mean": 5.565691028749586,
+            "std_dev": 1.2090864701397133,
+            "fill_value": 5.565691028749586
+          },
+          {
+            "name": "us_housing_starts_level",
+            "mean": 1497.167821267752,
+            "std_dev": 392.77385795797073,
+            "fill_value": 1497.167821267752
+          },
+          {
+            "name": "us_usdjpy_level",
+            "mean": 120.03317284378267,
+            "std_dev": 14.111098238648209,
+            "fill_value": 120.03317284378267
+          },
+          {
+            "name": "us_usdjpy_change_20d",
+            "mean": -0.45145306546588,
+            "std_dev": 3.8817586356489002,
+            "fill_value": -0.45145306546588
+          },
+          {
+            "name": "interaction__overall_score__us_vix_level",
+            "mean": 10.753848482854155,
+            "std_dev": 6.894722178840182,
+            "fill_value": 10.753848482854155
+          },
+          {
+            "name": "interaction__structural_score__trigger_score",
+            "mean": 0.20873583581572458,
+            "std_dev": 0.10271041701371554,
+            "fill_value": 0.20873583581572458
+          },
+          {
+            "name": "interaction__trigger_score__us_vix_level",
+            "mean": 7.122570400069275,
+            "std_dev": 5.436465176866285,
+            "fill_value": 7.122570400069275
+          },
+          {
+            "name": "interaction__trigger_score__us_usdjpy_change_20d",
+            "mean": -0.1334292500865958,
+            "std_dev": 1.4911006418565462,
+            "fill_value": -0.1334292500865958
+          },
+          {
+            "name": "interaction__external_dimension_score__us_usdjpy_level",
+            "mean": 67.97697278353633,
+            "std_dev": 22.49868685436278,
+            "fill_value": 67.97697278353633
+          },
+          {
+            "name": "interaction__us_curve_10y2y_level__us_fed_funds_level",
+            "mean": 2.8108922237616993,
+            "std_dev": 2.829752399001936,
+            "fill_value": 2.8108922237616993
+          },
+          {
+            "name": "interaction__us_nfci_level__us_stlfsi_level",
+            "mean": 0.6342964409767902,
+            "std_dev": 2.750238482251213,
+            "fill_value": 0.6342964409767902
+          },
+          {
+            "name": "interaction__us_baa_10y_spread_level__us_vix_level",
+            "mean": 54.748425995843405,
+            "std_dev": 52.92444486048818,
+            "fill_value": 54.748425995843405
+          },
+          {
+            "name": "tail_pos__us_vix_level__24",
+            "mean": 2.160833044683066,
+            "std_dev": 5.895528838560038,
+            "fill_value": 2.160833044683066
+          },
+          {
+            "name": "tail_pos__us_vix_level__32",
+            "mean": 0.8480706615864221,
+            "std_dev": 4.085951463299345,
+            "fill_value": 0.8480706615864221
+          },
+          {
+            "name": "tail_pos__us_baa_10y_spread_level__2",
+            "mean": 0.48931243505368716,
+            "std_dev": 0.7719005611712816,
+            "fill_value": 0.48931243505368716
+          },
+          {
+            "name": "tail_pos__us_stlfsi_level__1",
+            "mean": 0.21039715968133,
+            "std_dev": 0.9033554999723808,
+            "fill_value": 0.21039715968133
+          },
+          {
+            "name": "tail_pos__us_usdjpy_level__145",
+            "mean": 0.4335174922064429,
+            "std_dev": 1.9103365150998037,
+            "fill_value": 0.4335174922064429
+          },
+          {
+            "name": "tail_abs_pos__us_usdjpy_change_20d__4",
+            "mean": 0.6053585036369942,
+            "std_dev": 1.5589391830658226,
+            "fill_value": 0.6053585036369942
+          },
+          {
+            "name": "tail_neg__us_curve_10y2y_level__0",
+            "mean": 0.02070315206096294,
+            "std_dev": 0.07312243435308764,
+            "fill_value": 0.02070315206096294
+          },
+          {
+            "name": "tail_pos__overall_score__55",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "tail_pos__structural_score__52",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "tail_pos__trigger_score__50",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "tail_pos__external_dimension_score__50",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          }
+        ],
+        "coefficients": [
+          {
+            "name": "overall_score",
+            "weight": 0.0
+          },
+          {
+            "name": "structural_score",
+            "weight": 0.0
+          },
+          {
+            "name": "trigger_score",
+            "weight": 0.8368573443830822
+          },
+          {
+            "name": "external_dimension_score",
+            "weight": 0.2892330962044017
+          },
+          {
+            "name": "coverage_score",
+            "weight": 0.0
+          },
+          {
+            "name": "us_vix_level",
+            "weight": 0.0
+          },
+          {
+            "name": "us_vix_change_5d",
+            "weight": 0.6947910692183626
+          },
+          {
+            "name": "us_curve_10y2y_level",
+            "weight": -0.6877207326383653
+          },
+          {
+            "name": "us_baa_10y_spread_level",
+            "weight": 0.0
+          },
+          {
+            "name": "us_fed_funds_level",
+            "weight": 0.9649993547608438
+          },
+          {
+            "name": "us_nfci_level",
+            "weight": 0.8098123518157758
+          },
+          {
+            "name": "us_stlfsi_level",
+            "weight": 0.0
+          },
+          {
+            "name": "us_unemployment_level",
+            "weight": 0.0
+          },
+          {
+            "name": "us_housing_starts_level",
+            "weight": -0.8185712446451028
+          },
+          {
+            "name": "us_usdjpy_level",
+            "weight": 0.04335757988090619
+          },
+          {
+            "name": "us_usdjpy_change_20d",
+            "weight": -0.3782695401200597
+          },
+          {
+            "name": "interaction__overall_score__us_vix_level",
+            "weight": 0.047808897882036995
+          },
+          {
+            "name": "interaction__structural_score__trigger_score",
+            "weight": -0.34612220015673195
+          },
+          {
+            "name": "interaction__trigger_score__us_vix_level",
+            "weight": 0.23026053757668663
+          },
+          {
+            "name": "interaction__trigger_score__us_usdjpy_change_20d",
+            "weight": 0.5659620704040415
+          },
+          {
+            "name": "interaction__external_dimension_score__us_usdjpy_level",
+            "weight": 0.5237343027660948
+          },
+          {
+            "name": "interaction__us_curve_10y2y_level__us_fed_funds_level",
+            "weight": 0.4292644203214537
+          },
+          {
+            "name": "interaction__us_nfci_level__us_stlfsi_level",
+            "weight": 0.3233120912327926
+          },
+          {
+            "name": "interaction__us_baa_10y_spread_level__us_vix_level",
+            "weight": -0.441594009465721
+          },
+          {
+            "name": "tail_pos__us_vix_level__24",
+            "weight": 0.2015379295737165
+          },
+          {
+            "name": "tail_pos__us_vix_level__32",
+            "weight": -0.15795765833336345
+          },
+          {
+            "name": "tail_pos__us_baa_10y_spread_level__2",
+            "weight": -1.1205843510125681
+          },
+          {
+            "name": "tail_pos__us_stlfsi_level__1",
+            "weight": 0.02502498580248215
+          },
+          {
+            "name": "tail_pos__us_usdjpy_level__145",
+            "weight": -0.8367624131652225
+          },
+          {
+            "name": "tail_abs_pos__us_usdjpy_change_20d__4",
+            "weight": -0.0873303536552418
+          },
+          {
+            "name": "tail_neg__us_curve_10y2y_level__0",
+            "weight": -0.0808920728231878
+          },
+          {
+            "name": "tail_pos__overall_score__55",
+            "weight": 0.0
+          },
+          {
+            "name": "tail_pos__structural_score__52",
+            "weight": 0.0
+          },
+          {
+            "name": "tail_pos__trigger_score__50",
+            "weight": 0.0
+          },
+          {
+            "name": "tail_pos__external_dimension_score__50",
+            "weight": 0.0
+          }
+        ]
+      },
+      "calibration": null,
+      "evaluation": {
+        "sample_count": 22019,
+        "positive_rate": 0.002588673418411372,
+        "brier_score": 0.014068027761124823,
+        "log_loss": 0.06389721583775002,
+        "ece": 0.04162240832049855,
+        "precision_at_30pct": 0.024906600249066,
+        "recall_at_30pct": 0.3508771929824561,
+        "regime_separation": {
+          "horizon_days": 20,
+          "early_warning_regime": "pre_warning_buffer",
+          "normal_sample_count": 18113,
+          "pre_warning_buffer_sample_count": 340,
+          "positive_window_sample_count": 217,
+          "early_warning_sample_count": 340,
+          "in_crisis_sample_count": 2824,
+          "post_crisis_cooldown_sample_count": 525,
+          "normal_avg_probability": 0.030662,
+          "pre_warning_buffer_avg_probability": 0.054878,
+          "positive_window_avg_probability": 0.22421,
+          "early_warning_avg_probability": 0.054878,
+          "in_crisis_avg_probability": 0.114827,
+          "post_crisis_cooldown_avg_probability": 0.050497,
+          "max_non_normal_avg_probability": 0.22421,
+          "pre_warning_buffer_lift_vs_normal": 1.789744,
+          "positive_window_lift_vs_normal": 7.312187,
+          "early_warning_lift_vs_normal": 1.789744,
+          "in_crisis_lift_vs_normal": 3.744871,
+          "post_crisis_cooldown_lift_vs_normal": 1.646871,
+          "positive_window_gap_vs_normal": 0.193547,
+          "post_crisis_cooldown_gap_vs_normal": 0.019835,
+          "max_non_normal_lift_vs_normal": 7.312187,
+          "diagnosis": "usable_early_warning_separation"
+        },
+        "actionability": null
+      }
+    },
+    {
+      "horizon_days": 60,
+      "decision_threshold": 0.732,
+      "raw_model": {
+        "intercept": -3.758501633960985,
+        "feature_transform": "interaction_tail_v1",
+        "feature_stats": [
+          {
+            "name": "overall_score",
+            "mean": 0.4970767232421195,
+            "std_dev": 0.09429408026589384,
+            "fill_value": 0.4970767232421195
+          },
+          {
+            "name": "structural_score",
+            "mean": 0.6405557672324222,
+            "std_dev": 0.11221677703121094,
+            "fill_value": 0.6405557672324222
+          },
+          {
+            "name": "trigger_score",
+            "mean": 0.3218098372012476,
+            "std_dev": 0.1369228879443772,
+            "fill_value": 0.3218098372012476
+          },
+          {
+            "name": "external_dimension_score",
+            "mean": 0.5641452777970202,
+            "std_dev": 0.16416185197559385,
+            "fill_value": 0.5641452777970202
+          },
+          {
+            "name": "coverage_score",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "us_vix_level",
+            "mean": 20.39996189816412,
+            "std_dev": 9.82319479641154,
+            "fill_value": 20.39996189816412
+          },
+          {
+            "name": "us_vix_change_5d",
+            "mean": -0.03509352268791143,
+            "std_dev": 2.8936645767910028,
+            "fill_value": -0.03509352268791143
+          },
+          {
+            "name": "us_curve_10y2y_level",
+            "mean": 1.0686976099757566,
+            "std_dev": 0.9209315179533077,
+            "fill_value": 1.0686976099757566
+          },
+          {
+            "name": "us_baa_10y_spread_level",
+            "mean": 2.3931832351922364,
+            "std_dev": 0.8431254319270064,
+            "fill_value": 2.3931832351922364
+          },
+          {
+            "name": "us_fed_funds_level",
+            "mean": 4.006028749567044,
+            "std_dev": 2.1733690077040944,
+            "fill_value": 4.006028749567044
+          },
+          {
+            "name": "us_nfci_level",
+            "mean": -0.2301872185659856,
+            "std_dev": 0.6742534316534252,
+            "fill_value": -0.2301872185659856
+          },
+          {
+            "name": "us_stlfsi_level",
+            "mean": 0.2875248527883612,
+            "std_dev": 1.2492888292319444,
+            "fill_value": 0.2875248527883612
+          },
+          {
+            "name": "us_unemployment_level",
+            "mean": 5.565691028749586,
+            "std_dev": 1.2090864701397133,
+            "fill_value": 5.565691028749586
+          },
+          {
+            "name": "us_housing_starts_level",
+            "mean": 1497.167821267752,
+            "std_dev": 392.77385795797073,
+            "fill_value": 1497.167821267752
+          },
+          {
+            "name": "us_usdjpy_level",
+            "mean": 120.03317284378267,
+            "std_dev": 14.111098238648209,
+            "fill_value": 120.03317284378267
+          },
+          {
+            "name": "us_usdjpy_change_20d",
+            "mean": -0.45145306546588,
+            "std_dev": 3.8817586356489002,
+            "fill_value": -0.45145306546588
+          },
+          {
+            "name": "interaction__overall_score__us_vix_level",
+            "mean": 10.753848482854155,
+            "std_dev": 6.894722178840182,
+            "fill_value": 10.753848482854155
+          },
+          {
+            "name": "interaction__structural_score__trigger_score",
+            "mean": 0.20873583581572458,
+            "std_dev": 0.10271041701371554,
+            "fill_value": 0.20873583581572458
+          },
+          {
+            "name": "interaction__trigger_score__us_vix_level",
+            "mean": 7.122570400069275,
+            "std_dev": 5.436465176866285,
+            "fill_value": 7.122570400069275
+          },
+          {
+            "name": "interaction__trigger_score__us_usdjpy_change_20d",
+            "mean": -0.1334292500865958,
+            "std_dev": 1.4911006418565462,
+            "fill_value": -0.1334292500865958
+          },
+          {
+            "name": "interaction__external_dimension_score__us_usdjpy_level",
+            "mean": 67.97697278353633,
+            "std_dev": 22.49868685436278,
+            "fill_value": 67.97697278353633
+          },
+          {
+            "name": "interaction__us_curve_10y2y_level__us_fed_funds_level",
+            "mean": 2.8108922237616993,
+            "std_dev": 2.829752399001936,
+            "fill_value": 2.8108922237616993
+          },
+          {
+            "name": "interaction__us_nfci_level__us_stlfsi_level",
+            "mean": 0.6342964409767902,
+            "std_dev": 2.750238482251213,
+            "fill_value": 0.6342964409767902
+          },
+          {
+            "name": "interaction__us_baa_10y_spread_level__us_vix_level",
+            "mean": 54.748425995843405,
+            "std_dev": 52.92444486048818,
+            "fill_value": 54.748425995843405
+          },
+          {
+            "name": "tail_pos__us_vix_level__24",
+            "mean": 2.160833044683066,
+            "std_dev": 5.895528838560038,
+            "fill_value": 2.160833044683066
+          },
+          {
+            "name": "tail_pos__us_vix_level__32",
+            "mean": 0.8480706615864221,
+            "std_dev": 4.085951463299345,
+            "fill_value": 0.8480706615864221
+          },
+          {
+            "name": "tail_pos__us_baa_10y_spread_level__2",
+            "mean": 0.48931243505368716,
+            "std_dev": 0.7719005611712816,
+            "fill_value": 0.48931243505368716
+          },
+          {
+            "name": "tail_pos__us_stlfsi_level__1",
+            "mean": 0.21039715968133,
+            "std_dev": 0.9033554999723808,
+            "fill_value": 0.21039715968133
+          },
+          {
+            "name": "tail_pos__us_usdjpy_level__145",
+            "mean": 0.4335174922064429,
+            "std_dev": 1.9103365150998037,
+            "fill_value": 0.4335174922064429
+          },
+          {
+            "name": "tail_abs_pos__us_usdjpy_change_20d__4",
+            "mean": 0.6053585036369942,
+            "std_dev": 1.5589391830658226,
+            "fill_value": 0.6053585036369942
+          },
+          {
+            "name": "tail_neg__us_curve_10y2y_level__0",
+            "mean": 0.02070315206096294,
+            "std_dev": 0.07312243435308764,
+            "fill_value": 0.02070315206096294
+          },
+          {
+            "name": "tail_pos__overall_score__55",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "tail_pos__structural_score__52",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "tail_pos__trigger_score__50",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          },
+          {
+            "name": "tail_pos__external_dimension_score__50",
+            "mean": 0.0,
+            "std_dev": 1e-6,
+            "fill_value": 0.0
+          }
+        ],
+        "coefficients": [
+          {
+            "name": "overall_score",
+            "weight": 0.0
+          },
+          {
+            "name": "structural_score",
+            "weight": 0.0
+          },
+          {
+            "name": "trigger_score",
+            "weight": 1.3982552358567906
+          },
+          {
+            "name": "external_dimension_score",
+            "weight": 0.0
+          },
+          {
+            "name": "coverage_score",
+            "weight": 0.0
+          },
+          {
+            "name": "us_vix_level",
+            "weight": 0.0
+          },
+          {
+            "name": "us_vix_change_5d",
+            "weight": 0.31578952776420594
+          },
+          {
+            "name": "us_curve_10y2y_level",
+            "weight": -1.2605476569270524
+          },
+          {
+            "name": "us_baa_10y_spread_level",
+            "weight": 0.0
+          },
+          {
+            "name": "us_fed_funds_level",
+            "weight": 1.4859025859780015
+          },
+          {
+            "name": "us_nfci_level",
+            "weight": 0.1009057148507193
+          },
+          {
+            "name": "us_stlfsi_level",
+            "weight": 0.0
+          },
+          {
+            "name": "us_unemployment_level",
+            "weight": 0.0
+          },
+          {
+            "name": "us_housing_starts_level",
+            "weight": -1.229499791026175
+          },
+          {
+            "name": "us_usdjpy_level",
+            "weight": 0.9090655329848428
+          },
+          {
+            "name": "us_usdjpy_change_20d",
+            "weight": 0.02107839787507649
+          },
+          {
+            "name": "interaction__overall_score__us_vix_level",
+            "weight": -0.5030611471605432
+          },
+          {
+            "name": "interaction__structural_score__trigger_score",
+            "weight": -0.3963732094242654
+          },
+          {
+            "name": "interaction__trigger_score__us_vix_level",
+            "weight": 0.1406683567474972
+          },
+          {
+            "name": "interaction__trigger_score__us_usdjpy_change_20d",
+            "weight": -0.06848208652579366
+          },
+          {
+            "name": "interaction__external_dimension_score__us_usdjpy_level",
+            "weight": -0.015433704675504152
+          },
+          {
+            "name": "interaction__us_curve_10y2y_level__us_fed_funds_level",
+            "weight": 0.5513405506695265
+          },
+          {
+            "name": "interaction__us_nfci_level__us_stlfsi_level",
+            "weight": 0.8188171149437424
+          },
+          {
+            "name": "interaction__us_baa_10y_spread_level__us_vix_level",
+            "weight": -0.6690368691482372
+          },
+          {
+            "name": "tail_pos__us_vix_level__24",
+            "weight": 0.4089016549173073
+          },
+          {
+            "name": "tail_pos__us_vix_level__32",
+            "weight": 0.181890467588927
+          },
+          {
+            "name": "tail_pos__us_baa_10y_spread_level__2",
+            "weight": -1.0782263935067133
+          },
+          {
+            "name": "tail_pos__us_stlfsi_level__1",
+            "weight": 0.415078132482075
+          },
+          {
+            "name": "tail_pos__us_usdjpy_level__145",
+            "weight": -1.024382816700143
+          },
+          {
+            "name": "tail_abs_pos__us_usdjpy_change_20d__4",
+            "weight": -0.2418478048841614
+          },
+          {
+            "name": "tail_neg__us_curve_10y2y_level__0",
+            "weight": -0.20585022662777017
+          },
+          {
+            "name": "tail_pos__overall_score__55",
+            "weight": 0.0
+          },
+          {
+            "name": "tail_pos__structural_score__52",
+            "weight": 0.0
+          },
+          {
+            "name": "tail_pos__trigger_score__50",
+            "weight": 0.0
+          },
+          {
+            "name": "tail_pos__external_dimension_score__50",
+            "weight": 0.0
+          }
+        ]
+      },
+      "calibration": null,
+      "evaluation": {
+        "sample_count": 22019,
+        "positive_rate": 0.0062218992688132975,
+        "brier_score": 0.03575387197743545,
+        "log_loss": 0.13247403086989132,
+        "ece": 0.0752884134892408,
+        "precision_at_30pct": 0.01630674305861613,
+        "recall_at_30pct": 0.27007299270072993,
+        "regime_separation": {
+          "horizon_days": 60,
+          "early_warning_regime": "pre_warning_buffer",
+          "normal_sample_count": 17510,
+          "pre_warning_buffer_sample_count": 348,
+          "positive_window_sample_count": 617,
+          "early_warning_sample_count": 348,
+          "in_crisis_sample_count": 2824,
+          "post_crisis_cooldown_sample_count": 720,
+          "normal_avg_probability": 0.068028,
+          "pre_warning_buffer_avg_probability": 0.081777,
+          "positive_window_avg_probability": 0.224125,
+          "early_warning_avg_probability": 0.081777,
+          "in_crisis_avg_probability": 0.127545,
+          "post_crisis_cooldown_avg_probability": 0.106496,
+          "max_non_normal_avg_probability": 0.224125,
+          "pre_warning_buffer_lift_vs_normal": 1.202113,
+          "positive_window_lift_vs_normal": 3.294613,
+          "early_warning_lift_vs_normal": 1.202113,
+          "in_crisis_lift_vs_normal": 1.874898,
+          "post_crisis_cooldown_lift_vs_normal": 1.565478,
+          "positive_window_gap_vs_normal": 0.156098,
+          "post_crisis_cooldown_gap_vs_normal": 0.038468,
+          "max_non_normal_lift_vs_normal": 3.294613,
+          "diagnosis": "usable_early_warning_separation"
+        },
+        "actionability": null
+      }
+    }
+  ],
+  "actionability": null,
+  "summary": {
+    "sample_count": 66057,
+    "brier_score": 0.017490677817937738,
+    "log_loss": 0.07116018373031183,
+    "ece": 0.04202755012099267,
+    "regime_separation_summaries": [
+      {
+        "horizon_days": 5,
+        "early_warning_regime": "positive_window",
+        "normal_sample_count": 18959,
+        "pre_warning_buffer_sample_count": 24,
+        "positive_window_sample_count": 60,
+        "early_warning_sample_count": 60,
+        "in_crisis_sample_count": 2794,
+        "post_crisis_cooldown_sample_count": 182,
+        "normal_avg_probability": 0.008373,
+        "pre_warning_buffer_avg_probability": 0.172875,
+        "positive_window_avg_probability": 0.076417,
+        "early_warning_avg_probability": 0.076417,
+        "in_crisis_avg_probability": 0.019339,
+        "post_crisis_cooldown_avg_probability": 0.002489,
+        "max_non_normal_avg_probability": 0.172875,
+        "pre_warning_buffer_lift_vs_normal": 20.647916,
+        "positive_window_lift_vs_normal": 9.127166,
+        "early_warning_lift_vs_normal": 9.127166,
+        "in_crisis_lift_vs_normal": 2.309806,
+        "post_crisis_cooldown_lift_vs_normal": 0.297333,
+        "positive_window_gap_vs_normal": 0.068045,
+        "post_crisis_cooldown_gap_vs_normal": -0.005883,
+        "max_non_normal_lift_vs_normal": 20.647916,
+        "diagnosis": "usable_early_warning_separation"
+      },
+      {
+        "horizon_days": 20,
+        "early_warning_regime": "pre_warning_buffer",
+        "normal_sample_count": 18113,
+        "pre_warning_buffer_sample_count": 340,
+        "positive_window_sample_count": 217,
+        "early_warning_sample_count": 340,
+        "in_crisis_sample_count": 2824,
+        "post_crisis_cooldown_sample_count": 525,
+        "normal_avg_probability": 0.030662,
+        "pre_warning_buffer_avg_probability": 0.054878,
+        "positive_window_avg_probability": 0.22421,
+        "early_warning_avg_probability": 0.054878,
+        "in_crisis_avg_probability": 0.114827,
+        "post_crisis_cooldown_avg_probability": 0.050497,
+        "max_non_normal_avg_probability": 0.22421,
+        "pre_warning_buffer_lift_vs_normal": 1.789744,
+        "positive_window_lift_vs_normal": 7.312187,
+        "early_warning_lift_vs_normal": 1.789744,
+        "in_crisis_lift_vs_normal": 3.744871,
+        "post_crisis_cooldown_lift_vs_normal": 1.646871,
+        "positive_window_gap_vs_normal": 0.193547,
+        "post_crisis_cooldown_gap_vs_normal": 0.019835,
+        "max_non_normal_lift_vs_normal": 7.312187,
+        "diagnosis": "usable_early_warning_separation"
+      },
+      {
+        "horizon_days": 60,
+        "early_warning_regime": "pre_warning_buffer",
+        "normal_sample_count": 17510,
+        "pre_warning_buffer_sample_count": 348,
+        "positive_window_sample_count": 617,
+        "early_warning_sample_count": 348,
+        "in_crisis_sample_count": 2824,
+        "post_crisis_cooldown_sample_count": 720,
+        "normal_avg_probability": 0.068028,
+        "pre_warning_buffer_avg_probability": 0.081777,
+        "positive_window_avg_probability": 0.224125,
+        "early_warning_avg_probability": 0.081777,
+        "in_crisis_avg_probability": 0.127545,
+        "post_crisis_cooldown_avg_probability": 0.106496,
+        "max_non_normal_avg_probability": 0.224125,
+        "pre_warning_buffer_lift_vs_normal": 1.202113,
+        "positive_window_lift_vs_normal": 3.294613,
+        "early_warning_lift_vs_normal": 1.202113,
+        "in_crisis_lift_vs_normal": 1.874898,
+        "post_crisis_cooldown_lift_vs_normal": 1.565478,
+        "positive_window_gap_vs_normal": 0.156098,
+        "post_crisis_cooldown_gap_vs_normal": 0.038468,
+        "max_non_normal_lift_vs_normal": 3.294613,
+        "diagnosis": "usable_early_warning_separation"
+      }
+    ],
+    "usable_early_warning_horizon_count": 3,
+    "insufficient_early_warning_horizon_count": 0,
+    "note": "Weighted average across 5d / 20d / 60d evaluation slices. Usable early-warning horizons: 3. Insufficient or cooldown-bleed horizons: 0."
+  }
+}
