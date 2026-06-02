@@ -92,7 +92,8 @@
 - `demo.rs` 当前主要收缩为 demo seed、assessment history/backtest 生成、historical replay 缓存与审计辅助逻辑，后续可以继续沿 replay/cache 边界拆分。
 - 已新增 `apps/api/src/assessment/posture.rs`，把 `time_to_risk_bucket`、posture clause、position guidance、用户偏好升降级和 summary 这条姿态决策链从 `assessment.rs` 中拆出，主装配逻辑只保留调用点。
 - 已新增 `apps/api/src/assessment/probability.rs`，把 heuristic probability、bundle scoring、formal feature map、actionability 融合与相关测试依赖的 helper 从 `assessment.rs` 中拆出，避免模型评分逻辑继续和 assessment orchestration 混在一起。
-- `assessment.rs` 剩余大块仍主要集中在特征/概率装配、历史类比、事件评估与 runtime 诊断，下一步可以继续按 `probability/features` 与 `analogs/events` 两条边界切分。
+- 已新增 `apps/api/src/assessment/context.rs`，把 runtime freshness、关键指标状态、事件确认、历史类比和 backtest summary 从 `assessment.rs` 中拆出，让解释层上下文与概率/姿态决策链解耦。
+- `assessment.rs` 剩余大块已主要收缩到 data trust、JPY carry、conviction 与少量通用 helper；下一步可继续按 `market context` 与 `shared utility` 边界切分。
 
 ### 3.3 Shared Logic
 
