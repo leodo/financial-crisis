@@ -55,6 +55,11 @@
 - [ ] 把 backfill / refresh 免费数据路径拆成独立命令模块。
 - [ ] 把 markdown/json 报告渲染抽到专门 reporting 模块。
 
+当前进展：
+
+- 已先抽出 `apps/worker/src/output_paths.rs`，统一实验/追踪输出路径策略。
+- 已先抽出 `apps/worker/src/reporting.rs`，收走 release review / formal dataset summary 的写盘逻辑。
+
 ### 3.2 API
 
 - [ ] 把 `apps/api/src/demo.rs` 中的 demo seed 与真实数据源加载拆开。

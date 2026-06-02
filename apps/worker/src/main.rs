@@ -7,6 +7,7 @@ use std::{
 };
 
 mod output_paths;
+mod reporting;
 
 use anyhow::{bail, Context};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
@@ -47,6 +48,7 @@ use output_paths::{
     DEFAULT_FORMAL_DATASET_SUMMARY_OUTPUT_DIR, DEFAULT_PIPELINE_BUNDLE_OUTPUT_DIR,
     DEFAULT_PIPELINE_MANIFEST_OUTPUT_DIR, DEFAULT_RELEASE_REVIEW_OUTPUT_DIR,
 };
+use reporting::{write_formal_dataset_summary_report, write_release_review_report};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -10399,27 +10401,6 @@ fn build_release_review_recommendation(
     }
 }
 
-fn write_release_review_report(
-    output_dir: &Path,
-    report: &ReleaseReviewEnvelope,
-) -> anyhow::Result<()> {
-    fs::create_dir_all(output_dir)?;
-    let stem = format!(
-        "{}-{}-vs-{}-release-review",
-        report.candidate_assessment.as_of_date,
-        report.baseline_release.manifest.release_id,
-        report.candidate_release.manifest.release_id
-    );
-    let json_path = output_dir.join(format!("{stem}.json"));
-    let markdown_path = output_dir.join(format!("{stem}.md"));
-    fs::write(&json_path, serde_json::to_string_pretty(report)?)?;
-    fs::write(&markdown_path, render_release_review_markdown(report))?;
-    println!("Release review report exported.");
-    println!("  JSON     {}", json_path.display());
-    println!("  Markdown {}", markdown_path.display());
-    Ok(())
-}
-
 fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
     let mut markdown = String::new();
     let verdict = if report.overall_guard_passed {
@@ -11209,28 +11190,6 @@ where
     F: Fn(&FormalDatasetRowRecord) -> f64,
 {
     rows.iter().map(|row| accessor(row)).sum::<f64>() / rows.len() as f64
-}
-
-fn write_formal_dataset_summary_report(
-    output_dir: &Path,
-    summary: &FormalDatasetSummaryEnvelope,
-) -> anyhow::Result<()> {
-    fs::create_dir_all(output_dir)?;
-    let stem = format!(
-        "{}-{}-formal-dataset-summary",
-        summary.dataset.manifest.dataset_id, summary.dataset.manifest.dataset_version
-    );
-    let json_path = output_dir.join(format!("{stem}.json"));
-    let markdown_path = output_dir.join(format!("{stem}.md"));
-    fs::write(&json_path, serde_json::to_string_pretty(summary)?)?;
-    fs::write(
-        &markdown_path,
-        render_formal_dataset_summary_markdown(summary),
-    )?;
-    println!("Formal dataset summary exported.");
-    println!("  JSON     {}", json_path.display());
-    println!("  Markdown {}", markdown_path.display());
-    Ok(())
 }
 
 fn render_formal_dataset_summary_markdown(summary: &FormalDatasetSummaryEnvelope) -> String {
