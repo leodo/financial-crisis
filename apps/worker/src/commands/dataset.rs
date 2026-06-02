@@ -275,6 +275,16 @@ pub(crate) struct FormalDatasetSummaryEnvelope {
     pub(crate) recommendation: String,
 }
 
+#[derive(Debug, Clone)]
+struct ScenarioSummaryMetadata {
+    label: String,
+    family: String,
+    training_role: String,
+    protected_window: bool,
+    episode_template_id: String,
+    default_horizon_roles: Vec<u32>,
+}
+
 pub(crate) async fn research_formal_dataset_build_main(args: &[String]) -> anyhow::Result<()> {
     let options = FormalDatasetBuildOptions::parse(args)?;
     let store = crate::open_sqlite_store().await?;
@@ -486,7 +496,7 @@ pub(crate) fn build_formal_dataset_summary(
         &dataset.manifest.label_version,
     )?;
     let scenario_metadata =
-        crate::load_formal_dataset_scenario_metadata(&dataset.manifest.scenario_set_version)?;
+        load_formal_dataset_scenario_metadata(&dataset.manifest.scenario_set_version)?;
     let scenario_ranges = crate::collect_formal_dataset_scenario_ranges(rows, &scenarios);
     let split_summaries = summarize_formal_dataset_splits(rows, &scenario_ranges);
     let scenario_summaries =
@@ -601,7 +611,7 @@ fn summarize_formal_dataset_splits(
 fn summarize_formal_dataset_scenarios(
     rows: &[FormalDatasetRowRecord],
     scenario_ranges: &[crate::ScenarioRowRange],
-    scenario_metadata: &BTreeMap<String, crate::ScenarioSummaryMetadata>,
+    scenario_metadata: &BTreeMap<String, ScenarioSummaryMetadata>,
 ) -> Vec<FormalDatasetScenarioSummary> {
     scenario_ranges
         .iter()
@@ -993,4 +1003,42 @@ pub(crate) fn print_formal_dataset_summary(summary: &FormalDatasetSummaryEnvelop
         );
     }
     println!("  recommendation {}", summary.recommendation);
+}
+
+fn load_formal_dataset_scenario_metadata(
+    scenario_set_version: &str,
+) -> anyhow::Result<BTreeMap<String, ScenarioSummaryMetadata>> {
+    let catalog = crate::load_crisis_scenario_catalog();
+    if catalog.catalog_id != scenario_set_version {
+        bail!(
+            "scenario set version {} is not available in the active catalog {}; set FC_SCENARIO_CATALOG_PATH to another catalog or use {}",
+            scenario_set_version,
+            catalog.catalog_id,
+            catalog.catalog_id
+        );
+    }
+
+    Ok(catalog
+        .scenarios
+        .into_iter()
+        .map(|scenario| {
+            (
+                scenario.scenario_id.clone(),
+                ScenarioSummaryMetadata {
+                    label: scenario.label,
+                    family: crate::scenario_family_code(scenario.family).to_string(),
+                    training_role: crate::scenario_training_role_code(scenario.training_role)
+                        .to_string(),
+                    protected_window: scenario.protected_window,
+                    episode_template_id: crate::action_episode_template_code(
+                        scenario
+                            .episode_template_id
+                            .expect("validated scenario catalog must include episode_template_id"),
+                    )
+                    .to_string(),
+                    default_horizon_roles: scenario.default_horizon_roles,
+                },
+            )
+        })
+        .collect())
 }

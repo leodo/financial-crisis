@@ -377,16 +377,6 @@ struct ReleaseReviewEnvelope {
     recommendation: String,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct ScenarioSummaryMetadata {
-    pub(crate) label: String,
-    pub(crate) family: String,
-    pub(crate) training_role: String,
-    pub(crate) protected_window: bool,
-    pub(crate) episode_template_id: String,
-    pub(crate) default_horizon_roles: Vec<u32>,
-}
-
 async fn export_current_audit(args: &[String]) -> anyhow::Result<()> {
     let options = AuditExportOptions::parse(args)?;
     let client = reqwest::Client::builder()
@@ -1138,44 +1128,7 @@ fn crisis_scenario_from_definition(
     }
 }
 
-pub(crate) fn load_formal_dataset_scenario_metadata(
-    scenario_set_version: &str,
-) -> anyhow::Result<BTreeMap<String, ScenarioSummaryMetadata>> {
-    let catalog = load_crisis_scenario_catalog();
-    if catalog.catalog_id != scenario_set_version {
-        bail!(
-            "scenario set version {} is not available in the active catalog {}; set FC_SCENARIO_CATALOG_PATH to another catalog or use {}",
-            scenario_set_version,
-            catalog.catalog_id,
-            catalog.catalog_id
-        );
-    }
-
-    Ok(catalog
-        .scenarios
-        .into_iter()
-        .map(|scenario| {
-            (
-                scenario.scenario_id.clone(),
-                ScenarioSummaryMetadata {
-                    label: scenario.label,
-                    family: scenario_family_code(scenario.family).to_string(),
-                    training_role: scenario_training_role_code(scenario.training_role).to_string(),
-                    protected_window: scenario.protected_window,
-                    episode_template_id: action_episode_template_code(
-                        scenario
-                            .episode_template_id
-                            .expect("validated scenario catalog must include episode_template_id"),
-                    )
-                    .to_string(),
-                    default_horizon_roles: scenario.default_horizon_roles,
-                },
-            )
-        })
-        .collect())
-}
-
-fn scenario_family_code(family: fc_domain::CrisisScenarioFamily) -> &'static str {
+pub(crate) fn scenario_family_code(family: fc_domain::CrisisScenarioFamily) -> &'static str {
     match family {
         fc_domain::CrisisScenarioFamily::AcuteMarketLiquidityCrash => {
             "acute_market_liquidity_crash"
@@ -1190,7 +1143,9 @@ fn scenario_family_code(family: fc_domain::CrisisScenarioFamily) -> &'static str
     }
 }
 
-fn scenario_training_role_code(role: fc_domain::CrisisScenarioTrainingRole) -> &'static str {
+pub(crate) fn scenario_training_role_code(
+    role: fc_domain::CrisisScenarioTrainingRole,
+) -> &'static str {
     match role {
         fc_domain::CrisisScenarioTrainingRole::Mandatory => "mandatory",
         fc_domain::CrisisScenarioTrainingRole::CandidateOptional => "candidate_optional",
@@ -1199,7 +1154,7 @@ fn scenario_training_role_code(role: fc_domain::CrisisScenarioTrainingRole) -> &
     }
 }
 
-fn action_episode_template_code(template: ActionEpisodeTemplateId) -> &'static str {
+pub(crate) fn action_episode_template_code(template: ActionEpisodeTemplateId) -> &'static str {
     match template {
         ActionEpisodeTemplateId::AcuteMarketLiquidityCrash => "acute_market_liquidity_crash",
         ActionEpisodeTemplateId::SystemicCreditBankingCrisis => "systemic_credit_banking_crisis",
