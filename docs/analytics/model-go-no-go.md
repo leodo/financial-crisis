@@ -1136,6 +1136,57 @@ runtime 诊断说明两件事：
 - `60d` 当前仍不是“阈值公式层”的问题；
 - 真正的下一刀应当落在 `calibration evidence` 的构造上。
 
+### 7.22 2026-06-02 把 `in_crisis` 从 `20d/60d threshold selection` 里剥离后，`prepare_p60d` 确实下来了，但绝对提前量还没变
+
+基于 7.21 的结论，本轮做了一个更窄、也更符合业务目标的修正：
+
+1. 训练 / calibration strategy 仍保留 `in_crisis`，不改模型对“危机已发生阶段”的认知；
+2. 但 `20d / 60d` 的 `decision-threshold selection` 不再把 `in_crisis` 负样本和 `normal` 一样重罚；
+3. threshold diagnostics 也同步区分：
+   - calibration eligible rows
+   - 真正用于 threshold decision 的 selected rows
+
+对应候选：
+
+- `us_formal_interaction_tail_extmix10_20260602T061401`
+
+直接结果：
+
+1. `60d` threshold 从 `0.732` 降到 `0.656`
+2. `60d selected_rows` 从 `10015` 降到 `8143`
+3. `60d repair_reason` 仍是 `early_warning_lift_below_guardrail`
+4. 这说明：
+   - 把 `in_crisis` 从 threshold selection 剥离，确实能把 runtime floor 压下来；
+   - 但 calibration split 上 `pre_warning_buffer vs normal` 的 separation 仍然不够强；
+   - 所以问题被进一步缩小成：`60d pre_warning_buffer` 本身的证据还不够，不再是 `in_crisis` 干扰那么简单。
+
+strict rebuild release review 结果：
+
+- `timely_warning_rate = 10.0%`
+- `actionable_precision = 55.9%`
+- `longest_false_positive_episode_days = 5`
+
+相对 `extmix2/extmix5` 的意义是：
+
+1. runtime 提前量没有恢复，仍停在 `10.0%`
+2. 但动作精度从 `51.9%` 提到了 `55.9%`
+3. 最长误报段维持 `5` 天，没有因为压低 `60d` 阈值而重新炸宽
+
+这句人话解释是：
+
+- 这一步证明“把 `in_crisis` 作为 threshold false-positive 主惩罚”确实太保守；
+- 修掉之后，模型没有失控，反而把动作精度再往上推了一点；
+- 但它还没把真正想要的“危机前一周级别的可执行提前量”带回来。
+
+因此更新后的工程判断是：
+
+1. `extmix10` 可以替代 `extmix2/extmix5`，作为新的 `active_experimental` 基线；
+2. 下一轮不该再回头调 `in_crisis` 口径；
+3. 应直接进入：
+   - `60d pre_warning_buffer` soft-label / weight 再设计
+   - calibration split regime mix / scenario mix 审计
+   - 必要时单独给 `60d` 做更偏 pre-warning 的 threshold objective
+
 ## 12. 结论
 
 从这一步开始，项目里出现“formal bundle”不再自动等于“正式模型”。

@@ -187,6 +187,8 @@ pub struct ProbabilityThresholdDiagnostics {
     pub selected_row_count: usize,
     pub selected_positive_count: usize,
     pub selected_negative_count: usize,
+    #[serde(default)]
+    pub selected_used_full_split_fallback: bool,
     pub base_threshold: f64,
     pub final_threshold: f64,
     pub repair_applied: bool,
