@@ -11,6 +11,10 @@ pub(crate) mod snapshot;
 
 use anyhow::{bail, Result};
 
+pub(crate) use dataset::{
+    build_formal_dataset_summary, print_formal_dataset_summary,
+    render_formal_dataset_summary_markdown, FormalDatasetSummaryEnvelope,
+};
 #[cfg(test)]
 pub(crate) use dataset::{FormalDatasetBuildOptions, FormalDatasetSummaryOptions};
 pub(crate) use db::{db_check, db_init, db_seed};
