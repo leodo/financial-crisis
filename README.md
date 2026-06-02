@@ -29,6 +29,7 @@
 - [全局设计](docs/architecture/global-design.md)
 - [系统可行性分析](docs/architecture/system-feasibility-analysis.md)
 - [代码结构与可维护性评审](docs/architecture/codebase-maintainability-review.md)
+- [工程治理方案](docs/architecture/engineering-governance-plan.md)
 - [危机窗口与标签设计](docs/analytics/horizon-label-design.md)
 - [危机场景目录](docs/analytics/scenario-catalog.md)
 - [危机概率引擎设计](docs/analytics/probability-engine-design.md)
@@ -252,6 +253,8 @@ just formal-bootstrap
 
 - 如果没有显式传 `--release-id`，formal 训练默认优先使用最近一版 `heuristic_mvp` release 的快照，避免把正式模型自己的输出再次当作训练输入。
 - formal release id 现在带到秒级时间戳，避免同一天重复训练时覆盖同名 artifact。
+- 从本轮工程治理开始，`formal-train`、`formal-bootstrap`、`release-review`、`dataset summarize` 这类研究命令默认把生成物写到 `artifacts/research/**`，避免实验副产物长期污染 Git 工作区。
+- 只有需要长期保留的证据，才显式输出到 `config/model-*/generated` 或 `reports/*` 目录。
 
 如果只是日常更新最近数据，直接运行：
 
@@ -384,6 +387,10 @@ just refresh-latest-full # 日常刷新 + GDELT prototype 新闻聚合
 just backfill-backtest-history # 构建长区间免费历史库，尽量让 backtests 使用真实历史
 just db-check         # 检查本地 SQLite 关键指标是否足够新鲜
 just status           # 查看后台服务状态，并直接显示 data mode / 最新观测 / USDJPY
+just release-review <candidate_release_id> # 默认导出到忽略目录 artifacts/research/release-review
+just release-review-tracked <candidate_release_id> # 显式导出到 reports/release-review，作为长期证据保留
+just formal-train     # 默认导出到忽略目录 artifacts/research/model-*/generated
+just formal-train-tracked # 显式导出到版本化 generated 目录
 just db-init          # 初始化本地 SQLite
 just db-seed          # 写入 FRED/Treasury/World Bank/BOJ/SEC 元数据与映射
 just backfill-fred            # 无 key FRED CSV 回填

@@ -23,25 +23,27 @@
 
 ## 2. P0：立即补齐的治理项
 
-- [ ] 明确生成工件分级：
+- [x] 明确生成工件分级：
   - 正式发布与基线对照工件可以入库；
   - 临时实验工件必须有独立归档或清理策略；
   - 同目录不能长期混放“正式工件”和“草稿工件”。
-- [ ] 定义 `apps/worker` 模块拆分边界：
+- [x] 定义 `apps/worker` 模块拆分边界：
   - `commands/release`
   - `commands/research`
   - `commands/backfill`
   - `commands/db`
   - `reporting`
   - `pipeline`
-- [ ] 定义 `apps/api` 模块拆分边界：
+- [x] 定义 `apps/api` 模块拆分边界：
   - `assessment`
   - `history_replay`
   - `data_source`
   - `demo_seed`
   - `backtest`
-- [ ] 盘点 API 与 worker 的重复逻辑，列出必须收敛到共享模块的函数清单。
-- [ ] 为维护性治理补一条实施原则：模型主线优先，但新增功能不再允许直接塞进现有超大文件。
+- [x] 盘点 API 与 worker 的重复逻辑，列出必须收敛到共享模块的函数清单。
+- [x] 为维护性治理补一条实施原则：模型主线优先，但新增功能不再允许直接塞进现有超大文件。
+
+以上 P0 事项已由 [工程治理方案](../architecture/engineering-governance-plan.md) 落地，并已同步收紧 worker 的默认实验输出目录。
 
 ## 3. P1：优先重构项
 

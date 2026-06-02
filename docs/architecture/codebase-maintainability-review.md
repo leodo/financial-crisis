@@ -26,6 +26,11 @@
 2. 先补工程治理文档和 TODO。
 3. 再按优先级把几个超大文件拆回模块边界。
 
+对应治理落地见：
+
+- [工程治理方案](engineering-governance-plan.md)
+- [工程维护性 TODO](../roadmap/engineering-maintainability-todo.md)
+
 ## 3. 当前结构中做对的部分
 
 ### 3.1 仓库层级基本正确

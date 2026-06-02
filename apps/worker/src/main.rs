@@ -6,6 +6,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod output_paths;
+
 use anyhow::{bail, Context};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
 use fc_domain::{
@@ -40,6 +42,10 @@ use fc_storage::{
     ExternalIndicatorMapping, RawResponseRecord, SqliteStore, BOJ_FX_DATASET_ID,
     BOJ_MONEY_MARKET_DATASET_ID, FRED_DATASET_ID, GDELT_DOC_DATASET_ID, SEC_EVENTS_DATASET_ID,
     SEC_SUBMISSIONS_DATASET_ID, TREASURY_YIELD_DATASET_ID, WORLD_BANK_DATASET_ID,
+};
+use output_paths::{
+    DEFAULT_FORMAL_DATASET_SUMMARY_OUTPUT_DIR, DEFAULT_PIPELINE_BUNDLE_OUTPUT_DIR,
+    DEFAULT_PIPELINE_MANIFEST_OUTPUT_DIR, DEFAULT_RELEASE_REVIEW_OUTPUT_DIR,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use uuid::Uuid;
@@ -484,7 +490,7 @@ impl ReleaseReviewOptions {
         let mut baseline_release_id = None;
         let mut market_scope = None;
         let mut api_reload_url = DEFAULT_API_RELOAD_URL.to_string();
-        let mut output_dir = PathBuf::from("reports/release-review");
+        let mut output_dir = PathBuf::from(DEFAULT_RELEASE_REVIEW_OUTPUT_DIR);
         let mut updated_by = "fc-worker-review".to_string();
         let mut index = 0;
         while index < args.len() {
@@ -808,12 +814,14 @@ struct PipelineTrainOptions {
     aux_dataset_keys: Vec<String>,
     query: PredictionSnapshotQueryOptions,
     output_dir: PathBuf,
+    manifest_dir: PathBuf,
     release_prefix: String,
 }
 
 impl PipelineTrainOptions {
     fn parse(args: &[String]) -> anyhow::Result<Self> {
-        let mut output_dir = PathBuf::from("config/model-bundles/generated");
+        let mut output_dir = PathBuf::from(DEFAULT_PIPELINE_BUNDLE_OUTPUT_DIR);
+        let mut manifest_dir = PathBuf::from(DEFAULT_PIPELINE_MANIFEST_OUTPUT_DIR);
         let mut release_prefix = None;
         let mut dataset_source = PipelineDatasetSource::Formal;
         let mut model_shape = ProbabilityModelShape::LinearV1;
@@ -877,6 +885,13 @@ impl PipelineTrainOptions {
                             .with_context(|| "--output-dir requires a path")?,
                     );
                 }
+                "--manifest-dir" => {
+                    index += 1;
+                    manifest_dir = PathBuf::from(
+                        args.get(index)
+                            .with_context(|| "--manifest-dir requires a path")?,
+                    );
+                }
                 "--release-prefix" => {
                     index += 1;
                     release_prefix = Some(
@@ -915,6 +930,7 @@ impl PipelineTrainOptions {
             aux_dataset_keys,
             query: PredictionSnapshotQueryOptions::parse_with_default_limit(&query_args, None)?,
             output_dir,
+            manifest_dir,
             release_prefix,
         })
     }
@@ -1256,7 +1272,7 @@ impl FormalDatasetSummaryOptions {
         let mut dataset_id = DEFAULT_FORMAL_DATASET_ID.to_string();
         let mut dataset_version = None;
         let mut dataset_key = None;
-        let mut output_dir = PathBuf::from("reports/formal-dataset");
+        let mut output_dir = PathBuf::from(DEFAULT_FORMAL_DATASET_SUMMARY_OUTPUT_DIR);
         let mut index = 0;
         while index < args.len() {
             match args[index].as_str() {
@@ -5359,7 +5375,7 @@ async fn train_probability_pipeline(
     };
 
     let bundle_path = options.output_dir.join(format!("{release_id}.json"));
-    let manifest_dir = PathBuf::from("config/model-releases/generated");
+    let manifest_dir = options.manifest_dir.clone();
     let manifest_path = manifest_dir.join(format!("{release_id}.json"));
     let evaluation_path = options
         .output_dir
@@ -11862,13 +11878,13 @@ fn print_help() {
       List persisted formal dataset manifests stored in SQLite.
 
   cargo run -p fc-worker -- research dataset summarize-main [--market-scope SCOPE] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--output-dir DIR]
-      Summarize a persisted formal dataset, export JSON + Markdown stats, and show split/scenario/coverage diagnostics before training.
+      Summarize a persisted formal dataset, export JSON + Markdown stats, and show split/scenario/coverage diagnostics before training. Default output goes to ignored artifacts/research; pass --output-dir reports/formal-dataset to curate evidence into Git.
 
-  cargo run -p fc-worker -- research pipeline train-probability [--dataset-source formal|snapshot] [--model-shape linear_v1|interaction_tail_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--release-prefix PREFIX]
-      Train a formal probability bundle. By default it uses the latest persisted formal dataset with model-shape=linear_v1; pass --model-shape interaction_tail_v1 to enable the first non-linear interaction/tail baseline.
+  cargo run -p fc-worker -- research pipeline train-probability [--dataset-source formal|snapshot] [--model-shape linear_v1|interaction_tail_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--manifest-dir DIR] [--release-prefix PREFIX]
+      Train a formal probability bundle. By default it uses the latest persisted formal dataset with model-shape=linear_v1 and writes generated artifacts to ignored artifacts/research directories; pass explicit output dirs only when curating evidence into Git.
 
-  cargo run -p fc-worker -- research pipeline bootstrap-formal-release [--dataset-source formal|snapshot] [--model-shape linear_v1|interaction_tail_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--release-prefix PREFIX] [--no-activate] [--no-reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
-      Train a formal bundle, publish it into SQLite as a model release, optionally activate it, and optionally reload the API runtime. Default source is the latest persisted formal dataset.
+  cargo run -p fc-worker -- research pipeline bootstrap-formal-release [--dataset-source formal|snapshot] [--model-shape linear_v1|interaction_tail_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--manifest-dir DIR] [--release-prefix PREFIX] [--no-activate] [--no-reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
+      Train a formal bundle, publish it into SQLite as a model release, optionally activate it, and optionally reload the API runtime. Default source is the latest persisted formal dataset; generated files default to ignored artifacts/research directories.
 
   cargo run -p fc-worker -- refresh latest-free [--fast-lookback-days N] [--slow-lookback-years N] [--fred-chunk-days N] [--skip-world-bank] [--include-gdelt] [--no-reload-api] [--api-reload-url URL]
       Refresh the latest free-source data set for the dashboard, then optionally POST /api/system/reload.
@@ -12188,6 +12204,19 @@ mod tests {
     }
 
     #[test]
+    fn release_review_defaults_to_ignored_artifact_dir() {
+        let args = vec![
+            "--candidate-release-id".to_string(),
+            "candidate-123".to_string(),
+        ];
+        let options = ReleaseReviewOptions::parse(&args).unwrap();
+        assert_eq!(
+            options.output_dir,
+            PathBuf::from("artifacts/research/release-review")
+        );
+    }
+
+    #[test]
     fn parses_prediction_snapshot_query_options() {
         let args = vec![
             "--market-scope".to_string(),
@@ -12366,6 +12395,15 @@ mod tests {
     }
 
     #[test]
+    fn formal_dataset_summary_defaults_to_ignored_artifact_dir() {
+        let options = FormalDatasetSummaryOptions::parse(&[]).unwrap();
+        assert_eq!(
+            options.output_dir,
+            PathBuf::from("artifacts/research/formal-dataset")
+        );
+    }
+
+    #[test]
     fn parses_pipeline_train_defaults_to_formal_dataset() {
         let options = PipelineTrainOptions::parse(&[]).unwrap();
         assert_eq!(options.dataset_source, PipelineDatasetSource::Formal);
@@ -12374,6 +12412,14 @@ mod tests {
         assert_eq!(options.dataset_version, None);
         assert_eq!(options.dataset_key, None);
         assert!(options.aux_dataset_keys.is_empty());
+        assert_eq!(
+            options.output_dir,
+            PathBuf::from("artifacts/research/model-bundles/generated")
+        );
+        assert_eq!(
+            options.manifest_dir,
+            PathBuf::from("artifacts/research/model-releases/generated")
+        );
         assert_eq!(options.release_prefix, "us_formal_main");
     }
 

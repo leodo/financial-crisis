@@ -26,6 +26,7 @@ docs/
 - [系统可行性分析](architecture/system-feasibility-analysis.md)
 - [本地 SQLite 历史数据总体设计](architecture/local-sqlite-historical-data-design.md)
 - [代码结构与可维护性评审](architecture/codebase-maintainability-review.md)
+- [工程治理方案](architecture/engineering-governance-plan.md)
 - [设计 TODO 总索引](roadmap/design-todo.md)
 - [危机概率评估设计 TODO](roadmap/crisis-probability-design-todo.md)
 - [工程维护性 TODO](roadmap/engineering-maintainability-todo.md)

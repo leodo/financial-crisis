@@ -35,9 +35,15 @@ release-list:
     cargo run -p fc-worker -- research release list
 
 # 用“当前 active release”对比一个 candidate release，自动切换 API、以 strict_rebuild 方式重放历史、导出 review 报告，再恢复原 active。
+# 默认导出到忽略目录 artifacts/research/release-review，避免实验副产物长期污染 Git 工作区。
 # 用法：`just release-review us_formal_pit_20260531T160129`
 release-review candidate_release_id:
     cargo run -p fc-worker -- research release review --candidate-release-id {{candidate_release_id}}
+
+# 和 `release-review` 相同，但显式导出到版本化目录 reports/release-review。
+# 只在需要把这次 review 作为仓库证据长期保留时使用。
+release-review-tracked candidate_release_id:
+    cargo run -p fc-worker -- research release review --candidate-release-id {{candidate_release_id}} --output-dir reports/release-review
 
 # 用当前仓库自带的 heuristic bootstrap manifest 初始化一份 release，并激活到本地 API。
 # 这不会把系统伪装成正式概率模型；它只是把 method metadata 从硬编码迁到 release registry。
@@ -99,14 +105,23 @@ formal-dataset-list:
     cargo run -p fc-worker -- research dataset list-main --market-scope financial_system
 
 # 默认基于 SQLite 中最新的 persisted formal dataset 训练正式 bundle，并写出 bundle / manifest / evaluation 三份文件。
-# 如需回退旧的 prediction snapshot 过渡链路，可手动追加 `--dataset-source snapshot`。
+# 默认输出到忽略目录 artifacts/research/model-*/generated；如需回退旧的 prediction snapshot 过渡链路，可手动追加 `--dataset-source snapshot`。
 formal-train:
     cargo run -p fc-worker -- research pipeline train-probability --market-scope financial_system
+
+# 和 `formal-train` 相同，但显式把 bundle / manifest 输出到版本化 generated 目录。
+# 只在需要把该候选版作为仓库长期证据保留时使用。
+formal-train-tracked:
+    cargo run -p fc-worker -- research pipeline train-probability --market-scope financial_system --output-dir config/model-bundles/generated --manifest-dir config/model-releases/generated
 
 # 使用新的 `interaction_tail_v1` 非线性交互/尾部特征形态训练候选 bundle。
 # 适合在 formal main + 扩展数据集组合上验证“表达力增强后，runtime 提前量是否恢复”。
 formal-train-interaction-tail:
     cargo run -p fc-worker -- research pipeline train-probability --market-scope financial_system --model-shape interaction_tail_v1
+
+# 训练 `interaction_tail_v1`，并把产物显式输出到版本化 generated 目录。
+formal-train-interaction-tail-tracked:
+    cargo run -p fc-worker -- research pipeline train-probability --market-scope financial_system --model-shape interaction_tail_v1 --output-dir config/model-bundles/generated --manifest-dir config/model-releases/generated
 
 # 一键训练、发布并激活 formal bundle，然后触发 API reload。
 # 默认走最新 formal dataset；只有显式传 `--dataset-source snapshot` 时才回退旧链路。
