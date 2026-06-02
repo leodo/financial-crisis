@@ -368,7 +368,7 @@ pub(crate) async fn research_formal_dataset_summarize_main(args: &[String]) -> a
     let options = FormalDatasetSummaryOptions::parse(args)?;
     let store = crate::open_sqlite_store().await?;
     store.migrate().await?;
-    let dataset_key = crate::resolve_formal_dataset_key(
+    let dataset_key = super::pipeline::resolve_formal_dataset_key(
         &store,
         options.dataset_key.as_deref(),
         &options.dataset_id,

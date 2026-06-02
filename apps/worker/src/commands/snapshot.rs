@@ -1,7 +1,13 @@
-use std::path::PathBuf;
+use std::{
+    fmt::Write,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{bail, Context};
 use chrono::NaiveDate;
+use fc_domain::PredictionSnapshotRecord;
+use fc_storage::SqliteStore;
 
 #[derive(Debug, Clone)]
 pub(crate) struct PredictionSnapshotQueryOptions {
@@ -180,7 +186,7 @@ pub(crate) async fn research_prediction_snapshot_list(args: &[String]) -> anyhow
     let options = PredictionSnapshotQueryOptions::parse(args)?;
     let store = crate::open_sqlite_store().await?;
     store.migrate().await?;
-    let snapshots = crate::load_prediction_snapshots(&store, &options).await?;
+    let snapshots = load_prediction_snapshots(&store, &options).await?;
     if snapshots.is_empty() {
         println!("No prediction snapshots found.");
         return Ok(());
@@ -208,8 +214,8 @@ pub(crate) async fn research_prediction_snapshot_export(args: &[String]) -> anyh
     let options = PredictionSnapshotExportOptions::parse(args)?;
     let store = crate::open_sqlite_store().await?;
     store.migrate().await?;
-    let snapshots = crate::load_prediction_snapshots(&store, &options.query).await?;
-    crate::write_snapshot_export(&snapshots, options.format, options.output_path.as_deref())?;
+    let snapshots = load_prediction_snapshots(&store, &options.query).await?;
+    write_snapshot_export(&snapshots, options.format, options.output_path.as_deref())?;
     Ok(())
 }
 
@@ -217,13 +223,205 @@ pub(crate) async fn research_prediction_snapshot_dataset(args: &[String]) -> any
     let options = SnapshotDatasetExportOptions::parse(args)?;
     let store = crate::open_sqlite_store().await?;
     store.migrate().await?;
-    let snapshots = crate::load_training_snapshots(&store, &options.query).await?;
-    let dataset = crate::build_pipeline_dataset_rows(&snapshots);
-    crate::write_dataset_export(
+    let snapshots = load_training_snapshots(&store, &options.query).await?;
+    let dataset = super::pipeline::build_pipeline_dataset_rows(&snapshots);
+    write_dataset_export(
         &dataset,
-        &crate::transitional_feature_names(),
+        &super::pipeline::transitional_feature_names(),
         options.format,
         options.output_path.as_deref(),
     )?;
     Ok(())
+}
+
+pub(crate) async fn load_prediction_snapshots(
+    store: &SqliteStore,
+    options: &PredictionSnapshotQueryOptions,
+) -> anyhow::Result<Vec<PredictionSnapshotRecord>> {
+    Ok(store
+        .list_prediction_snapshots(
+            options.market_scope.as_deref(),
+            options.release_id.as_deref(),
+            options.from,
+            options.to,
+            options.limit,
+        )
+        .await?)
+}
+
+pub(crate) async fn load_training_snapshots(
+    store: &SqliteStore,
+    options: &PredictionSnapshotQueryOptions,
+) -> anyhow::Result<Vec<PredictionSnapshotRecord>> {
+    let market_scope = options
+        .market_scope
+        .clone()
+        .unwrap_or_else(|| "financial_system".to_string());
+    let release_id = match options.release_id.clone() {
+        Some(release_id) => Some(release_id),
+        None => Some(resolve_default_training_release_id(store, &market_scope).await?),
+    };
+    let snapshots = store
+        .list_prediction_snapshots(
+            Some(&market_scope),
+            release_id.as_deref(),
+            options.from,
+            options.to,
+            options.limit,
+        )
+        .await?;
+    if snapshots.is_empty() {
+        bail!("no training snapshots found for market scope {market_scope}");
+    }
+    Ok(snapshots)
+}
+
+async fn resolve_default_training_release_id(
+    store: &SqliteStore,
+    market_scope: &str,
+) -> anyhow::Result<String> {
+    if let Some(active_release) = store.load_active_model_release(market_scope).await? {
+        if active_release.manifest.probability_mode == "heuristic_mvp" {
+            return Ok(active_release.manifest.release_id);
+        }
+    }
+
+    let heuristic_release = store
+        .list_model_releases(Some(market_scope))
+        .await?
+        .into_iter()
+        .find(|release| release.manifest.probability_mode == "heuristic_mvp");
+
+    heuristic_release
+        .map(|release| release.manifest.release_id)
+        .with_context(|| {
+            format!(
+                "no heuristic training release found for market scope {market_scope}; pass --release-id explicitly or bootstrap a heuristic release first"
+            )
+        })
+}
+
+pub(crate) fn write_snapshot_export(
+    snapshots: &[PredictionSnapshotRecord],
+    format: ExportFormat,
+    output_path: Option<&Path>,
+) -> anyhow::Result<()> {
+    let content = match format {
+        ExportFormat::Json => serde_json::to_string_pretty(snapshots)?,
+        ExportFormat::Csv => render_snapshot_csv(snapshots),
+    };
+    write_or_print_export(content, output_path)
+}
+
+pub(crate) fn write_dataset_export(
+    dataset: &[crate::ProbabilityTrainingRow],
+    feature_names: &[String],
+    format: ExportFormat,
+    output_path: Option<&Path>,
+) -> anyhow::Result<()> {
+    let content = match format {
+        ExportFormat::Json => serde_json::to_string_pretty(dataset)?,
+        ExportFormat::Csv => render_dataset_csv(dataset, feature_names),
+    };
+    write_or_print_export(content, output_path)
+}
+
+fn write_or_print_export(content: String, output_path: Option<&Path>) -> anyhow::Result<()> {
+    if let Some(path) = output_path {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        fs::write(path, content)?;
+        println!("Exported {}", path.display());
+    } else {
+        println!("{content}");
+    }
+    Ok(())
+}
+
+fn render_snapshot_csv(snapshots: &[PredictionSnapshotRecord]) -> String {
+    let mut csv = String::from(
+        "as_of_date,market_scope,release_id,probability_mode,release_status,point_in_time_mode,overall_score,external_shock_score,raw_p_5d,raw_p_20d,raw_p_60d,calibrated_p_5d,calibrated_p_20d,calibrated_p_60d,posture,time_to_risk_bucket,coverage_score,freshness_status,method_version,posture_trigger_codes,posture_blocker_codes,recorded_at\n",
+    );
+    for snapshot in snapshots {
+        let _ = writeln!(
+            csv,
+            "{},{},{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{},{},{:.6},{},{},{},{},{}",
+            snapshot.as_of_date,
+            snapshot.market_scope,
+            snapshot.release_id.as_deref().unwrap_or(""),
+            snapshot.probability_mode,
+            snapshot.release_status,
+            snapshot.point_in_time_mode,
+            snapshot.overall_score,
+            snapshot.external_shock_score,
+            snapshot.raw_p_5d,
+            snapshot.raw_p_20d,
+            snapshot.raw_p_60d,
+            snapshot.calibrated_p_5d,
+            snapshot.calibrated_p_20d,
+            snapshot.calibrated_p_60d,
+            snapshot.posture,
+            snapshot.time_to_risk_bucket,
+            snapshot.coverage_score,
+            snapshot.freshness_status,
+            snapshot.method_version,
+            snapshot.posture_trigger_codes.join("|"),
+            snapshot.posture_blocker_codes.join("|"),
+            snapshot.recorded_at.to_rfc3339()
+        );
+    }
+    csv
+}
+
+pub(crate) fn render_dataset_csv(
+    dataset: &[crate::ProbabilityTrainingRow],
+    feature_names: &[String],
+) -> String {
+    let mut header = String::from(
+        "as_of_date,market_scope,release_id,probability_mode,freshness_status,time_to_risk_bucket,split_name,primary_scenario_id,scenario_family,scenario_training_role,label_5d,label_20d,label_60d,action_label_5d,action_label_20d,action_label_60d,prepare_episode_label,hedge_episode_label,defend_episode_label,primary_action_level,action_episode_id,action_episode_phase,protected_action_window",
+    );
+    for feature in feature_names {
+        header.push(',');
+        header.push_str(feature);
+    }
+    header.push('\n');
+
+    let mut csv = header;
+    for row in dataset {
+        let columns = [
+            row.as_of_date.to_string(),
+            row.market_scope.clone(),
+            row.release_id.clone().unwrap_or_default(),
+            row.probability_mode.clone().unwrap_or_default(),
+            row.freshness_status.clone().unwrap_or_default(),
+            row.time_to_risk_bucket.clone().unwrap_or_default(),
+            row.split_name.clone().unwrap_or_default(),
+            row.primary_scenario_id.clone().unwrap_or_default(),
+            row.scenario_family.clone().unwrap_or_default(),
+            row.scenario_training_role.clone().unwrap_or_default(),
+            row.label_5d.to_string(),
+            row.label_20d.to_string(),
+            row.label_60d.to_string(),
+            row.action_label_5d.to_string(),
+            row.action_label_20d.to_string(),
+            row.action_label_60d.to_string(),
+            row.prepare_episode_label.to_string(),
+            row.hedge_episode_label.to_string(),
+            row.defend_episode_label.to_string(),
+            row.primary_action_level.clone().unwrap_or_default(),
+            row.action_episode_id.clone().unwrap_or_default(),
+            row.action_episode_phase.clone(),
+            (row.protected_action_window as u8).to_string(),
+        ];
+        csv.push_str(&columns.join(","));
+        for feature in feature_names {
+            let value = row.features.get(feature).copied().unwrap_or_default();
+            let _ = write!(csv, ",{value:.6}");
+        }
+        csv.push('\n');
+    }
+    csv
 }
