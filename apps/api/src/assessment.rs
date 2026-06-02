@@ -227,7 +227,7 @@ pub(crate) fn history_runtime_policy_version(
     // thresholds are tightened or relaxed, history must be recomputed even if the
     // release manifest itself did not change.
     format!(
-        "runtime_history_v1_20260601|class={release_class}|prepare={:.3}|hedge={:.3}|defend={:.3}",
+        "runtime_history_v2_20260602|class={release_class}|prepare={:.3}|hedge={:.3}|defend={:.3}",
         thresholds.prepare_p60d, thresholds.hedge_p20d, thresholds.defend_p5d
     )
 }
@@ -1130,6 +1130,23 @@ fn build_time_to_risk_bucket(
 ) -> TimeToRiskBucket {
     let severe_carry = jpy_carry.score >= 70.0 && jpy_carry.funding_pressure_score >= 55.0;
     let stressed_carry = jpy_carry.score >= 58.0 && jpy_carry.funding_pressure_score >= 48.0;
+    let prepare_confirmation_count = prepare_context_confirmation_count_without_events(
+        trigger_score,
+        external_shock_score,
+        breadth_score,
+        jpy_carry.funding_pressure_score,
+    );
+    let prepare_non_external_confirmation_count =
+        prepare_non_external_confirmation_count_without_events(
+            trigger_score,
+            breadth_score,
+            jpy_carry.funding_pressure_score,
+        );
+    let prepare_non_carry_confirmation_count = prepare_non_carry_confirmation_count_without_events(
+        trigger_score,
+        external_shock_score,
+        breadth_score,
+    );
     let defend_head_now = actionability.is_some_and(|scores| {
         scores.defend >= 0.33
             && (trigger_score >= 55.0 || external_shock_score >= 55.0 || breadth_score >= 44.0)
@@ -1139,8 +1156,10 @@ fn build_time_to_risk_bucket(
             && (trigger_score >= 48.0 || external_shock_score >= 48.0 || breadth_score >= 38.0)
     });
     let prepare_head_months = actionability.is_some_and(|scores| {
-        scores.prepare >= 0.36
-            && (structural_score >= 52.0 || external_shock_score >= 50.0 || breadth_score >= 36.0)
+        scores.prepare >= 0.38
+            && probabilities.p_60d >= thresholds.downgrade_prepare_p60d()
+            && prepare_confirmation_count >= 2
+            && (structural_score >= 56.0 || external_shock_score >= 55.0)
     });
 
     if (probabilities.p_5d >= thresholds.defend_p5d
@@ -1165,12 +1184,20 @@ fn build_time_to_risk_bucket(
         || hedge_head_weeks
     {
         TimeToRiskBucket::Weeks
-    } else if (probabilities.p_60d >= thresholds.prepare_p60d && structural_score >= 55.0)
+    } else if (probabilities.p_60d >= thresholds.prepare_p60d
+        && structural_score >= 58.0
+        && prepare_confirmation_count >= 2)
         || (structural_score >= 62.0
-            && trigger_score >= 42.0
+            && prepare_confirmation_count >= 2
             && probabilities.p_60d >= thresholds.downgrade_prepare_p60d())
-        || (external_shock_score >= 55.0
+        || (external_shock_score >= 58.0
+            && structural_score >= 54.0
+            && prepare_non_external_confirmation_count >= 1
             && probabilities.p_20d >= thresholds.external_prepare_p20d())
+        || (stressed_carry
+            && structural_score >= 56.0
+            && prepare_non_carry_confirmation_count >= 1
+            && probabilities.p_60d >= thresholds.carry_prepare_p60d())
         || prepare_head_months
     {
         TimeToRiskBucket::Months
@@ -1198,6 +1225,25 @@ fn build_posture_clause_diagnostics(
     let confirmation_count = posture_confirmation_count(
         snapshot.trigger_score,
         external_shock_score,
+        event_assessment.confirmation_score,
+    );
+    let prepare_confirmation_count = prepare_context_confirmation_count(
+        snapshot.trigger_score,
+        external_shock_score,
+        breadth_score,
+        event_assessment.confirmation_score,
+        jpy_carry.funding_pressure_score,
+    );
+    let prepare_non_external_confirmation_count = prepare_non_external_confirmation_count(
+        snapshot.trigger_score,
+        breadth_score,
+        event_assessment.confirmation_score,
+        jpy_carry.funding_pressure_score,
+    );
+    let prepare_non_carry_confirmation_count = prepare_non_carry_confirmation_count(
+        snapshot.trigger_score,
+        external_shock_score,
+        breadth_score,
         event_assessment.confirmation_score,
     );
     let severe_carry = jpy_carry.score >= 70.0 && jpy_carry.funding_pressure_score >= 55.0;
@@ -1274,32 +1320,35 @@ fn build_posture_clause_diagnostics(
     if conviction_score >= 0.54 {
         if probabilities.p_60d >= thresholds.prepare_p60d
             && snapshot.structural_score >= 58.0
-            && (snapshot.trigger_score >= 45.0
-                || external_shock_score >= 50.0
-                || jpy_carry.funding_pressure_score >= 45.0)
+            && prepare_confirmation_count >= 2
         {
             prepare_trigger_codes.push("prepare_p60d_structural");
         }
         if snapshot.structural_score >= 64.0
             && probabilities.p_60d >= thresholds.downgrade_prepare_p60d()
-            && (snapshot.trigger_score >= 45.0
-                || external_shock_score >= 52.0
-                || jpy_carry.funding_pressure_score >= 48.0)
+            && prepare_confirmation_count >= 2
         {
             prepare_trigger_codes.push("prepare_structural_downgrade");
         }
-        if external_shock_score >= 55.0 && snapshot.structural_score >= 52.0 {
+        if external_shock_score >= 58.0
+            && snapshot.structural_score >= 54.0
+            && probabilities.p_20d >= thresholds.external_prepare_p20d()
+            && prepare_non_external_confirmation_count >= 1
+        {
             prepare_trigger_codes.push("prepare_external_structural");
         }
-        if jpy_carry.funding_pressure_score >= 50.0
-            && snapshot.structural_score >= 54.0
+        if stressed_carry
+            && snapshot.structural_score >= 56.0
             && probabilities.p_60d >= thresholds.carry_prepare_p60d()
+            && prepare_non_carry_confirmation_count >= 1
         {
             prepare_trigger_codes.push("prepare_carry_structural");
         }
         if actionability.is_some_and(|scores| {
-            scores.prepare >= 0.38
-                && (snapshot.structural_score >= 50.0 || external_shock_score >= 50.0)
+            scores.prepare >= 0.40
+                && probabilities.p_60d >= thresholds.downgrade_prepare_p60d()
+                && prepare_confirmation_count >= 2
+                && (snapshot.structural_score >= 56.0 || external_shock_score >= 55.0)
         }) {
             prepare_trigger_codes.push("prepare_actionability");
         }
@@ -1479,6 +1528,106 @@ fn posture_confirmation_count(
         trigger_score >= 60.0,
         external_shock_score >= 55.0,
         event_confirmation_score >= 55.0,
+    ]
+    .into_iter()
+    .filter(|flag| *flag)
+    .count() as u8
+}
+
+fn prepare_context_confirmation_count(
+    trigger_score: f64,
+    external_shock_score: f64,
+    breadth_score: f64,
+    event_confirmation_score: f64,
+    carry_funding_pressure_score: f64,
+) -> u8 {
+    [
+        trigger_score >= 45.0,
+        external_shock_score >= 50.0,
+        breadth_score >= 36.0,
+        event_confirmation_score >= 38.0,
+        carry_funding_pressure_score >= 48.0,
+    ]
+    .into_iter()
+    .filter(|flag| *flag)
+    .count() as u8
+}
+
+fn prepare_context_confirmation_count_without_events(
+    trigger_score: f64,
+    external_shock_score: f64,
+    breadth_score: f64,
+    carry_funding_pressure_score: f64,
+) -> u8 {
+    [
+        trigger_score >= 45.0,
+        external_shock_score >= 50.0,
+        breadth_score >= 36.0,
+        carry_funding_pressure_score >= 48.0,
+    ]
+    .into_iter()
+    .filter(|flag| *flag)
+    .count() as u8
+}
+
+fn prepare_non_external_confirmation_count(
+    trigger_score: f64,
+    breadth_score: f64,
+    event_confirmation_score: f64,
+    carry_funding_pressure_score: f64,
+) -> u8 {
+    [
+        trigger_score >= 45.0,
+        breadth_score >= 36.0,
+        event_confirmation_score >= 38.0,
+        carry_funding_pressure_score >= 48.0,
+    ]
+    .into_iter()
+    .filter(|flag| *flag)
+    .count() as u8
+}
+
+fn prepare_non_external_confirmation_count_without_events(
+    trigger_score: f64,
+    breadth_score: f64,
+    carry_funding_pressure_score: f64,
+) -> u8 {
+    [
+        trigger_score >= 45.0,
+        breadth_score >= 36.0,
+        carry_funding_pressure_score >= 48.0,
+    ]
+    .into_iter()
+    .filter(|flag| *flag)
+    .count() as u8
+}
+
+fn prepare_non_carry_confirmation_count(
+    trigger_score: f64,
+    external_shock_score: f64,
+    breadth_score: f64,
+    event_confirmation_score: f64,
+) -> u8 {
+    [
+        trigger_score >= 45.0,
+        external_shock_score >= 50.0,
+        breadth_score >= 36.0,
+        event_confirmation_score >= 38.0,
+    ]
+    .into_iter()
+    .filter(|flag| *flag)
+    .count() as u8
+}
+
+fn prepare_non_carry_confirmation_count_without_events(
+    trigger_score: f64,
+    external_shock_score: f64,
+    breadth_score: f64,
+) -> u8 {
+    [
+        trigger_score >= 45.0,
+        external_shock_score >= 50.0,
+        breadth_score >= 36.0,
     ]
     .into_iter()
     .filter(|flag| *flag)
@@ -2518,13 +2667,13 @@ fn round_option(value: Option<f64>, decimals: i32) -> Option<f64> {
 mod tests {
     use super::{
         actionability_confidence_from_probability, build_posture_guidance,
-        fuse_actionability_confidence, ProbabilityActionThresholds,
+        build_time_to_risk_bucket, fuse_actionability_confidence, ProbabilityActionThresholds,
     };
     use chrono::{NaiveDate, Utc};
     use fc_domain::{
         ActionabilityLevel, DataQualitySummary, DataTrust, EventAssessment, EventConfirmationState,
         JpyCarrySnapshot, JpyCarryState, ProbabilityBlock, QualityGrade, RiskLevel, RiskSnapshot,
-        UserRiskPreferences, UserRiskProfile,
+        TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
     };
 
     fn neutral_preferences() -> UserRiskPreferences {
@@ -2584,6 +2733,24 @@ mod tests {
             funding_pressure_score,
             vix_coupling_score: 15.0,
             credit_coupling_score: 15.0,
+            reason: "test".to_string(),
+        }
+    }
+
+    fn stressed_jpy_carry(score: f64, funding_pressure_score: f64) -> JpyCarrySnapshot {
+        JpyCarrySnapshot {
+            state: JpyCarryState::Stress,
+            score,
+            usdjpy_level: Some(159.0),
+            jp_call_rate: Some(0.10),
+            us_short_rate: Some(5.25),
+            us_jp_short_rate_diff: Some(5.15),
+            change_5d: Some(2.5),
+            change_20d: Some(4.2),
+            realized_vol_20d: Some(0.11),
+            funding_pressure_score,
+            vix_coupling_score: 52.0,
+            credit_coupling_score: 48.0,
             reason: "test".to_string(),
         }
     }
@@ -2699,7 +2866,55 @@ mod tests {
     }
 
     #[test]
-    fn posture_guidance_emits_prepare_external_structural_clause() {
+    fn time_to_risk_bucket_requires_confirmation_for_months_bucket() {
+        let bucket = build_time_to_risk_bucket(
+            &ProbabilityBlock {
+                p_5d: 0.004,
+                p_20d: 0.018,
+                p_60d: 0.14,
+            },
+            None,
+            59.0,
+            40.0,
+            44.0,
+            32.0,
+            &quiet_jpy_carry(20.0),
+            ProbabilityActionThresholds {
+                prepare_p60d: 0.12,
+                hedge_p20d: 0.06,
+                defend_p5d: 0.05,
+            },
+        );
+
+        assert_eq!(bucket, TimeToRiskBucket::Normal);
+    }
+
+    #[test]
+    fn time_to_risk_bucket_allows_months_when_probability_and_context_align() {
+        let bucket = build_time_to_risk_bucket(
+            &ProbabilityBlock {
+                p_5d: 0.004,
+                p_20d: 0.05,
+                p_60d: 0.14,
+            },
+            None,
+            59.0,
+            47.0,
+            52.0,
+            38.0,
+            &quiet_jpy_carry(20.0),
+            ProbabilityActionThresholds {
+                prepare_p60d: 0.12,
+                hedge_p20d: 0.06,
+                defend_p5d: 0.05,
+            },
+        );
+
+        assert_eq!(bucket, TimeToRiskBucket::Months);
+    }
+
+    #[test]
+    fn posture_guidance_blocks_prepare_external_without_probability_companion() {
         let snapshot = RiskSnapshot {
             as_of_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
             entity_id: "us".to_string(),
@@ -2738,6 +2953,59 @@ mod tests {
             &[],
             &quiet_jpy_carry(20.0),
             &quiet_event_assessment(20.0),
+            &neutral_preferences(),
+            ProbabilityActionThresholds {
+                prepare_p60d: 0.12,
+                hedge_p20d: 0.06,
+                defend_p5d: 0.05,
+            },
+        );
+
+        assert_eq!(posture.posture, fc_domain::DecisionPosture::Normal);
+        assert!(posture.trigger_codes.is_empty());
+        assert!(posture.blocker_codes.is_empty());
+    }
+
+    #[test]
+    fn posture_guidance_emits_prepare_external_structural_clause_when_probability_confirms() {
+        let snapshot = RiskSnapshot {
+            as_of_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            overall_score: 57.0,
+            overall_level: RiskLevel::Stress,
+            structural_score: 55.0,
+            trigger_score: 46.0,
+            level_reason: "test".to_string(),
+            dimensions: Vec::new(),
+            top_contributors: Vec::new(),
+            data_quality_summary: DataQualitySummary {
+                overall_score: 91.0,
+                grade: QualityGrade::A,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count: 0,
+            },
+            generated_at: Utc::now(),
+            method_version: "test".to_string(),
+        };
+        let probabilities = ProbabilityBlock {
+            p_5d: 0.004,
+            p_20d: 0.05,
+            p_60d: 0.010,
+        };
+        let posture = build_posture_guidance(
+            &snapshot,
+            &probabilities,
+            None,
+            0.60,
+            &test_data_trust(QualityGrade::A),
+            59.0,
+            38.0,
+            &[],
+            &quiet_jpy_carry(20.0),
+            &quiet_event_assessment(42.0),
             &neutral_preferences(),
             ProbabilityActionThresholds {
                 prepare_p60d: 0.12,
@@ -2957,6 +3225,58 @@ mod tests {
             &[],
             &quiet_jpy_carry(20.0),
             &quiet_event_assessment(25.0),
+            &neutral_preferences(),
+            ProbabilityActionThresholds {
+                prepare_p60d: 0.12,
+                hedge_p20d: 0.06,
+                defend_p5d: 0.05,
+            },
+        );
+
+        assert_eq!(posture.posture, fc_domain::DecisionPosture::Normal);
+        assert!(posture.trigger_codes.is_empty());
+    }
+
+    #[test]
+    fn posture_guidance_blocks_prepare_carry_without_noncarry_confirmation() {
+        let snapshot = RiskSnapshot {
+            as_of_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            overall_score: 56.5,
+            overall_level: RiskLevel::Stress,
+            structural_score: 57.0,
+            trigger_score: 34.0,
+            level_reason: "test".to_string(),
+            dimensions: Vec::new(),
+            top_contributors: Vec::new(),
+            data_quality_summary: DataQualitySummary {
+                overall_score: 90.0,
+                grade: QualityGrade::A,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count: 0,
+            },
+            generated_at: Utc::now(),
+            method_version: "test".to_string(),
+        };
+        let probabilities = ProbabilityBlock {
+            p_5d: 0.01,
+            p_20d: 0.03,
+            p_60d: 0.10,
+        };
+        let posture = build_posture_guidance(
+            &snapshot,
+            &probabilities,
+            None,
+            0.60,
+            &test_data_trust(QualityGrade::A),
+            41.0,
+            32.0,
+            &[],
+            &stressed_jpy_carry(60.0, 52.0),
+            &quiet_event_assessment(30.0),
             &neutral_preferences(),
             ProbabilityActionThresholds {
                 prepare_p60d: 0.12,
