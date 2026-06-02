@@ -103,11 +103,21 @@ formal-dataset-list:
 formal-train:
     cargo run -p fc-worker -- research pipeline train-probability --market-scope financial_system
 
+# 使用新的 `interaction_tail_v1` 非线性交互/尾部特征形态训练候选 bundle。
+# 适合在 formal main + 扩展数据集组合上验证“表达力增强后，runtime 提前量是否恢复”。
+formal-train-interaction-tail:
+    cargo run -p fc-worker -- research pipeline train-probability --market-scope financial_system --model-shape interaction_tail_v1
+
 # 一键训练、发布并激活 formal bundle，然后触发 API reload。
 # 默认走最新 formal dataset；只有显式传 `--dataset-source snapshot` 时才回退旧链路。
 # 这会把线上 probability_mode 从 heuristic 切到 formal_bundle_v1（若 bundle 可正常加载）。
 formal-bootstrap:
     cargo run -p fc-worker -- research pipeline bootstrap-formal-release --market-scope financial_system
+
+# 训练、发布并激活 `interaction_tail_v1` 候选 release。
+# 适合在本地 API 上直接切换到下一代模型做 strict rebuild review 或面板联调。
+formal-bootstrap-interaction-tail:
+    cargo run -p fc-worker -- research pipeline bootstrap-formal-release --market-scope financial_system --model-shape interaction_tail_v1
 
 # 停止 `just dev` 启动的 API 和 Web 服务。
 stop:

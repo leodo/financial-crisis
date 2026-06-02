@@ -10,6 +10,7 @@ use anyhow::{bail, Context};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
 use fc_domain::{
     embedded_protected_stress_window_catalog, load_crisis_scenario_catalog,
+    probability_feature_names_for_transform, resolve_probability_feature_value,
     ActionEpisodeTemplateId, ActionabilityBundle, ActionabilityEvaluationSummary,
     ActionabilityLevel, ActionabilityLevelBundle, AssessmentHistoryPoint, AssessmentMethodVersions,
     AssessmentSnapshot, BacktestScenarioSummary, CrisisScenarioActionEpisodeOverrides,
@@ -23,6 +24,8 @@ use fc_domain::{
     FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
     FEATURE_FRESHNESS_STALE_OR_MISSING, FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D,
     FEATURE_HEURISTIC_P_60D, FEATURE_OVERALL_SCORE, FORMAL_PROBABILITY_BUNDLE_FEATURES,
+    PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1, PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1,
+    PROBABILITY_MODEL_FAMILY_INTERACTION_TAIL_V1, PROBABILITY_MODEL_FAMILY_LINEAR_V1,
     TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES,
 };
 use fc_ingestion::{
@@ -763,9 +766,40 @@ impl PipelineDatasetSource {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProbabilityModelShape {
+    LinearV1,
+    InteractionTailV1,
+}
+
+impl ProbabilityModelShape {
+    fn parse(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "linear_v1" => Ok(Self::LinearV1),
+            "interaction_tail_v1" => Ok(Self::InteractionTailV1),
+            other => bail!("unsupported --model-shape value: {other}"),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::LinearV1 => PROBABILITY_MODEL_FAMILY_LINEAR_V1,
+            Self::InteractionTailV1 => PROBABILITY_MODEL_FAMILY_INTERACTION_TAIL_V1,
+        }
+    }
+
+    fn feature_transform(self) -> &'static str {
+        match self {
+            Self::LinearV1 => PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1,
+            Self::InteractionTailV1 => PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct PipelineTrainOptions {
     dataset_source: PipelineDatasetSource,
+    model_shape: ProbabilityModelShape,
     dataset_id: String,
     dataset_version: Option<String>,
     dataset_key: Option<String>,
@@ -780,6 +814,7 @@ impl PipelineTrainOptions {
         let mut output_dir = PathBuf::from("config/model-bundles/generated");
         let mut release_prefix = None;
         let mut dataset_source = PipelineDatasetSource::Formal;
+        let mut model_shape = ProbabilityModelShape::LinearV1;
         let mut dataset_id = DEFAULT_FORMAL_DATASET_ID.to_string();
         let mut dataset_version = None;
         let mut dataset_key = None;
@@ -793,6 +828,13 @@ impl PipelineTrainOptions {
                     dataset_source = PipelineDatasetSource::parse(
                         args.get(index)
                             .with_context(|| "--dataset-source requires a value")?,
+                    )?;
+                }
+                "--model-shape" => {
+                    index += 1;
+                    model_shape = ProbabilityModelShape::parse(
+                        args.get(index)
+                            .with_context(|| "--model-shape requires a value")?,
                     )?;
                 }
                 "--dataset-id" => {
@@ -846,13 +888,25 @@ impl PipelineTrainOptions {
             index += 1;
         }
 
-        let release_prefix = release_prefix.unwrap_or_else(|| match dataset_source {
-            PipelineDatasetSource::Formal => "us_formal_main".to_string(),
-            PipelineDatasetSource::Snapshot => "us_formal_transitional".to_string(),
-        });
+        let release_prefix =
+            release_prefix.unwrap_or_else(|| match (dataset_source, model_shape) {
+                (PipelineDatasetSource::Formal, ProbabilityModelShape::LinearV1) => {
+                    "us_formal_main".to_string()
+                }
+                (PipelineDatasetSource::Formal, ProbabilityModelShape::InteractionTailV1) => {
+                    "us_formal_interaction_tail".to_string()
+                }
+                (PipelineDatasetSource::Snapshot, ProbabilityModelShape::LinearV1) => {
+                    "us_formal_transitional".to_string()
+                }
+                (PipelineDatasetSource::Snapshot, ProbabilityModelShape::InteractionTailV1) => {
+                    "us_formal_transitional_interaction_tail".to_string()
+                }
+            });
 
         Ok(Self {
             dataset_source,
+            model_shape,
             dataset_id,
             dataset_version,
             dataset_key,
@@ -2192,6 +2246,7 @@ async fn research_pipeline_train_probability(args: &[String]) -> anyhow::Result<
     println!("Formal probability bundle generated.");
     println!("  dataset_source   {}", artifacts.dataset_source);
     println!("  dataset_label    {}", artifacts.dataset_label);
+    println!("  model_shape      {}", options.model_shape.as_str());
     println!(
         "  release_id       {}",
         artifacts.release.manifest.release_id
@@ -4630,6 +4685,8 @@ struct PipelineEvaluationReport {
     release_id: String,
     dataset_source: String,
     dataset_label: String,
+    model_family: String,
+    feature_transform: String,
     target_label_mode: ProbabilityTargetLabelMode,
     market_scope: String,
     feature_names: Vec<String>,
@@ -5154,6 +5211,10 @@ async fn train_probability_pipeline(
 ) -> anyhow::Result<PipelineArtifacts> {
     let generated_at = Utc::now();
     let training = load_probability_training_input(store, options).await?;
+    let model_feature_names = probability_feature_names_for_transform(
+        &training.feature_names,
+        options.model_shape.feature_transform(),
+    );
     let crisis_prior_label_mode = ProbabilityTargetLabelMode::ForwardCrisis;
     let horizons = [5_u32, 20_u32, 60_u32]
         .into_iter()
@@ -5162,7 +5223,7 @@ async fn train_probability_pipeline(
                 &training.train_rows,
                 &training.calibration_rows,
                 &training.evaluation_rows,
-                &training.feature_names,
+                &model_feature_names,
                 horizon,
                 crisis_prior_label_mode,
             )
@@ -5202,8 +5263,10 @@ async fn train_probability_pipeline(
     let release_id = format!("{}_{}", options.release_prefix, release_suffix);
     let bundle_note = match training.dataset_source {
         PipelineDatasetSource::Formal => format!(
-            "Formal bundle trained from persisted formal dataset {} built from raw observations -> feature snapshots -> scenario labels; crisis-prior head uses forward-crisis labels, and {}.",
+            "Formal bundle trained from persisted formal dataset {} built from raw observations -> feature snapshots -> scenario labels; model_shape={} feature_transform={}; crisis-prior head uses forward-crisis labels, and {}.",
             training.dataset_label,
+            options.model_shape.as_str(),
+            options.model_shape.feature_transform(),
             if actionability.is_some() {
                 "actionability head uses episode-native prepare/hedge/defend labels when quality gates pass"
             } else {
@@ -5218,8 +5281,10 @@ async fn train_probability_pipeline(
         bundle_id: release_id.clone(),
         market_scope: training.market_scope.clone(),
         probability_mode: "formal_bundle_v1".to_string(),
+        model_family: options.model_shape.as_str().to_string(),
+        feature_transform: options.model_shape.feature_transform().to_string(),
         created_at: generated_at,
-        feature_names: training.feature_names.clone(),
+        feature_names: model_feature_names.clone(),
         monotonic_min_gap_5d_to_20d: 0.02,
         monotonic_min_gap_20d_to_60d: 0.03,
         note: bundle_note.clone(),
@@ -5247,7 +5312,7 @@ async fn train_probability_pipeline(
             bundle_uri: bundle_path.to_string_lossy().replace('\\', "/"),
             feature_set_version: training.feature_set_version.clone(),
             label_version: training.label_version.clone(),
-            prob_model_version: format!("prob_bundle_{release_suffix}"),
+            prob_model_version: format!("prob_{}_{}", options.model_shape.as_str(), release_suffix),
             calibration_version: format!("platt_{release_suffix}"),
             posture_policy_version: "posture_v1_20260530".to_string(),
             action_playbook_version: "action_playbook_v1_20260531".to_string(),
@@ -5265,9 +5330,10 @@ async fn train_probability_pipeline(
             log_loss: bundle.evaluation.as_ref().map(|summary| summary.log_loss),
             ece: bundle.evaluation.as_ref().map(|summary| summary.ece),
             note: format!(
-                "Generated by `research pipeline train-probability` from {} dataset {}.",
+                "Generated by `research pipeline train-probability` from {} dataset {} with model_shape={}.",
                 training.dataset_source.as_str(),
-                training.dataset_label
+                training.dataset_label,
+                options.model_shape.as_str()
             ),
         },
         created_at: generated_at,
@@ -5279,9 +5345,11 @@ async fn train_probability_pipeline(
         release_id: release_id.clone(),
         dataset_source: training.dataset_source.as_str().to_string(),
         dataset_label: training.dataset_label.clone(),
+        model_family: options.model_shape.as_str().to_string(),
+        feature_transform: options.model_shape.feature_transform().to_string(),
         target_label_mode: crisis_prior_label_mode,
         market_scope: release.manifest.market_scope.clone(),
-        feature_names: training.feature_names.clone(),
+        feature_names: model_feature_names.clone(),
         training_samples: training.train_rows.len(),
         calibration_samples: training.calibration_rows.len(),
         evaluation_samples: training.evaluation_rows.len(),
@@ -6500,6 +6568,13 @@ fn fit_logistic_model(
 
     LogisticProbabilityModel {
         intercept,
+        feature_transform: if feature_names.iter().any(|feature_name| {
+            feature_name.contains("interaction__") || feature_name.contains("tail_")
+        }) {
+            PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1.to_string()
+        } else {
+            PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1.to_string()
+        },
         feature_stats: feature_stats.clone(),
         coefficients: feature_names
             .iter()
@@ -6786,7 +6861,9 @@ fn build_feature_stat(
 ) -> ProbabilityFeatureStat {
     let values = rows
         .iter()
-        .map(|row| row.features.get(feature_name).copied().unwrap_or_default())
+        .map(|row| {
+            resolve_probability_feature_value(feature_name, &row.features).unwrap_or_default()
+        })
         .collect::<Vec<_>>();
     let mean = values.iter().sum::<f64>() / values.len() as f64;
     let variance = values
@@ -7191,10 +7268,7 @@ fn normalized_features(
     feature_stats
         .iter()
         .map(|stat| {
-            let value = row
-                .features
-                .get(&stat.name)
-                .copied()
+            let value = resolve_probability_feature_value(&stat.name, &row.features)
                 .unwrap_or(stat.fill_value);
             (value - stat.mean) / stat.std_dev.max(1e-6)
         })
@@ -11114,10 +11188,10 @@ fn print_help() {
   cargo run -p fc-worker -- research dataset summarize-main [--market-scope SCOPE] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--output-dir DIR]
       Summarize a persisted formal dataset, export JSON + Markdown stats, and show split/scenario/coverage diagnostics before training.
 
-  cargo run -p fc-worker -- research pipeline train-probability [--dataset-source formal|snapshot] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--release-prefix PREFIX]
-      Train a formal probability bundle. By default it uses the latest persisted formal dataset; pass one or more --aux-dataset-key values to append extension/protected datasets, or --dataset-source snapshot to fall back to the old prediction-snapshot transitional path.
+  cargo run -p fc-worker -- research pipeline train-probability [--dataset-source formal|snapshot] [--model-shape linear_v1|interaction_tail_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--release-prefix PREFIX]
+      Train a formal probability bundle. By default it uses the latest persisted formal dataset with model-shape=linear_v1; pass --model-shape interaction_tail_v1 to enable the first non-linear interaction/tail baseline.
 
-  cargo run -p fc-worker -- research pipeline bootstrap-formal-release [--dataset-source formal|snapshot] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--release-prefix PREFIX] [--no-activate] [--no-reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
+  cargo run -p fc-worker -- research pipeline bootstrap-formal-release [--dataset-source formal|snapshot] [--model-shape linear_v1|interaction_tail_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--release-prefix PREFIX] [--no-activate] [--no-reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
       Train a formal bundle, publish it into SQLite as a model release, optionally activate it, and optionally reload the API runtime. Default source is the latest persisted formal dataset.
 
   cargo run -p fc-worker -- refresh latest-free [--fast-lookback-days N] [--slow-lookback-years N] [--fred-chunk-days N] [--skip-world-bank] [--include-gdelt] [--no-reload-api] [--api-reload-url URL]
@@ -11165,7 +11239,8 @@ mod tests {
         FormalDatasetRowRecord, Frequency, HorizonEvaluationSummary, LogisticProbabilityModel,
         ModelReleaseManifest, ModelReleaseRecord, Observation, PlattCalibrationArtifact,
         ProbabilityBundle, ProbabilityBundleEvaluation, RegimeSeparationEvaluationSummary,
-        TimeToRiskBucket,
+        TimeToRiskBucket, PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1,
+        PROBABILITY_MODEL_FAMILY_LINEAR_V1,
     };
 
     use super::{
@@ -11185,9 +11260,10 @@ mod tests {
         CrisisScenario, FeatureSnapshotBuildOptions, FormalDatasetBuildOptions,
         FormalDatasetSummaryOptions, FormalSplitLabelSupport, PipelineDatasetSource,
         PipelineTrainOptions, PointInTimeMode, PredictionSnapshotQueryOptions,
-        ProbabilityTargetLabelMode, ProbabilityTrainingRegime, ProbabilityTrainingRow,
-        RefreshLatestOptions, ReleaseActionabilityLevelReview, ReleaseActionabilityReview,
-        ReleasePublishOptions, ReleaseReviewOptions, ReleaseSwitchOptions, ScenarioRowRange,
+        ProbabilityModelShape, ProbabilityTargetLabelMode, ProbabilityTrainingRegime,
+        ProbabilityTrainingRow, RefreshLatestOptions, ReleaseActionabilityLevelReview,
+        ReleaseActionabilityReview, ReleasePublishOptions, ReleaseReviewOptions,
+        ReleaseSwitchOptions, ScenarioRowRange,
     };
 
     fn observation(
@@ -11614,6 +11690,7 @@ mod tests {
     fn parses_pipeline_train_defaults_to_formal_dataset() {
         let options = PipelineTrainOptions::parse(&[]).unwrap();
         assert_eq!(options.dataset_source, PipelineDatasetSource::Formal);
+        assert_eq!(options.model_shape, ProbabilityModelShape::LinearV1);
         assert_eq!(options.dataset_id, "formal_v1_main_1990_daily");
         assert_eq!(options.dataset_version, None);
         assert_eq!(options.dataset_key, None);
@@ -11633,11 +11710,27 @@ mod tests {
         ];
         let options = PipelineTrainOptions::parse(&args).unwrap();
         assert_eq!(options.dataset_source, PipelineDatasetSource::Snapshot);
+        assert_eq!(options.model_shape, ProbabilityModelShape::LinearV1);
         assert_eq!(options.release_prefix, "custom_prefix");
         assert_eq!(
             options.query.market_scope.as_deref(),
             Some("financial_system")
         );
+    }
+
+    #[test]
+    fn parses_pipeline_train_interaction_tail_shape() {
+        let args = vec![
+            "--model-shape".to_string(),
+            "interaction_tail_v1".to_string(),
+        ];
+        let options = PipelineTrainOptions::parse(&args).unwrap();
+
+        assert_eq!(
+            options.model_shape,
+            ProbabilityModelShape::InteractionTailV1
+        );
+        assert_eq!(options.release_prefix, "us_formal_interaction_tail");
     }
 
     #[test]
@@ -12811,6 +12904,7 @@ mod tests {
                 decision_threshold: 0.05,
                 raw_model: LogisticProbabilityModel {
                     intercept: 0.0,
+                    feature_transform: PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1.to_string(),
                     feature_stats: Vec::new(),
                     coefficients: Vec::new(),
                 },
@@ -13178,6 +13272,8 @@ mod tests {
             bundle_id: "candidate_guard_zero".to_string(),
             market_scope: "financial_system".to_string(),
             probability_mode: "formal_bundle_v1".to_string(),
+            model_family: PROBABILITY_MODEL_FAMILY_LINEAR_V1.to_string(),
+            feature_transform: PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1.to_string(),
             created_at: Utc::now(),
             feature_names: Vec::new(),
             monotonic_min_gap_5d_to_20d: 0.0,
@@ -13244,6 +13340,8 @@ mod tests {
             bundle_id: "candidate_guard_cooldown".to_string(),
             market_scope: "financial_system".to_string(),
             probability_mode: "formal_bundle_v1".to_string(),
+            model_family: PROBABILITY_MODEL_FAMILY_LINEAR_V1.to_string(),
+            feature_transform: PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1.to_string(),
             created_at: Utc::now(),
             feature_names: Vec::new(),
             monotonic_min_gap_5d_to_20d: 0.0,

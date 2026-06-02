@@ -2937,6 +2937,8 @@ mod tests {
                 bundle_id: "bundle".to_string(),
                 market_scope: "financial_system".to_string(),
                 probability_mode: "formal_bundle_v1".to_string(),
+                model_family: "linear_v1".to_string(),
+                feature_transform: "identity_v1".to_string(),
                 created_at: Utc::now(),
                 feature_names: Vec::new(),
                 monotonic_min_gap_5d_to_20d: 0.0,

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +28,10 @@ pub const FEATURE_US_UNEMPLOYMENT_LEVEL: &str = "us_unemployment_level";
 pub const FEATURE_US_HOUSING_STARTS_LEVEL: &str = "us_housing_starts_level";
 pub const FEATURE_US_USDJPY_LEVEL: &str = "us_usdjpy_level";
 pub const FEATURE_US_USDJPY_CHANGE_20D: &str = "us_usdjpy_change_20d";
+pub const PROBABILITY_MODEL_FAMILY_LINEAR_V1: &str = "linear_v1";
+pub const PROBABILITY_MODEL_FAMILY_INTERACTION_TAIL_V1: &str = "interaction_tail_v1";
+pub const PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1: &str = "identity_v1";
+pub const PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1: &str = "interaction_tail_v1";
 
 pub const TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES: &[&str] = &[
     FEATURE_OVERALL_SCORE,
@@ -61,12 +67,91 @@ pub const FORMAL_PROBABILITY_BUNDLE_FEATURES: &[&str] = &[
 ];
 
 pub const PROBABILITY_BUNDLE_FEATURES: &[&str] = TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES;
+pub const INTERACTION_TAIL_DERIVED_FEATURES: &[&str] = &[
+    "interaction__overall_score__us_vix_level",
+    "interaction__structural_score__trigger_score",
+    "interaction__trigger_score__us_vix_level",
+    "interaction__trigger_score__us_usdjpy_change_20d",
+    "interaction__external_dimension_score__us_usdjpy_level",
+    "interaction__us_curve_10y2y_level__us_fed_funds_level",
+    "interaction__us_nfci_level__us_stlfsi_level",
+    "interaction__us_baa_10y_spread_level__us_vix_level",
+    "tail_pos__us_vix_level__24",
+    "tail_pos__us_vix_level__32",
+    "tail_pos__us_baa_10y_spread_level__2",
+    "tail_pos__us_stlfsi_level__1",
+    "tail_pos__us_usdjpy_level__145",
+    "tail_abs_pos__us_usdjpy_change_20d__4",
+    "tail_neg__us_curve_10y2y_level__0",
+    "tail_pos__overall_score__55",
+    "tail_pos__structural_score__52",
+    "tail_pos__trigger_score__50",
+    "tail_pos__external_dimension_score__50",
+];
+
+fn default_probability_model_family() -> String {
+    PROBABILITY_MODEL_FAMILY_LINEAR_V1.to_string()
+}
+
+fn default_probability_feature_transform() -> String {
+    PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1.to_string()
+}
+
+pub fn probability_feature_names_for_transform(
+    base_feature_names: &[String],
+    feature_transform: &str,
+) -> Vec<String> {
+    let mut names = base_feature_names.to_vec();
+    if feature_transform == PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1 {
+        for feature_name in INTERACTION_TAIL_DERIVED_FEATURES {
+            if !names.iter().any(|existing| existing == feature_name) {
+                names.push((*feature_name).to_string());
+            }
+        }
+    }
+    names
+}
+
+pub fn resolve_probability_feature_value(
+    feature_name: &str,
+    features: &BTreeMap<String, f64>,
+) -> Option<f64> {
+    if let Some(value) = features.get(feature_name) {
+        return Some(*value);
+    }
+
+    let parts = feature_name.split("__").collect::<Vec<_>>();
+    match parts.as_slice() {
+        ["interaction", left, right] => Some(
+            resolve_probability_feature_value(left, features)?
+                * resolve_probability_feature_value(right, features)?,
+        ),
+        ["tail_pos", base, threshold] => Some(
+            (resolve_probability_feature_value(base, features)? - threshold.parse::<f64>().ok()?)
+                .max(0.0),
+        ),
+        ["tail_neg", base, threshold] => Some(
+            (threshold.parse::<f64>().ok()? - resolve_probability_feature_value(base, features)?)
+                .max(0.0),
+        ),
+        ["tail_abs_pos", base, threshold] => Some(
+            (resolve_probability_feature_value(base, features)?.abs()
+                - threshold.parse::<f64>().ok()?)
+            .max(0.0),
+        ),
+        _ => None,
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProbabilityBundle {
     pub bundle_id: String,
     pub market_scope: String,
     pub probability_mode: String,
+    #[serde(default = "default_probability_model_family")]
+    pub model_family: String,
+    #[serde(default = "default_probability_feature_transform")]
+    pub feature_transform: String,
     pub created_at: DateTime<Utc>,
     pub feature_names: Vec<String>,
     pub monotonic_min_gap_5d_to_20d: f64,
@@ -138,6 +223,8 @@ pub struct ProbabilityCoefficient {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogisticProbabilityModel {
     pub intercept: f64,
+    #[serde(default = "default_probability_feature_transform")]
+    pub feature_transform: String,
     pub feature_stats: Vec<ProbabilityFeatureStat>,
     pub coefficients: Vec<ProbabilityCoefficient>,
 }
@@ -245,4 +332,54 @@ pub struct ActionabilityEvaluationSummary {
     pub late_confirmation_rate: Option<f64>,
     pub missed_rate: Option<f64>,
     pub note: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interaction_tail_transform_appends_derived_features() {
+        let base = FORMAL_PROBABILITY_BUNDLE_FEATURES
+            .iter()
+            .map(|feature| (*feature).to_string())
+            .collect::<Vec<_>>();
+        let expanded = probability_feature_names_for_transform(
+            &base,
+            PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1,
+        );
+
+        assert!(expanded.len() > base.len());
+        assert!(expanded.contains(&"interaction__overall_score__us_vix_level".to_string()));
+        assert!(expanded.contains(&"tail_neg__us_curve_10y2y_level__0".to_string()));
+    }
+
+    #[test]
+    fn derived_feature_resolver_handles_interactions_and_tail_features() {
+        let mut features = BTreeMap::new();
+        features.insert(FEATURE_OVERALL_SCORE.to_string(), 60.0);
+        features.insert(FEATURE_US_VIX_LEVEL.to_string(), 28.0);
+        features.insert(FEATURE_US_CURVE_10Y2Y_LEVEL.to_string(), -0.5);
+        features.insert(FEATURE_US_USDJPY_CHANGE_20D.to_string(), -6.0);
+
+        assert_eq!(
+            resolve_probability_feature_value(
+                "interaction__overall_score__us_vix_level",
+                &features
+            ),
+            Some(1680.0)
+        );
+        assert_eq!(
+            resolve_probability_feature_value("tail_pos__us_vix_level__24", &features),
+            Some(4.0)
+        );
+        assert_eq!(
+            resolve_probability_feature_value("tail_neg__us_curve_10y2y_level__0", &features),
+            Some(0.5)
+        );
+        assert_eq!(
+            resolve_probability_feature_value("tail_abs_pos__us_usdjpy_change_20d__4", &features),
+            Some(2.0)
+        );
+    }
 }

@@ -3,23 +3,23 @@ use std::{collections::BTreeMap, env};
 use chrono::NaiveDate;
 use chrono::Utc;
 use fc_domain::{
-    ActionabilityBlock, ActionabilityLevel, AlertEvent, AssessmentMethodVersions, AssessmentScores,
-    AssessmentSnapshot, BacktestPerformanceSummary, BacktestRollingAudit, BacktestScenarioSummary,
-    BacktestSignalSource, DataMode, DataTrust, DecisionPosture, EventAssessment,
-    EventConfirmationState, EventSignalSummary, FreshnessStatus, HistoricalAnalog, IndicatorRisk,
-    JpyCarrySnapshot, JpyCarryState, KeyIndicatorStatus, LogisticProbabilityModel,
-    ModelReleaseRecord, Observation, PlattCalibrationArtifact, PositionGuidance, PostureGuidance,
-    ProbabilityBlock, ProbabilityBundle, QualityGrade, RiskContributor, RiskDimension,
-    RiskSnapshot, RuntimeMetadata, TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
-    FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER,
-    FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_DIMENSION_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE,
-    FEATURE_FRESHNESS_DELAYED_OR_WORSE, FEATURE_FRESHNESS_STALE_OR_MISSING,
-    FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D, FEATURE_HEURISTIC_P_60D,
-    FEATURE_OVERALL_SCORE, FEATURE_STRUCTURAL_SCORE, FEATURE_TRIGGER_SCORE,
-    FEATURE_US_BAA_10Y_SPREAD_LEVEL, FEATURE_US_CURVE_10Y2Y_LEVEL, FEATURE_US_FED_FUNDS_LEVEL,
-    FEATURE_US_HOUSING_STARTS_LEVEL, FEATURE_US_NFCI_LEVEL, FEATURE_US_STLFSI_LEVEL,
-    FEATURE_US_UNEMPLOYMENT_LEVEL, FEATURE_US_USDJPY_CHANGE_20D, FEATURE_US_USDJPY_LEVEL,
-    FEATURE_US_VIX_CHANGE_5D, FEATURE_US_VIX_LEVEL,
+    resolve_probability_feature_value, ActionabilityBlock, ActionabilityLevel, AlertEvent,
+    AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot, BacktestPerformanceSummary,
+    BacktestRollingAudit, BacktestScenarioSummary, BacktestSignalSource, DataMode, DataTrust,
+    DecisionPosture, EventAssessment, EventConfirmationState, EventSignalSummary, FreshnessStatus,
+    HistoricalAnalog, IndicatorRisk, JpyCarrySnapshot, JpyCarryState, KeyIndicatorStatus,
+    LogisticProbabilityModel, ModelReleaseRecord, Observation, PlattCalibrationArtifact,
+    PositionGuidance, PostureGuidance, ProbabilityBlock, ProbabilityBundle, QualityGrade,
+    RiskContributor, RiskDimension, RiskSnapshot, RuntimeMetadata, TimeToRiskBucket,
+    UserRiskPreferences, UserRiskProfile, FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW,
+    FEATURE_BUCKET_WEEKS_OR_HIGHER, FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_DIMENSION_SCORE,
+    FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
+    FEATURE_FRESHNESS_STALE_OR_MISSING, FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D,
+    FEATURE_HEURISTIC_P_60D, FEATURE_OVERALL_SCORE, FEATURE_STRUCTURAL_SCORE,
+    FEATURE_TRIGGER_SCORE, FEATURE_US_BAA_10Y_SPREAD_LEVEL, FEATURE_US_CURVE_10Y2Y_LEVEL,
+    FEATURE_US_FED_FUNDS_LEVEL, FEATURE_US_HOUSING_STARTS_LEVEL, FEATURE_US_NFCI_LEVEL,
+    FEATURE_US_STLFSI_LEVEL, FEATURE_US_UNEMPLOYMENT_LEVEL, FEATURE_US_USDJPY_CHANGE_20D,
+    FEATURE_US_USDJPY_LEVEL, FEATURE_US_VIX_CHANGE_5D, FEATURE_US_VIX_LEVEL,
 };
 use serde::Serialize;
 
@@ -1079,9 +1079,7 @@ fn score_logistic_model(model: &LogisticProbabilityModel, features: &BTreeMap<St
             .feature_stats
             .iter()
             .find(|stat| stat.name == coefficient.name);
-        let raw_value = features
-            .get(&coefficient.name)
-            .copied()
+        let raw_value = resolve_probability_feature_value(&coefficient.name, features)
             .or_else(|| stat.map(|stat| stat.fill_value))
             .unwrap_or(0.0);
         let normalized = stat.map_or(raw_value, |stat| {
