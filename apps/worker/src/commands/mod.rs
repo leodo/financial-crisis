@@ -14,7 +14,10 @@ use anyhow::{bail, Result};
 #[cfg(test)]
 pub(crate) use dataset::{FormalDatasetBuildOptions, FormalDatasetSummaryOptions};
 pub(crate) use db::{db_check, db_init, db_seed};
-pub(crate) use feature::{FeatureSnapshotBuildOptions, PointInTimeMode};
+pub(crate) use feature::{
+    feature_quality_grade, has_extension_acute_core_features, has_main_dataset_core_features,
+    observation_is_visible_for_date, FeatureSnapshotBuildOptions, PointInTimeMode,
+};
 pub(crate) use pipeline::{PipelineDatasetSource, PipelineTrainOptions, ProbabilityModelShape};
 pub(crate) use snapshot::PredictionSnapshotQueryOptions;
 

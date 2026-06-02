@@ -64,6 +64,7 @@
 - 已新增 `apps/worker/src/commands/release.rs`，把 release 选项解析与 `publish/list/show/activate/rollback/review` handler 从 `main.rs` 中移出。
 - 已新增 `apps/worker/src/commands/snapshot.rs`、`commands/feature.rs`、`commands/dataset.rs`、`commands/pipeline.rs`，把 research 下的 snapshot / feature / dataset / pipeline CLI 选项解析与入口 handler 从 `main.rs` 中继续剥离。
 - snapshot 导出写盘、heuristic snapshot 训练样本装配、formal dataset 训练集解析等 research helper 也已开始跟随迁移到对应子模块，不再继续堆在 `main.rs` 的同一层里。
+- formal feature snapshot 的观测可见性判断、时区截止规则、覆盖率汇总、核心特征门槛与单日快照构建实现，已继续迁入 `commands/feature.rs`，`main.rs` 不再直接承载这一整块特征工程细节。
 - release 相关的 `activate_release_with_runtime_guard`、review stage activate/restore、market scope resolve 也已迁到 `commands/release.rs`。
 - `release review` 的 runtime snapshot 抓取与 orchestration 也已迁到 `commands/release.rs`。
 - `release review` 专属的 probability/actionability/runtime sanity guardrail、recommendation、summary helper 也已开始跟随迁移。
