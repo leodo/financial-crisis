@@ -1,0 +1,121 @@
+# 工程维护性 TODO
+
+状态：`Draft`
+
+最后更新：2026-06-02
+
+本文档只管理“工程结构、模块边界、共用代码收敛、生成工件治理、维护性约束”，不替代概率模型主线 TODO。
+
+相关评审见：
+
+- [代码结构与可维护性评审](../architecture/codebase-maintainability-review.md)
+- [危机概率评估设计 TODO](crisis-probability-design-todo.md)
+
+## 1. 目标
+
+目标不是追求形式上的“优雅”，而是降低以下风险：
+
+- 改一个研究逻辑误伤运行逻辑；
+- 训练与线上评分口径漂移；
+- review 成本持续上升；
+- 生成物淹没有效提交；
+- 文件过大导致理解和测试成本失控。
+
+## 2. P0：立即补齐的治理项
+
+- [ ] 明确生成工件分级：
+  - 正式发布与基线对照工件可以入库；
+  - 临时实验工件必须有独立归档或清理策略；
+  - 同目录不能长期混放“正式工件”和“草稿工件”。
+- [ ] 定义 `apps/worker` 模块拆分边界：
+  - `commands/release`
+  - `commands/research`
+  - `commands/backfill`
+  - `commands/db`
+  - `reporting`
+  - `pipeline`
+- [ ] 定义 `apps/api` 模块拆分边界：
+  - `assessment`
+  - `history_replay`
+  - `data_source`
+  - `demo_seed`
+  - `backtest`
+- [ ] 盘点 API 与 worker 的重复逻辑，列出必须收敛到共享模块的函数清单。
+- [ ] 为维护性治理补一条实施原则：模型主线优先，但新增功能不再允许直接塞进现有超大文件。
+
+## 3. P1：优先重构项
+
+### 3.1 Worker
+
+- [ ] 把 `apps/worker/src/main.rs` 的 CLI 参数解析与命令分发拆出去。
+- [ ] 把 release review / publish / activate / rollback 收敛到独立模块。
+- [ ] 把 feature snapshot / formal dataset / pipeline train 拆成独立研究模块。
+- [ ] 把 backfill / refresh 免费数据路径拆成独立命令模块。
+- [ ] 把 markdown/json 报告渲染抽到专门 reporting 模块。
+
+### 3.2 API
+
+- [ ] 把 `apps/api/src/demo.rs` 中的 demo seed 与真实数据源加载拆开。
+- [ ] 把 historical replay / prediction snapshot bridge / cache key 逻辑拆开。
+- [ ] 把 `apps/api/src/assessment.rs` 中的特征构造、概率评分、posture 判定、position guidance、analogs 分模块。
+
+### 3.3 Shared Logic
+
+- [ ] 收敛 `apply_platt_calibration`、观测值窗口切片、`difference_from_tail` 等重复函数。
+- [ ] 明确概率数学、特征派生、runtime threshold 诊断哪些属于共享领域逻辑，哪些属于 app-specific glue code。
+- [ ] 为共享逻辑补单元测试，避免训练侧和运行侧未来再次分叉。
+
+## 4. P2：次级重构项
+
+### 4.1 Storage
+
+- [ ] 把 `crates/storage/src/sqlite.rs` 按聚合拆分：
+  - metadata / mappings
+  - observations
+  - alerts
+  - releases
+  - snapshots
+  - formal datasets
+  - historical replay
+
+### 4.2 Web
+
+- [ ] 把 `apps/web/src/App.tsx` 拆成按页面和卡片组织的 view/container/component。
+- [ ] 把领域解释文本和格式化逻辑继续从页面组件中剥离。
+- [ ] 为决策面板、方法页、审计页明确单独的数据装配层。
+
+## 5. 约束机制
+
+- [ ] 新增或显著扩展功能时，如果目标文件已经是当前仓库前几位的大文件，优先先拆模块，再加功能。
+- [ ] 生成工件进入 Git 前，必须说明它属于：
+  - 正式 release 工件；
+  - 基线对照证据；
+  - 还是临时研究副产物。
+- [ ] 任何影响训练口径和运行口径的修改，都要检查共享函数是否已统一。
+- [ ] 任何新的仓位建议或动作规则，都不能绕开现有 `playbook`、`Go/No-Go` 和 “非自动交易指令”边界。
+
+## 6. 完成定义
+
+以下条件满足时，才可以认为工程维护性从“高风险”进入“可持续”：
+
+- [ ] `apps/worker/src/main.rs` 不再承担所有主线职责。
+- [ ] `apps/api/src/demo.rs` 不再同时承载 demo seed、真实历史回放和 runtime bridge。
+- [ ] API / worker 的重复概率数学与观测窗口逻辑已收敛。
+- [ ] `crates/storage/src/sqlite.rs` 已按聚合拆开。
+- [ ] `apps/web/src/App.tsx` 已拆成稳定组件层次。
+- [ ] 生成工件治理规则已落文档并落实到提交流程。
+
+## 7. 执行顺序
+
+建议按以下顺序推进：
+
+1. 先完成 P0 治理定义；
+2. 再拆 worker；
+3. 再收敛 API / worker 共用逻辑；
+4. 再拆 API history/runtime/demo；
+5. 再拆 storage 与 web。
+
+原因很简单：
+
+- worker 和 API 共用逻辑是当前最容易继续恶化的耦合点；
+- web 与 storage 的问题也真实存在，但对当前模型主线的阻塞更小。
