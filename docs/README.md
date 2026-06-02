@@ -61,6 +61,7 @@ docs/
 - [持仓动作手册设计](analytics/portfolio-action-playbook.md)
 - [特征库设计](analytics/feature-store-design.md)
 - [正式训练数据集规格](analytics/formal-dataset-spec.md)
+- [正式危机概率模型下一代设计](analytics/formal-nextgen-model-design.md)
 - [概率校准设计](analytics/probability-calibration-design.md)
 - [真实回测执行设计](analytics/real-backtest-execution-design.md)
 - [模型发布与在线评分设计](analytics/model-release-and-serving-design.md)

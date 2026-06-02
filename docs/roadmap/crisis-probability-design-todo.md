@@ -257,10 +257,16 @@
    - [x] 为 formal 训练管线增加 `--aux-dataset-key`，支持把 `main + ext_stress + ext_acute` 作为同一轮候选训练输入
    - [x] 把 `scenario_training_role` 贯通到 formal dataset row / SQLite / dataset CSV / training row，并接入 `ForwardCrisis` 正例权重
    - [ ] `main + ext_stress + ext_acute` 组合候选 `us_formal_main_extmix_20260601T215225` 已验证：bundle evaluation 出现 `5d/20d/60d usable separation`，但 strict runtime review 仍只有 `timely_warning_rate=10.0%`，说明“扩展样本接入能力”已经打通，但“如何真正学进去”还没解决
-   - [ ] 基于新的 `scenario_training_role + scenario_family` 加权重新训练 `extmix2`，验证 `1990-1993 / 1994 / 1998 / 2000 / 2008 / 2011 / 2020 / 2022` 是否能从“只在 bundle evaluation 有分离”推进到“runtime 形成可执行提前量”
+   - [x] 基于新的 `scenario_training_role + scenario_family` 加权重新训练 `extmix2 / extmix3 / extmix4`，验证“继续加权/软标签/pairwise 微调”后，runtime 仍停留在 `timely_warning_rate=10.0%`
    - [x] 已连续复核 `extmix2 / extmix3 / extmix4`：角色加权、soft-label 上调、pairwise margin 加强、normal/cooldown 负样本惩罚，均未突破 `timely_warning_rate=10.0% / longest_false_positive_episode_days=30`
    - [ ] 下一轮不再继续做同类 sample-weight 微调；需要先设计更强的模型形态或目标函数（如 regime-tail objective、family-conditional head、非线性模型基线），否则只会重复得到“bundle 有分离、runtime 仍失败”的结果
    - [ ] “强 prepare 也算动作级预警”的审计口径已接入，但在 `extmix` 复核里没有提高 `timely_warning_rate`，反而把 `longest_false_positive_episode_days` 拉到 `30`；这说明仅靠回测口径放宽不能替代训练目标修正
+   - [x] 补写 `docs/analytics/formal-nextgen-model-design.md`，把下一轮主线正式切到 `interaction_tail_v1 -> family_conditional_v1`
+   - [ ] 在 `crates/domain` 增加 derived feature resolver 与 bundle metadata（至少记录 `model_family / feature_transform`）
+   - [ ] 在 `apps/worker` 为 `train-probability` / `bootstrap-formal-release` 增加 `--model-shape linear_v1|interaction_tail_v1`
+   - [ ] 实现 `interaction_tail_v1` 第一批交互/尾部特征，并确保训练与 API serving 共用同一套特征解析
+   - [ ] 用 `main + ext_stress + ext_acute` 重训第一版 `interaction_tail_v1` 候选，重点检查 `1990-1993 / 1998 / 2000 / 2008 / 2011 / 2020 / 2022 / 2023`
+   - [ ] 若 `interaction_tail_v1` 仍只在 bundle evaluation 有分离、runtime 无法恢复提前量，再补 `family_conditional_v1` 细分设计与 PoC
 3. Raw PIT history replay 闭环
    - [x] 新增 historical replay run / point 存储结构
    - [x] release review 默认走 `strict_rebuild`

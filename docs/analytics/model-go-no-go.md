@@ -878,6 +878,30 @@ release review 的结论也一致：
 - 当前剩余瓶颈已经不是“参数还没调够”；
 - 而是“这套模型形态对你要的那类提前离场能力，表达力可能不够”。
 
+### 7.16 2026-06-02 下一轮主线正式切到 `interaction_tail_v1`
+
+基于 `extmix2 / extmix3 / extmix4` 的连续复核结果，当前已经可以做一个更强的工程决策：
+
+1. 下一轮主线不再继续主要投入在 `sample-weight / soft-label / pairwise margin` 微调；
+2. 第一优先级切到可解释的非线性基线：`interaction_tail_v1`；
+3. 只有当 `interaction_tail_v1` 明确失败后，才进入 `family_conditional_v1`。
+
+这样切换的原因不是“想换个更复杂的模型试试”，而是：
+
+- 现有线性头已经能在 bundle evaluation 上学出一些 separation；
+- 但这种 separation 无法稳定穿透到 runtime；
+- 说明主瓶颈更像是模型表达力，而不是再多拧一圈权重。
+
+下一轮方案已单独整理到：
+
+- `docs/analytics/formal-nextgen-model-design.md`
+
+这份设计文档的目标很明确：
+
+1. 先在不破坏现有 bundle / release review / serving 结构的前提下，引入 `interaction + tail` 特征；
+2. 用同一套 strict rebuild runtime review 判断表达力增强后，是否终于恢复“危机前数周的可执行提前量”；
+3. 如果仍失败，再进入 family-conditional 的第二阶段设计，而不是继续在同一条低收益路线里循环。
+
 ## 12. 结论
 
 从这一步开始，项目里出现“formal bundle”不再自动等于“正式模型”。
