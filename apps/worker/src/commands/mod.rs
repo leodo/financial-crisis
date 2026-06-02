@@ -1,13 +1,22 @@
 mod audit;
 mod backfill;
+mod dataset;
 mod db;
+mod feature;
+mod pipeline;
 mod refresh;
 pub(crate) mod release;
 mod research;
+mod snapshot;
 
 use anyhow::{bail, Result};
 
+#[cfg(test)]
+pub(crate) use dataset::{FormalDatasetBuildOptions, FormalDatasetSummaryOptions};
 pub(crate) use db::{db_check, db_init, db_seed};
+pub(crate) use feature::{FeatureSnapshotBuildOptions, PointInTimeMode};
+pub(crate) use pipeline::{PipelineDatasetSource, PipelineTrainOptions, ProbabilityModelShape};
+pub(crate) use snapshot::{ExportFormat, PredictionSnapshotQueryOptions};
 
 pub(crate) async fn run_from_args(args: Vec<String>) -> Result<()> {
     match args.as_slice() {
