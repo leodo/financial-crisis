@@ -1187,6 +1187,33 @@ strict rebuild release review 结果：
    - calibration split regime mix / scenario mix 审计
    - 必要时单独给 `60d` 做更偏 pre-warning 的 threshold objective
 
+### 7.23 2026-06-02 `extmix11` 证明“轻微再拧一格 soft-label / weight”已经不够
+
+在 `extmix10` 之后，我又试了一次非常保守的 `60d pre_warning_buffer` 监督增强：
+
+- 轻微抬高 `60d pre_warning_buffer` soft-label
+- 轻微下调 `60d pre_warning_buffer` negative weight
+
+对应候选：
+
+- `us_formal_interaction_tail_extmix11_20260602T064636`
+
+但结果几乎没动：
+
+- `60d threshold` 仍是 `0.656`
+- `60d selected_rows` 仍是 `8143`
+- `repair_reason` 仍是 `early_warning_lift_below_guardrail`
+- runtime 层面也没有继续超过 `extmix10`
+
+这意味着：
+
+1. 当前已经不适合继续做这类“小一格、小一格”的参数微调；
+2. 瓶颈已经基本锁定在：
+   - calibration split 里 `pre_warning_buffer` 的样本构成
+   - `pre_warning_buffer vs normal` 的可分性
+   - threshold objective 是否还需要更显式地偏向 pre-warning
+3. 所以这类无显著收益的微调不应继续保留在主代码里，更适合只记录结论。
+
 ## 12. 结论
 
 从这一步开始，项目里出现“formal bundle”不再自动等于“正式模型”。

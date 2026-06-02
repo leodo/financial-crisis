@@ -281,6 +281,7 @@
    - [ ] 在新的 runtime guard 下重训下一版 `interaction_tail` 候选，目标从“继续压误报”切到“把 `60d pre_warning_buffer` 真正推过 `prepare` floor，并恢复绝对提前量”
      - [x] `extmix8/extmix9` 已完成，但结论是 threshold repair 仍不足以改变 `60d=0.732`
      - [x] `extmix10` 已验证“剥离 in_crisis threshold 惩罚”可把 `60d` 压到 `0.656`
+     - [x] `extmix11` 已验证“轻微上调 60d pre_warning_buffer soft-label / 降低 negative weight”对当前数据集几乎无效，不应继续做同类微调
      - [ ] 下一版重训前先完成 `60d calibration evidence` 设计与实现，避免继续停在 `timely_warning_rate=10.0%`
    - [ ] 只有当 `interaction_tail_v1` 连续两轮仍无法提升 `timely_warning_rate` 且无法压下误报段时，再进入 `family_conditional_v1` 细分设计与 PoC
 3. Raw PIT history replay 闭环
