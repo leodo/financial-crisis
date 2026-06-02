@@ -6673,6 +6673,18 @@ fn adjust_probability_decision_threshold_for_regime_support(
         return base_threshold;
     }
 
+    let early_warning_regime = match horizon_days {
+        5 => ProbabilityTrainingRegime::PositiveWindow,
+        20 | 60 => ProbabilityTrainingRegime::PreWarningBuffer,
+        _ => ProbabilityTrainingRegime::PositiveWindow,
+    };
+    let early_warning_probability_cap = probabilities
+        .iter()
+        .zip(rows.iter().copied())
+        .filter(|(_, row)| row.regime_for_horizon(horizon_days) == early_warning_regime)
+        .map(|(probability, _)| *probability)
+        .fold(0.0_f64, f64::max);
+
     let relaxed_prediction_ceiling =
         regime_aware_threshold_prediction_ceiling(actual_positive_count, horizon_days);
     let beta_sq = probability_threshold_beta_sq(horizon_days);
@@ -6732,7 +6744,14 @@ fn adjust_probability_decision_threshold_for_regime_support(
         }
     }
 
-    round3(best_threshold).clamp(0.005, base_threshold)
+    let repaired_threshold =
+        if early_warning_probability_cap > 0.0 && early_warning_probability_cap < base_threshold {
+            best_threshold.min(early_warning_probability_cap)
+        } else {
+            best_threshold
+        };
+
+    round3(repaired_threshold).clamp(0.005, base_threshold)
 }
 
 fn probability_prediction_count_ceiling_from_actual_positive_count(
