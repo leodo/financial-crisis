@@ -3,8 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{bail, Context};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
 use fc_domain::{
-    observation_history_for_indicator_where, observation_value_difference_from_tail,
-    FeatureSnapshotRecord, Frequency, Indicator, IndicatorRisk, Observation, RiskDimension,
+    formal_observation_feature_value_from_history, observation_history_for_indicator_where,
+    FeatureSnapshotRecord, FormalObservationFeatureTransform, Frequency, Indicator, IndicatorRisk,
+    Observation, RiskDimension, FORMAL_OBSERVATION_FEATURE_SPECS,
 };
 use fc_scoring::ScoringEngine;
 use fc_storage::SqliteStore;
@@ -380,140 +381,12 @@ pub(crate) fn build_formal_feature_snapshot_for_date(
     let mut features = BTreeMap::new();
     let mut visible_candidates = Vec::new();
 
-    let vix_history = observations_for_indicator(
-        observations,
-        "us_market_vix_close",
-        as_of_date,
-        point_in_time_mode,
-    );
-    insert_latest_feature(
+    insert_formal_observation_features(
         &mut features,
         &mut visible_candidates,
-        "us_vix_level",
-        &vix_history,
-        point_in_time_mode,
-    );
-    insert_derived_feature(
-        &mut features,
-        "us_vix_change_5d",
-        observation_value_difference_from_tail(&vix_history, 5),
-    );
-
-    let curve_history = observations_for_indicator(
         observations,
-        "us_rates_yield_curve_10y2y",
         as_of_date,
         point_in_time_mode,
-    );
-    insert_latest_feature(
-        &mut features,
-        &mut visible_candidates,
-        "us_curve_10y2y_level",
-        &curve_history,
-        point_in_time_mode,
-    );
-
-    let baa_history = observations_for_indicator(
-        observations,
-        "us_credit_baa_10y_spread",
-        as_of_date,
-        point_in_time_mode,
-    );
-    insert_latest_feature(
-        &mut features,
-        &mut visible_candidates,
-        "us_baa_10y_spread_level",
-        &baa_history,
-        point_in_time_mode,
-    );
-
-    let effr_history = observations_for_indicator(
-        observations,
-        "us_liquidity_effr",
-        as_of_date,
-        point_in_time_mode,
-    );
-    insert_latest_feature(
-        &mut features,
-        &mut visible_candidates,
-        "us_fed_funds_level",
-        &effr_history,
-        point_in_time_mode,
-    );
-
-    let nfci_history = observations_for_indicator(
-        observations,
-        "us_liquidity_national_financial_conditions",
-        as_of_date,
-        point_in_time_mode,
-    );
-    insert_latest_feature(
-        &mut features,
-        &mut visible_candidates,
-        "us_nfci_level",
-        &nfci_history,
-        point_in_time_mode,
-    );
-
-    let stlfsi_history = observations_for_indicator(
-        observations,
-        "us_liquidity_financial_stress_stl",
-        as_of_date,
-        point_in_time_mode,
-    );
-    insert_latest_feature(
-        &mut features,
-        &mut visible_candidates,
-        "us_stlfsi_level",
-        &stlfsi_history,
-        point_in_time_mode,
-    );
-
-    let unemployment_history = observations_for_indicator(
-        observations,
-        "us_macro_unemployment_rate",
-        as_of_date,
-        point_in_time_mode,
-    );
-    insert_latest_feature(
-        &mut features,
-        &mut visible_candidates,
-        "us_unemployment_level",
-        &unemployment_history,
-        point_in_time_mode,
-    );
-
-    let housing_history = observations_for_indicator(
-        observations,
-        "us_real_estate_housing_starts",
-        as_of_date,
-        point_in_time_mode,
-    );
-    insert_latest_feature(
-        &mut features,
-        &mut visible_candidates,
-        "us_housing_starts_level",
-        &housing_history,
-        point_in_time_mode,
-    );
-
-    let usdjpy_history = observations_for_indicator(
-        observations,
-        "us_external_usdjpy_level",
-        as_of_date,
-        point_in_time_mode,
-    );
-    insert_latest_feature(
-        &mut features,
-        &mut visible_candidates,
-        "us_usdjpy_level",
-        &usdjpy_history,
-        point_in_time_mode,
-    );
-    insert_derived_feature(
-        &mut features,
-        "us_usdjpy_change_20d",
-        observation_value_difference_from_tail(&usdjpy_history, 20),
     );
 
     features.insert(
@@ -611,28 +484,33 @@ fn observations_for_indicator<'a>(
     })
 }
 
-fn insert_latest_feature(
+fn insert_formal_observation_features(
     features: &mut BTreeMap<String, f64>,
     visible_candidates: &mut Vec<DateTime<Utc>>,
-    feature_name: &str,
-    history: &[&Observation],
+    observations: &[Observation],
+    as_of_date: NaiveDate,
     point_in_time_mode: PointInTimeMode,
 ) {
-    if let Some(latest) = history.last() {
-        features.insert(feature_name.to_string(), crate::round6(latest.value));
-        if let Some(visible_at) = observation_visible_at_for_mode(latest, point_in_time_mode) {
-            visible_candidates.push(visible_at);
+    for spec in FORMAL_OBSERVATION_FEATURE_SPECS {
+        let history = observations_for_indicator(
+            observations,
+            spec.indicator_id,
+            as_of_date,
+            point_in_time_mode,
+        );
+        if let Some(value) = formal_observation_feature_value_from_history(&history, spec.transform)
+        {
+            features.insert(spec.feature_name.to_string(), crate::round6(value));
         }
-    }
-}
-
-fn insert_derived_feature(
-    features: &mut BTreeMap<String, f64>,
-    feature_name: &str,
-    value: Option<f64>,
-) {
-    if let Some(value) = value {
-        features.insert(feature_name.to_string(), crate::round6(value));
+        if matches!(spec.transform, FormalObservationFeatureTransform::Latest) {
+            if let Some(latest) = history.last() {
+                if let Some(visible_at) =
+                    observation_visible_at_for_mode(latest, point_in_time_mode)
+                {
+                    visible_candidates.push(visible_at);
+                }
+            }
+        }
     }
 }
 

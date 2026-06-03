@@ -1,21 +1,16 @@
 use std::collections::BTreeMap;
 
-use chrono::NaiveDate;
 use fc_domain::{
-    apply_platt_probability_calibration, observation_history_for_indicator,
-    observation_value_difference_for_indicator, score_logistic_probability_model,
-    ActionabilityBlock, ActionabilityBundle, ActionabilityLevel, DataTrust, FreshnessStatus,
-    JpyCarrySnapshot, KeyIndicatorStatus, Observation, ProbabilityBlock, ProbabilityBundle,
-    RiskDimension, RiskSnapshot, TimeToRiskBucket, FEATURE_BUCKET_MONTHS_OR_HIGHER,
-    FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER, FEATURE_COVERAGE_SCORE,
-    FEATURE_EXTERNAL_DIMENSION_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE,
+    apply_platt_probability_calibration, formal_observation_feature_value,
+    score_logistic_probability_model, ActionabilityBlock, ActionabilityBundle, ActionabilityLevel,
+    DataTrust, FreshnessStatus, JpyCarrySnapshot, KeyIndicatorStatus, Observation,
+    ProbabilityBlock, ProbabilityBundle, RiskDimension, RiskSnapshot, TimeToRiskBucket,
+    FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER,
+    FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_DIMENSION_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE,
     FEATURE_FRESHNESS_DELAYED_OR_WORSE, FEATURE_FRESHNESS_STALE_OR_MISSING,
     FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D, FEATURE_HEURISTIC_P_60D,
     FEATURE_OVERALL_SCORE, FEATURE_STRUCTURAL_SCORE, FEATURE_TRIGGER_SCORE,
-    FEATURE_US_BAA_10Y_SPREAD_LEVEL, FEATURE_US_CURVE_10Y2Y_LEVEL, FEATURE_US_FED_FUNDS_LEVEL,
-    FEATURE_US_HOUSING_STARTS_LEVEL, FEATURE_US_NFCI_LEVEL, FEATURE_US_STLFSI_LEVEL,
-    FEATURE_US_UNEMPLOYMENT_LEVEL, FEATURE_US_USDJPY_CHANGE_20D, FEATURE_US_USDJPY_LEVEL,
-    FEATURE_US_VIX_CHANGE_5D, FEATURE_US_VIX_LEVEL,
+    FORMAL_OBSERVATION_FEATURE_SPECS,
 };
 
 use super::{
@@ -388,89 +383,11 @@ fn build_formal_probability_feature_map(
     ]);
     let as_of_date = snapshot.as_of_date;
 
-    insert_formal_latest_feature(
-        &mut features,
-        FEATURE_US_VIX_LEVEL,
-        observations,
-        "us_market_vix_close",
-        as_of_date,
-    );
-    insert_formal_derived_feature(
-        &mut features,
-        FEATURE_US_VIX_CHANGE_5D,
-        observation_value_difference_for_indicator(
-            observations,
-            "us_market_vix_close",
-            as_of_date,
-            5,
-        ),
-    );
-    insert_formal_latest_feature(
-        &mut features,
-        FEATURE_US_CURVE_10Y2Y_LEVEL,
-        observations,
-        "us_rates_yield_curve_10y2y",
-        as_of_date,
-    );
-    insert_formal_latest_feature(
-        &mut features,
-        FEATURE_US_BAA_10Y_SPREAD_LEVEL,
-        observations,
-        "us_credit_baa_10y_spread",
-        as_of_date,
-    );
-    insert_formal_latest_feature(
-        &mut features,
-        FEATURE_US_FED_FUNDS_LEVEL,
-        observations,
-        "us_liquidity_effr",
-        as_of_date,
-    );
-    insert_formal_latest_feature(
-        &mut features,
-        FEATURE_US_NFCI_LEVEL,
-        observations,
-        "us_liquidity_national_financial_conditions",
-        as_of_date,
-    );
-    insert_formal_latest_feature(
-        &mut features,
-        FEATURE_US_STLFSI_LEVEL,
-        observations,
-        "us_liquidity_financial_stress_stl",
-        as_of_date,
-    );
-    insert_formal_latest_feature(
-        &mut features,
-        FEATURE_US_UNEMPLOYMENT_LEVEL,
-        observations,
-        "us_macro_unemployment_rate",
-        as_of_date,
-    );
-    insert_formal_latest_feature(
-        &mut features,
-        FEATURE_US_HOUSING_STARTS_LEVEL,
-        observations,
-        "us_real_estate_housing_starts",
-        as_of_date,
-    );
-    insert_formal_latest_feature(
-        &mut features,
-        FEATURE_US_USDJPY_LEVEL,
-        observations,
-        "us_external_usdjpy_level",
-        as_of_date,
-    );
-    insert_formal_derived_feature(
-        &mut features,
-        FEATURE_US_USDJPY_CHANGE_20D,
-        observation_value_difference_for_indicator(
-            observations,
-            "us_external_usdjpy_level",
-            as_of_date,
-            20,
-        ),
-    );
+    for spec in FORMAL_OBSERVATION_FEATURE_SPECS {
+        if let Some(value) = formal_observation_feature_value(observations, spec, as_of_date) {
+            features.insert(spec.feature_name.to_string(), round6(value));
+        }
+    }
 
     features
 }
@@ -482,38 +399,6 @@ fn dimension_score(snapshot: &RiskSnapshot, dimension: RiskDimension) -> f64 {
         .find(|score| score.dimension == dimension)
         .map(|score| score.score)
         .unwrap_or(0.0)
-}
-
-fn insert_formal_latest_feature(
-    features: &mut BTreeMap<String, f64>,
-    feature_name: &str,
-    observations: &[Observation],
-    indicator_id: &str,
-    as_of_date: NaiveDate,
-) {
-    if let Some(value) = latest_observation_value(observations, indicator_id, as_of_date) {
-        features.insert(feature_name.to_string(), round6(value));
-    }
-}
-
-fn insert_formal_derived_feature(
-    features: &mut BTreeMap<String, f64>,
-    feature_name: &str,
-    value: Option<f64>,
-) {
-    if let Some(value) = value {
-        features.insert(feature_name.to_string(), round6(value));
-    }
-}
-
-fn latest_observation_value(
-    observations: &[Observation],
-    indicator_id: &str,
-    as_of_date: NaiveDate,
-) -> Option<f64> {
-    observation_history_for_indicator(observations, indicator_id, as_of_date)
-        .last()
-        .map(|observation| observation.value)
 }
 
 fn score_bundle_horizon(

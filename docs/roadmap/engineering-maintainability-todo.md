@@ -111,7 +111,8 @@
 - PIT 可见性过滤暂时保留在 worker 的 `observations_for_indicator` 包装函数内，因为它绑定 source publication timing、cutoff timezone 和 `PointInTimeMode`，不应在未完成边界设计前强行下沉到 domain。
 - `crates/domain` 已补观测窗口排序、过滤、lookback 差值单测；`probability_bundle` 已覆盖共享 Platt 校准和派生特征 resolver。
 - 共享边界已补到 [工程治理方案](../architecture/engineering-governance-plan.md)：纯概率打分、Platt 应用、观测窗口和纯 transform 进 `crates/domain`；训练拟合、阈值选择、release review 留 `apps/worker`；active release / 用户偏好 / response 装配留 `apps/api`；Web 只做展示翻译。
-- 下一步如继续收敛正式特征派生，应先做 `feature id -> source indicator -> transform` 注册表，避免 API/worker 继续手写同一批映射。
+- 已新增 `crates/domain/src/formal_feature.rs`，把正式观测特征的 `feature id -> source indicator -> transform/lookback` 注册表收敛到 domain；API runtime 与 worker PIT feature snapshot 已共用该注册表。
+- 后续新增免费数据指标或调整 lookback，应先改 `FORMAL_OBSERVATION_FEATURE_SPECS`，再由 API/worker 自动沿用同一口径。
 
 ## 4. P2：次级重构项
 
