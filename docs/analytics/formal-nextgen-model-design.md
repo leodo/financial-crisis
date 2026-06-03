@@ -75,7 +75,7 @@
 
 ### 4.4 第二优先级：`family_conditional_v1`
 
-只有在 `interaction_tail_v1` 明确失败后，才进入这条线。
+只有在 `interaction_tail_v1` 明确失败后，才进入这条线。到 `2026-06-03`，`prepare_p60d_episode_native_v1` 已验证目标增强仍无法突破 runtime `timely_warning_rate=10.0%`，因此下一阶段正式进入 `family_conditional_v1` PoC。
 
 目标是让不同危机家族拥有部分独立表达能力，例如：
 
@@ -84,7 +84,7 @@
 - `mixed_systemic_stress`
 - `rate_shock_or_policy_dislocation`
 
-但这条线对样本量要求更高，也需要更谨慎的在线解释口径，因此不作为第一步。
+但这条线对样本量要求更高，也需要更谨慎的在线解释口径，因此第一版只允许使用线上可计算的 family proxy derived features，详见 `docs/analytics/family-conditional-model-design.md`。
 
 ## 5. 选定路线：`interaction_tail_v1`
 
@@ -251,7 +251,7 @@
 1. `analytics_prediction_snapshots` 退回审计与桥接视图角色；
 2. raw PIT feature store 继续补齐；
 3. 扩展历史覆盖矩阵继续完善；
-4. 若 `interaction_tail_v1` 失败，再补 `family_conditional_v1` 细分设计。
+4. `family_conditional_v1` 细分设计已补到 `docs/analytics/family-conditional-model-design.md`，第一版 PoC 采用可线上计算的 family proxy / family context derived features。
 
 ## 11. 结论
 
@@ -259,6 +259,6 @@
 
 - **停止把 sample-weight 微调当主突破口**
 - **优先推进 `interaction_tail_v1` 这条可解释的非线性基线**
-- **只有它失败后，再进入 `family_conditional_v1`**
+- **`interaction_tail_v1` 已经触发失败退出条件，下一阶段进入 `family_conditional_v1`**
 
 这条路线最符合当前项目的真实约束：免费数据、样本稀缺、需要解释、需要上线、又必须提升“危机前数周可执行提前量”。

@@ -122,6 +122,10 @@ fn forward_crisis_expected_coefficient_sign(
         return None;
     }
 
+    if feature_name.starts_with("family_proxy__") || feature_name.starts_with("family_context__") {
+        return Some(ExpectedCoefficientSign::Positive);
+    }
+
     match feature_name {
         "overall_score"
         | "structural_score"

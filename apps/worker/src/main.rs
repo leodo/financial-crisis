@@ -58,9 +58,10 @@ use fc_domain::{
     FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
     FEATURE_FRESHNESS_STALE_OR_MISSING, FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D,
     FEATURE_HEURISTIC_P_60D, FEATURE_OVERALL_SCORE, FORMAL_PROBABILITY_BUNDLE_FEATURES,
-    PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1, PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1,
-    PROBABILITY_MODEL_FAMILY_INTERACTION_TAIL_V1, PROBABILITY_MODEL_FAMILY_LINEAR_V1,
-    TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES,
+    PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1, PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1,
+    PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1,
+    PROBABILITY_MODEL_FAMILY_FAMILY_CONDITIONAL_V1, PROBABILITY_MODEL_FAMILY_INTERACTION_TAIL_V1,
+    PROBABILITY_MODEL_FAMILY_LINEAR_V1, TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES,
 };
 use fc_ingestion::{
     BojConnector, BojDataset, Connector, FetchPlan, FredConnector, FredGraphCsvConnector,
@@ -4030,6 +4031,21 @@ mod tests {
             ProbabilityModelShape::InteractionTailV1
         );
         assert_eq!(options.release_prefix, "us_formal_interaction_tail");
+    }
+
+    #[test]
+    fn parses_pipeline_train_family_conditional_shape() {
+        let args = vec![
+            "--model-shape".to_string(),
+            "family_conditional_v1".to_string(),
+        ];
+        let options = PipelineTrainOptions::parse(&args).unwrap();
+
+        assert_eq!(
+            options.model_shape,
+            ProbabilityModelShape::FamilyConditionalV1
+        );
+        assert_eq!(options.release_prefix, "us_formal_family_conditional");
     }
 
     #[test]

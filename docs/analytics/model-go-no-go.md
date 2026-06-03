@@ -1335,6 +1335,50 @@ strict rebuild release review 结果：
 - `interaction_tail_v1 + 共享 60d 头` 已经证明不足以恢复目标里的“数周到数月提前量”；
 - 下一阶段进入 `family_conditional_v1`，把系统性银行/信用、混合压力、政策利率冲击、急性流动性、日元套息等风险家族拆成条件头或分层校准，而不是继续共享一个 60d 目标。
 
+### 7.27 2026-06-03 `family_conditional_v1` derived-feature PoC 离线变好，但 runtime 早期预警更差
+
+本轮实现了第一版 `family_conditional_v1`：
+
+- `model_shape=family_conditional_v1`
+- `feature_transform=family_conditional_v1`
+- 在 `interaction_tail_v1` 基础上新增线上可计算的 family proxy / family context derived features；
+- 不使用训练标签里的 `scenario_family` 作为线上 one-hot，避免 serving 口径作弊。
+
+候选：
+
+- `us_formal_family_conditional_20260603T084333`
+
+训练侧离线指标明显更好：
+
+| Metric | Candidate |
+| --- | ---: |
+| `brier` | `0.0114` |
+| `log_loss` | `0.0548` |
+| `ece` | `0.0292` |
+
+但 fast release review 失败：
+
+| Metric | Active `extmix10` | Candidate `family_conditional` |
+| --- | ---: | ---: |
+| `timely_warning_rate` | `10.0%` | `0.0%` |
+| `actionable_precision` | `55.9%` | `54.5%` |
+| `longest_false_positive_episode_days` | `5` | `5` |
+| `prepare_p60d` runtime floor | `65.6%` | `70.8%` |
+| `p_60d>=prepare` history hits | `112` | `29` |
+| Runtime `60d` diagnosis | `usable_early_warning_separation` | `late_only_no_early_warning` |
+
+判断：
+
+1. family proxy derived features 让 bundle evaluation 更好，但把 runtime `60d` 早期分离打坏；
+2. 候选并不是误报太多，而是过度收窄，导致没有动作级提前命中；
+3. 因此不能继续用“再加几个 family proxy 特征”的方式推进。
+
+结论：
+
+- 候选不晋升，active 保持 `us_formal_interaction_tail_extmix10_20260602T061401`；
+- 下一步应设计真正的 `family_overlay / family_head` bundle schema，而不是继续往单一 logistic head 里堆 derived features；
+- 多头方案必须同时设计 serving schema、release review、runtime explanation 和 UI 解释，不能只改训练脚本。
+
 ## 12. 结论
 
 从这一步开始，项目里出现“formal bundle”不再自动等于“正式模型”。

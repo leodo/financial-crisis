@@ -30,8 +30,10 @@ pub const FEATURE_US_USDJPY_LEVEL: &str = "us_usdjpy_level";
 pub const FEATURE_US_USDJPY_CHANGE_20D: &str = "us_usdjpy_change_20d";
 pub const PROBABILITY_MODEL_FAMILY_LINEAR_V1: &str = "linear_v1";
 pub const PROBABILITY_MODEL_FAMILY_INTERACTION_TAIL_V1: &str = "interaction_tail_v1";
+pub const PROBABILITY_MODEL_FAMILY_FAMILY_CONDITIONAL_V1: &str = "family_conditional_v1";
 pub const PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1: &str = "identity_v1";
 pub const PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1: &str = "interaction_tail_v1";
+pub const PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1: &str = "family_conditional_v1";
 
 pub const TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES: &[&str] = &[
     FEATURE_OVERALL_SCORE,
@@ -89,6 +91,19 @@ pub const INTERACTION_TAIL_DERIVED_FEATURES: &[&str] = &[
     "tail_pos__external_dimension_score__50",
 ];
 
+pub const FAMILY_CONDITIONAL_DERIVED_FEATURES: &[&str] = &[
+    "family_proxy__systemic_credit",
+    "family_proxy__mixed_systemic",
+    "family_proxy__rate_shock",
+    "family_proxy__acute_liquidity",
+    "family_proxy__jpy_carry",
+    "family_context__systemic_credit__structural_score",
+    "family_context__mixed_systemic__trigger_score",
+    "family_context__rate_shock__external_dimension_score",
+    "family_context__acute_liquidity__trigger_score",
+    "family_context__jpy_carry__external_dimension_score",
+];
+
 fn default_probability_model_family() -> String {
     PROBABILITY_MODEL_FAMILY_LINEAR_V1.to_string()
 }
@@ -102,8 +117,17 @@ pub fn probability_feature_names_for_transform(
     feature_transform: &str,
 ) -> Vec<String> {
     let mut names = base_feature_names.to_vec();
-    if feature_transform == PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1 {
+    if feature_transform == PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1
+        || feature_transform == PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1
+    {
         for feature_name in INTERACTION_TAIL_DERIVED_FEATURES {
+            if !names.iter().any(|existing| existing == feature_name) {
+                names.push((*feature_name).to_string());
+            }
+        }
+    }
+    if feature_transform == PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1 {
+        for feature_name in FAMILY_CONDITIONAL_DERIVED_FEATURES {
             if !names.iter().any(|existing| existing == feature_name) {
                 names.push((*feature_name).to_string());
             }
@@ -139,8 +163,86 @@ pub fn resolve_probability_feature_value(
                 - threshold.parse::<f64>().ok()?)
             .max(0.0),
         ),
+        ["family_proxy", family] => resolve_family_proxy_value(family, features),
+        ["family_context", family, base] => Some(
+            resolve_family_proxy_value(family, features)?
+                * resolve_probability_feature_value(base, features)?,
+        ),
         _ => None,
     }
+}
+
+fn resolve_family_proxy_value(family: &str, features: &BTreeMap<String, f64>) -> Option<f64> {
+    match family {
+        "systemic_credit" => Some(
+            0.35 * scaled_tail_pos(features, FEATURE_US_BAA_10Y_SPREAD_LEVEL, 2.0, 3.0)?
+                + 0.25 * scaled_tail_pos(features, FEATURE_US_STLFSI_LEVEL, 1.0, 3.0)?
+                + 0.20 * scaled_tail_pos(features, FEATURE_US_NFCI_LEVEL, 0.25, 1.5)?
+                + 0.20 * scaled_tail_pos(features, FEATURE_STRUCTURAL_SCORE, 52.0, 28.0)?,
+        ),
+        "mixed_systemic" => Some(
+            0.30 * scaled_tail_pos(features, FEATURE_OVERALL_SCORE, 55.0, 35.0)?
+                + 0.30 * scaled_tail_pos(features, FEATURE_TRIGGER_SCORE, 50.0, 35.0)?
+                + 0.20 * scaled_tail_pos(features, FEATURE_EXTERNAL_DIMENSION_SCORE, 50.0, 35.0)?
+                + 0.20 * scaled_tail_pos(features, FEATURE_US_VIX_LEVEL, 24.0, 20.0)?,
+        ),
+        "rate_shock" => Some(
+            0.35 * scaled_tail_pos(features, FEATURE_US_FED_FUNDS_LEVEL, 4.0, 3.0)?
+                + 0.35 * scaled_tail_neg(features, FEATURE_US_CURVE_10Y2Y_LEVEL, 0.0, 2.0)?
+                + 0.15 * scaled_tail_pos(features, FEATURE_EXTERNAL_DIMENSION_SCORE, 50.0, 35.0)?
+                + 0.15 * scaled_tail_abs(features, FEATURE_US_USDJPY_CHANGE_20D, 4.0, 8.0)?,
+        ),
+        "acute_liquidity" => Some(
+            0.55 * scaled_tail_pos(features, FEATURE_US_VIX_LEVEL, 32.0, 20.0)?
+                + 0.45 * scaled_tail_pos(features, FEATURE_US_STLFSI_LEVEL, 1.0, 3.0)?,
+        ),
+        "jpy_carry" => Some(
+            0.35 * scaled_tail_pos(features, FEATURE_US_USDJPY_LEVEL, 145.0, 20.0)?
+                + 0.35 * scaled_tail_abs(features, FEATURE_US_USDJPY_CHANGE_20D, 4.0, 8.0)?
+                + 0.15 * scaled_tail_pos(features, FEATURE_US_FED_FUNDS_LEVEL, 4.0, 3.0)?
+                + 0.15 * scaled_tail_pos(features, FEATURE_EXTERNAL_DIMENSION_SCORE, 50.0, 35.0)?,
+        ),
+        _ => None,
+    }
+}
+
+fn scaled_tail_pos(
+    features: &BTreeMap<String, f64>,
+    feature_name: &str,
+    threshold: f64,
+    scale: f64,
+) -> Option<f64> {
+    Some(
+        ((resolve_probability_feature_value(feature_name, features)? - threshold)
+            / scale.max(1e-6))
+        .clamp(0.0, 1.0),
+    )
+}
+
+fn scaled_tail_neg(
+    features: &BTreeMap<String, f64>,
+    feature_name: &str,
+    threshold: f64,
+    scale: f64,
+) -> Option<f64> {
+    Some(
+        ((threshold - resolve_probability_feature_value(feature_name, features)?)
+            / scale.max(1e-6))
+        .clamp(0.0, 1.0),
+    )
+}
+
+fn scaled_tail_abs(
+    features: &BTreeMap<String, f64>,
+    feature_name: &str,
+    threshold: f64,
+    scale: f64,
+) -> Option<f64> {
+    Some(
+        ((resolve_probability_feature_value(feature_name, features)?.abs() - threshold)
+            / scale.max(1e-6))
+        .clamp(0.0, 1.0),
+    )
 }
 
 pub fn score_logistic_probability_model(
@@ -467,6 +569,25 @@ mod tests {
     }
 
     #[test]
+    fn family_conditional_transform_appends_family_features() {
+        let base = FORMAL_PROBABILITY_BUNDLE_FEATURES
+            .iter()
+            .map(|feature| (*feature).to_string())
+            .collect::<Vec<_>>();
+        let expanded = probability_feature_names_for_transform(
+            &base,
+            PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1,
+        );
+
+        assert!(expanded.len() > base.len() + INTERACTION_TAIL_DERIVED_FEATURES.len());
+        assert!(expanded.contains(&"interaction__overall_score__us_vix_level".to_string()));
+        assert!(expanded.contains(&"family_proxy__systemic_credit".to_string()));
+        assert!(
+            expanded.contains(&"family_context__jpy_carry__external_dimension_score".to_string())
+        );
+    }
+
+    #[test]
     fn derived_feature_resolver_handles_interactions_and_tail_features() {
         let mut features = BTreeMap::new();
         features.insert(FEATURE_OVERALL_SCORE.to_string(), 60.0);
@@ -493,6 +614,36 @@ mod tests {
             resolve_probability_feature_value("tail_abs_pos__us_usdjpy_change_20d__4", &features),
             Some(2.0)
         );
+    }
+
+    #[test]
+    fn derived_feature_resolver_handles_family_conditional_features() {
+        let mut features = BTreeMap::new();
+        features.insert(FEATURE_STRUCTURAL_SCORE.to_string(), 80.0);
+        features.insert(FEATURE_TRIGGER_SCORE.to_string(), 70.0);
+        features.insert(FEATURE_EXTERNAL_DIMENSION_SCORE.to_string(), 65.0);
+        features.insert(FEATURE_US_VIX_LEVEL.to_string(), 44.0);
+        features.insert(FEATURE_US_BAA_10Y_SPREAD_LEVEL.to_string(), 5.0);
+        features.insert(FEATURE_US_FED_FUNDS_LEVEL.to_string(), 5.5);
+        features.insert(FEATURE_US_NFCI_LEVEL.to_string(), 1.0);
+        features.insert(FEATURE_US_STLFSI_LEVEL.to_string(), 2.5);
+        features.insert(FEATURE_US_CURVE_10Y2Y_LEVEL.to_string(), -1.0);
+        features.insert(FEATURE_US_USDJPY_LEVEL.to_string(), 160.0);
+        features.insert(FEATURE_US_USDJPY_CHANGE_20D.to_string(), -8.0);
+
+        let systemic =
+            resolve_probability_feature_value("family_proxy__systemic_credit", &features).unwrap();
+        let carry =
+            resolve_probability_feature_value("family_proxy__jpy_carry", &features).unwrap();
+        let carry_context = resolve_probability_feature_value(
+            "family_context__jpy_carry__external_dimension_score",
+            &features,
+        )
+        .unwrap();
+
+        assert!(systemic > 0.70 && systemic <= 1.0);
+        assert!(carry > 0.55 && carry <= 1.0);
+        assert!((carry_context - carry * 65.0).abs() < 1e-9);
     }
 
     #[test]

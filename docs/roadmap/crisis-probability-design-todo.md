@@ -295,6 +295,12 @@
      - [x] 实现 `prepare_p60d_episode_native_v1` 训练目标并重训候选 `us_formal_interaction_tail_prepare_20260603T081710`；训练 evidence 把 `60d pre_warning_buffer` soft target 从 `26.0%` 提到 `45.2%`、weight 从 `0.630` 提到 `0.900`。
      - [x] `prepare_p60d_episode_native_v1` fast review 已 No-Go：`timely_warning_rate=10.0% -> 10.0%`，`actionable_precision=55.9% -> 54.8%`，`longest_false_positive_episode_days=5 -> 5`；active 已恢复 `us_formal_interaction_tail_extmix10_20260602T061401`。
    - [ ] 进入 `family_conditional_v1` 细分设计与 PoC；停止继续调同类 `60d pre_warning_buffer` soft target / objective weight
+     - [x] 补写 `docs/analytics/family-conditional-model-design.md`，第一版限定为线上可计算的 family proxy / family context derived features，不把历史 `scenario_family` 标签直接塞进 serving。
+     - [x] 在 `crates/domain` 增加 `family_conditional_v1` feature transform 与 resolver。
+     - [x] 在 `apps/worker` 增加 `--model-shape family_conditional_v1`。
+     - [x] 用 `main + ext_stress + ext_acute` 训练第一版 family-conditional 候选 `us_formal_family_conditional_20260603T084333` 并跑 fast review。
+     - [x] fast review 已 No-Go：`timely_warning_rate=10.0% -> 0.0%`，`actionable_precision=55.9% -> 54.5%`，`longest_false_positive_episode_days=5 -> 5`，runtime `60d` 从 `usable_early_warning_separation` 退化为 `late_only_no_early_warning`。
+     - [ ] 升级到真正多头 / 分层校准 bundle schema 设计，不再继续堆同类 family proxy derived features。
 3. Raw PIT history replay 闭环
    - [x] 新增 historical replay run / point 存储结构
    - [x] release review 默认走 `strict_rebuild`

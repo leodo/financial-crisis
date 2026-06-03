@@ -33,6 +33,7 @@ impl PipelineDatasetSource {
 pub(crate) enum ProbabilityModelShape {
     LinearV1,
     InteractionTailV1,
+    FamilyConditionalV1,
 }
 
 impl ProbabilityModelShape {
@@ -40,6 +41,7 @@ impl ProbabilityModelShape {
         match value {
             "linear_v1" => Ok(Self::LinearV1),
             "interaction_tail_v1" => Ok(Self::InteractionTailV1),
+            "family_conditional_v1" => Ok(Self::FamilyConditionalV1),
             other => bail!("unsupported --model-shape value: {other}"),
         }
     }
@@ -48,6 +50,7 @@ impl ProbabilityModelShape {
         match self {
             Self::LinearV1 => crate::PROBABILITY_MODEL_FAMILY_LINEAR_V1,
             Self::InteractionTailV1 => crate::PROBABILITY_MODEL_FAMILY_INTERACTION_TAIL_V1,
+            Self::FamilyConditionalV1 => crate::PROBABILITY_MODEL_FAMILY_FAMILY_CONDITIONAL_V1,
         }
     }
 
@@ -55,6 +58,7 @@ impl ProbabilityModelShape {
         match self {
             Self::LinearV1 => crate::PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1,
             Self::InteractionTailV1 => crate::PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1,
+            Self::FamilyConditionalV1 => crate::PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1,
         }
     }
 }
@@ -168,11 +172,17 @@ impl PipelineTrainOptions {
                 (PipelineDatasetSource::Formal, ProbabilityModelShape::InteractionTailV1) => {
                     "us_formal_interaction_tail".to_string()
                 }
+                (PipelineDatasetSource::Formal, ProbabilityModelShape::FamilyConditionalV1) => {
+                    "us_formal_family_conditional".to_string()
+                }
                 (PipelineDatasetSource::Snapshot, ProbabilityModelShape::LinearV1) => {
                     "us_formal_transitional".to_string()
                 }
                 (PipelineDatasetSource::Snapshot, ProbabilityModelShape::InteractionTailV1) => {
                     "us_formal_transitional_interaction_tail".to_string()
+                }
+                (PipelineDatasetSource::Snapshot, ProbabilityModelShape::FamilyConditionalV1) => {
+                    "us_formal_transitional_family_conditional".to_string()
                 }
             });
 
