@@ -117,7 +117,7 @@
 
 ### 4.1 Storage
 
-- [ ] 把 `crates/storage/src/sqlite.rs` 按聚合拆分：
+- [x] 把 `crates/storage/src/sqlite.rs` 按聚合拆分：
   - metadata / mappings
   - observations
   - alerts
@@ -125,6 +125,12 @@
   - snapshots
   - formal datasets
   - historical replay
+
+当前进展：
+
+- 已新增 `crates/storage/src/sqlite/` 子模块目录，按聚合拆出 `metadata.rs`、`observations.rs`、`operational.rs`、`releases.rs`、`prediction_snapshots.rs`、`feature_snapshots.rs`、`formal_datasets.rs`、`historical_replay.rs`。
+- `sqlite.rs` 当前保留连接/迁移、底层 mapper/id/parser helper、`RiskStore` trait 转接、seed struct 和 storage round-trip tests。
+- 本轮是低风险机械拆分：SQL、表结构、public method 签名和调用方不变。
 
 ### 4.2 Web
 
@@ -213,8 +219,8 @@
 
 - [ ] `apps/worker/src/main.rs` 不再承担所有主线职责。
 - [ ] `apps/api/src/demo.rs` 不再同时承载 demo seed、真实历史回放和 runtime bridge。
-- [ ] API / worker 的重复概率数学与观测窗口逻辑已收敛。
-- [ ] `crates/storage/src/sqlite.rs` 已按聚合拆开。
+- [x] API / worker 的重复概率数学与观测窗口逻辑已收敛。
+- [x] `crates/storage/src/sqlite.rs` 已按聚合拆开。
 - [ ] `apps/web/src/App.tsx` 已拆成稳定组件层次。
 - [ ] 生成工件治理规则已落文档并落实到提交流程。
 
