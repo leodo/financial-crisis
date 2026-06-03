@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use fc_domain::{
     apply_platt_probability_calibration, HorizonEvaluationSummary, PlattCalibrationArtifact,
-    ProbabilityBundleEvaluation, ProbabilityHorizonBundle,
+    ProbabilityBundleEvaluation, ProbabilityCalibrationRegimeEvidence, ProbabilityHorizonBundle,
     ProbabilityThresholdDecisionSummary as ProbabilityThresholdDecisionSummaryWire,
     ProbabilityThresholdDiagnostics as ProbabilityThresholdDiagnosticsWire,
     RegimeSeparationEvaluationSummary,
@@ -988,7 +988,165 @@ pub(crate) fn build_probability_threshold_diagnostics(
         relaxed_prediction_ceiling,
         base_summary: probability_threshold_decision_summary_wire(base_metrics),
         final_summary: probability_threshold_decision_summary_wire(final_metrics),
+        calibration_regime_evidence: build_probability_calibration_regime_evidence(
+            full_calibration_rows,
+            calibration_selection,
+            threshold_selection,
+            horizon_days,
+            label_mode,
+        ),
     }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ProbabilityCalibrationRegimeEvidenceBucket {
+    full_row_count: u32,
+    calibration_eligible_row_count: u32,
+    calibration_used_row_count: u32,
+    threshold_selected_row_count: u32,
+    positive_label_count: u32,
+    hard_label_sum: f64,
+    training_target_sum: f64,
+    objective_weight_sum: f64,
+    protected_action_window_count: u32,
+}
+
+fn build_probability_calibration_regime_evidence(
+    full_calibration_rows: &[crate::ProbabilityTrainingRow],
+    calibration_selection: &ProbabilityCalibrationSelection<'_>,
+    threshold_selection: &ProbabilityThresholdSelection<'_>,
+    horizon_days: u32,
+    label_mode: crate::ProbabilityTargetLabelMode,
+) -> Vec<ProbabilityCalibrationRegimeEvidence> {
+    if full_calibration_rows.is_empty() {
+        return Vec::new();
+    }
+
+    let calibration_selected_ptrs = calibration_selection
+        .rows
+        .iter()
+        .map(|row| *row as *const crate::ProbabilityTrainingRow)
+        .collect::<HashSet<_>>();
+    let threshold_selected_ptrs = threshold_selection
+        .rows
+        .iter()
+        .map(|row| *row as *const crate::ProbabilityTrainingRow)
+        .collect::<HashSet<_>>();
+    let mut buckets = BTreeMap::<
+        crate::ProbabilityTrainingRegime,
+        ProbabilityCalibrationRegimeEvidenceBucket,
+    >::new();
+
+    for row in full_calibration_rows {
+        let row_ptr = row as *const crate::ProbabilityTrainingRow;
+        let regime = row.regime_for_horizon(horizon_days);
+        let hard_label = row.label_for_horizon(label_mode, horizon_days);
+        let bucket = buckets.entry(regime).or_default();
+        bucket.full_row_count += 1;
+        if probability_row_is_calibration_eligible(row, horizon_days, label_mode) {
+            bucket.calibration_eligible_row_count += 1;
+        }
+        if calibration_selected_ptrs.contains(&row_ptr) {
+            bucket.calibration_used_row_count += 1;
+        }
+        if threshold_selected_ptrs.contains(&row_ptr) {
+            bucket.threshold_selected_row_count += 1;
+        }
+        if hard_label > 0.0 {
+            bucket.positive_label_count += 1;
+        }
+        bucket.hard_label_sum += hard_label;
+        bucket.training_target_sum +=
+            crate::model::probability_training_target_label(row, horizon_days, label_mode);
+        bucket.objective_weight_sum +=
+            probability_calibration_objective_weight(row, horizon_days, label_mode);
+        if row.protected_action_window {
+            bucket.protected_action_window_count += 1;
+        }
+    }
+
+    let full_row_count = full_calibration_rows.len() as f64;
+    probability_regime_evidence_order()
+        .into_iter()
+        .filter_map(|regime| {
+            let bucket = buckets.get(&regime).copied().unwrap_or_default();
+            if bucket.full_row_count == 0 {
+                return None;
+            }
+            let row_count = bucket.full_row_count as f64;
+            Some(ProbabilityCalibrationRegimeEvidence {
+                regime: crate::probability_training_regime_name(regime).to_string(),
+                full_row_count: bucket.full_row_count,
+                full_row_rate: crate::round3(crate::safe_divide(row_count, full_row_count)),
+                calibration_eligible_row_count: bucket.calibration_eligible_row_count,
+                calibration_eligible_row_rate: crate::round3(crate::safe_divide(
+                    bucket.calibration_eligible_row_count as f64,
+                    row_count,
+                )),
+                calibration_used_row_count: bucket.calibration_used_row_count,
+                calibration_used_row_rate: crate::round3(crate::safe_divide(
+                    bucket.calibration_used_row_count as f64,
+                    row_count,
+                )),
+                threshold_selected_row_count: bucket.threshold_selected_row_count,
+                threshold_selected_row_rate: crate::round3(crate::safe_divide(
+                    bucket.threshold_selected_row_count as f64,
+                    row_count,
+                )),
+                positive_label_count: bucket.positive_label_count,
+                positive_label_rate: crate::round3(crate::safe_divide(
+                    bucket.positive_label_count as f64,
+                    row_count,
+                )),
+                avg_hard_label: crate::round3(crate::safe_divide(bucket.hard_label_sum, row_count)),
+                avg_training_target: crate::round3(crate::safe_divide(
+                    bucket.training_target_sum,
+                    row_count,
+                )),
+                objective_weight_sum: crate::round3(bucket.objective_weight_sum),
+                avg_objective_weight: crate::round3(crate::safe_divide(
+                    bucket.objective_weight_sum,
+                    row_count,
+                )),
+                protected_action_window_count: bucket.protected_action_window_count,
+                protected_action_window_rate: crate::round3(crate::safe_divide(
+                    bucket.protected_action_window_count as f64,
+                    row_count,
+                )),
+            })
+        })
+        .collect()
+}
+
+fn probability_regime_evidence_order() -> [crate::ProbabilityTrainingRegime; 5] {
+    [
+        crate::ProbabilityTrainingRegime::Normal,
+        crate::ProbabilityTrainingRegime::PreWarningBuffer,
+        crate::ProbabilityTrainingRegime::PositiveWindow,
+        crate::ProbabilityTrainingRegime::InCrisis,
+        crate::ProbabilityTrainingRegime::PostCrisisCooldown,
+    ]
+}
+
+fn probability_calibration_objective_weight(
+    row: &crate::ProbabilityTrainingRow,
+    horizon_days: u32,
+    label_mode: crate::ProbabilityTargetLabelMode,
+) -> f64 {
+    let hard_label = row.label_for_horizon(label_mode, horizon_days);
+    if hard_label > 0.0 {
+        return match label_mode {
+            crate::ProbabilityTargetLabelMode::ForwardCrisis => {
+                crate::model::forward_crisis_positive_sample_weight(row, horizon_days)
+            }
+            crate::ProbabilityTargetLabelMode::ActionWindow
+            | crate::ProbabilityTargetLabelMode::ActionEpisode => {
+                crate::model::positive_sample_action_weight(row, horizon_days)
+            }
+        };
+    }
+
+    crate::model::negative_sample_weight(row, horizon_days, label_mode)
 }
 
 fn probability_prediction_count_ceiling_from_actual_positive_count(

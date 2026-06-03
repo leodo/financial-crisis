@@ -274,7 +274,9 @@
      - [x] 已确认 `60d repair_reason=early_warning_lift_below_guardrail`，说明当前 calibration split 的 `pre_warning_buffer` calibrated lift 连 `1.5x` 护栏都没跨过
      - [x] 已把 `in_crisis` 从 `20d/60d threshold selection` 剥离，`extmix10` 把 `60d threshold` 从 `0.732` 压到 `0.656`
      - [x] `extmix10` strict rebuild review 已完成：`timely_warning_rate=10.0%` 不变，`actionable_precision=55.9%`，`longest_false_positive_episode_days=5`
-     - [ ] 下一步改 `60d calibration evidence` 构造：优先审计 `probability_row_is_calibration_eligible`、split regime mix、`pre_warning_buffer` soft-label / weight
+     - [x] 下一步改 `60d calibration evidence` 构造：优先审计 `probability_row_is_calibration_eligible`、split regime mix、`pre_warning_buffer` soft-label / weight
+       - 已在 bundle `threshold_diagnostics.calibration_regime_evidence` 中按 regime 导出：full split 占比、calibration eligible 行数、calibration used 行数、threshold selected 行数、硬标签均值、训练 soft target 均值、目标权重均值、protected action window 占比。
+       - 这一步只补证据链，不改变训练目标；下一轮重训/审计要用这组 evidence 判断 `60d pre_warning_buffer` 是否仍被 normal/cooldown 稀释。
    - [x] 产出 `interaction_tail_extmix2` 并重跑 strict rebuild review；结果是 `actionable_precision` 从 `63.8%` 提到 `65.8%`、`longest_false_positive_episode_days` 从 `21` 降到 `19`，但 `timely_warning_rate` 仍停在 `10.0%`
    - [x] 拆解 `prepare_carry_structural / prepare_p60d_structural / prepare_structural_downgrade` 的 overfire；已确认 `carry` 过宽是 runtime posture 问题，收紧 guard 后 `prepare` 从 `477` 点降到 `30`、`longest_false_positive_episode_days` 降到 `5`
    - [ ] 复盘 `interaction_tail_extmix2` 为什么离线 `5d usable separation` 没有穿透到 runtime，优先看 `5d` label / calibration / posture clause 是否口径错位
@@ -282,7 +284,8 @@
      - [x] `extmix8/extmix9` 已完成，但结论是 threshold repair 仍不足以改变 `60d=0.732`
      - [x] `extmix10` 已验证“剥离 in_crisis threshold 惩罚”可把 `60d` 压到 `0.656`
      - [x] `extmix11` 已验证“轻微上调 60d pre_warning_buffer soft-label / 降低 negative weight”对当前数据集几乎无效，不应继续做同类微调
-     - [ ] 下一版重训前先完成 `60d calibration evidence` 设计与实现，避免继续停在 `timely_warning_rate=10.0%`
+     - [x] 下一版重训前先完成 `60d calibration evidence` 设计与实现，避免继续停在 `timely_warning_rate=10.0%`
+     - [ ] 基于新增 `calibration_regime_evidence` 重训下一版 `interaction_tail`，复核 `60d pre_warning_buffer` 的 hard/soft/weight/selected 证据是否支持下调 `prepare_p60d`
    - [ ] 只有当 `interaction_tail_v1` 连续两轮仍无法提升 `timely_warning_rate` 且无法压下误报段时，再进入 `family_conditional_v1` 细分设计与 PoC
 3. Raw PIT history replay 闭环
    - [x] 新增 historical replay run / point 存储结构

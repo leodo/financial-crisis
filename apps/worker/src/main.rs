@@ -5588,6 +5588,20 @@ mod tests {
         ));
         assert_eq!(diagnostics.base_summary.early_warning_hit_count, 0);
         assert!(diagnostics.final_summary.early_warning_hit_count > 0);
+
+        let prewarning_evidence = diagnostics
+            .calibration_regime_evidence
+            .iter()
+            .find(|row| row.regime == "pre_warning_buffer")
+            .expect("pre-warning calibration evidence");
+        assert_eq!(prewarning_evidence.full_row_count, 2);
+        assert_eq!(prewarning_evidence.calibration_eligible_row_count, 2);
+        assert_eq!(prewarning_evidence.calibration_used_row_count, 2);
+        assert_eq!(prewarning_evidence.threshold_selected_row_count, 2);
+        assert_eq!(prewarning_evidence.positive_label_count, 0);
+        assert_eq!(prewarning_evidence.avg_hard_label, 0.0);
+        assert_eq!(prewarning_evidence.avg_training_target, 0.26);
+        assert_eq!(prewarning_evidence.avg_objective_weight, 0.6);
     }
 
     #[test]

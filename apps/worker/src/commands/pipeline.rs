@@ -306,6 +306,24 @@ pub(crate) async fn research_pipeline_train_probability(args: &[String]) -> anyh
                 diag.final_summary.normal_hit_count,
                 diag.final_summary.normal_row_count,
             );
+            if let Some(early_evidence) = diag
+                .calibration_regime_evidence
+                .iter()
+                .find(|row| row.regime == diag.early_warning_regime)
+            {
+                println!(
+                    "                   calib_evidence early={} rows={}({}) eligible={} used={} selected={} hard={} soft={} weight={}",
+                    early_evidence.regime,
+                    early_evidence.full_row_count,
+                    crate::format_pct(early_evidence.full_row_rate),
+                    early_evidence.calibration_eligible_row_count,
+                    early_evidence.calibration_used_row_count,
+                    early_evidence.threshold_selected_row_count,
+                    crate::format_pct(early_evidence.avg_hard_label),
+                    crate::format_pct(early_evidence.avg_training_target),
+                    early_evidence.avg_objective_weight,
+                );
+            }
         }
     }
     if let Some(actionability) = artifacts.bundle.actionability.as_ref() {

@@ -1214,6 +1214,37 @@ strict rebuild release review 结果：
    - threshold objective 是否还需要更显式地偏向 pre-warning
 3. 所以这类无显著收益的微调不应继续保留在主代码里，更适合只记录结论。
 
+### 7.24 2026-06-03 `calibration_regime_evidence` 把下一轮重训前的证据缺口补齐
+
+本轮没有继续改权重，也没有继续放宽阈值，而是把 `60d calibration evidence` 正式落到 bundle 元数据。
+
+新增位置：
+
+- `horizons[*].threshold_diagnostics.calibration_regime_evidence`
+
+每个 regime 会导出：
+
+- full calibration split 中的行数与占比；
+- 符合 Platt calibration eligibility 的行数；
+- 实际进入 Platt calibration 的行数，便于识别 fallback 是否改变了样本构成；
+- 实际进入 threshold selection 的行数；
+- 硬标签均值；
+- 训练用 soft target 均值；
+- 目标权重均值；
+- protected action window 占比。
+
+这一步解决的问题是：
+
+1. 以前只能看到 `60d repair_reason=early_warning_lift_below_guardrail`，但看不到这是因为 `pre_warning_buffer` 太少、被 eligibility 过滤、soft target 太低、权重太低，还是被 normal/cooldown 混合稀释；
+2. 现在下一版 `interaction_tail` 重训后，可以直接对照 `pre_warning_buffer` 与 `normal / cooldown / positive_window` 的 hard/soft/weight/selected 证据；
+3. 这会决定下一刀到底是改 split、改 calibration eligibility、改 `60d` 训练目标，还是进入 `family_conditional_v1`。
+
+边界也要写清楚：
+
+- 这次改动不会单独提高 `timely_warning_rate`；
+- 它只是把“为什么 60d 提前量学不进去”的审计证据补齐；
+- 下一步必须重训并重跑 strict review，才能判断模型质量是否真的改善。
+
 ## 12. 结论
 
 从这一步开始，项目里出现“formal bundle”不再自动等于“正式模型”。

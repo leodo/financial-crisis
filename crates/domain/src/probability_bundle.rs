@@ -237,6 +237,29 @@ pub struct ProbabilityThresholdDiagnostics {
     pub relaxed_prediction_ceiling: Option<u32>,
     pub base_summary: ProbabilityThresholdDecisionSummary,
     pub final_summary: ProbabilityThresholdDecisionSummary,
+    #[serde(default)]
+    pub calibration_regime_evidence: Vec<ProbabilityCalibrationRegimeEvidence>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbabilityCalibrationRegimeEvidence {
+    pub regime: String,
+    pub full_row_count: u32,
+    pub full_row_rate: f64,
+    pub calibration_eligible_row_count: u32,
+    pub calibration_eligible_row_rate: f64,
+    pub calibration_used_row_count: u32,
+    pub calibration_used_row_rate: f64,
+    pub threshold_selected_row_count: u32,
+    pub threshold_selected_row_rate: f64,
+    pub positive_label_count: u32,
+    pub positive_label_rate: f64,
+    pub avg_hard_label: f64,
+    pub avg_training_target: f64,
+    pub objective_weight_sum: f64,
+    pub avg_objective_weight: f64,
+    pub protected_action_window_count: u32,
+    pub protected_action_window_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
