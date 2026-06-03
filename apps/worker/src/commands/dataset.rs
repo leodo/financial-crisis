@@ -1056,6 +1056,7 @@ pub(crate) fn row_has_action_episode_label(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn scenario_count_for_index_range(
     rows: &[FormalDatasetRowRecord],
     start: usize,

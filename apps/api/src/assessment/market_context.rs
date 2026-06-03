@@ -1,7 +1,7 @@
-use chrono::NaiveDate;
 use fc_domain::{
-    DataTrust, IndicatorRisk, JpyCarrySnapshot, JpyCarryState, Observation, RiskContributor,
-    RiskDimension, RiskSnapshot,
+    observation_history_for_indicator, observation_value_difference_from_tail, DataTrust,
+    IndicatorRisk, JpyCarrySnapshot, JpyCarryState, Observation, RiskContributor, RiskDimension,
+    RiskSnapshot,
 };
 
 use super::{round1, round3, round_option, scaled_pressure};
@@ -75,19 +75,19 @@ pub(super) fn build_jpy_carry_snapshot(
     indicator_risks: &[IndicatorRisk],
     observations: &[Observation],
 ) -> JpyCarrySnapshot {
-    let usdjpy_history = observations_for_indicator(
+    let usdjpy_history = observation_history_for_indicator(
         observations,
         "us_external_usdjpy_level",
         snapshot.as_of_date,
     );
     let usdjpy_level = usdjpy_history.last().map(|observation| observation.value);
     let jp_call_rate_history =
-        observations_for_indicator(observations, "jp_rates_call_rate", snapshot.as_of_date);
+        observation_history_for_indicator(observations, "jp_rates_call_rate", snapshot.as_of_date);
     let jp_call_rate = jp_call_rate_history
         .last()
         .map(|observation| observation.value);
     let us_short_rate_history =
-        observations_for_indicator(observations, "us_liquidity_effr", snapshot.as_of_date);
+        observation_history_for_indicator(observations, "us_liquidity_effr", snapshot.as_of_date);
     let us_short_rate = us_short_rate_history
         .last()
         .map(|observation| observation.value);
@@ -95,8 +95,8 @@ pub(super) fn build_jpy_carry_snapshot(
         (Some(us), Some(jp)) => Some(us - jp),
         _ => None,
     };
-    let change_5d = difference_from_tail(&usdjpy_history, 5);
-    let change_20d = difference_from_tail(&usdjpy_history, 20);
+    let change_5d = observation_value_difference_from_tail(&usdjpy_history, 5);
+    let change_20d = observation_value_difference_from_tail(&usdjpy_history, 20);
     let realized_vol_20d = realized_volatility(&usdjpy_history, 20);
     let vix_score = find_indicator_score(indicator_risks, "us_market_vix_close");
     let credit_score = find_indicator_score(indicator_risks, "us_credit_high_yield_oas");
@@ -229,27 +229,6 @@ pub(super) fn high_risk_breadth(snapshot: &RiskSnapshot) -> f64 {
         .filter(|dimension| dimension.score >= 60.0)
         .count();
     elevated as f64 / total as f64 * 100.0
-}
-
-fn observations_for_indicator<'a>(
-    observations: &'a [Observation],
-    indicator_id: &str,
-    as_of_date: NaiveDate,
-) -> Vec<&'a Observation> {
-    let mut rows = observations
-        .iter()
-        .filter(|observation| observation.indicator_id == indicator_id)
-        .filter(|observation| observation.as_of_date <= as_of_date)
-        .collect::<Vec<_>>();
-    rows.sort_by_key(|observation| observation.as_of_date);
-    rows
-}
-
-fn difference_from_tail(observations: &[&Observation], lookback: usize) -> Option<f64> {
-    let latest = observations.last()?;
-    let previous_index = observations.len().checked_sub(lookback + 1)?;
-    let previous = observations.get(previous_index)?;
-    Some(latest.value - previous.value)
 }
 
 fn realized_volatility(observations: &[&Observation], window: usize) -> Option<f64> {

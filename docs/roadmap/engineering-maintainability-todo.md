@@ -98,15 +98,18 @@
 
 ### 3.3 Shared Logic
 
-- [ ] 收敛 `apply_platt_calibration`、观测值窗口切片、`difference_from_tail` 等重复函数。
+- [x] 收敛 `apply_platt_calibration`、观测值窗口切片、`difference_from_tail` 等重复函数。
 - [ ] 明确概率数学、特征派生、runtime threshold 诊断哪些属于共享领域逻辑，哪些属于 app-specific glue code。
-- [ ] 为共享逻辑补单元测试，避免训练侧和运行侧未来再次分叉。
+- [x] 为共享逻辑补单元测试，避免训练侧和运行侧未来再次分叉。
 
 当前进展：
 
 - 已把 logistic 概率打分与 `Platt` 校准收敛到 `crates/domain/src/probability_bundle.rs`。
 - `apps/api` 与 `apps/worker` 已开始复用同一套共享概率函数。
-- 观测窗口 / `difference_from_tail` 仍待继续收敛，但涉及 PIT 可见性过滤，下一步需要先划清 generic helper 与 runtime-specific 过滤边界。
+- 已新增 `crates/domain/src/observation_window.rs`，把按指标取历史窗口、按 as-of 排序、尾部 lookback 差值计算收敛到共享领域层。
+- `apps/api` 与 `apps/worker` 已改用 `observation_history_for_indicator*` / `observation_value_difference_*`，避免训练侧与运行侧各写一套窗口切片和尾部差值。
+- PIT 可见性过滤暂时保留在 worker 的 `observations_for_indicator` 包装函数内，因为它绑定 source publication timing、cutoff timezone 和 `PointInTimeMode`，不应在未完成边界设计前强行下沉到 domain。
+- `crates/domain` 已补观测窗口排序、过滤、lookback 差值单测；`probability_bundle` 已覆盖共享 Platt 校准和派生特征 resolver。
 
 ## 4. P2：次级重构项
 

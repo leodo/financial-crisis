@@ -2,18 +2,20 @@ use std::collections::BTreeMap;
 
 use chrono::NaiveDate;
 use fc_domain::{
-    apply_platt_probability_calibration, score_logistic_probability_model, ActionabilityBlock,
-    ActionabilityBundle, ActionabilityLevel, DataTrust, FreshnessStatus, JpyCarrySnapshot,
-    KeyIndicatorStatus, Observation, ProbabilityBlock, ProbabilityBundle, RiskDimension,
-    RiskSnapshot, TimeToRiskBucket, FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW,
-    FEATURE_BUCKET_WEEKS_OR_HIGHER, FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_DIMENSION_SCORE,
-    FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
-    FEATURE_FRESHNESS_STALE_OR_MISSING, FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D,
-    FEATURE_HEURISTIC_P_60D, FEATURE_OVERALL_SCORE, FEATURE_STRUCTURAL_SCORE,
-    FEATURE_TRIGGER_SCORE, FEATURE_US_BAA_10Y_SPREAD_LEVEL, FEATURE_US_CURVE_10Y2Y_LEVEL,
-    FEATURE_US_FED_FUNDS_LEVEL, FEATURE_US_HOUSING_STARTS_LEVEL, FEATURE_US_NFCI_LEVEL,
-    FEATURE_US_STLFSI_LEVEL, FEATURE_US_UNEMPLOYMENT_LEVEL, FEATURE_US_USDJPY_CHANGE_20D,
-    FEATURE_US_USDJPY_LEVEL, FEATURE_US_VIX_CHANGE_5D, FEATURE_US_VIX_LEVEL,
+    apply_platt_probability_calibration, observation_history_for_indicator,
+    observation_value_difference_for_indicator, score_logistic_probability_model,
+    ActionabilityBlock, ActionabilityBundle, ActionabilityLevel, DataTrust, FreshnessStatus,
+    JpyCarrySnapshot, KeyIndicatorStatus, Observation, ProbabilityBlock, ProbabilityBundle,
+    RiskDimension, RiskSnapshot, TimeToRiskBucket, FEATURE_BUCKET_MONTHS_OR_HIGHER,
+    FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER, FEATURE_COVERAGE_SCORE,
+    FEATURE_EXTERNAL_DIMENSION_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE,
+    FEATURE_FRESHNESS_DELAYED_OR_WORSE, FEATURE_FRESHNESS_STALE_OR_MISSING,
+    FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D, FEATURE_HEURISTIC_P_60D,
+    FEATURE_OVERALL_SCORE, FEATURE_STRUCTURAL_SCORE, FEATURE_TRIGGER_SCORE,
+    FEATURE_US_BAA_10Y_SPREAD_LEVEL, FEATURE_US_CURVE_10Y2Y_LEVEL, FEATURE_US_FED_FUNDS_LEVEL,
+    FEATURE_US_HOUSING_STARTS_LEVEL, FEATURE_US_NFCI_LEVEL, FEATURE_US_STLFSI_LEVEL,
+    FEATURE_US_UNEMPLOYMENT_LEVEL, FEATURE_US_USDJPY_CHANGE_20D, FEATURE_US_USDJPY_LEVEL,
+    FEATURE_US_VIX_CHANGE_5D, FEATURE_US_VIX_LEVEL,
 };
 
 use super::{
@@ -396,7 +398,12 @@ fn build_formal_probability_feature_map(
     insert_formal_derived_feature(
         &mut features,
         FEATURE_US_VIX_CHANGE_5D,
-        observation_difference_from_tail(observations, "us_market_vix_close", as_of_date, 5),
+        observation_value_difference_for_indicator(
+            observations,
+            "us_market_vix_close",
+            as_of_date,
+            5,
+        ),
     );
     insert_formal_latest_feature(
         &mut features,
@@ -457,7 +464,12 @@ fn build_formal_probability_feature_map(
     insert_formal_derived_feature(
         &mut features,
         FEATURE_US_USDJPY_CHANGE_20D,
-        observation_difference_from_tail(observations, "us_external_usdjpy_level", as_of_date, 20),
+        observation_value_difference_for_indicator(
+            observations,
+            "us_external_usdjpy_level",
+            as_of_date,
+            20,
+        ),
     );
 
     features
@@ -499,37 +511,9 @@ fn latest_observation_value(
     indicator_id: &str,
     as_of_date: NaiveDate,
 ) -> Option<f64> {
-    observation_history(observations, indicator_id, as_of_date)
+    observation_history_for_indicator(observations, indicator_id, as_of_date)
         .last()
         .map(|observation| observation.value)
-}
-
-fn observation_difference_from_tail(
-    observations: &[Observation],
-    indicator_id: &str,
-    as_of_date: NaiveDate,
-    lookback: usize,
-) -> Option<f64> {
-    let history = observation_history(observations, indicator_id, as_of_date);
-    let latest = history.last()?;
-    let previous_index = history.len().checked_sub(lookback + 1)?;
-    let previous = history.get(previous_index)?;
-    Some(latest.value - previous.value)
-}
-
-fn observation_history<'a>(
-    observations: &'a [Observation],
-    indicator_id: &str,
-    as_of_date: NaiveDate,
-) -> Vec<&'a Observation> {
-    let mut history = observations
-        .iter()
-        .filter(|observation| {
-            observation.indicator_id == indicator_id && observation.as_of_date <= as_of_date
-        })
-        .collect::<Vec<_>>();
-    history.sort_by_key(|observation| observation.as_of_date);
-    history
 }
 
 fn score_bundle_horizon(

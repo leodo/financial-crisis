@@ -17,26 +17,34 @@ mod training;
 
 pub(crate) use actionability::{
     actionability_bundle_quality_regressions, actionability_guardrail_policy,
-    actionability_prediction_count_ceiling_from_actual_positive_count,
-    evaluate_actionability_summary, percentage_score, select_actionability_calibration_strategy,
-    select_actionability_decision_threshold, train_actionability_bundle,
+    actionability_prediction_count_ceiling_from_actual_positive_count, percentage_score,
+    train_actionability_bundle,
+};
+#[cfg(test)]
+pub(crate) use actionability::{
+    evaluate_actionability_summary, select_actionability_calibration_strategy,
+    select_actionability_decision_threshold,
 };
 use anyhow::{bail, Context};
 use chrono::{Duration, NaiveDate, Utc};
 pub(crate) use commands::{
     build_formal_dataset_summary, collect_formal_dataset_scenario_ranges, feature_quality_grade,
-    formal_dataset_min_date, formal_dataset_snapshot_is_usable, formal_dataset_split_profile,
-    formal_dataset_split_requirements, has_extension_acute_core_features,
+    formal_dataset_split_profile, has_extension_acute_core_features,
     has_main_dataset_core_features, load_formal_dataset_scenario_sets,
-    load_label_set_crisis_scenarios, observation_is_visible_for_date, print_formal_dataset_summary,
+    load_label_set_crisis_scenarios, print_formal_dataset_summary,
     render_formal_dataset_summary_markdown, row_has_action_episode_label,
-    scenario_aware_formal_split_bounds, scenario_count_for_index_range,
     scenario_count_for_split_range, FormalDatasetSplitProfile, FormalDatasetSummaryEnvelope,
-    FormalSplitLabelSupport, ScenarioRowRange,
+    ScenarioRowRange,
 };
-use commands::{
-    FeatureSnapshotBuildOptions, PipelineDatasetSource, PipelineTrainOptions, PointInTimeMode,
+#[cfg(test)]
+pub(crate) use commands::{
+    formal_dataset_min_date, formal_dataset_snapshot_is_usable, formal_dataset_split_requirements,
+    observation_is_visible_for_date, scenario_aware_formal_split_bounds,
+    scenario_count_for_index_range, FormalSplitLabelSupport,
 };
+#[cfg(test)]
+use commands::{FeatureSnapshotBuildOptions, PointInTimeMode};
+use commands::{PipelineDatasetSource, PipelineTrainOptions};
 use fc_domain::{
     embedded_protected_stress_window_catalog, load_crisis_scenario_catalog,
     probability_feature_names_for_transform, resolve_probability_feature_value,
@@ -65,26 +73,32 @@ use fc_storage::{
     SEC_SUBMISSIONS_DATASET_ID, TREASURY_YIELD_DATASET_ID, WORLD_BANK_DATASET_ID,
 };
 pub(crate) use formal::derive_scenario_label_snapshot;
+#[cfg(test)]
 pub(crate) use model::{
     apply_forward_crisis_sign_gradient, apply_regime_pairwise_gradient, build_feature_stat,
-    evaluate_probabilities, fit_logistic_model, fit_platt_calibration,
     forward_crisis_positive_sample_weight, forward_crisis_regime_pairwise_targets,
     forward_crisis_regime_sample_weight, negative_sample_weight, positive_sample_action_weight,
     probability_training_target_label, project_forward_crisis_sign_constraints,
+};
+pub(crate) use model::{
+    evaluate_probabilities, fit_logistic_model, fit_platt_calibration,
     score_logistic_model_for_dataset,
 };
 use output_paths::{
     DEFAULT_FORMAL_DATASET_SUMMARY_OUTPUT_DIR, DEFAULT_PIPELINE_BUNDLE_OUTPUT_DIR,
     DEFAULT_PIPELINE_MANIFEST_OUTPUT_DIR, DEFAULT_RELEASE_REVIEW_OUTPUT_DIR,
 };
+#[cfg(test)]
 pub(crate) use probability::{
     adjust_probability_decision_threshold_for_regime_support,
     build_probability_threshold_diagnostics, classify_probability_regime_separation,
     probability_calibration_selection_rows, probability_decision_threshold_selection,
-    regime_positive_window_gap_floor, select_probability_calibration_strategy,
-    select_probability_decision_threshold, summarize_bundle_evaluation, train_horizon_bundle,
+    select_probability_calibration_strategy, select_probability_decision_threshold,
     ProbabilityCalibrationSelection, ProbabilityThresholdDiagnosticsInput,
     ProbabilityThresholdSelection,
+};
+pub(crate) use probability::{
+    regime_positive_window_gap_floor, summarize_bundle_evaluation, train_horizon_bundle,
 };
 use reporting::write_formal_dataset_summary_report;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};

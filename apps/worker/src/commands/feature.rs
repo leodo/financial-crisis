@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{bail, Context};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
 use fc_domain::{
+    observation_history_for_indicator_where, observation_value_difference_from_tail,
     FeatureSnapshotRecord, Frequency, Indicator, IndicatorRisk, Observation, RiskDimension,
 };
 use fc_scoring::ScoringEngine;
@@ -395,7 +396,7 @@ pub(crate) fn build_formal_feature_snapshot_for_date(
     insert_derived_feature(
         &mut features,
         "us_vix_change_5d",
-        difference_from_tail(&vix_history, 5),
+        observation_value_difference_from_tail(&vix_history, 5),
     );
 
     let curve_history = observations_for_indicator(
@@ -512,7 +513,7 @@ pub(crate) fn build_formal_feature_snapshot_for_date(
     insert_derived_feature(
         &mut features,
         "us_usdjpy_change_20d",
-        difference_from_tail(&usdjpy_history, 20),
+        observation_value_difference_from_tail(&usdjpy_history, 20),
     );
 
     features.insert(
@@ -605,16 +606,9 @@ fn observations_for_indicator<'a>(
     as_of_date: NaiveDate,
     point_in_time_mode: PointInTimeMode,
 ) -> Vec<&'a Observation> {
-    let mut rows = observations
-        .iter()
-        .filter(|observation| observation.indicator_id == indicator_id)
-        .filter(|observation| observation.as_of_date <= as_of_date)
-        .filter(|observation| {
-            observation_is_visible_for_date(observation, as_of_date, point_in_time_mode)
-        })
-        .collect::<Vec<_>>();
-    rows.sort_by_key(|observation| observation.as_of_date);
-    rows
+    observation_history_for_indicator_where(observations, indicator_id, as_of_date, |observation| {
+        observation_is_visible_for_date(observation, as_of_date, point_in_time_mode)
+    })
 }
 
 fn insert_latest_feature(
@@ -640,13 +634,6 @@ fn insert_derived_feature(
     if let Some(value) = value {
         features.insert(feature_name.to_string(), crate::round6(value));
     }
-}
-
-fn difference_from_tail(observations: &[&Observation], lookback: usize) -> Option<f64> {
-    let latest = observations.last()?;
-    let previous_index = observations.len().checked_sub(lookback + 1)?;
-    let previous = observations.get(previous_index)?;
-    Some(latest.value - previous.value)
 }
 
 fn feature_snapshot_visibility_status(

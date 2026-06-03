@@ -12,23 +12,31 @@ pub(crate) mod snapshot;
 use anyhow::{bail, Result};
 
 pub(crate) use dataset::{
-    build_formal_dataset_summary, collect_formal_dataset_scenario_ranges, formal_dataset_min_date,
-    formal_dataset_snapshot_is_usable, formal_dataset_split_profile,
-    formal_dataset_split_requirements, load_formal_dataset_scenario_sets,
+    build_formal_dataset_summary, collect_formal_dataset_scenario_ranges,
+    formal_dataset_split_profile, load_formal_dataset_scenario_sets,
     load_label_set_crisis_scenarios, print_formal_dataset_summary,
     render_formal_dataset_summary_markdown, row_has_action_episode_label,
-    scenario_aware_formal_split_bounds, scenario_count_for_index_range,
     scenario_count_for_split_range, FormalDatasetSplitProfile, FormalDatasetSummaryEnvelope,
-    FormalSplitLabelSupport, ScenarioRowRange,
+    ScenarioRowRange,
 };
 #[cfg(test)]
-pub(crate) use dataset::{FormalDatasetBuildOptions, FormalDatasetSummaryOptions};
+pub(crate) use dataset::{
+    formal_dataset_min_date, formal_dataset_snapshot_is_usable, formal_dataset_split_requirements,
+    scenario_aware_formal_split_bounds, scenario_count_for_index_range, FormalDatasetBuildOptions,
+    FormalDatasetSummaryOptions, FormalSplitLabelSupport,
+};
 pub(crate) use db::{db_check, db_init, db_seed};
 pub(crate) use feature::{
     feature_quality_grade, has_extension_acute_core_features, has_main_dataset_core_features,
+};
+#[cfg(test)]
+pub(crate) use feature::{
     observation_is_visible_for_date, FeatureSnapshotBuildOptions, PointInTimeMode,
 };
-pub(crate) use pipeline::{PipelineDatasetSource, PipelineTrainOptions, ProbabilityModelShape};
+#[cfg(test)]
+pub(crate) use pipeline::ProbabilityModelShape;
+pub(crate) use pipeline::{PipelineDatasetSource, PipelineTrainOptions};
+#[cfg(test)]
 pub(crate) use snapshot::PredictionSnapshotQueryOptions;
 
 pub(crate) async fn run_from_args(args: Vec<String>) -> Result<()> {
