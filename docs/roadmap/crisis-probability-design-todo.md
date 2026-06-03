@@ -291,7 +291,10 @@
        - 快速 review（`history_mode=default, history_limit=5000`）显示相对 `extmix10` 没有改善：`timely_warning_rate=10.0%`、`actionable_precision=55.9%`、`longest_false_positive_episode_days=5` 均不变。
        - 结论：下一刀不应继续做同类重训，应改 `60d pre_warning_buffer` 的目标定义，或进入更强的 family/episode 条件头设计。
      - [x] 为 release review 增加 `--history-mode` / `--history-limit`，并新增 `just release-review-fast`，用于 strict rebuild 太慢时先做方向性 triage；正式 Go/No-Go 仍必须跑 `just release-review`。
-   - [ ] 只有当 `interaction_tail_v1` 连续两轮仍无法提升 `timely_warning_rate` 且无法压下误报段时，再进入 `family_conditional_v1` 细分设计与 PoC
+     - [x] 补写 `docs/analytics/episode-native-prewarning-target-design.md`，把下一轮实验限定为 `prepare_p60d_episode_native_v1`：只抬升已进入 `prepare episode`、仍在危机前、且场景支持 60d 的 `pre_warning_buffer`，避免把所有 buffer 都当正例。
+     - [x] 实现 `prepare_p60d_episode_native_v1` 训练目标并重训候选 `us_formal_interaction_tail_prepare_20260603T081710`；训练 evidence 把 `60d pre_warning_buffer` soft target 从 `26.0%` 提到 `45.2%`、weight 从 `0.630` 提到 `0.900`。
+     - [x] `prepare_p60d_episode_native_v1` fast review 已 No-Go：`timely_warning_rate=10.0% -> 10.0%`，`actionable_precision=55.9% -> 54.8%`，`longest_false_positive_episode_days=5 -> 5`；active 已恢复 `us_formal_interaction_tail_extmix10_20260602T061401`。
+   - [ ] 进入 `family_conditional_v1` 细分设计与 PoC；停止继续调同类 `60d pre_warning_buffer` soft target / objective weight
 3. Raw PIT history replay 闭环
    - [x] 新增 historical replay run / point 存储结构
    - [x] release review 默认走 `strict_rebuild`

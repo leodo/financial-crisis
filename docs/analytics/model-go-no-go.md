@@ -1293,6 +1293,48 @@ strict rebuild release review 结果：
 1. 重定义 `60d pre_warning_buffer` 的 episode-native 目标，把“可执行提前离场”从 soft negative 中剥出来；
 2. 或进入 `family_conditional_v1`，让银行/信用/外部流动性/日元套息这几类风险有独立条件头，而不是继续共享一个 60d 线性/交互头。
 
+### 7.26 2026-06-03 `prepare_p60d_episode_native_v1` 证明目标增强仍不足以突破 runtime 提前量
+
+本轮按 `docs/analytics/episode-native-prewarning-target-design.md` 实现了一个窄目标：
+
+- 只抬升 `ForwardCrisis / 60d / pre_warning_buffer`；
+- 必须已经进入 `prepare_episode_label` 或 `primary_action_level=prepare`；
+- 必须仍在危机前且场景支持 `60d`；
+- 不把急性流动性崩盘样本硬塞成数月级提前预警。
+
+候选：
+
+- `us_formal_interaction_tail_prepare_20260603T081710`
+
+训练侧 evidence 确实变了：
+
+| Horizon | Early regime | Old soft target | New soft target | Old objective weight | New objective weight |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `60d` | `pre_warning_buffer` | `26.0%` | `45.2%` | `0.630` | `0.900` |
+
+但 fast release review 没有改善真正的目标：
+
+| Metric | Active `extmix10` | Candidate `prepare` |
+| --- | ---: | ---: |
+| `timely_warning_rate` | `10.0%` | `10.0%` |
+| `actionable_precision` | `55.9%` | `54.8%` |
+| `longest_false_positive_episode_days` | `5` | `5` |
+| `prepare_p60d` runtime floor | `65.6%` | `66.1%` |
+| `p_60d>=prepare` history hits | `112` | `97` |
+
+判断：
+
+1. 这次实验没有把提前命中率从 `10.0%` 拉出来；
+2. 它只是把 history trigger 变窄，没有让真正漏掉的历史危机场景更早命中；
+3. `prepare_p60d` floor 反而从 `65.6%` 小幅抬到 `66.1%`；
+4. 继续调同类 `60d pre_warning_buffer` target/weight 的边际价值已经很低。
+
+结论：
+
+- 候选不晋升，active 保持 `us_formal_interaction_tail_extmix10_20260602T061401`；
+- `interaction_tail_v1 + 共享 60d 头` 已经证明不足以恢复目标里的“数周到数月提前量”；
+- 下一阶段进入 `family_conditional_v1`，把系统性银行/信用、混合压力、政策利率冲击、急性流动性、日元套息等风险家族拆成条件头或分层校准，而不是继续共享一个 60d 目标。
+
 ## 12. 结论
 
 从这一步开始，项目里出现“formal bundle”不再自动等于“正式模型”。

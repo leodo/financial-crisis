@@ -497,6 +497,10 @@ pub(crate) fn probability_training_target_label(
         return hard_label;
     }
 
+    if let Some(objective) = forward_crisis_prepare_prewarning_objective(row, horizon_days) {
+        return objective.target_label;
+    }
+
     match row.regime_for_horizon(horizon_days) {
         ProbabilityTrainingRegime::Normal => 0.0,
         ProbabilityTrainingRegime::PreWarningBuffer => match horizon_days {
@@ -520,6 +524,65 @@ pub(crate) fn probability_training_target_label(
             _ => 0.0,
         },
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ForwardCrisisPreparePrewarningObjective {
+    target_label: f64,
+    objective_weight: f64,
+}
+
+fn forward_crisis_prepare_prewarning_objective(
+    row: &ProbabilityTrainingRow,
+    horizon_days: u32,
+) -> Option<ForwardCrisisPreparePrewarningObjective> {
+    if horizon_days != 60 {
+        return None;
+    }
+    if row.regime_for_horizon(horizon_days) != ProbabilityTrainingRegime::PreWarningBuffer {
+        return None;
+    }
+    if row.label_for_horizon(ProbabilityTargetLabelMode::ForwardCrisis, horizon_days) > 0.0 {
+        return None;
+    }
+    if row.primary_scenario_supports_horizon(horizon_days) != Some(true) {
+        return None;
+    }
+    if row
+        .days_to_primary_crisis_start
+        .is_none_or(|lead_days| lead_days <= 0)
+    {
+        return None;
+    }
+    if !is_prepare_episode_row(row) {
+        return None;
+    }
+    if matches!(
+        row.scenario_family.as_deref(),
+        Some("acute_market_liquidity_crash")
+    ) {
+        return None;
+    }
+    if matches!(
+        row.scenario_training_role.as_deref(),
+        Some("no_positive_main")
+    ) {
+        return None;
+    }
+
+    let extension_or_protected = row.protected_action_window
+        || matches!(
+            row.scenario_training_role.as_deref(),
+            Some("extension_only")
+        );
+    Some(ForwardCrisisPreparePrewarningObjective {
+        target_label: if extension_or_protected { 0.58 } else { 0.64 },
+        objective_weight: if extension_or_protected { 1.10 } else { 1.35 },
+    })
+}
+
+fn is_prepare_episode_row(row: &ProbabilityTrainingRow) -> bool {
+    row.prepare_episode_label > 0 || matches!(row.primary_action_level.as_deref(), Some("prepare"))
 }
 
 fn logistic_sample_weight(
@@ -691,6 +754,10 @@ pub(crate) fn negative_sample_weight(
             }
         }
         ProbabilityTargetLabelMode::ForwardCrisis => {
+            if let Some(objective) = forward_crisis_prepare_prewarning_objective(row, horizon_days)
+            {
+                return objective.objective_weight;
+            }
             if row.protected_action_window {
                 return match row.action_episode_phase.as_str() {
                     "primary" => match horizon_days {
