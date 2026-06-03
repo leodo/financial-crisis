@@ -2,7 +2,7 @@
 
 状态：`Review`
 
-最后更新：2026-06-02
+最后更新：2026-06-03
 
 ## 1. 目的
 
@@ -174,6 +174,12 @@ apps/api/src/
 - 训练侧和运行侧共用同一实现
 - 不允许继续一边修、一边忘
 
+当前落地：
+
+- `apply_platt_calibration` 已以 `apply_platt_probability_calibration` 形式进入 `crates/domain/src/probability_bundle.rs`。
+- bundle runtime scoring 已以 `score_logistic_probability_model` 形式进入 `crates/domain/src/probability_bundle.rs`。
+- `Platt` 拟合、样本权重、sign/regime 约束仍留在 `apps/worker/src/model.rs`，因为它们依赖训练样本、切分策略和候选实验，不属于 API 运行时必需能力。
+
 ### 6.2 观测窗口与派生特征
 
 - `observations_for_indicator`
@@ -185,6 +191,12 @@ apps/api/src/
 
 - 同一特征名在 worker 训练与 API 运行中使用同一派生规则
 
+当前落地：
+
+- 通用观测窗口、as-of 过滤、排序、尾部 lookback 差值已进入 `crates/domain/src/observation_window.rs`。
+- worker 的 PIT 可见性包装仍保留在 `apps/worker/src/commands/feature.rs`，因为它绑定 `PointInTimeMode`、publication timing 和时区截止规则。
+- 下一步若要下沉更多正式特征派生，必须先定义“feature id -> source indicator -> transform”的注册表，而不是继续在 API/worker 两边手写映射。
+
 ### 6.3 Runtime / training 解释口径
 
 - threshold diagnostics
@@ -194,6 +206,29 @@ apps/api/src/
 目标：
 
 - 前台解释、release review、训练导出三者不能各说各话
+
+当前边界：
+
+- `threshold selection`、calibration selection、regime separation 诊断当前仍属于 worker 训练/release review 侧。
+- API 运行时只消费已发布 bundle 中的阈值、metadata 和 serving policy，不应在请求路径重新训练或重新选择阈值。
+- 如果未来 dashboard 要展示与 release review 完全一致的 threshold diagnostic 明细，应先把纯诊断结构和渲染无关计算抽到 shared crate，再让 worker/API 共用。
+
+### 6.4 共享边界判定矩阵
+
+| 归属 | 可以放什么 | 不能放什么 | 当前代表文件 |
+| --- | --- | --- | --- |
+| `crates/domain` | 纯领域模型、bundle schema、纯概率打分、Platt 应用、特征 transform resolver、观测窗口排序/差值、静态场景目录 | IO、环境变量、HTTP、数据库、缓存、当前时间、用户 profile、source-specific PIT 发布规则 | `probability_bundle.rs`、`observation_window.rs`、`stress_window.rs` |
+| `apps/worker` | 数据刷新/回填命令、训练样本构建、PIT feature snapshot、模型拟合、阈值选择、release review、候选实验 guardrail | API response shape、前端展示文案、请求级用户偏好、运行时重新训练 | `commands/feature.rs`、`model.rs`、`probability.rs`、`commands/release.rs` |
+| `apps/api` | 当前评估装配、active release 加载、runtime cache、用户偏好升降级、posture/position guidance、API DTO | 训练样本切分、候选模型搜索、离线实验输出、UI 文案硬编码 | `assessment/*.rs`、`data_source.rs`、`history_replay.rs` |
+| `apps/web` | 人话标签、格式化、页面 view model、图表和交互状态 | 概率计算、阈值选择、仓位规则事实来源、数据抓取 | `format.ts`、`views/**` |
+
+判定规则：
+
+1. 同一函数如果同时被训练侧和运行侧需要，且不依赖 IO/缓存/当前时间/用户请求，优先进入 `crates/domain`。
+2. 依赖训练切分、候选发布、guardrail review 的逻辑先留在 `apps/worker`；只有 API 需要同一语义时才抽共享层。
+3. 依赖 active release、runtime cache、用户 profile、HTTP response 的逻辑留在 `apps/api`。
+4. PIT 可见性分两层处理：通用观测窗口可以进 domain，source publication timing 与 cutoff timezone 暂留 worker/data 规范，避免把数据源时效假设伪装成纯领域逻辑。
+5. Web 只能翻译和呈现，不承接新的风险判断事实来源；任何新增仓位动作必须先进入 API playbook/Go-No-Go 边界。
 
 ## 7. 实施原则
 

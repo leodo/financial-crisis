@@ -99,7 +99,7 @@
 ### 3.3 Shared Logic
 
 - [x] 收敛 `apply_platt_calibration`、观测值窗口切片、`difference_from_tail` 等重复函数。
-- [ ] 明确概率数学、特征派生、runtime threshold 诊断哪些属于共享领域逻辑，哪些属于 app-specific glue code。
+- [x] 明确概率数学、特征派生、runtime threshold 诊断哪些属于共享领域逻辑，哪些属于 app-specific glue code。
 - [x] 为共享逻辑补单元测试，避免训练侧和运行侧未来再次分叉。
 
 当前进展：
@@ -110,6 +110,8 @@
 - `apps/api` 与 `apps/worker` 已改用 `observation_history_for_indicator*` / `observation_value_difference_*`，避免训练侧与运行侧各写一套窗口切片和尾部差值。
 - PIT 可见性过滤暂时保留在 worker 的 `observations_for_indicator` 包装函数内，因为它绑定 source publication timing、cutoff timezone 和 `PointInTimeMode`，不应在未完成边界设计前强行下沉到 domain。
 - `crates/domain` 已补观测窗口排序、过滤、lookback 差值单测；`probability_bundle` 已覆盖共享 Platt 校准和派生特征 resolver。
+- 共享边界已补到 [工程治理方案](../architecture/engineering-governance-plan.md)：纯概率打分、Platt 应用、观测窗口和纯 transform 进 `crates/domain`；训练拟合、阈值选择、release review 留 `apps/worker`；active release / 用户偏好 / response 装配留 `apps/api`；Web 只做展示翻译。
+- 下一步如继续收敛正式特征派生，应先做 `feature id -> source indicator -> transform` 注册表，避免 API/worker 继续手写同一批映射。
 
 ## 4. P2：次级重构项
 
