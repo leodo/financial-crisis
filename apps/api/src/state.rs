@@ -62,6 +62,10 @@ impl AppState {
         self.default_history_points
     }
 
+    pub fn max_history_points(&self) -> usize {
+        self.max_history_points
+    }
+
     pub async fn reload(&self) -> anyhow::Result<AppData> {
         self.reload_with_history_mode(AssessmentHistoryBuildMode::Default)
             .await
@@ -71,9 +75,18 @@ impl AppState {
         &self,
         history_build_mode: AssessmentHistoryBuildMode,
     ) -> anyhow::Result<AppData> {
+        self.reload_with_history_mode_and_limit(history_build_mode, self.max_history_points)
+            .await
+    }
+
+    pub async fn reload_with_history_mode_and_limit(
+        &self,
+        history_build_mode: AssessmentHistoryBuildMode,
+        max_history_points: usize,
+    ) -> anyhow::Result<AppData> {
         let data = data_source::load_app_data_with_history_mode(
             &self.source,
-            self.max_history_points,
+            max_history_points,
             history_build_mode,
         )
         .await?;

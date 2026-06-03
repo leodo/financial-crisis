@@ -45,6 +45,11 @@ release-list:
 release-review candidate_release_id:
     cargo run -p fc-worker -- research release review --candidate-release-id {{candidate_release_id}}
 
+# 快速评审入口：不强制 strict_rebuild，只用 API 默认历史构建策略，适合 strict review 太慢时先判断候选方向。
+# 这不是正式 Go/No-Go 证据，正式放行仍应使用 `just release-review`。
+release-review-fast candidate_release_id:
+    cargo run -p fc-worker -- research release review --candidate-release-id {{candidate_release_id}} --history-mode default --history-limit 5000
+
 # 和 `release-review` 相同，但显式导出到版本化目录 reports/release-review。
 # 只在需要把这次 review 作为仓库证据长期保留时使用。
 release-review-tracked candidate_release_id:

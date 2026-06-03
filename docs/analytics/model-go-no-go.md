@@ -1245,6 +1245,54 @@ strict rebuild release review 结果：
 - 它只是把“为什么 60d 提前量学不进去”的审计证据补齐；
 - 下一步必须重训并重跑 strict review，才能判断模型质量是否真的改善。
 
+### 7.25 2026-06-03 `extmix_20260603T062837` 证明 60d 瓶颈不是样本没进来，而是目标口径太弱
+
+基于新增 `calibration_regime_evidence`，本轮重新训练了：
+
+- `us_formal_interaction_tail_extmix_20260603T062837`
+
+训练输入仍是：
+
+- `formal_v1_main_1990_daily:20260601T172759`
+- `formal_v1_ext_stress_1990_daily:20260601T162655`
+- `formal_v1_ext_acute_pre1990:20260601T163102`
+
+这次最有价值的不是候选表现，而是 evidence 把问题定位得更具体：
+
+| Horizon | Early regime | Early rows | Hard label | Soft target | Objective weight | Early hit | Normal hit | Repair |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `5d` | `positive_window` | `31` | `35.5%` | `35.5%` | `1.677` | `9.1%` | `21.4%` | `not_applicable` |
+| `20d` | `pre_warning_buffer` | `116` | `0.0%` | `18.0%` | `0.642` | `12.9%` | `9.8%` | `base_threshold_has_usable_early_warning_gap` |
+| `60d` | `pre_warning_buffer` | `150` | `0.0%` | `26.0%` | `0.630` | `8.7%` | `13.7%` | `early_warning_lift_below_guardrail` |
+
+关键结论：
+
+1. `60d pre_warning_buffer` 没有被过滤掉：150 行全部进入 calibration 和 threshold selection；
+2. 但它在当前监督里仍被当作“弱负样本/软提示”而不是可执行提前量正例；
+3. 因此 `60d` 仍然无法支持下调 `prepare_p60d`，不是因为数据没进来，而是因为目标函数没有把这类提前窗口定义成足够明确的学习目标。
+
+快速 release review 结果：
+
+- 命令：`just release-review-fast us_formal_interaction_tail_extmix_20260603T062837`
+- 口径：`history_mode=default`、`history_limit=5000`
+- 相对 active `extmix10`：
+  - `timely_warning_rate = 10.0% -> 10.0%`
+  - `actionable_precision = 55.9% -> 55.9%`
+  - `longest_false_positive_episode_days = 5 -> 5`
+- 候选没有晋升；已恢复原 active `us_formal_interaction_tail_extmix10_20260602T061401`。
+
+工程侧也补了一个必要能力：
+
+- `release review` 新增 `--history-mode default|strict_rebuild`
+- `release review` 新增 `--history-limit N`
+- `just release-review-fast` 作为快速 triage 入口
+- 正式 Go/No-Go 仍必须使用默认 `strict_rebuild`，快速 review 只用于判断方向
+
+下一步不应继续同类 `interaction_tail` 重训。更可行的方向是：
+
+1. 重定义 `60d pre_warning_buffer` 的 episode-native 目标，把“可执行提前离场”从 soft negative 中剥出来；
+2. 或进入 `family_conditional_v1`，让银行/信用/外部流动性/日元套息这几类风险有独立条件头，而不是继续共享一个 60d 线性/交互头。
+
 ## 12. 结论
 
 从这一步开始，项目里出现“formal bundle”不再自动等于“正式模型”。

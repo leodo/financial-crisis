@@ -101,8 +101,8 @@ fn print_help() {
   cargo run -p fc-worker -- research release rollback --to-release-id ID [--market-scope SCOPE] [--reload-api] [--api-reload-url URL] [--updated-by NAME]
       Roll back the selected market scope to an earlier release and optionally reload the API runtime.
 
-  cargo run -p fc-worker -- research release review --candidate-release-id ID [--baseline-release-id ID] [--market-scope SCOPE] [--api-reload-url URL] [--output-dir DIR] [--updated-by NAME]
-      Temporarily switch the running API between baseline and candidate releases. Review reloads now default to strict_rebuild raw history replay before exporting JSON + Markdown, then restore the original active release.
+  cargo run -p fc-worker -- research release review --candidate-release-id ID [--baseline-release-id ID] [--market-scope SCOPE] [--api-reload-url URL] [--history-mode default|strict_rebuild] [--history-limit N] [--output-dir DIR] [--updated-by NAME]
+      Temporarily switch the running API between baseline and candidate releases. Review reloads default to strict_rebuild raw history replay and history-limit=20000 before exporting JSON + Markdown, then restore the original active release. Use --history-mode default with a smaller --history-limit only for quick triage when strict rebuild is too slow.
 
   cargo run -p fc-worker -- research snapshot list [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N]
       List persisted prediction snapshots stored in SQLite for audit and release-review work.

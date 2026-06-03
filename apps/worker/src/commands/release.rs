@@ -195,6 +195,8 @@ pub(crate) struct ReleaseReviewOptions {
     pub(crate) market_scope: Option<String>,
     pub(crate) api_reload_url: String,
     pub(crate) output_dir: PathBuf,
+    pub(crate) history_mode: crate::ApiReloadHistoryMode,
+    pub(crate) history_limit: usize,
     pub(crate) updated_by: String,
 }
 
@@ -205,6 +207,8 @@ impl ReleaseReviewOptions {
         let mut market_scope = None;
         let mut api_reload_url = crate::DEFAULT_API_RELOAD_URL.to_string();
         let mut output_dir = PathBuf::from(crate::DEFAULT_RELEASE_REVIEW_OUTPUT_DIR);
+        let mut history_mode = crate::ApiReloadHistoryMode::StrictRebuild;
+        let mut history_limit = 20_000_usize;
         let mut updated_by = "fc-worker-review".to_string();
         let mut index = 0;
         while index < args.len() {
@@ -247,6 +251,24 @@ impl ReleaseReviewOptions {
                             .with_context(|| "--output-dir requires a directory path")?,
                     );
                 }
+                "--history-mode" => {
+                    index += 1;
+                    history_mode = crate::ApiReloadHistoryMode::parse(
+                        args.get(index)
+                            .with_context(|| "--history-mode requires default|strict_rebuild")?,
+                    )?;
+                }
+                "--history-limit" => {
+                    index += 1;
+                    history_limit = args
+                        .get(index)
+                        .with_context(|| "--history-limit requires a positive integer")?
+                        .parse::<usize>()
+                        .with_context(|| "--history-limit requires a positive integer")?;
+                    if history_limit == 0 {
+                        bail!("--history-limit requires a positive integer");
+                    }
+                }
                 "--updated-by" => {
                     index += 1;
                     updated_by = args
@@ -265,6 +287,8 @@ impl ReleaseReviewOptions {
             market_scope,
             api_reload_url,
             output_dir,
+            history_mode,
+            history_limit,
             updated_by,
         })
     }
@@ -502,6 +526,7 @@ struct ReleaseReviewRuntimeSnapshot {
 
 async fn fetch_release_review_runtime_snapshot(
     api_reload_url: &str,
+    history_limit: usize,
 ) -> anyhow::Result<ReleaseReviewRuntimeSnapshot> {
     let api_base_url = api_reload_url
         .strip_suffix("/api/system/reload")
@@ -517,8 +542,9 @@ async fn fetch_release_review_runtime_snapshot(
         crate::fetch_api_json(&client, api_base_url, "/api/assessment/current").await?;
     let method: crate::AuditMethodResponseWire =
         crate::fetch_api_json(&client, api_base_url, "/api/assessment/method").await?;
+    let history_path = format!("/api/assessment/history?limit={history_limit}");
     let history: Vec<fc_domain::AssessmentHistoryPoint> =
-        crate::fetch_api_json(&client, api_base_url, "/api/assessment/history?limit=20000").await?;
+        crate::fetch_api_json(&client, api_base_url, &history_path).await?;
     Ok(ReleaseReviewRuntimeSnapshot {
         assessment,
         method,
@@ -543,27 +569,25 @@ async fn run_release_review(
         store,
         market_scope,
         &baseline_release.manifest.release_id,
-        &options.api_reload_url,
-        crate::ApiReloadHistoryMode::StrictRebuild,
-        &options.updated_by,
+        options,
         "baseline",
     )
     .await?;
     let baseline_runtime_snapshot =
-        fetch_release_review_runtime_snapshot(&options.api_reload_url).await?;
+        fetch_release_review_runtime_snapshot(&options.api_reload_url, options.history_limit)
+            .await?;
 
     activate_release_for_review(
         store,
         market_scope,
         &candidate_release.manifest.release_id,
-        &options.api_reload_url,
-        crate::ApiReloadHistoryMode::StrictRebuild,
-        &options.updated_by,
+        options,
         "candidate",
     )
     .await?;
     let candidate_runtime_snapshot =
-        fetch_release_review_runtime_snapshot(&options.api_reload_url).await?;
+        fetch_release_review_runtime_snapshot(&options.api_reload_url, options.history_limit)
+            .await?;
 
     let baseline_assessment = baseline_runtime_snapshot.assessment;
     let candidate_assessment = candidate_runtime_snapshot.assessment;
@@ -641,20 +665,25 @@ pub(crate) async fn activate_release_for_review(
     store: &fc_storage::SqliteStore,
     market_scope: &str,
     release_id: &str,
-    api_reload_url: &str,
-    history_mode: crate::ApiReloadHistoryMode,
-    updated_by: &str,
+    options: &ReleaseReviewOptions,
     stage: &str,
 ) -> anyhow::Result<()> {
     store
-        .activate_model_release(market_scope, release_id, updated_by)
+        .activate_model_release(market_scope, release_id, &options.updated_by)
         .await?;
     println!("Review step {stage}: activated {release_id}.");
     println!(
-        "Review step {stage}: reloading API runtime via {api_reload_url} (history_mode={}).",
-        history_mode.as_label()
+        "Review step {stage}: reloading API runtime via {api_reload_url} (history_mode={} history_limit={}).",
+        options.history_mode.as_label(),
+        options.history_limit,
+        api_reload_url = options.api_reload_url
     );
-    crate::reload_api_runtime_with_history_mode(api_reload_url, history_mode).await?;
+    crate::reload_api_runtime_with_history_options(
+        &options.api_reload_url,
+        options.history_mode,
+        Some(options.history_limit),
+    )
+    .await?;
     println!("Review step {stage}: runtime ready.");
     Ok(())
 }

@@ -149,6 +149,14 @@ enum ApiReloadHistoryMode {
 }
 
 impl ApiReloadHistoryMode {
+    fn parse(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "default" => Ok(Self::Default),
+            "strict_rebuild" => Ok(Self::StrictRebuild),
+            other => bail!("unsupported API reload history mode: {other}"),
+        }
+    }
+
     fn as_query_value(self) -> Option<&'static str> {
         match self {
             Self::Default => None,
@@ -3441,14 +3449,29 @@ async fn reload_api_runtime_with_history_mode(
     url: &str,
     history_mode: ApiReloadHistoryMode,
 ) -> anyhow::Result<()> {
+    reload_api_runtime_with_history_options(url, history_mode, None).await
+}
+
+async fn reload_api_runtime_with_history_options(
+    url: &str,
+    history_mode: ApiReloadHistoryMode,
+    history_limit: Option<usize>,
+) -> anyhow::Result<()> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(1_200))
         .build()?;
     let request = client.post(url);
-    let request = if let Some(history_mode) = history_mode.as_query_value() {
-        request.query(&[("history_mode", history_mode)])
-    } else {
+    let mut query = Vec::<(&str, String)>::new();
+    if let Some(history_mode) = history_mode.as_query_value() {
+        query.push(("history_mode", history_mode.to_string()));
+    }
+    if let Some(history_limit) = history_limit {
+        query.push(("history_limit", history_limit.to_string()));
+    }
+    let request = if query.is_empty() {
         request
+    } else {
+        request.query(&query)
     };
     let response = request.send().await?;
     if !response.status().is_success() {
@@ -3735,12 +3758,18 @@ mod tests {
             "financial_system".to_string(),
             "--output-dir".to_string(),
             "reports/release-review".to_string(),
+            "--history-mode".to_string(),
+            "default".to_string(),
+            "--history-limit".to_string(),
+            "5000".to_string(),
         ];
         let options = ReleaseReviewOptions::parse(&args).unwrap();
         assert_eq!(options.candidate_release_id, "candidate-123");
         assert_eq!(options.baseline_release_id.as_deref(), Some("baseline-456"));
         assert_eq!(options.market_scope.as_deref(), Some("financial_system"));
         assert_eq!(options.output_dir, PathBuf::from("reports/release-review"));
+        assert_eq!(options.history_mode, super::ApiReloadHistoryMode::Default);
+        assert_eq!(options.history_limit, 5000);
     }
 
     #[test]
@@ -3754,6 +3783,11 @@ mod tests {
             options.output_dir,
             PathBuf::from("artifacts/research/release-review")
         );
+        assert_eq!(
+            options.history_mode,
+            super::ApiReloadHistoryMode::StrictRebuild
+        );
+        assert_eq!(options.history_limit, 20_000);
     }
 
     #[test]

@@ -35,6 +35,7 @@ pub struct ResearchAuditQuery {
 #[derive(Debug, Default, Deserialize)]
 pub struct ReloadQuery {
     history_mode: Option<String>,
+    history_limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -300,8 +301,12 @@ pub async fn system_reload(
         Some("strict_rebuild") => AssessmentHistoryBuildMode::StrictRebuild,
         _ => AssessmentHistoryBuildMode::Default,
     };
+    let history_limit = query.history_limit.unwrap_or(state.max_history_points());
+    if history_limit == 0 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
     let data = state
-        .reload_with_history_mode(history_build_mode)
+        .reload_with_history_mode_and_limit(history_build_mode, history_limit)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({
@@ -313,5 +318,6 @@ pub async fn system_reload(
             AssessmentHistoryBuildMode::Default => "default",
             AssessmentHistoryBuildMode::StrictRebuild => "strict_rebuild",
         },
+        "history_limit": history_limit,
     })))
 }

@@ -335,6 +335,7 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["status"], "ok");
         assert_eq!(json["history_mode"], "default");
+        assert_eq!(json["history_limit"], 260);
         assert!(json["generated_at"].is_string());
     }
 
@@ -364,6 +365,35 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["status"], "ok");
         assert_eq!(json["history_mode"], "strict_rebuild");
+        assert_eq!(json["history_limit"], 260);
+    }
+
+    #[tokio::test]
+    async fn system_reload_endpoint_accepts_history_limit() {
+        let app = router(Arc::new(AppState::new(
+            demo::build_demo_data(260),
+            data_source::AppDataSource::Demo,
+            260,
+            260,
+        )));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/system/reload?history_limit=25")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["history_limit"], 25);
     }
 
     #[tokio::test]

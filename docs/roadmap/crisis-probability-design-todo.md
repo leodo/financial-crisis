@@ -285,7 +285,12 @@
      - [x] `extmix10` 已验证“剥离 in_crisis threshold 惩罚”可把 `60d` 压到 `0.656`
      - [x] `extmix11` 已验证“轻微上调 60d pre_warning_buffer soft-label / 降低 negative weight”对当前数据集几乎无效，不应继续做同类微调
      - [x] 下一版重训前先完成 `60d calibration evidence` 设计与实现，避免继续停在 `timely_warning_rate=10.0%`
-     - [ ] 基于新增 `calibration_regime_evidence` 重训下一版 `interaction_tail`，复核 `60d pre_warning_buffer` 的 hard/soft/weight/selected 证据是否支持下调 `prepare_p60d`
+     - [x] 基于新增 `calibration_regime_evidence` 重训下一版 `interaction_tail`，复核 `60d pre_warning_buffer` 的 hard/soft/weight/selected 证据是否支持下调 `prepare_p60d`
+       - 候选 `us_formal_interaction_tail_extmix_20260603T062837` 已用 `main + ext_stress + ext_acute` 重训并发布为非 active 候选。
+       - 证据显示 `60d pre_warning_buffer` 并没有被过滤：`150/150` 行 calibration eligible / used / threshold selected；但 hard label 均值 `0.0`、soft target `26.0%`、目标权重均值 `0.63`，且 calibration hit rate `8.7%` 低于 normal `13.7%`。
+       - 快速 review（`history_mode=default, history_limit=5000`）显示相对 `extmix10` 没有改善：`timely_warning_rate=10.0%`、`actionable_precision=55.9%`、`longest_false_positive_episode_days=5` 均不变。
+       - 结论：下一刀不应继续做同类重训，应改 `60d pre_warning_buffer` 的目标定义，或进入更强的 family/episode 条件头设计。
+     - [x] 为 release review 增加 `--history-mode` / `--history-limit`，并新增 `just release-review-fast`，用于 strict rebuild 太慢时先做方向性 triage；正式 Go/No-Go 仍必须跑 `just release-review`。
    - [ ] 只有当 `interaction_tail_v1` 连续两轮仍无法提升 `timely_warning_rate` 且无法压下误报段时，再进入 `family_conditional_v1` 细分设计与 PoC
 3. Raw PIT history replay 闭环
    - [x] 新增 historical replay run / point 存储结构
