@@ -1,0 +1,299 @@
+import {
+  Activity,
+  ArrowUpRight,
+  ChartColumnIncreasing,
+  Database,
+  GitCompareArrows,
+  ShieldCheck
+} from "lucide-react";
+import {
+  humanizeNarrativeCopy,
+  eventStateLabel,
+  formatNumber,
+  jpyStateLabel
+} from "../../format";
+import { SimpleGroupedBarChart } from "../../simpleCharts";
+import type { AssessmentSnapshot, RiskSnapshot } from "../../types";
+import {
+  BulletList,
+  DetailRows,
+  DriverList,
+  MetricGrid,
+  PillTableCell,
+  ResponsiveTable,
+  RuleBox,
+  StateSummary,
+  SurfaceHeader,
+  type MetricItem
+} from "../shared/panelHelpers";
+import { BudgetBar } from "./components";
+import { decisionContent } from "./content";
+import type { GroupedBarChartModel } from "./charts";
+import type {
+  DecisionAnalogRow,
+  DecisionRollingAuditEpisodeRow
+} from "./useDecisionViewModel";
+
+function humanizeDecisionCopy(text: string) {
+  return humanizeNarrativeCopy(text);
+}
+
+export function DecisionWhyNowPanel({
+  assessment,
+  posture
+}: {
+  assessment: AssessmentSnapshot;
+  posture: { reasons: string[]; upgrade_condition: string };
+}) {
+  return (
+    <section className="surface">
+      <SurfaceHeader title="为什么是现在" icon={Activity} />
+      <BulletList items={posture.reasons.map(humanizeDecisionCopy)} />
+      <div className="driver-preview">
+        <strong>{decisionContent.panels.whyNowTopDrivers}</strong>
+        <DriverList rows={assessment.top_risk_drivers.slice(0, 3)} />
+      </div>
+      <RuleBox label="升级条件">{humanizeDecisionCopy(posture.upgrade_condition)}</RuleBox>
+    </section>
+  );
+}
+
+export function DecisionReliefPanel({
+  assessment,
+  posture,
+  overview
+}: {
+  assessment: AssessmentSnapshot;
+  posture: { downgrade_condition: string };
+  overview: RiskSnapshot;
+}) {
+  return (
+    <section className="surface">
+      <SurfaceHeader title="为什么还没更糟" icon={ShieldCheck} />
+      <p className="body-copy">{decisionContent.panels.reliefBody}</p>
+      <DriverList rows={assessment.top_relief_drivers.slice(0, 3)} />
+      <RuleBox label="降级条件">{humanizeDecisionCopy(posture.downgrade_condition)}</RuleBox>
+      <RuleBox label="旧版评分层辅助解释">{humanizeDecisionCopy(overview.level_reason)}</RuleBox>
+    </section>
+  );
+}
+
+export function DecisionAnalogPanel({
+  analogChart,
+  analogRows
+}: {
+  analogChart: GroupedBarChartModel;
+  analogRows: DecisionAnalogRow[];
+}) {
+  return (
+    <section className="surface">
+      <SurfaceHeader title="历史类比" icon={GitCompareArrows} />
+      <SimpleGroupedBarChart model={analogChart} height={300} />
+      <div className="legend-note">
+        蓝柱表示当前总风险强度，橙柱表示对应历史场景的压力峰值。先看当前距离历史峰值还有多远，再看下面每个样本给过多长提前量。
+      </div>
+      <DetailRows
+        items={analogRows.map((analog) => ({
+          id: analog.id,
+          title: analog.title,
+          detail: analog.detail,
+          meta: analog.score
+        }))}
+      />
+    </section>
+  );
+}
+
+export function DecisionActionPlanPanel({
+  assessment,
+  actionPlanMetrics
+}: {
+  assessment: AssessmentSnapshot;
+  actionPlanMetrics: MetricItem[];
+}) {
+  return (
+    <section className="surface">
+      <SurfaceHeader title="组合动作建议" icon={ChartColumnIncreasing} />
+      <p className="body-copy">{humanizeDecisionCopy(assessment.position_guidance.action_summary)}</p>
+      <MetricGrid items={actionPlanMetrics} />
+      <RuleBox label="执行节奏">{humanizeDecisionCopy(assessment.position_guidance.execution_urgency)}</RuleBox>
+      <RuleBox label="可信度门槛">{humanizeDecisionCopy(assessment.position_guidance.confidence_gate)}</RuleBox>
+      {assessment.position_guidance.capital_preservation_overlay_enabled ? (
+        <RuleBox label="资本保全叠加已打开">
+          {decisionContent.panels.actionPlanCapitalPreservation}
+        </RuleBox>
+      ) : null}
+      <div className="surface-grid">
+        <BudgetBar
+          label="风险资产上限"
+          value={assessment.position_guidance.target_equity_exposure_pct}
+          note="风险窗口打开时，系统建议先压低总暴露。"
+          tone="risk"
+        />
+        <BudgetBar
+          label="现金目标"
+          value={assessment.position_guidance.target_cash_pct}
+          note="用于应对流动性冲击和执行保护动作。"
+          tone="cash"
+        />
+        <BudgetBar
+          label="对冲覆盖"
+          value={assessment.position_guidance.hedge_ratio_pct}
+          note="核心仓位应有多少保护覆盖。"
+          tone="hedge"
+        />
+        <BudgetBar
+          label="杠杆上限"
+          value={assessment.position_guidance.leverage_cap_pct}
+          note="风险窗口内不宜维持高杠杆。"
+          tone="leverage"
+        />
+        <BudgetBar
+          label="期权保护"
+          value={assessment.position_guidance.option_overlay_pct}
+          note="可用来做尾部保护，而不是替代全部风控。"
+          tone="option"
+        />
+      </div>
+      <div className="surface-grid">
+        <RuleBox label="建议动作">
+          <BulletList items={assessment.position_guidance.actions.map(humanizeDecisionCopy)} compact />
+        </RuleBox>
+        <RuleBox label="当前先不要做什么">
+          <BulletList items={assessment.position_guidance.forbidden_actions.map(humanizeDecisionCopy)} compact />
+        </RuleBox>
+      </div>
+      <RuleBox label="什么情况下再恢复仓位">
+        <BulletList items={assessment.position_guidance.reentry_conditions.map(humanizeDecisionCopy)} compact />
+      </RuleBox>
+      <RuleBox label="执行护栏">
+        <BulletList items={assessment.position_guidance.guardrails.map(humanizeDecisionCopy)} compact />
+      </RuleBox>
+    </section>
+  );
+}
+
+export function DecisionEventPanel({
+  assessment
+}: {
+  assessment: AssessmentSnapshot;
+}) {
+  return (
+    <section className="surface">
+      <SurfaceHeader title="事件层确认" icon={Activity} />
+      <StateSummary
+        pillLabel={eventStateLabel(assessment.event_assessment.state)}
+        score={formatNumber(assessment.event_assessment.confirmation_score)}
+        summary={humanizeDecisionCopy(assessment.event_assessment.summary)}
+      />
+      <div className="surface-grid">
+        <RuleBox label={decisionContent.panels.eventConfirmedTitle}>
+          <BulletList
+            items={assessment.event_assessment.confirmed_signals.map(humanizeDecisionCopy)}
+            compact
+            emptyText={decisionContent.panels.eventConfirmedEmpty}
+            emptyVariant="inline"
+          />
+        </RuleBox>
+        <RuleBox label={decisionContent.panels.eventPendingTitle}>
+          <BulletList
+            items={assessment.event_assessment.pending_gaps.map(humanizeDecisionCopy)}
+            compact
+            emptyText={decisionContent.panels.eventPendingEmpty}
+            emptyVariant="inline"
+          />
+        </RuleBox>
+      </div>
+    </section>
+  );
+}
+
+export function DecisionJpyCarryPanel({
+  assessment,
+  jpyCarryMetrics
+}: {
+  assessment: AssessmentSnapshot;
+  jpyCarryMetrics: MetricItem[];
+}) {
+  return (
+    <section className="surface">
+      <SurfaceHeader title="日元套息放大器" icon={ArrowUpRight} />
+      <StateSummary
+        pillLabel={jpyStateLabel(assessment.jpy_carry.state)}
+        pillClassName={`state-${assessment.jpy_carry.state}`}
+        score={formatNumber(assessment.jpy_carry.score)}
+        summary={humanizeDecisionCopy(assessment.jpy_carry.reason)}
+      />
+      <MetricGrid items={jpyCarryMetrics} />
+      <div className="legend-note">
+        {decisionContent.panels.jpyCarryLegend}
+      </div>
+    </section>
+  );
+}
+
+export function DecisionBacktestSummaryPanel({
+  assessment,
+  backtestSummaryMetrics,
+  historyCoverageText
+}: {
+  assessment: AssessmentSnapshot;
+  backtestSummaryMetrics: MetricItem[];
+  historyCoverageText: string;
+}) {
+  return (
+    <section className="surface">
+      <SurfaceHeader title="历史表现与当前约束" icon={Database} />
+      <RuleBox label="历史表现摘要">
+        {humanizeDecisionCopy(assessment.backtest_summary.summary)}
+      </RuleBox>
+      <MetricGrid items={backtestSummaryMetrics} />
+      <div className="surface-grid">
+        <RuleBox label="历史覆盖">{historyCoverageText}</RuleBox>
+        <RuleBox label="当前组合约束">
+          {`风险档位 ${assessment.user_preferences.profile === "neutral" ? "中性" : assessment.user_preferences.profile === "conservative" ? "保守" : "进取"}，现金底线 ${assessment.user_preferences.cash_floor_pct.toFixed(0)}%，风险资产上限 ${assessment.user_preferences.max_equity_cap_pct.toFixed(0)}%，杠杆上限 ${assessment.user_preferences.max_leverage_pct.toFixed(0)}%，期权保护偏好 ${assessment.user_preferences.option_overlay_preference_pct.toFixed(0)}%。`}
+        </RuleBox>
+      </div>
+    </section>
+  );
+}
+
+export function DecisionRollingAuditPanel({
+  assessment,
+  rollingAuditMetrics,
+  rollingAuditBoundaryText,
+  rollingAuditEpisodes
+}: {
+  assessment: AssessmentSnapshot;
+  rollingAuditMetrics: MetricItem[];
+  rollingAuditBoundaryText: string;
+  rollingAuditEpisodes: DecisionRollingAuditEpisodeRow[];
+}) {
+  return (
+    <section className="surface">
+      <SurfaceHeader title="滚动审计与误报边界" icon={Database} />
+      <RuleBox label="历史滚动审计结论">
+        {humanizeDecisionCopy(assessment.backtest_summary.rolling_audit.summary)}
+      </RuleBox>
+      <MetricGrid items={rollingAuditMetrics} />
+      <RuleBox label="统计口径">{decisionContent.panels.rollingAuditDefinition}</RuleBox>
+      <RuleBox label="这组结果怎么用">{rollingAuditBoundaryText}</RuleBox>
+      {rollingAuditEpisodes.length > 0 ? (
+        <ResponsiveTable columns={["类型", "区间", "持续", "信号点", "说明"]}>
+          {rollingAuditEpisodes.map((episode) => (
+              <tr key={episode.key}>
+                <PillTableCell
+                  className={episode.classificationClass}
+                  label={episode.classificationLabel}
+                />
+                <td>{episode.interval}</td>
+                <td>{episode.duration}</td>
+                <td>{episode.signalCount}</td>
+                <td>{humanizeDecisionCopy(episode.note)}</td>
+              </tr>
+            ))}
+        </ResponsiveTable>
+      ) : null}
+    </section>
+  );
+}

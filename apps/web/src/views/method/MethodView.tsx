@@ -1,0 +1,140 @@
+import { BadgeInfo, History, ShieldCheck } from "lucide-react";
+import { formatDate } from "../../format";
+import type {
+  AssessmentMethodResponse,
+  AssessmentSnapshot,
+  PostureGuidance
+} from "../../types";
+import {
+  BulletList,
+  GuideList,
+  MetricGrid,
+  MetricPairsGrid,
+  ResponsiveTable,
+  renderClauseBulletRows,
+  RuleBox,
+  StackedTableCell,
+  SurfaceHeader,
+  VersionRow
+} from "../shared/panelHelpers";
+import { methodContent } from "./content";
+import { useMethodViewModel } from "./useMethodViewModel";
+
+export default function MethodView({
+  assessment,
+  posture,
+  method
+}: {
+  assessment: AssessmentSnapshot;
+  posture: PostureGuidance;
+  method: AssessmentMethodResponse;
+}) {
+  const {
+    headlineMetrics,
+    versionRows,
+    priorActionRows,
+    runtimeMetrics,
+    triggerClauses,
+    blockerClauses,
+    limitations,
+    historyPolicyVersion,
+    protectedCatalogId,
+    protectedCatalogSource,
+    protectedCatalogNote
+  } = useMethodViewModel({
+    assessment,
+    posture,
+    method
+  });
+
+  return (
+    <section className="workspace">
+      <section className="band-grid">
+        <section className="surface">
+          <SurfaceHeader title="当前方法摘要" icon={BadgeInfo} />
+          <MetricGrid items={headlineMetrics} />
+        </section>
+
+        <section className="surface">
+          <SurfaceHeader title="方法分层" icon={BadgeInfo} />
+          <GuideList rows={methodContent.layerGuideRows} />
+        </section>
+      </section>
+
+      <section className="surface">
+        <SurfaceHeader title="版本与边界" icon={History} />
+          <div className="version-list">
+            {versionRows.map((row) => (
+              <VersionRow key={row.label} {...row} />
+            ))}
+          </div>
+      </section>
+
+      <section className="band-grid">
+        <section className="surface">
+          <SurfaceHeader title="先验和动作概率怎么区分" icon={BadgeInfo} />
+          <GuideList rows={priorActionRows} />
+        </section>
+
+        <section className="surface">
+          <SurfaceHeader title="当前运行阈值" icon={History} />
+          <MetricPairsGrid pairs={runtimeMetrics} />
+          <RuleBox label="历史审计策略版本">
+            <span title={historyPolicyVersion.hint}>{historyPolicyVersion.value}</span>
+          </RuleBox>
+          <RuleBox label="当前执行条款">
+            <div className="list-stack compact">
+              {renderClauseBulletRows({
+                clauses: triggerClauses,
+                emptyText: methodContent.clauseTriggerEmpty
+              })}
+              {blockerClauses.length > 0 && (
+                renderClauseBulletRows({
+                  clauses: blockerClauses,
+                  leadText: methodContent.blockerLead
+                })
+              )}
+            </div>
+          </RuleBox>
+        </section>
+      </section>
+
+      <section className="surface">
+        <SurfaceHeader title="当前结论的限制" icon={BadgeInfo} />
+        <BulletList items={limitations} />
+      </section>
+
+      <section className="surface">
+        <SurfaceHeader title="受保护压力窗口目录" icon={ShieldCheck} />
+        <RuleBox label="目录说明">{protectedCatalogNote}</RuleBox>
+        <MetricPairsGrid
+          pairs={[
+            ["目录版本", protectedCatalogId.value],
+            ["市场范围", method.protected_stress_window_catalog.market_scope.toUpperCase()],
+            ["窗口数量", `${method.protected_stress_window_catalog.windows.length}`]
+          ]}
+        />
+        <RuleBox label="配置来源">
+          <span title={protectedCatalogSource.hint}>{protectedCatalogSource.value}</span>
+        </RuleBox>
+        {method.protected_stress_window_catalog.warning ? (
+          <RuleBox label="配置告警">{method.protected_stress_window_catalog.warning}</RuleBox>
+        ) : null}
+        <ResponsiveTable
+          className="wide-table"
+          columns={["窗口", "开始", "结束", "说明"]}
+          note={methodContent.tableNote}
+        >
+          {method.protected_stress_window_catalog.windows.map((window) => (
+            <tr key={window.window_id}>
+              <StackedTableCell title={window.label} details={window.window_id} />
+              <td>{formatDate(window.start_date)}</td>
+              <td>{formatDate(window.end_date)}</td>
+              <td>{window.note}</td>
+            </tr>
+          ))}
+        </ResponsiveTable>
+      </section>
+    </section>
+  );
+}

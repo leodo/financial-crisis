@@ -76,6 +76,17 @@ export function qualityLabel(grade: QualityGrade): string {
   return grade.toUpperCase();
 }
 
+export function qualityDetailLabel(grade: QualityGrade): string {
+  const labels: Record<QualityGrade, string> = {
+    a: "A 可靠",
+    b: "B 可用",
+    c: "C 降级",
+    d: "D 偏弱",
+    f: "F 缺测"
+  };
+  return labels[grade];
+}
+
 export function dataModeLabel(mode: DataMode): string {
   const labels: Record<DataMode, string> = {
     demo: "Demo",
@@ -83,6 +94,93 @@ export function dataModeLabel(mode: DataMode): string {
     postgres: "Postgres"
   };
   return labels[mode];
+}
+
+const DIMENSION_LABELS: Record<string, string> = {
+  market_stress: "市场压力",
+  external_sector: "外部部门与汇率",
+  real_estate: "房地产与资产泡沫",
+  macro_fragility: "宏观脆弱性",
+  liquidity_funding: "流动性与融资",
+  leverage_credit: "杠杆与信用",
+  events_sentiment: "事件与公告"
+};
+
+export function dimensionLabel(dimension: string | null | undefined): string {
+  if (!dimension) {
+    return "—";
+  }
+  return DIMENSION_LABELS[dimension] ?? dimension;
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  fred: "FRED",
+  treasury: "U.S. Treasury",
+  world_bank: "World Bank",
+  boj: "BOJ",
+  sec_edgar: "SEC EDGAR",
+  gdelt: "GDELT",
+  yfinance: "yfinance"
+};
+
+export function sourceLabel(sourceId: string | null | undefined): string {
+  if (!sourceId) {
+    return "—";
+  }
+  return SOURCE_LABELS[sourceId] ?? sourceId;
+}
+
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  macro_financial_timeseries: "宏观金融时序",
+  government_timeseries: "官方时序",
+  filings_events: "公告事件",
+  global_macro: "全球宏观",
+  fx_rates_timeseries: "汇率与利率时序",
+  news_events: "新闻事件",
+  market_price_prototype: "行情原型"
+};
+
+export function sourceTypeLabel(sourceType: string): string {
+  return SOURCE_TYPE_LABELS[sourceType] ?? sourceType;
+}
+
+const SOURCE_HEALTH_STATUS_LABELS: Record<string, string> = {
+  healthy: "正常",
+  delayed: "延迟",
+  stale: "陈旧",
+  degraded: "降级",
+  prototype: "原型",
+  failing: "失败",
+  missing: "缺失"
+};
+
+export function sourceHealthStatusLabel(status: string): string {
+  return SOURCE_HEALTH_STATUS_LABELS[status] ?? status;
+}
+
+const SOURCE_PRIORITY_LABELS: Record<string, string> = {
+  p0: "核心主路径",
+  p1: "扩展/辅助"
+};
+
+export function sourcePriorityLabel(priority: string | null | undefined): string {
+  if (!priority) {
+    return "—";
+  }
+  return SOURCE_PRIORITY_LABELS[priority] ?? priority;
+}
+
+const SOURCE_ACCESS_METHOD_LABELS: Record<string, string> = {
+  api: "API 拉取",
+  file: "文件导入",
+  scrape: "网页抓取"
+};
+
+export function sourceAccessMethodLabel(accessMethod: string | null | undefined): string {
+  if (!accessMethod) {
+    return "—";
+  }
+  return SOURCE_ACCESS_METHOD_LABELS[accessMethod] ?? accessMethod;
 }
 
 export function backtestSignalSourceLabel(source: BacktestSignalSource): string {
@@ -134,6 +232,353 @@ export function userProfileLabel(profile: UserRiskProfile): string {
   return labels[profile];
 }
 
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  risk_watch: "风险观察",
+  risk_warning: "风险预警",
+  risk_confirmed: "风险确认",
+  filing_cluster: "公告聚集",
+  funding_stress: "融资压力"
+};
+
+export function eventTypeLabel(eventType: string): string {
+  return EVENT_TYPE_LABELS[eventType] ?? eventType;
+}
+
+const INDICATOR_REF_LABELS: Record<string, string> = {
+  us_event_bank_8k_count: "白名单银行 8-K 数量",
+  us_event_risk_keyword_count: "SEC 风险关键词命中数",
+  us_banking_filing_stress_count: "银行公告压力计数",
+  us_event_official_filing_severity: "SEC 官方公告严重度",
+  global_news_financial_stress_count: "金融压力新闻数量"
+};
+
+export function indicatorRefLabel(indicatorId: string): string {
+  return INDICATOR_REF_LABELS[indicatorId] ?? indicatorId;
+}
+
+const DATASET_LABELS: Record<string, string> = {
+  fred_series_observations: "FRED 序列观测",
+  treasury_daily_yield_curve: "美债收益率曲线",
+  sec_filing_events: "SEC 公告事件",
+  world_bank_country_indicators: "World Bank 国家指标",
+  boj_fx_daily: "BOJ 汇率日序列",
+  boj_money_market_rates: "BOJ 货币市场利率"
+};
+
+export function datasetLabel(datasetId: string | null | undefined): string {
+  if (!datasetId) {
+    return "—";
+  }
+  return DATASET_LABELS[datasetId] ?? datasetId;
+}
+
+const FREQUENCY_LABELS: Record<string, string> = {
+  daily: "日频",
+  weekly: "周频",
+  monthly: "月频",
+  quarterly: "季频",
+  annual: "年频"
+};
+
+export function frequencyLabel(frequency: string | null | undefined): string {
+  if (!frequency) {
+    return "—";
+  }
+  return FREQUENCY_LABELS[frequency] ?? frequency;
+}
+
+const RISK_DIRECTION_LABELS: Record<string, string> = {
+  higher_is_riskier: "越高越危险",
+  lower_is_riskier: "越低越危险",
+  two_sided: "偏离过大都危险",
+  rising_fast_is_riskier: "上升过快危险",
+  falling_fast_is_riskier: "下跌过快危险",
+  manual_rule: "规则触发型"
+};
+
+export function riskDirectionLabel(direction: string | null | undefined): string {
+  if (!direction) {
+    return "—";
+  }
+  return RISK_DIRECTION_LABELS[direction] ?? direction;
+}
+
+const INDICATOR_QUALITY_TIER_LABELS: Record<string, string> = {
+  core: "核心",
+  extended: "扩展",
+  supplemental: "补充"
+};
+
+export function indicatorQualityTierLabel(tier: string | null | undefined): string {
+  if (!tier) {
+    return "—";
+  }
+  return INDICATOR_QUALITY_TIER_LABELS[tier] ?? tier;
+}
+
+const UNIT_LABELS: Record<string, string> = {
+  percent: "%",
+  index: "指数",
+  jpy_per_usd: "JPY/USD",
+  count: "次",
+  score: "分",
+  billions: "十亿",
+  thousands: "千"
+};
+
+export function unitLabel(unit: string | null | undefined): string {
+  if (!unit) {
+    return "";
+  }
+  return UNIT_LABELS[unit] ?? unit;
+}
+
+const SCORE_BASIS_LABELS: Record<string, string> = {
+  原始水平: "原始水平",
+  "12m同比": "12个月同比",
+  "20d振幅": "20日振幅",
+  变化幅度: "变化幅度",
+  人工规则: "规则触发",
+  缺少观测: "缺少观测"
+};
+
+export function scoreBasisLabel(scoreBasis: string | null | undefined): string {
+  if (!scoreBasis) {
+    return "—";
+  }
+  return SCORE_BASIS_LABELS[scoreBasis] ?? scoreBasis;
+}
+
+const METHOD_VERSION_FIELD_LABELS: Record<string, string> = {
+  score: "评分规则版本",
+  prob: "概率模型版本",
+  calibration: "概率校准版本",
+  feature: "特征集版本",
+  label: "标签口径版本",
+  posture: "执行节奏规则版本",
+  playbook: "仓位动作框架版本",
+  "prob mode": "概率模式",
+  release: "运行状态",
+  "release id": "当前生效版本",
+  "pit mode": "点位可见性"
+};
+
+export function methodVersionFieldLabel(field: string): string {
+  return METHOD_VERSION_FIELD_LABELS[field] ?? field;
+}
+
+const PROBABILITY_MODE_LABELS: Record<string, string> = {
+  heuristic_mvp: "启发式过渡层"
+};
+
+export function probabilityModeLabel(mode: string): string {
+  if (PROBABILITY_MODE_LABELS[mode]) {
+    return PROBABILITY_MODE_LABELS[mode];
+  }
+  if (mode.startsWith("formal_bundle")) {
+    return "正式概率包";
+  }
+  return mode;
+}
+
+const POINT_IN_TIME_MODE_LABELS: Record<string, string> = {
+  strict: "严格 PIT",
+  best_effort: "过渡 PIT"
+};
+
+export function pointInTimeModeLabel(mode: string): string {
+  return POINT_IN_TIME_MODE_LABELS[mode] ?? mode;
+}
+
+const RELEASE_SERVING_STATUS_LABELS: Record<string, string> = {
+  healthy: "运行正常",
+  degraded: "降级运行"
+};
+
+export function releaseServingStatusLabel(status: string): string {
+  return RELEASE_SERVING_STATUS_LABELS[status] ?? status;
+}
+
+const RELEASE_MANIFEST_STATUS_LABELS: Record<string, string> = {
+  active: "当前生效",
+  approved: "已批准",
+  archived: "已归档",
+  rolled_back: "已回退",
+  retired: "已退役"
+};
+
+export function releaseManifestStatusLabel(status: string): string {
+  return RELEASE_MANIFEST_STATUS_LABELS[status] ?? status;
+}
+
+const RUNTIME_THRESHOLD_LABELS: Record<string, string> = {
+  "prepare floor": "准备档进入线",
+  "hedge floor": "对冲档进入线",
+  "defend floor": "防守档进入线",
+  "weeks bridge": "数周窗口桥接线",
+  "external bridge": "外部冲击桥接线",
+  "carry bridge": "日元套息桥接线"
+};
+
+export function runtimeThresholdLabel(label: string): string {
+  return RUNTIME_THRESHOLD_LABELS[label] ?? label;
+}
+
+export function technicalWithLabel(label: string, technical: string | null | undefined): string {
+  if (!technical) {
+    return label;
+  }
+  return `${label}（${technical}）`;
+}
+
+export function humanizeNarrativeCopy(text: string): string {
+  return text
+    .replaceAll(/\bposture\b/g, "执行节奏")
+    .replaceAll(/\bp_60d\b/g, "60日危机先验")
+    .replaceAll(/\bp_20d\b/g, "20日危机先验")
+    .replaceAll(/\bp_5d\b/g, "5日危机先验")
+    .replaceAll(/\bstructural score\b/g, "结构性风险强度")
+    .replaceAll(/\bhigh beta\b/g, "高波动")
+    .replaceAll(/高 beta/g, "高波动")
+    .replaceAll(/\bprepare\b/g, "准备档")
+    .replaceAll(/\bhedge\b/g, "对冲档")
+    .replaceAll(/\bdefend\b/g, "防守档")
+    .replaceAll(/\bnormal\b/g, "正常观察")
+    .replaceAll(/\bL1 Watch\b/g, "L1 观察")
+    .replaceAll(/\bL2 Stress\b/g, "L2 压力")
+    .replaceAll(/\bL3 Warning\b/g, "L3 预警")
+    .replaceAll(/\bbeta\b/g, "高波动")
+    .replaceAll(/\bfiling\b/g, "公告")
+    .replaceAll(/\bJPY carry\b/g, "日元套息")
+    .replaceAll("12m同比", "12个月同比")
+    .replaceAll("20d振幅", "20日振幅")
+    .replaceAll("当前信号", "当前读数")
+    .replaceAll("按人工规则评分", "按规则触发评分")
+    .replaceAll("当前处于相对低压区。", "当前处在低压区，更像缓冲项。")
+    .replaceAll("压力 公告", "压力公告");
+}
+
+function humanizeTechnicalFamily(family: string) {
+  const mappings: Array<[RegExp, (...groups: string[]) => string]> = [
+    [/^scoring_v(\d+)$/, (version) => `评分规则 v${version}`],
+    [/^interaction_tail_v(\d+)$/, (version) => `概率模型 v${version}`],
+    [/^interaction_tail_extmix(\d+)$/, (variant) => `候选版本 ${variant}`],
+    [/^platt$/, () => "Platt 校准"],
+    [/^formal_v(\d+)_main$/, (version) => `正式特征主线 v${version}`],
+    [/^formal_label_v(\d+)$/, (version) => `正式标签口径 v${version}`],
+    [/^posture_v(\d+)$/, (version) => `执行节奏规则 v${version}`],
+    [/^action_playbook_v(\d+)$/, (version) => `动作框架 v${version}`],
+    [/^runtime_history_v(\d+)$/, (version) => `历史审计策略 v${version}`],
+    [/^protected_stress_windows$/, () => "受保护窗口目录"]
+  ];
+
+  for (const [pattern, formatter] of mappings) {
+    const match = family.match(pattern);
+    if (match) {
+      return formatter(...match.slice(1));
+    }
+  }
+
+  return family;
+}
+
+export function compactTechnicalId(
+  value: string | null | undefined,
+  familySegmentCount = 3
+) {
+  if (!value) {
+    return {
+      value: "none",
+      hint: undefined
+    };
+  }
+
+  const [head] = value.split("|");
+  const parts = head.split("_").filter(Boolean);
+  if (parts.length === 2 && /^\d{8}(T\d+)?$/i.test(parts[1])) {
+    return {
+      value: `${humanizeTechnicalFamily(parts[0])} · ${parts[1]}`,
+      hint: value
+    };
+  }
+
+  if (parts.length < 3) {
+    return {
+      value: head,
+      hint: head === value ? undefined : value
+    };
+  }
+
+  const timestamp = parts.at(-1);
+  const family = humanizeTechnicalFamily(
+    parts
+    .slice(Math.max(0, parts.length - (familySegmentCount + 1)), parts.length - 1)
+    .join("_")
+  );
+  return {
+    value: `${family} · ${timestamp}`,
+    hint: value
+  };
+}
+
+export function releaseIdLabel(value: string | null | undefined) {
+  if (!value) {
+    return {
+      value: "未绑定版本",
+      hint: undefined
+    };
+  }
+
+  const [head] = value.split("|");
+  const extmixMatch = head.match(/(?:^|_)(?:main_)?extmix(\d*)_(\d{8})(?:T(\d{2})(\d{2})(\d{2}))?$/);
+  const mainMatch = head.match(/(?:^|_)main_(\d{8})(?:T(\d{2})(\d{2})(\d{2}))?$/);
+  const formatTimestamp = (date: string, hour?: string, minute?: string) => {
+    const formattedDate = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
+    return `${formattedDate}${hour && minute ? ` ${hour}:${minute}` : ""}`;
+  };
+
+  if (extmixMatch) {
+    const [, version, date, hour, minute] = extmixMatch;
+    return {
+      value: `${version ? `候选版本 ${version}` : "候选版本"} · ${formatTimestamp(date, hour, minute)}`,
+      hint: value
+    };
+  }
+
+  if (mainMatch) {
+    const [, date, hour, minute] = mainMatch;
+    return {
+      value: `主线版本 · ${formatTimestamp(date, hour, minute)}`,
+      hint: value
+    };
+  }
+
+  return compactTechnicalId(value, 1);
+}
+
+export function compactFileReference(value: string | null | undefined, segments = 3) {
+  if (!value) {
+    return {
+      value: "none",
+      hint: undefined
+    };
+  }
+
+  const normalized = value.replaceAll("\\", "/");
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.length <= segments) {
+    return {
+      value: normalized,
+      hint: undefined
+    };
+  }
+
+  return {
+    value: parts.slice(-segments).join("/"),
+    hint: normalized
+  };
+}
+
 export interface PostureClauseDescriptor {
   label: string;
   summary: string;
@@ -153,7 +598,7 @@ const POSTURE_CLAUSE_DESCRIPTORS: Record<string, PostureClauseDescriptor> = {
   },
   defend_actionability: {
     label: "动作头确认 defend",
-    summary: "独立 episode-native 动作头认为近端保护优先级已经足够高。",
+    summary: "独立动作头认为近端保护优先级已经足够高。",
     kind: "trigger"
   },
   hedge_p20d_context: {
@@ -173,7 +618,7 @@ const POSTURE_CLAUSE_DESCRIPTORS: Record<string, PostureClauseDescriptor> = {
   },
   hedge_actionability: {
     label: "动作头确认 hedge",
-    summary: "独立 episode-native 动作头提示未来几周的保护动作需要前置。",
+    summary: "独立动作头提示未来几周的保护动作需要前置。",
     kind: "trigger"
   },
   prepare_p60d_structural: {
@@ -198,7 +643,7 @@ const POSTURE_CLAUSE_DESCRIPTORS: Record<string, PostureClauseDescriptor> = {
   },
   prepare_actionability: {
     label: "动作头确认 prepare",
-    summary: "独立 episode-native 动作头提示应该先准备现金、对冲工具和执行顺序。",
+    summary: "独立动作头提示应该先准备现金、对冲工具和执行顺序。",
     kind: "trigger"
   },
   quality_blocked_hedge: {
@@ -208,17 +653,17 @@ const POSTURE_CLAUSE_DESCRIPTORS: Record<string, PostureClauseDescriptor> = {
   },
   preference_conservative_escalation: {
     label: "保守偏好上调档位",
-    summary: "用户偏好更保守，系统把基础 posture 再上调一档处理。",
+    summary: "用户偏好更保守，系统把基础执行节奏再上调一档处理。",
     kind: "preference"
   },
   preference_aggressive_deescalation: {
     label: "进取偏好下调档位",
-    summary: "用户偏好更进取，系统把基础 posture 适度下调后再给出建议。",
+    summary: "用户偏好更进取，系统把基础执行节奏适度下调后再给出建议。",
     kind: "preference"
   },
   preference_neutral_no_adjustment: {
     label: "中性偏好未调整",
-    summary: "用户偏好没有改变基础 posture。",
+    summary: "用户偏好没有改变基础执行节奏。",
     kind: "preference"
   }
 };

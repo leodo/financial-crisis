@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-02
+最后更新：2026-06-03
 
 本文档只管理“工程结构、模块边界、共用代码收敛、生成工件治理、维护性约束”，不替代概率模型主线 TODO。
 
@@ -123,9 +123,74 @@
 
 ### 4.2 Web
 
-- [ ] 把 `apps/web/src/App.tsx` 拆成按页面和卡片组织的 view/container/component。
+- [x] 把 `apps/web/src/App.tsx` 拆成按页面和卡片组织的 view/container/component。
 - [ ] 把领域解释文本和格式化逻辑继续从页面组件中剥离。
-- [ ] 为决策面板、方法页、审计页明确单独的数据装配层。
+- [x] 为决策面板、方法页、审计页明确单独的数据装配层。
+
+当前进展（2026-06-03）：
+- 已把决策页主体拆到 `apps/web/src/views/decision/DecisionView.tsx`。
+- 已把决策页展示组件拆到 `apps/web/src/views/decision/components.tsx`。
+- 已把决策页重型业务面板拆到 `apps/web/src/views/decision/panels.tsx`。
+- 已把决策页解释逻辑和图表构造拆到 `apps/web/src/views/decision/logic.ts` 与 `charts.ts`。
+- 已新增 `apps/web/src/views/decision/useDecisionViewModel.ts`，把决策页派生数据、图表模型、条款映射和关键指标定位集中到页面数据装配层。
+- 已新增 `apps/web/src/views/decision/content.ts`，把长段解释文本、风险提示和空态文案从页面 TSX 中外提。
+- 已新增 `apps/web/src/views/method/useMethodViewModel.ts` 与 `apps/web/src/views/method/content.ts`，开始把 method 页的解释文本、版本清单、阈值展示和限制说明从页面 TSX 中抽离。
+- 已新增 `apps/web/src/views/audit/useAuditViewModel.ts` 与 `apps/web/src/views/audit/content.ts`，开始把 audit 页的运行态摘要、release/snapshot 行模型和说明文案从页面 TSX 中抽离。
+- 已新增 `apps/web/src/views/backtests/useBacktestsViewModel.ts` 与 `apps/web/src/views/backtests/content.ts`，把回测页的轨迹图、摘要指标、审计指标、场景行和 episode 行模型从页面 TSX 中抽离。
+- 已新增 `apps/web/src/views/sources/useSourcesViewModel.ts` 与 `apps/web/src/views/sources/content.ts`，把可信度指标、告警列表、数据源行模型和免费源策略说明从页面 TSX 中抽离。
+- 已新增 `apps/web/src/views/drivers/useDriversViewModel.ts` 与 `apps/web/src/views/drivers/content.ts`，把维度卡片和结论摘要的派生展示数据从页面 TSX 中抽离。
+- 已新增 `apps/web/src/views/events/useEventsViewModel.ts` 与 `apps/web/src/views/events/content.ts`，把事件层状态、缺口列表和最近事件表行模型从页面 TSX 中抽离。
+- 已把主应用查询装配抽到 `apps/web/src/useConsoleData.ts`。
+- 已把 drivers / indicators / sources / method / events / backtests / audit 全部拆到独立 view 文件，`lazyViews.tsx` 已删除。
+- `apps/web/src/App.tsx` 已收缩到壳层（194 行），不再承载页面实现。
+- 已把决策页首屏 prelude 拆到 `apps/web/src/views/decision/sections.tsx`。
+- 已继续把决策页首屏 hero / 风险时距 / posture playbook 从主体文件拆到 `sections.tsx`，并把重复的 bullet list 抽到 `components.tsx`。
+- 已把 why-now / relief / analog / action plan / event / JPY carry / backtest summary / rolling audit 等重型面板迁入 `panels.tsx`，`DecisionView.tsx` 目前约 249 行。
+- 已重排决策页列布局：移除顶部三列同排的拉高结构，改为双列独立工作台，并把“历史类比”“为什么还没更糟”“回测摘要与用户参数”按主题重新分配到列内，降低大面积留白和超长右列。
+- 已把“组合动作建议”重排为预算、建议动作、禁止动作、再入场条件、执行护栏分块展示；已把“回测与用户参数”拆成“回测摘要与用户参数”与“滚动审计与误报”两块。
+- 当前决策页文件边界已变为：`DecisionView.tsx`（249 行壳层编排）/ `sections.tsx`（195 行首屏摘要）/ `panels.tsx`（458 行重型业务面板）/ `components.tsx`（265 行通用展示组件）/ `useDecisionViewModel.ts`（74 行数据装配层）/ `content.ts`（55 行页面文案）。
+- 已去掉 Web 运行时对 `echarts` 的依赖，改为 `apps/web/src/simpleCharts.tsx` 里的轻量图表组件；原先的 500k+ 图表 chunk 警告已消失。
+- 已补一轮窄屏治理：平板端保留更多双列信息密度，移动端顶部导航改为横向滚动，避免过早全部堆成单列。
+- 已补 method / audit 表格的窄屏可读性：宽表最小宽度、横向滚动容器、滚动提示、窄屏字体收缩已就位。
+- 已补 backtests / sources / events 的宽表滚动提示与最小宽度约束，移动端优先保证“可滚、可扫、可定位”。
+- `apps/web/src/useConsoleData.ts` 已新增 `readyData` 聚合出口，`App.tsx` 不再手工串接一长串 `query.data` 判定；主壳层当前约 173 行，继续保持在壳层编排职责内。
+- 已新增 `apps/web/src/views/shared/panelHelpers.tsx` 里的 `ResponsiveTable`，把 audit / method / backtests / sources / events / indicators 与决策页局部表格的响应式壳层收敛到一处，减少重复的 `table-wrap + thead/tbody` JSX。
+- 已继续把 `SurfaceHeader` / `RuleBox` / `MetricGrid` 收敛到 `apps/web/src/views/shared/panelHelpers.tsx`，并覆盖 decision / audit / method / backtests / sources / events / drivers / indicators 等页面，减少重复的 `surface-head`、`rule-box` 与 `mini-metrics` 壳层。
+- decision 页已改为复用 shared `Metric`，不再在 `views/decision/components.tsx` 维护第二套指标卡实现。
+- decision 页已进一步复用 shared `BulletList` / `DriverList`，并通过 `emptyVariant` 兼容卡片内联空态；`views/decision/components.tsx` 已收缩为概率 tile、posture ladder、signal layer 和 budget bar 等真正 decision-specific 组件。
+- decision 页的大块指标组已统一改用 `MetricGrid`，减少 `DecisionView.tsx` / `sections.tsx` / `panels.tsx` 里成片重复的 `Metric` JSX。
+- 已新增 shared `DetailRows`，把 `GuideList` / `DriverList` 以及 decision/drivers 页局部 `list-row` 壳层收敛到一处，减少重复的“标题 + 说明 + 右侧分值” JSX。
+- 已新增 shared `renderClauseBulletRows`，把 method 页 runtime/posture 条款的 bullet 映射收敛到共享层，避免继续手写 `bullet-row` + `describePostureClause` 展示循环。
+- 已新增 shared `MetricPairsGrid`，把 audit / backtests / method / sources 页里反复出现的 `[label, value] -> MetricGrid items` 样板代码收敛到一处。
+- 已新增 shared `StackedTableCell`，把 indicators / sources / audit 表格里反复出现的 `td > strong + span` 堆栈单元格收敛到共享层。
+- 已新增 shared `PillTableCell`，把 decision / backtests 表格里反复出现的 `state-pill` 单元格收敛到共享层。
+- method 页的“受保护压力窗口目录”也已同步改用 `MetricPairsGrid` 与 `StackedTableCell`，不再保留同类旧写法。
+- 当前 shared table/list 展示积木已形成 `DetailRows` / `MetricPairsGrid` / `StackedTableCell` / `PillTableCell` / `renderClauseBulletRows` 这一组基础层，可继续优先承接 Web 端后续展示治理。
+- 已新增 `apps/web/src/views/decision/builders.ts`，把 runtime prelude、风险档位、signal layer、历史类比、回测摘要、滚动审计 episode 行等纯展示拼装从 hook/面板层继续外提；`useDecisionViewModel.ts` 当前重新收缩为编排层。
+- 决策页当前更多由 “`logic.ts` 解释规则 + `charts.ts` 图表模型 + `builders.ts` 纯展示行模型 + `useDecisionViewModel.ts` hook 编排 + `sections/panels/components` 渲染层” 组成，页面层已较少再直接拼字符串或拼表格行。
+- 已新增 `apps/web/src/viewRegistry.tsx`，把导航定义、懒加载页面注册和 `readyData` 到各页面 props 的装配从 `App.tsx` 中继续下沉；主壳层当前只保留导航、状态提示和活动视图渲染。
+- 已把各视图的顶栏标题/说明并入 `viewRegistry.tsx` 的导航元数据，切换到方法页、事件页、回测页时不再错误地继续显示“风险决策面板”标题。
+- 当前决策页文件边界已变为：`DecisionView.tsx`（222 行壳层编排）/ `sections.tsx`（135 行首屏摘要）/ `panels.tsx`（281 行重型业务面板）/ `components.tsx`（163 行 decision-specific 小组件）/ `builders.ts`（405 行纯展示拼装）/ `useDecisionViewModel.ts`（189 行 hook 编排）/ `content.ts`（55 行页面文案）。
+- 已把移动端/平板导航从横向滚动改为 4 列网格，并把顶部刷新按钮并回标题行，减少首屏空白和滚动条占位。
+- 已把 `sources` 页改成“顶部摘要双列 + 下方全宽源状态表”，避免短说明卡与长表绑成同一栅格后在桌面端留下大块空白。
+- 已把 `backtests` 页顶部摘要区改成桌面 3 列、宽屏退化 2 列、窄屏 1 列，去掉 3 张卡套 2 列时留下的半屏空洞。
+- shared `MetricGrid` / `Metric` 已补 `hint` 与长 token value class 支持，像 release id、bundle id 这类长字符串不再轻易把指标卡撑坏。
+- 已把 `format.ts` 扩成前端显示标签层，统一兜底 `dimension` / `source_id` / `source_type` / `event_type` / 事件相关指标 ID 的人话映射，减少页面直接暴露内部枚举和值域代码。
+- 已继续把 `unit` 的机器值（如 `percent` / `index` / `count` / `jpy_per_usd`）映射成更适合面板阅读的展示文本，避免指标页和决策页继续出现底层单位代码。
+- 已继续把 `audit / method / decision` 的 runtime / release / PIT / 概率模式等内部英文术语压到统一显示层，审计页表头、状态值和说明文案已改成中文可读版本，并保留必要的技术码作括号提示。
+- 已继续把 `App` 顶栏元信息、视图标题说明、决策页动态说明文本和用户约束摘要做前端“人话翻译”层，减少 `As of / Mode / profile=neutral / structural score / prepare / normal` 这类直接暴露给用户的内部字样。
+- 已把 method 页的版本清单、历史阈值策略版本、受保护压力窗口目录版本和配置来源改为压缩展示，长技术串默认不再整段铺在页面上。
+- 已给 audit 页补“审计摘要”概览，并把 release bundle 路径压缩成短引用，降低进入明细表前的认知负担。
+- 已把 sources 页补成“总体可信度摘要 + 免费源策略 + 源状态明细”的三层结构，并把 dataset/raw health message 收敛成中文可读说明。
+- 已给 indicators 页新增 view model 与阅读导引，把裸表改成“指标摘要 + 阅读规则 + 压缩明细表”，移除原始 indicator id 的直接暴露。
+- 已继续把 drivers 页的摘要卡、维度焦点和缓冲项名称接入统一“人话翻译”层，清掉前端直接暴露的 `filing` 等原始 display name。
+- 已继续把 decision 页下半区的人机边界重新命名并解释，例如把“旧逻辑回推”改成“过渡动作映射”、把“旧风险引擎解释”降为“旧版评分层辅助解释”，并给历史类比补充可视化阅读提示。
+- 已把 backtests 页补成“顶部速览 + 解读顺序 + 回测/滚动审计明细”的三层结构，并把场景说明与误报区间说明接入统一文案人话化。
+- 已给 events 页补充“最近事件日 / 最常见事件 / 涉及维度 / 关联指标”结构摘要，减少待补确认为空时的桌面端留白。
+- 已给 method 页补“当前方法摘要”首屏，把概率模式、动作层、PIT 状态和运行状态先翻成人话，再把版本清单下沉到单独的“版本与边界”区块。
+- 已继续清理 audit / method / decision 的 release id 展示，把 `extmix`、完整 bundle 文件名和原始模型路径从正文显示中移出，统一通过 `releaseIdLabel` 输出“候选版本 / 主线版本 + 日期”。
+- 已把 indicators 页摘要、焦点指标和明细表接入统一指标名映射，避免不同页面继续各自暴露后端 `display_name` 或内部 indicator id。
+- Web 页面当前剩余重点：继续抽共享文案/格式化 helper，并视需要继续把 `builders.ts` 中的高复用行模型向 shared 层沉淀。
 
 ## 5. 约束机制
 
