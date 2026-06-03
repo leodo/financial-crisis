@@ -41,9 +41,11 @@ function Write-List {
 
 $stagedVersionedArtifacts = @()
 $untrackedVersionedArtifacts = @()
+$ignoredVersionedArtifacts = @()
 foreach ($root in $VersionedArtifactRoots) {
     $stagedVersionedArtifacts += Invoke-GitLines @("diff", "--cached", "--name-only", "--", $root)
     $untrackedVersionedArtifacts += Invoke-GitLines @("ls-files", "--others", "--exclude-standard", "--", $root)
+    $ignoredVersionedArtifacts += Invoke-GitLines @("ls-files", "--others", "-i", "--exclude-standard", "--", $root)
 }
 
 $ignoredResearchArtifacts = @()
@@ -56,6 +58,8 @@ Write-Host "==============="
 Write-List "Staged versioned artifacts:" $stagedVersionedArtifacts
 Write-Host ""
 Write-List "Untracked files in versioned artifact directories:" $untrackedVersionedArtifacts
+Write-Host ""
+Write-List "Ignored generated files in versioned artifact directories:" $ignoredVersionedArtifacts
 Write-Host ""
 Write-List "Ignored research artifacts:" $ignoredResearchArtifacts
 

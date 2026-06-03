@@ -32,3 +32,13 @@ reports/snapshot-export.json
 reports/pipeline-dataset.json
 tmp_assessment_history.json
 tmp_assessment_history_full.json
+
+# Generated research artifacts in versioned evidence directories.
+# Already tracked baselines remain tracked; new curated evidence must use `git add -f`
+# after documenting why it is a formal release artifact or baseline evidence.
+config/model-bundles/generated/*.json
+config/model-releases/generated/*.json
+reports/release-review/*-release-review.json
+reports/release-review/*-release-review.md
+reports/formal-dataset/*-formal-dataset-summary.json
+reports/formal-dataset/*-formal-dataset-summary.md

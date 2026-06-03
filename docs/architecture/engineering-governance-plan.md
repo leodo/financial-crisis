@@ -92,6 +92,7 @@ config/model-releases/generated
 - `research pipeline train-probability` 默认输出到 `artifacts/research/model-*/generated`
 - 只有显式传 `--output-dir` / `--manifest-dir`，才把结果送入版本化目录
 - 提交前运行 `just artifact-status`；如果版本化 artifact 已被暂存，命令会要求先写清它属于正式 release、基线证据还是临时研究副产物。
+- 版本化 artifact 目录默认忽略新生成文件；需要长期保留的证据必须在文档/TODO 中说明用途后，用 `git add -f` 显式纳入。
 
 `just` 层同步提供两类入口：
 
