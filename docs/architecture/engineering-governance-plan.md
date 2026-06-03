@@ -91,6 +91,7 @@ config/model-releases/generated
 - `research dataset summarize-main` 默认输出到 `artifacts/research/formal-dataset`
 - `research pipeline train-probability` 默认输出到 `artifacts/research/model-*/generated`
 - 只有显式传 `--output-dir` / `--manifest-dir`，才把结果送入版本化目录
+- 提交前运行 `just artifact-status`；如果版本化 artifact 已被暂存，命令会要求先写清它属于正式 release、基线证据还是临时研究副产物。
 
 `just` 层同步提供两类入口：
 
@@ -250,6 +251,7 @@ apps/api/src/
 
 - [x] 工件分级规则已定义
 - [x] 默认实验输出目录已切到 ignored artifacts
+- [x] 提交前 artifact 审计入口已落到 `just artifact-status`
 - [x] worker 模块拆分边界已定义
 - [x] api 模块拆分边界已定义
 - [x] API / worker 重复逻辑收敛清单已建立

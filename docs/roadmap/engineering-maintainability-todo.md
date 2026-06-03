@@ -83,7 +83,7 @@
 
 - [x] 把 `apps/api/src/demo.rs` 中的 demo seed 与真实数据源加载拆开。
 - [x] 把 historical replay / prediction snapshot bridge / cache key 逻辑拆开。
-- [ ] 把 `apps/api/src/assessment.rs` 中的特征构造、概率评分、posture 判定、position guidance、analogs 分模块。
+- [x] 把 `apps/api/src/assessment.rs` 中的特征构造、概率评分、posture 判定、position guidance、analogs 分模块。
 
 当前进展：
 
@@ -206,7 +206,7 @@
 ## 5. 约束机制
 
 - [ ] 新增或显著扩展功能时，如果目标文件已经是当前仓库前几位的大文件，优先先拆模块，再加功能。
-- [ ] 生成工件进入 Git 前，必须说明它属于：
+- [x] 生成工件进入 Git 前，必须说明它属于：
   - 正式 release 工件；
   - 基线对照证据；
   - 还是临时研究副产物。
@@ -221,8 +221,8 @@
 - [ ] `apps/api/src/demo.rs` 不再同时承载 demo seed、真实历史回放和 runtime bridge。
 - [x] API / worker 的重复概率数学与观测窗口逻辑已收敛。
 - [x] `crates/storage/src/sqlite.rs` 已按聚合拆开。
-- [ ] `apps/web/src/App.tsx` 已拆成稳定组件层次。
-- [ ] 生成工件治理规则已落文档并落实到提交流程。
+- [x] `apps/web/src/App.tsx` 已拆成稳定组件层次。
+- [x] 生成工件治理规则已落文档并落实到提交流程。
 
 ## 7. 执行顺序
 

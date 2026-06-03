@@ -24,6 +24,11 @@ dev-sqlite:
 status:
     ./scripts/dev-status.ps1
 
+# 检查生成工件是否误入版本化目录。
+# 已暂存的版本化 artifact 会让命令失败，除非先补充证据说明并设置 ALLOW_TRACKED_ARTIFACTS=1。
+artifact-status:
+    ./scripts/artifact-status.ps1
+
 # 从正在运行的本地 API 导出一份滚动审计报告，默认写到 reports/rolling-audit。
 # 适合每次 refresh/backfill 后留存一份当前评估快照，便于复盘模型是否在“高压但未危机”的阶段过度频繁动作。
 audit-report:
