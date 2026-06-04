@@ -385,7 +385,31 @@ struct ReleaseReviewComparisonSummary {
     current_p_5d: ReleaseReviewScalarMetric,
     current_p_20d: ReleaseReviewScalarMetric,
     current_p_60d: ReleaseReviewScalarMetric,
+    runtime_separation_summary: Vec<ReleaseReviewRuntimeSeparationComparison>,
     backtest_scenarios: Vec<ReleaseReviewBacktestScenarioComparison>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReleaseReviewRuntimeSeparationComparison {
+    horizon_days: u32,
+    baseline_diagnosis: String,
+    candidate_diagnosis: String,
+    baseline_threshold: Option<f64>,
+    candidate_threshold: Option<f64>,
+    baseline_early_warning_regime: String,
+    candidate_early_warning_regime: String,
+    baseline_early_warning_avg_probability: Option<f64>,
+    candidate_early_warning_avg_probability: Option<f64>,
+    baseline_normal_avg_probability: Option<f64>,
+    candidate_normal_avg_probability: Option<f64>,
+    baseline_early_warning_gap_vs_normal: Option<f64>,
+    candidate_early_warning_gap_vs_normal: Option<f64>,
+    baseline_floor_gap: Option<f64>,
+    candidate_floor_gap: Option<f64>,
+    baseline_early_warning_lift_vs_normal: Option<f64>,
+    candidate_early_warning_lift_vs_normal: Option<f64>,
+    baseline_threshold_hit_rate: Option<f64>,
+    candidate_threshold_hit_rate: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2887,6 +2911,55 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
         "candidate",
         &report.candidate_runtime_review,
     );
+    if !report.comparison.runtime_separation_summary.is_empty() {
+        let _ = writeln!(markdown);
+        let _ = writeln!(markdown, "## Runtime Separation Comparison");
+        let _ = writeln!(markdown);
+        let _ = writeln!(
+            markdown,
+            "| Horizon | Baseline diagnosis | Candidate diagnosis | Baseline floor | Candidate floor | Baseline early regime | Candidate early regime | Baseline early P | Candidate early P | Baseline normal P | Candidate normal P | Baseline EW gap | Candidate EW gap | Baseline floor gap | Candidate floor gap | Baseline EW lift | Candidate EW lift | Baseline hit rate | Candidate hit rate |"
+        );
+        let _ = writeln!(
+            markdown,
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+        );
+        for row in &report.comparison.runtime_separation_summary {
+            let _ = writeln!(
+                markdown,
+                "| {}d | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                row.horizon_days,
+                row.baseline_diagnosis,
+                row.candidate_diagnosis,
+                format_optional_pct(row.baseline_threshold),
+                format_optional_pct(row.candidate_threshold),
+                row.baseline_early_warning_regime,
+                row.candidate_early_warning_regime,
+                format_optional_pct(row.baseline_early_warning_avg_probability),
+                format_optional_pct(row.candidate_early_warning_avg_probability),
+                format_optional_pct(row.baseline_normal_avg_probability),
+                format_optional_pct(row.candidate_normal_avg_probability),
+                format_optional_pct(row.baseline_early_warning_gap_vs_normal),
+                format_optional_pct(row.candidate_early_warning_gap_vs_normal),
+                format_optional_pct(row.baseline_floor_gap),
+                format_optional_pct(row.candidate_floor_gap),
+                format_optional_multiplier(row.baseline_early_warning_lift_vs_normal),
+                format_optional_multiplier(row.candidate_early_warning_lift_vs_normal),
+                format_optional_pct(row.baseline_threshold_hit_rate),
+                format_optional_pct(row.candidate_threshold_hit_rate),
+            );
+        }
+        let takeaways = release_review_runtime_separation_takeaways(
+            &report.comparison.runtime_separation_summary,
+        );
+        if !takeaways.is_empty() {
+            let _ = writeln!(markdown);
+            let _ = writeln!(markdown, "### Runtime Interpretation");
+            let _ = writeln!(markdown);
+            for takeaway in takeaways {
+                let _ = writeln!(markdown, "- {takeaway}");
+            }
+        }
+    }
     let _ = writeln!(markdown);
     let _ = writeln!(markdown, "## Backtest Guardrails");
     let _ = writeln!(markdown);
@@ -3213,6 +3286,54 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
     let _ = writeln!(markdown);
     let _ = writeln!(markdown, "{}", report.recommendation);
     markdown
+}
+
+pub(crate) fn release_review_runtime_separation_takeaways(
+    rows: &[ReleaseReviewRuntimeSeparationComparison],
+) -> Vec<String> {
+    let mut takeaways = Vec::new();
+    for row in rows {
+        if !matches!(row.horizon_days, 20 | 60) {
+            continue;
+        }
+        match row.candidate_diagnosis.as_str() {
+            "separated_but_below_runtime_floor" => {
+                takeaways.push(format!(
+                    "{}d: candidate 的 {} 已经和 normal 拉开，但 early-warning 平均概率 {} 仍低于 runtime floor {}（floor gap {}）。这更像阈值 / runtime policy 瓶颈，不是完全没有信号。",
+                    row.horizon_days,
+                    row.candidate_early_warning_regime,
+                    format_optional_pct(row.candidate_early_warning_avg_probability),
+                    format_optional_pct(row.candidate_threshold),
+                    format_optional_pct(row.candidate_floor_gap),
+                ));
+            }
+            "usable_early_warning_separation" => {
+                if row.baseline_diagnosis == "separated_but_below_runtime_floor" {
+                    takeaways.push(format!(
+                        "{}d: candidate 已把 early-warning 平均概率 {} 推过 runtime floor {}（floor gap {}），说明这一窗的主瓶颈已不再是 runtime threshold 本身。",
+                        row.horizon_days,
+                        format_optional_pct(row.candidate_early_warning_avg_probability),
+                        format_optional_pct(row.candidate_threshold),
+                        format_optional_pct(row.candidate_floor_gap),
+                    ));
+                }
+            }
+            "cooldown_bleed" => {
+                takeaways.push(format!(
+                    "{}d: candidate 仍有 cooldown bleed，说明 post-crisis cooldown 段概率抬得过高，容易把危机后的背景值误当成提前预警。",
+                    row.horizon_days
+                ));
+            }
+            "late_only_no_early_warning" => {
+                takeaways.push(format!(
+                    "{}d: candidate 只有晚到信号，没有形成可用的 early-warning separation，当前还谈不上可执行提前量。",
+                    row.horizon_days
+                ));
+            }
+            _ => {}
+        }
+    }
+    takeaways
 }
 
 fn render_release_actionability_review_markdown(
@@ -3894,6 +4015,7 @@ mod tests {
 
     use super::commands::release::{
         build_release_review_backtest_scenario_comparisons,
+        build_release_review_runtime_separation_comparisons,
         build_release_review_scenario_focus_diagnostics, compare_actionability_guardrails,
         compare_probability_guardrails, release_review_structured_signal_counts,
         ReleaseFormalProbabilityCompareOptions, ReleaseFormalProbabilitySliceOptions,
@@ -3912,11 +4034,11 @@ mod tests {
         forward_crisis_regime_pairwise_targets, forward_crisis_regime_sample_weight,
         forward_crisis_training_regime, forward_crisis_training_regime_with_context,
         negative_sample_weight, observation_is_visible_for_date, positive_sample_action_weight,
-        probability_calibration_selection_rows, probability_decision_threshold_selection, round3,
-        scenario_aware_formal_split_bounds, scenario_count_for_index_range,
-        select_actionability_calibration_strategy, select_actionability_decision_threshold,
-        select_probability_calibration_strategy, select_probability_decision_threshold,
-        summarize_release_runtime_regime_probabilities,
+        probability_calibration_selection_rows, probability_decision_threshold_selection,
+        release_review_runtime_separation_takeaways, round3, scenario_aware_formal_split_bounds,
+        scenario_count_for_index_range, select_actionability_calibration_strategy,
+        select_actionability_decision_threshold, select_probability_calibration_strategy,
+        select_probability_decision_threshold, summarize_release_runtime_regime_probabilities,
         summarize_release_runtime_regime_separation, ActionabilityLevel, AuditExportOptions,
         CrisisScenario, FeatureSnapshotBuildOptions, FormalDatasetBuildOptions,
         FormalDatasetSummaryOptions, FormalSplitLabelSupport, PipelineDatasetSource,
@@ -3924,7 +4046,9 @@ mod tests {
         ProbabilityCalibrationSelection, ProbabilityModelShape, ProbabilityTargetLabelMode,
         ProbabilityThresholdDiagnosticsInput, ProbabilityThresholdSelection,
         ProbabilityTrainingRegime, ProbabilityTrainingRow, RefreshLatestOptions,
-        ReleaseActionabilityLevelReview, ReleaseActionabilityReview, ScenarioRowRange,
+        ReleaseActionabilityLevelReview, ReleaseActionabilityReview,
+        ReleaseReviewRuntimeSeparationComparison, ReleaseRuntimeReviewDiagnostics,
+        ReleaseRuntimeSeparationSummary, RuntimeThresholdDiagnosticsWire, ScenarioRowRange,
     };
 
     fn observation(
@@ -7888,6 +8012,157 @@ mod tests {
 
         assert_eq!(strict_actionable_point_count, 0);
         assert_eq!(runtime_floor_hit_count, 2);
+    }
+
+    #[test]
+    fn release_review_runtime_separation_comparison_highlights_60d_floor_gap() {
+        let baseline = ReleaseRuntimeReviewDiagnostics {
+            release_id: "baseline".to_string(),
+            history_point_count: 120,
+            posture_distribution: Vec::new(),
+            time_bucket_distribution: Vec::new(),
+            posture_trigger_distribution: Vec::new(),
+            posture_blocker_distribution: Vec::new(),
+            regime_probability_summaries: Vec::new(),
+            regime_separation_summaries: vec![ReleaseRuntimeSeparationSummary {
+                horizon_days: 60,
+                early_warning_regime: "pre_warning_buffer".to_string(),
+                normal_avg_probability: 0.28,
+                pre_warning_buffer_avg_probability: 0.52,
+                positive_window_avg_probability: 0.61,
+                in_crisis_avg_probability: 0.66,
+                post_crisis_cooldown_avg_probability: 0.35,
+                early_warning_raw_lift_vs_normal: Some(1.92),
+                early_warning_calibrated_lift_vs_normal: Some(1.86),
+                early_warning_gap_retention: Some(0.81),
+                positive_window_calibrated_lift_vs_normal: Some(2.18),
+                positive_window_gap_vs_normal: Some(0.33),
+                in_crisis_raw_lift_vs_normal: Some(2.36),
+                in_crisis_calibrated_lift_vs_normal: Some(2.36),
+                post_crisis_cooldown_calibrated_lift_vs_normal: Some(1.25),
+                post_crisis_cooldown_gap_vs_normal: Some(0.07),
+                max_non_normal_calibrated_lift_vs_normal: Some(2.36),
+                max_non_normal_threshold_hit_rate: Some(0.0),
+                diagnosis: "separated_but_below_runtime_floor".to_string(),
+            }],
+            runtime_thresholds: Some(RuntimeThresholdDiagnosticsWire {
+                prepare_p60d: 0.65,
+                hedge_p20d: 0.07,
+                defend_p5d: 0.03,
+                severe_now_p20d: 0.27,
+                elevated_weeks_p60d: 0.20,
+                external_prepare_p20d: 0.05,
+                carry_prepare_p60d: 0.08,
+                downgrade_prepare_p60d: 0.075,
+                downgrade_hedge_p20d: 0.053,
+                downgrade_defend_p5d: 0.02,
+                history_runtime_policy_version: "runtime_history_test".to_string(),
+            }),
+            points_at_or_above_prepare_p60d: Some(0),
+            points_at_or_above_hedge_p20d: Some(14),
+            points_at_or_above_defend_p5d: Some(6),
+            note: "test".to_string(),
+        };
+        let candidate = ReleaseRuntimeReviewDiagnostics {
+            release_id: "candidate".to_string(),
+            history_point_count: 120,
+            posture_distribution: Vec::new(),
+            time_bucket_distribution: Vec::new(),
+            posture_trigger_distribution: Vec::new(),
+            posture_blocker_distribution: Vec::new(),
+            regime_probability_summaries: Vec::new(),
+            regime_separation_summaries: vec![ReleaseRuntimeSeparationSummary {
+                horizon_days: 60,
+                early_warning_regime: "pre_warning_buffer".to_string(),
+                normal_avg_probability: 0.24,
+                pre_warning_buffer_avg_probability: 0.58,
+                positive_window_avg_probability: 0.64,
+                in_crisis_avg_probability: 0.69,
+                post_crisis_cooldown_avg_probability: 0.30,
+                early_warning_raw_lift_vs_normal: Some(2.48),
+                early_warning_calibrated_lift_vs_normal: Some(2.42),
+                early_warning_gap_retention: Some(0.88),
+                positive_window_calibrated_lift_vs_normal: Some(2.67),
+                positive_window_gap_vs_normal: Some(0.40),
+                in_crisis_raw_lift_vs_normal: Some(2.88),
+                in_crisis_calibrated_lift_vs_normal: Some(2.88),
+                post_crisis_cooldown_calibrated_lift_vs_normal: Some(1.25),
+                post_crisis_cooldown_gap_vs_normal: Some(0.06),
+                max_non_normal_calibrated_lift_vs_normal: Some(2.88),
+                max_non_normal_threshold_hit_rate: Some(0.12),
+                diagnosis: "usable_early_warning_separation".to_string(),
+            }],
+            runtime_thresholds: Some(RuntimeThresholdDiagnosticsWire {
+                prepare_p60d: 0.45,
+                hedge_p20d: 0.07,
+                defend_p5d: 0.03,
+                severe_now_p20d: 0.27,
+                elevated_weeks_p60d: 0.20,
+                external_prepare_p20d: 0.05,
+                carry_prepare_p60d: 0.08,
+                downgrade_prepare_p60d: 0.075,
+                downgrade_hedge_p20d: 0.053,
+                downgrade_defend_p5d: 0.02,
+                history_runtime_policy_version: "runtime_history_test".to_string(),
+            }),
+            points_at_or_above_prepare_p60d: Some(9),
+            points_at_or_above_hedge_p20d: Some(16),
+            points_at_or_above_defend_p5d: Some(6),
+            note: "test".to_string(),
+        };
+
+        let rows = build_release_review_runtime_separation_comparisons(&baseline, &candidate);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].horizon_days, 60);
+        assert_eq!(
+            rows[0].baseline_diagnosis,
+            "separated_but_below_runtime_floor"
+        );
+        assert_eq!(
+            rows[0].candidate_diagnosis,
+            "usable_early_warning_separation"
+        );
+        assert_eq!(rows[0].baseline_threshold, Some(0.65));
+        assert_eq!(rows[0].candidate_threshold, Some(0.45));
+        assert_eq!(rows[0].baseline_early_warning_avg_probability, Some(0.52));
+        assert_eq!(rows[0].candidate_early_warning_avg_probability, Some(0.58));
+        assert_eq!(rows[0].baseline_floor_gap, Some(-0.13));
+        assert_eq!(rows[0].candidate_floor_gap, Some(0.13));
+        assert_eq!(rows[0].baseline_threshold_hit_rate, Some(0.0));
+        assert_eq!(rows[0].candidate_threshold_hit_rate, Some(0.12));
+    }
+
+    #[test]
+    fn release_review_runtime_separation_takeaways_explain_floor_gap() {
+        let rows = vec![ReleaseReviewRuntimeSeparationComparison {
+            horizon_days: 60,
+            baseline_diagnosis: "usable_early_warning_separation".to_string(),
+            candidate_diagnosis: "separated_but_below_runtime_floor".to_string(),
+            baseline_threshold: Some(0.45),
+            candidate_threshold: Some(0.65),
+            baseline_early_warning_regime: "pre_warning_buffer".to_string(),
+            candidate_early_warning_regime: "pre_warning_buffer".to_string(),
+            baseline_early_warning_avg_probability: Some(0.58),
+            candidate_early_warning_avg_probability: Some(0.52),
+            baseline_normal_avg_probability: Some(0.24),
+            candidate_normal_avg_probability: Some(0.28),
+            baseline_early_warning_gap_vs_normal: Some(0.34),
+            candidate_early_warning_gap_vs_normal: Some(0.24),
+            baseline_floor_gap: Some(0.13),
+            candidate_floor_gap: Some(-0.13),
+            baseline_early_warning_lift_vs_normal: Some(2.42),
+            candidate_early_warning_lift_vs_normal: Some(1.86),
+            baseline_threshold_hit_rate: Some(0.12),
+            candidate_threshold_hit_rate: Some(0.0),
+        }];
+
+        let takeaways = release_review_runtime_separation_takeaways(&rows);
+
+        assert_eq!(takeaways.len(), 1);
+        assert!(takeaways[0].contains("60d"));
+        assert!(takeaways[0].contains("runtime floor"));
+        assert!(takeaways[0].contains("阈值 / runtime policy 瓶颈"));
     }
 
     #[test]

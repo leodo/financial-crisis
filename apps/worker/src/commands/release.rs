@@ -1507,6 +1507,8 @@ async fn run_release_review(
                 history: &candidate_runtime_snapshot.history,
                 method: &candidate_runtime_snapshot.method,
             },
+            &baseline_runtime_review,
+            &candidate_runtime_review,
         ),
         baseline_assessment,
         candidate_assessment,
@@ -3132,6 +3134,8 @@ fn print_operational_guardrail_summary(
 fn build_release_review_comparison(
     baseline: ReleaseReviewComparisonInput<'_>,
     candidate: ReleaseReviewComparisonInput<'_>,
+    baseline_runtime_review: &crate::ReleaseRuntimeReviewDiagnostics,
+    candidate_runtime_review: &crate::ReleaseRuntimeReviewDiagnostics,
 ) -> crate::ReleaseReviewComparisonSummary {
     let (baseline_strict_actionable_point_count, baseline_runtime_floor_hit_count) =
         release_review_structured_signal_counts(
@@ -3194,10 +3198,142 @@ fn build_release_review_comparison(
             baseline.assessment.probabilities.p_60d,
             candidate.assessment.probabilities.p_60d,
         ),
+        runtime_separation_summary: build_release_review_runtime_separation_comparisons(
+            baseline_runtime_review,
+            candidate_runtime_review,
+        ),
         backtest_scenarios: build_release_review_backtest_scenario_comparisons(
             baseline.backtests,
             candidate.backtests,
         ),
+    }
+}
+
+pub(crate) fn build_release_review_runtime_separation_comparisons(
+    baseline: &crate::ReleaseRuntimeReviewDiagnostics,
+    candidate: &crate::ReleaseRuntimeReviewDiagnostics,
+) -> Vec<crate::ReleaseReviewRuntimeSeparationComparison> {
+    let baseline_by_horizon = baseline
+        .regime_separation_summaries
+        .iter()
+        .map(|summary| (summary.horizon_days, summary))
+        .collect::<BTreeMap<_, _>>();
+    let candidate_by_horizon = candidate
+        .regime_separation_summaries
+        .iter()
+        .map(|summary| (summary.horizon_days, summary))
+        .collect::<BTreeMap<_, _>>();
+    let horizons = baseline_by_horizon
+        .keys()
+        .chain(candidate_by_horizon.keys())
+        .copied()
+        .collect::<BTreeSet<_>>();
+
+    horizons
+        .into_iter()
+        .map(|horizon_days| {
+            let baseline_summary = baseline_by_horizon.get(&horizon_days).copied();
+            let candidate_summary = candidate_by_horizon.get(&horizon_days).copied();
+            let baseline_threshold = release_review_runtime_threshold_for_horizon(
+                baseline.runtime_thresholds.as_ref(),
+                horizon_days,
+            );
+            let candidate_threshold = release_review_runtime_threshold_for_horizon(
+                candidate.runtime_thresholds.as_ref(),
+                horizon_days,
+            );
+            let baseline_early_warning_avg_probability =
+                baseline_summary.and_then(release_review_early_warning_avg_probability);
+            let candidate_early_warning_avg_probability =
+                candidate_summary.and_then(release_review_early_warning_avg_probability);
+            let baseline_normal_avg_probability =
+                baseline_summary.map(|summary| summary.normal_avg_probability);
+            let candidate_normal_avg_probability =
+                candidate_summary.map(|summary| summary.normal_avg_probability);
+
+            crate::ReleaseReviewRuntimeSeparationComparison {
+                horizon_days,
+                baseline_diagnosis: baseline_summary
+                    .map(|summary| summary.diagnosis.clone())
+                    .unwrap_or_else(|| "missing".to_string()),
+                candidate_diagnosis: candidate_summary
+                    .map(|summary| summary.diagnosis.clone())
+                    .unwrap_or_else(|| "missing".to_string()),
+                baseline_threshold,
+                candidate_threshold,
+                baseline_early_warning_regime: baseline_summary
+                    .map(|summary| summary.early_warning_regime.clone())
+                    .unwrap_or_else(|| "—".to_string()),
+                candidate_early_warning_regime: candidate_summary
+                    .map(|summary| summary.early_warning_regime.clone())
+                    .unwrap_or_else(|| "—".to_string()),
+                baseline_early_warning_avg_probability,
+                candidate_early_warning_avg_probability,
+                baseline_normal_avg_probability,
+                candidate_normal_avg_probability,
+                baseline_early_warning_gap_vs_normal: baseline_summary
+                    .and_then(release_review_early_warning_gap_vs_normal),
+                candidate_early_warning_gap_vs_normal: candidate_summary
+                    .and_then(release_review_early_warning_gap_vs_normal),
+                baseline_floor_gap: release_review_runtime_floor_gap(
+                    baseline_early_warning_avg_probability,
+                    baseline_threshold,
+                ),
+                candidate_floor_gap: release_review_runtime_floor_gap(
+                    candidate_early_warning_avg_probability,
+                    candidate_threshold,
+                ),
+                baseline_early_warning_lift_vs_normal: baseline_summary
+                    .and_then(|summary| summary.early_warning_calibrated_lift_vs_normal),
+                candidate_early_warning_lift_vs_normal: candidate_summary
+                    .and_then(|summary| summary.early_warning_calibrated_lift_vs_normal),
+                baseline_threshold_hit_rate: baseline_summary
+                    .and_then(|summary| summary.max_non_normal_threshold_hit_rate),
+                candidate_threshold_hit_rate: candidate_summary
+                    .and_then(|summary| summary.max_non_normal_threshold_hit_rate),
+            }
+        })
+        .collect()
+}
+
+fn release_review_runtime_threshold_for_horizon(
+    runtime_thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+    horizon_days: u32,
+) -> Option<f64> {
+    runtime_thresholds.map(|thresholds| match horizon_days {
+        5 => thresholds.defend_p5d,
+        20 => thresholds.hedge_p20d,
+        60 => thresholds.prepare_p60d,
+        _ => 1.0,
+    })
+}
+
+fn release_review_early_warning_avg_probability(
+    summary: &crate::ReleaseRuntimeSeparationSummary,
+) -> Option<f64> {
+    match summary.early_warning_regime.as_str() {
+        "positive_window" => Some(summary.positive_window_avg_probability),
+        "pre_warning_buffer" => Some(summary.pre_warning_buffer_avg_probability),
+        _ => None,
+    }
+}
+
+fn release_review_early_warning_gap_vs_normal(
+    summary: &crate::ReleaseRuntimeSeparationSummary,
+) -> Option<f64> {
+    release_review_early_warning_avg_probability(summary)
+        .map(|value| crate::round6(value - summary.normal_avg_probability))
+}
+
+fn release_review_runtime_floor_gap(
+    early_warning_avg_probability: Option<f64>,
+    threshold: Option<f64>,
+) -> Option<f64> {
+    match (early_warning_avg_probability, threshold) {
+        (Some(early_warning_avg_probability), Some(threshold)) => {
+            Some(crate::round6(early_warning_avg_probability - threshold))
+        }
+        _ => None,
     }
 }
 
@@ -4286,6 +4422,15 @@ fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope) {
             .longest_false_positive_episode_days
             .candidate
     );
+    let runtime_takeaways = crate::release_review_runtime_separation_takeaways(
+        &report.comparison.runtime_separation_summary,
+    );
+    if !runtime_takeaways.is_empty() {
+        println!("Runtime separation takeaways:");
+        for takeaway in runtime_takeaways {
+            println!("  - {takeaway}");
+        }
+    }
     if report.probability_guard_regressions.is_empty() {
         println!("Probability guard summary:");
         println!("  no bundle-level probability guard regressions");

@@ -156,6 +156,13 @@ vs
     - `strict_actionable_point_count`
     - `runtime_floor_hit_count`
 - markdown / 控制台 summary 已同步展示上述双口径计数与 block reason。
+- `release review` 主报告现在还会新增一张 horizon 级
+  `Runtime Separation Comparison` 表：
+  - 逐个对比 baseline / candidate 的 `5d / 20d / 60d` diagnosis；
+  - 直接展示各 horizon 的 runtime floor；
+  - 直接展示 early-warning regime 的平均概率、相对 normal 的 gap /
+    lift；
+  - 直接展示 `early_warning_avg_probability - runtime_floor` 的 floor gap。
 
 ### 5.2 下一步文档与评审对齐
 
@@ -198,6 +205,15 @@ vs
 - 卡在 `review_gate_gap` 时，主要缺的是 `p20d`、`p60d` 还是两者都缺；
 - 卡在 `posture_bucket_normal` 时，是否长期没有任何 `prepare / hedge / defend` trigger；
 - `prepare / months` 场景里，阻塞主要来自 score confirmation 还是 transitional bridge。
+- `60d` 到底是“没有 early-warning separation”，还是“已经分离但仍穿不过
+  runtime floor”。
+
+这条新增对照尤其重要，因为当前 `timely_warning_rate` 的一个主瓶颈，
+已经不是“看不见 60d 风险”，而是：
+
+- `60d` 有时能达到 `separated_but_below_runtime_floor`；
+- 但如果不把 floor gap 直接打到 `release review` 主报告里，
+  后续就很容易把“目标函数问题”和“阈值映射问题”重新混在一起讨论。
 
 ## 6. 非目标
 

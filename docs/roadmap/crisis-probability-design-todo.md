@@ -434,6 +434,14 @@
             2. 在聚合 summary 中增加 `strict_actionable_point_count` 与
                `runtime_floor_hit_count`；
             3. 让 `Focus Scenarios` 和正式 guard 说明都能同时表达“runtime 已有信号，但 strict L3 仍未成立”。
+          - [x] 已把 `Runtime Separation Comparison` 接入 `release review` 主报告与控制台 summary：
+            1. 按 `5d / 20d / 60d` 直接对比 baseline / candidate 的 diagnosis、
+               runtime floor、early-warning 平均概率、normal 均值、EW gap、floor gap、hit rate；
+            2. 主报告新增 `Runtime Interpretation`，明确区分
+               “完全没有 early-warning separation”、
+               “已经 separated 但仍低于 runtime floor”、
+               “cooldown bleed” 三类问题；
+            3. 这样后续审计 `60d` 时，可以直接判断更像训练目标问题、阈值映射问题，还是 cooldown 背景值问题。
           - [~] 已开始专项审计 `1990-1993 / 2000-2001` 的 posture continuity：
             1. 逐日对齐 `p20d / p60d / posture / time_bucket / actionable bridge`；
             2. 已补 `runtime_actionable_block_category` 与场景级 `runtime block mix`，
