@@ -242,12 +242,23 @@ vs
 - 再汇总有多少场景落在 `posture_continuity`；
 - 同时给出每条 workstream 当前覆盖的 `scenario list / family / training role / protected count`。
 
+现在又再往上压了一层 `Historical Audit Takeaways`：
+
+- 不再只给 workstream 表；
+- 会直接用几条结论说明：
+  - 先修 `strict review gate vs runtime floor`；
+  - 还是先修 `posture continuity`；
+  - 还是要回去复核 `score confirmation / transitional bridge`。
+
 这样正式报告会先回答：
 
 - 下一步先修哪条线；
 - 这条线现在覆盖哪些历史样本；
 - 这些样本是 `candidate_optional`、`extension_only`，还是正式主正例之外的
   `protected stress`。
+
+而 `Historical Audit Takeaways` 会进一步把这些信息说成人话，避免读报告的人还要自己把
+`workstream / scenario list / suggested review` 再拼回一句结论。
 
 这意味着后续不需要再只靠肉眼扫长表，已经可以直接回答：
 

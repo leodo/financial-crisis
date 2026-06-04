@@ -4583,6 +4583,14 @@ fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope) {
     }
     if !report.historical_audit_workstreams.is_empty() {
         println!("Historical audit workstream summary:");
+        let takeaways =
+            crate::release_review_historical_audit_takeaways(&report.historical_audit_workstreams);
+        if !takeaways.is_empty() {
+            println!("Historical audit takeaways:");
+            for takeaway in takeaways {
+                println!("  - {takeaway}");
+            }
+        }
         for row in &report.historical_audit_workstreams {
             println!(
                 "  - {} scenarios={} ({}) protected={} families={} roles={} review={}",

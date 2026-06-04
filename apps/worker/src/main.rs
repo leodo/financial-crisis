@@ -3107,6 +3107,16 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
         if !report.historical_audit_workstreams.is_empty() {
             let _ = writeln!(markdown, "## Historical Audit Workstream Summary");
             let _ = writeln!(markdown);
+            let workstream_takeaways =
+                release_review_historical_audit_takeaways(&report.historical_audit_workstreams);
+            if !workstream_takeaways.is_empty() {
+                let _ = writeln!(markdown, "### Historical Audit Takeaways");
+                let _ = writeln!(markdown);
+                for takeaway in workstream_takeaways {
+                    let _ = writeln!(markdown, "- {takeaway}");
+                }
+                let _ = writeln!(markdown);
+            }
             let _ = writeln!(
                 markdown,
                 "| Workstream | Scenarios | Protected | Families | Roles | Suggested review |"
@@ -3676,6 +3686,52 @@ pub(crate) fn summarize_release_review_historical_audit_workstreams(
             .then_with(|| left.workstream.cmp(&right.workstream))
     });
     rows
+}
+
+pub(crate) fn release_review_historical_audit_takeaways(
+    rows: &[ReleaseReviewHistoricalAuditWorkstreamSummary],
+) -> Vec<String> {
+    let mut takeaways = Vec::new();
+    for row in rows {
+        match row.workstream.as_str() {
+            "strict_review_vs_runtime_mapping" => {
+                takeaways.push(format!(
+                    "{} 个历史样本首先应复核 strict review gate 与 runtime floor 的映射，涉及 {}。当前更像 runtime 已经看到风险，但 strict gate 仍比运行时口径更严。",
+                    row.scenario_count,
+                    format_runtime_category_list(&row.scenarios)
+                ));
+            }
+            "posture_continuity" => {
+                takeaways.push(format!(
+                    "{} 个历史样本主要卡在 posture continuity，涉及 {}。下一步应优先解释为什么高 p20d/p60d 仍长期停在 normal，以及 3/5 sustained 命中为什么建不起来。",
+                    row.scenario_count,
+                    format_runtime_category_list(&row.scenarios)
+                ));
+            }
+            "score_confirmation" => {
+                takeaways.push(format!(
+                    "{} 个历史样本主要卡在 score confirmation，涉及 {}。这更像 months/prepare 的确认门槛过严，不是完全没有 pre-warning separation。",
+                    row.scenario_count,
+                    format_runtime_category_list(&row.scenarios)
+                ));
+            }
+            "transitional_bridge" => {
+                takeaways.push(format!(
+                    "{} 个历史样本主要卡在 transitional bridge，涉及 {}。下一步应确认 bridge 只是过渡模型遗留问题，还是正式策略本身缺少连续触发。",
+                    row.scenario_count,
+                    format_runtime_category_list(&row.scenarios)
+                ));
+            }
+            _ => {
+                takeaways.push(format!(
+                    "{} 个历史样本仍落在 residual release-review audit，涉及 {}。需要继续回到 block mix 与 continuity facets 做逐点复核。",
+                    row.scenario_count,
+                    format_runtime_category_list(&row.scenarios)
+                ));
+            }
+        }
+    }
+    takeaways
 }
 
 fn release_review_primary_workstream(
@@ -4455,10 +4511,11 @@ mod tests {
         forward_crisis_training_regime, forward_crisis_training_regime_with_context,
         negative_sample_weight, observation_is_visible_for_date, positive_sample_action_weight,
         probability_calibration_selection_rows, probability_decision_threshold_selection,
-        release_review_runtime_separation_takeaways, round3, scenario_aware_formal_split_bounds,
-        scenario_count_for_index_range, select_actionability_calibration_strategy,
-        select_actionability_decision_threshold, select_probability_calibration_strategy,
-        select_probability_decision_threshold, summarize_release_review_failure_modes,
+        release_review_historical_audit_takeaways, release_review_runtime_separation_takeaways,
+        round3, scenario_aware_formal_split_bounds, scenario_count_for_index_range,
+        select_actionability_calibration_strategy, select_actionability_decision_threshold,
+        select_probability_calibration_strategy, select_probability_decision_threshold,
+        summarize_release_review_failure_modes,
         summarize_release_review_historical_audit_priorities,
         summarize_release_review_historical_audit_workstreams,
         summarize_release_runtime_regime_probabilities,
@@ -8804,6 +8861,43 @@ mod tests {
             .scenarios
             .contains(&"1990-1993 美国银行与衰退压力".to_string()));
         assert!(posture.scenarios.contains(&"2011 美欧融资压力".to_string()));
+    }
+
+    #[test]
+    fn release_review_historical_audit_takeaways_explain_primary_workstreams() {
+        let takeaways = summarize_release_review_historical_audit_workstreams(&[
+            ReleaseReviewHistoricalAuditPriority {
+                scenario_id: "us_dotcom_unwind_2000".to_string(),
+                scenario_name: "2000-2001 科网泡沫出清".to_string(),
+                scenario_family: "mixed_systemic_stress".to_string(),
+                training_role: "candidate_optional".to_string(),
+                protected_window: true,
+                baseline_failure_mode: "strict_gate_mismatch".to_string(),
+                candidate_failure_mode: "strict_gate_mismatch".to_string(),
+                primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
+                suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
+            },
+            ReleaseReviewHistoricalAuditPriority {
+                scenario_id: "us_early_90s_banking_stress".to_string(),
+                scenario_name: "1990-1993 美国银行与衰退压力".to_string(),
+                scenario_family: "mixed_systemic_stress".to_string(),
+                training_role: "extension_only".to_string(),
+                protected_window: true,
+                baseline_failure_mode: "posture_continuity_failure".to_string(),
+                candidate_failure_mode: "posture_continuity_failure".to_string(),
+                primary_workstream: "posture_continuity".to_string(),
+                suggested_review: "复核 prepare/months 连续性".to_string(),
+            },
+        ]);
+        let rendered = release_review_historical_audit_takeaways(&takeaways);
+
+        assert_eq!(rendered.len(), 2);
+        assert!(rendered
+            .iter()
+            .any(|row| row.contains("strict review gate 与 runtime floor")));
+        assert!(rendered
+            .iter()
+            .any(|row| row.contains("高 p20d/p60d 仍长期停在 normal")));
     }
 
     #[test]

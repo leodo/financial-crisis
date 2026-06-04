@@ -468,6 +468,10 @@
                 会把上述 priority 再按 `workstream` 聚合，
                 直接显示下一步优先修哪条线、覆盖哪些历史样本、
                 以及这些样本属于哪些 `family / training_role / protected stress` 约束；
+            4.6 [x] `release review` 已新增 `Historical Audit Takeaways`，
+                会把 `workstream summary` 再压成几条直接可执行的结论，
+                明确说明是先修 `strict gate vs runtime floor`、
+                还是先修 `posture continuity / score confirmation / bridge`；
             5. 下一步不再把两类 missed 场景混成一个问题：
                - 对 `2000-2001` 先专项复核 strict gate 与 runtime floor 的映射；
                - 对 `1990-1993` 先专项复核为什么高 `p20d/p60d` 长期无法推动 `prepare/months` 连续成立。
