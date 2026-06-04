@@ -422,6 +422,19 @@ struct ReleaseReviewHistoricalAuditWorkstreamSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct ReleaseReviewHistoricalAuditAttributionSummary {
+    workstream: String,
+    attribution: String,
+    scenario_count: u32,
+    protected_count: u32,
+    baseline_count: u32,
+    candidate_count: u32,
+    baseline_scenarios: Vec<String>,
+    candidate_scenarios: Vec<String>,
+    explanation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct ReleaseReviewComparisonSummary {
     timely_warning_rate: ReleaseReviewScalarMetric,
     strict_actionable_point_count: ReleaseReviewCountMetric,
@@ -591,6 +604,7 @@ struct ReleaseReviewEnvelope {
     scenario_focus: Vec<ReleaseReviewScenarioFocusDiagnostic>,
     historical_audit_workstreams: Vec<ReleaseReviewHistoricalAuditWorkstreamSummary>,
     historical_audit_priorities: Vec<ReleaseReviewHistoricalAuditPriority>,
+    historical_audit_attribution: Vec<ReleaseReviewHistoricalAuditAttributionSummary>,
     comparison: ReleaseReviewComparisonSummary,
     probability_guard_regressions: Vec<String>,
     probability_guard_passed: bool,
@@ -3137,6 +3151,31 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
             }
             let _ = writeln!(markdown);
         }
+        if !report.historical_audit_attribution.is_empty() {
+            let _ = writeln!(markdown, "## Historical Audit Attribution");
+            let _ = writeln!(markdown);
+            let _ = writeln!(
+                markdown,
+                "| Workstream | Attribution | Scenarios | Protected | Baseline count | Candidate count | Explanation |"
+            );
+            let _ = writeln!(markdown, "| --- | --- | --- | --- | --- | --- | --- |");
+            for row in &report.historical_audit_attribution {
+                let _ = writeln!(
+                    markdown,
+                    "| {} | {} | {} | {} | {} ({}) | {} ({}) | {} |",
+                    row.workstream,
+                    row.attribution,
+                    row.scenario_count,
+                    row.protected_count,
+                    row.baseline_count,
+                    format_runtime_category_list(&row.baseline_scenarios),
+                    row.candidate_count,
+                    format_runtime_category_list(&row.candidate_scenarios),
+                    row.explanation,
+                );
+            }
+            let _ = writeln!(markdown);
+        }
         let _ = writeln!(markdown, "## Historical Audit Priorities");
         let _ = writeln!(markdown);
         let _ = writeln!(
@@ -3576,7 +3615,7 @@ pub(crate) fn summarize_release_review_historical_audit_priorities(
             let candidate_failure_mode = scenario
                 .candidate_primary_failure_mode
                 .clone()
-                .unwrap_or_else(|| baseline_failure_mode.clone());
+                .unwrap_or_else(|| "—".to_string());
             let primary_workstream = release_review_primary_workstream(
                 scenario.baseline_primary_failure_mode.as_deref(),
                 scenario.candidate_primary_failure_mode.as_deref(),
@@ -3607,6 +3646,99 @@ pub(crate) fn summarize_release_review_historical_audit_priorities(
                 &right.primary_workstream,
             ))
             .then_with(|| left.scenario_id.cmp(&right.scenario_id))
+    });
+    rows
+}
+
+pub(crate) fn summarize_release_review_historical_audit_attribution(
+    priorities: &[ReleaseReviewHistoricalAuditPriority],
+) -> Vec<ReleaseReviewHistoricalAuditAttributionSummary> {
+    let mut rows = BTreeMap::<
+        (String, String),
+        (
+            BTreeSet<String>,
+            u32,
+            u32,
+            u32,
+            BTreeSet<String>,
+            BTreeSet<String>,
+        ),
+    >::new();
+    for priority in priorities {
+        let baseline_matches = release_review_failure_mode_matches_workstream(
+            &priority.baseline_failure_mode,
+            &priority.primary_workstream,
+        );
+        let candidate_matches = release_review_failure_mode_matches_workstream(
+            &priority.candidate_failure_mode,
+            &priority.primary_workstream,
+        );
+        let attribution =
+            release_review_historical_audit_attribution_label(baseline_matches, candidate_matches);
+        let entry = rows
+            .entry((priority.primary_workstream.clone(), attribution.to_string()))
+            .or_insert_with(|| (BTreeSet::new(), 0, 0, 0, BTreeSet::new(), BTreeSet::new()));
+        entry.0.insert(priority.scenario_name.clone());
+        if priority.protected_window {
+            entry.1 += 1;
+        }
+        if baseline_matches {
+            entry.2 += 1;
+            entry.4.insert(priority.scenario_name.clone());
+        }
+        if candidate_matches {
+            entry.3 += 1;
+            entry.5.insert(priority.scenario_name.clone());
+        }
+    }
+
+    let mut rows = rows
+        .into_iter()
+        .map(
+            |(
+                (workstream, attribution),
+                (
+                    scenarios,
+                    protected_count,
+                    baseline_count,
+                    candidate_count,
+                    baseline_scenarios,
+                    candidate_scenarios,
+                ),
+            )| {
+                let scenario_count = scenarios.len() as u32;
+                let scenario_names = scenarios.into_iter().collect::<Vec<_>>();
+                ReleaseReviewHistoricalAuditAttributionSummary {
+                    explanation: release_review_historical_audit_attribution_explanation(
+                        &workstream,
+                        &attribution,
+                        scenario_count,
+                        &scenario_names,
+                    ),
+                    workstream,
+                    attribution,
+                    scenario_count,
+                    protected_count,
+                    baseline_count,
+                    candidate_count,
+                    baseline_scenarios: baseline_scenarios.into_iter().collect(),
+                    candidate_scenarios: candidate_scenarios.into_iter().collect(),
+                }
+            },
+        )
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| {
+        release_review_historical_workstream_priority(&left.workstream)
+            .cmp(&release_review_historical_workstream_priority(
+                &right.workstream,
+            ))
+            .then_with(|| {
+                release_review_historical_attribution_priority(&left.attribution).cmp(
+                    &release_review_historical_attribution_priority(&right.attribution),
+                )
+            })
+            .then_with(|| right.scenario_count.cmp(&left.scenario_count))
+            .then_with(|| left.workstream.cmp(&right.workstream))
     });
     rows
 }
@@ -3734,14 +3866,74 @@ pub(crate) fn release_review_historical_audit_takeaways(
     takeaways
 }
 
+fn release_review_historical_audit_attribution_label(
+    baseline_matches: bool,
+    candidate_matches: bool,
+) -> &'static str {
+    match (baseline_matches, candidate_matches) {
+        (true, true) => "both_baseline_and_candidate",
+        (true, false) => "baseline_shared_weakness",
+        (false, true) => "candidate_regression",
+        (false, false) => "unclassified",
+    }
+}
+
+fn release_review_historical_attribution_priority(attribution: &str) -> u8 {
+    match attribution {
+        "both_baseline_and_candidate" => 0,
+        "candidate_regression" => 1,
+        "baseline_shared_weakness" => 2,
+        _ => 3,
+    }
+}
+
+fn release_review_historical_audit_attribution_explanation(
+    workstream: &str,
+    attribution: &str,
+    scenario_count: u32,
+    scenarios: &[String],
+) -> String {
+    let workstream_label = match workstream {
+        "strict_review_vs_runtime_mapping" => "strict gate vs runtime floor",
+        "posture_continuity" => "posture continuity",
+        "score_confirmation" => "score confirmation",
+        "transitional_bridge" => "transitional bridge",
+        _ => "residual release-review audit",
+    };
+    let scenario_text = format_runtime_category_list(scenarios);
+    match attribution {
+        "both_baseline_and_candidate" => format!(
+            "{scenario_count} 个样本在 baseline 和 candidate 都落在 {workstream_label}，涉及 {scenario_text}。这说明它既是 formal main 的共性短板，也是 candidate 当前仍未修复的问题。"
+        ),
+        "candidate_regression" => format!(
+            "{scenario_count} 个样本主要是 candidate 新落入 {workstream_label}，涉及 {scenario_text}。baseline 在同一条线没有对应失败，这更像这次候选版本自己退化出来的问题。"
+        ),
+        "baseline_shared_weakness" => format!(
+            "{scenario_count} 个样本在 baseline 已经落在 {workstream_label}，涉及 {scenario_text}。candidate 这版没有新增同类失败，因此这更像 formal main 既有短板。"
+        ),
+        _ => format!(
+            "{scenario_count} 个样本目前仍需要继续人工复核 {workstream_label}，涉及 {scenario_text}。"
+        ),
+    }
+}
+
+fn release_review_failure_mode_matches_workstream(failure_mode: &str, workstream: &str) -> bool {
+    failure_mode != "—" && release_review_workstream_for_failure_mode(failure_mode) == workstream
+}
+
 fn release_review_primary_workstream(
     baseline_failure_mode: Option<&str>,
     candidate_failure_mode: Option<&str>,
 ) -> &'static str {
-    match candidate_failure_mode
-        .or(baseline_failure_mode)
-        .unwrap_or_default()
-    {
+    release_review_workstream_for_failure_mode(
+        candidate_failure_mode
+            .or(baseline_failure_mode)
+            .unwrap_or_default(),
+    )
+}
+
+fn release_review_workstream_for_failure_mode(failure_mode: &str) -> &'static str {
+    match failure_mode {
         "strict_gate_mismatch" => "strict_review_vs_runtime_mapping",
         "posture_continuity_failure" => "posture_continuity",
         "score_confirmation_failure" => "score_confirmation",
@@ -4516,6 +4708,7 @@ mod tests {
         select_actionability_calibration_strategy, select_actionability_decision_threshold,
         select_probability_calibration_strategy, select_probability_decision_threshold,
         summarize_release_review_failure_modes,
+        summarize_release_review_historical_audit_attribution,
         summarize_release_review_historical_audit_priorities,
         summarize_release_review_historical_audit_workstreams,
         summarize_release_runtime_regime_probabilities,
@@ -8861,6 +9054,74 @@ mod tests {
             .scenarios
             .contains(&"1990-1993 美国银行与衰退压力".to_string()));
         assert!(posture.scenarios.contains(&"2011 美欧融资压力".to_string()));
+    }
+
+    #[test]
+    fn release_review_historical_audit_attribution_distinguishes_shared_and_regression() {
+        let rows = summarize_release_review_historical_audit_attribution(&[
+            ReleaseReviewHistoricalAuditPriority {
+                scenario_id: "us_dotcom_unwind_2000".to_string(),
+                scenario_name: "2000-2001 科网泡沫出清".to_string(),
+                scenario_family: "mixed_systemic_stress".to_string(),
+                training_role: "candidate_optional".to_string(),
+                protected_window: true,
+                baseline_failure_mode: "strict_gate_mismatch".to_string(),
+                candidate_failure_mode: "strict_gate_mismatch".to_string(),
+                primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
+                suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
+            },
+            ReleaseReviewHistoricalAuditPriority {
+                scenario_id: "us_early_90s_banking_stress".to_string(),
+                scenario_name: "1990-1993 美国银行与衰退压力".to_string(),
+                scenario_family: "mixed_systemic_stress".to_string(),
+                training_role: "extension_only".to_string(),
+                protected_window: true,
+                baseline_failure_mode: "posture_continuity_failure".to_string(),
+                candidate_failure_mode: "—".to_string(),
+                primary_workstream: "posture_continuity".to_string(),
+                suggested_review: "复核 prepare/months 连续性".to_string(),
+            },
+            ReleaseReviewHistoricalAuditPriority {
+                scenario_id: "us_regional_banks_2023".to_string(),
+                scenario_name: "2023 美国区域银行危机".to_string(),
+                scenario_family: "banking_crisis".to_string(),
+                training_role: "mandatory".to_string(),
+                protected_window: true,
+                baseline_failure_mode: "residual_review_l3_failure".to_string(),
+                candidate_failure_mode: "score_confirmation_failure".to_string(),
+                primary_workstream: "score_confirmation".to_string(),
+                suggested_review: "复核 months/prepare 的 score confirmation".to_string(),
+            },
+        ]);
+
+        assert_eq!(rows.len(), 3);
+
+        let shared = rows
+            .iter()
+            .find(|row| row.attribution == "both_baseline_and_candidate")
+            .expect("shared row");
+        assert_eq!(shared.workstream, "strict_review_vs_runtime_mapping");
+        assert_eq!(shared.baseline_count, 1);
+        assert_eq!(shared.candidate_count, 1);
+        assert!(shared.explanation.contains("共性短板"));
+
+        let baseline_only = rows
+            .iter()
+            .find(|row| row.attribution == "baseline_shared_weakness")
+            .expect("baseline-only row");
+        assert_eq!(baseline_only.workstream, "posture_continuity");
+        assert_eq!(baseline_only.baseline_count, 1);
+        assert_eq!(baseline_only.candidate_count, 0);
+        assert!(baseline_only.explanation.contains("既有短板"));
+
+        let regression = rows
+            .iter()
+            .find(|row| row.attribution == "candidate_regression")
+            .expect("candidate regression row");
+        assert_eq!(regression.workstream, "score_confirmation");
+        assert_eq!(regression.baseline_count, 0);
+        assert_eq!(regression.candidate_count, 1);
+        assert!(regression.explanation.contains("自己退化出来"));
     }
 
     #[test]

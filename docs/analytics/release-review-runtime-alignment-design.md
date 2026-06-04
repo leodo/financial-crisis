@@ -260,6 +260,20 @@ vs
 而 `Historical Audit Takeaways` 会进一步把这些信息说成人话，避免读报告的人还要自己把
 `workstream / scenario list / suggested review` 再拼回一句结论。
 
+现在还需要再补一层 `Historical Audit Attribution`：
+
+- 不只回答“下一步修哪条线”；
+- 还要回答这条线更像：
+  - `both_baseline_and_candidate`：baseline 和 candidate 都掉进同一类失败；
+  - `baseline_shared_weakness`：这是 formal main 既有短板，不是 candidate 新退化；
+  - `candidate_regression`：baseline 没有同类问题，是 candidate 这版自己退化出来的。
+
+这层归因的目的，是避免把两种性质完全不同的问题混在一起讨论：
+
+- 如果是 `baseline_shared_weakness`，后续重点应放在 formal main 的长期结构修复；
+- 如果是 `candidate_regression`，后续重点应放在 candidate 这轮训练、阈值或 policy 改动；
+- 如果是 `both_baseline_and_candidate`，说明 candidate 既没有修掉主线短板，也还不能拿来替换当前 active。
+
 这意味着后续不需要再只靠肉眼扫长表，已经可以直接回答：
 
 - 是 `review gate` 挡住更多；
@@ -314,3 +328,9 @@ vs
 而 `Historical Audit Priorities` + `Historical Audit Workstream Summary` 的意义，就是把
 “哪些历史样本需要继续复核”以及“下一步先修哪条工作流”都直接固化到正式
 `release review` 产物里，避免后续每一轮 review 都重新手工解释一遍。
+
+再加上 `Historical Audit Attribution` 之后，正式产物还会进一步回答：
+
+- 这是当前 formal main 的共性问题，还是 candidate 本轮新增退化；
+- 哪些 workstream 属于“主线先天不足”，哪些属于“候选版本自己弄坏了”；
+- 后续优先级应先放在主线结构修复，还是直接淘汰当前 candidate。

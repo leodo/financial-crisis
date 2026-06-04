@@ -1494,6 +1494,8 @@ async fn run_release_review(
     );
     let historical_audit_priorities =
         crate::summarize_release_review_historical_audit_priorities(&scenario_focus);
+    let historical_audit_attribution =
+        crate::summarize_release_review_historical_audit_attribution(&historical_audit_priorities);
     let historical_audit_workstreams =
         crate::summarize_release_review_historical_audit_workstreams(&historical_audit_priorities);
 
@@ -1532,6 +1534,7 @@ async fn run_release_review(
         scenario_focus,
         historical_audit_workstreams,
         historical_audit_priorities,
+        historical_audit_attribution,
         probability_guard_passed: probability_regressions.is_empty(),
         operational_guard_passed: operational_regressions.is_empty(),
         actionability_guard_passed: actionability_regressions.is_empty(),
@@ -4602,6 +4605,31 @@ fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope) {
                 row.training_roles.join(", "),
                 row.suggested_review
             );
+        }
+    }
+    if !report.historical_audit_attribution.is_empty() {
+        println!("Historical audit attribution:");
+        for row in &report.historical_audit_attribution {
+            println!(
+                "  - {} attribution={} scenarios={} protected={} baseline={} ({}) candidate={} ({})",
+                row.workstream,
+                row.attribution,
+                row.scenario_count,
+                row.protected_count,
+                row.baseline_count,
+                if row.baseline_scenarios.is_empty() {
+                    "—".to_string()
+                } else {
+                    row.baseline_scenarios.join(", ")
+                },
+                row.candidate_count,
+                if row.candidate_scenarios.is_empty() {
+                    "—".to_string()
+                } else {
+                    row.candidate_scenarios.join(", ")
+                }
+            );
+            println!("    {}", row.explanation);
         }
     }
     if !report.historical_audit_priorities.is_empty() {

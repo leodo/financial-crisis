@@ -472,6 +472,12 @@
                 会把 `workstream summary` 再压成几条直接可执行的结论，
                 明确说明是先修 `strict gate vs runtime floor`、
                 还是先修 `posture continuity / score confirmation / bridge`；
+            4.7 [x] `release review` 已新增 `Historical Audit Attribution`，
+                会继续区分每条 workstream 到底是：
+                `both_baseline_and_candidate`、
+                `baseline_shared_weakness`，
+                还是 `candidate_regression`，
+                避免把 formal main 既有短板和 candidate 本轮退化混成同一个问题；
             5. 下一步不再把两类 missed 场景混成一个问题：
                - 对 `2000-2001` 先专项复核 strict gate 与 runtime floor 的映射；
                - 对 `1990-1993` 先专项复核为什么高 `p20d/p60d` 长期无法推动 `prepare/months` 连续成立。
