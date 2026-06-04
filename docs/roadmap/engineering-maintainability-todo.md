@@ -95,8 +95,9 @@
 - 已新增 `apps/worker/src/commands/db.rs`，把 `db init/seed/check` 从超大入口文件中拆出。
 - 已新增 `apps/worker/src/commands/refresh.rs` 与 `commands/backfill.rs`，开始把免费数据刷新与回填入口从 `main.rs` 中剥离。
 - 已新增 `apps/worker/src/scenario.rs`，把 `CrisisScenario`、action episode window、protected context、primary/forward scenario 选择和 action window label 这组场景时间窗逻辑从 `main.rs` 中拆出，固定场景标签与动作窗口 helper 的归属边界。
-- 这一轮之后，`apps/worker/src/main.rs` 已从约 `7,573` 行继续收缩到约 `5,429` 行，进一步移除了动作 episode / scenario helper，当前更接近“顶层导出 + 通用格式化/IO helper + 测试”的收口状态。
-- 当前 `main.rs` 已不再直接承载训练管线、release review 报告结构、动作 episode / scenario 时间窗逻辑；下一步可优先继续观察通用 API/IO helper 与测试夹具是否还值得进一步下沉。
+- 已新增 `apps/worker/src/support.rs`，把 `ApiReloadHistoryMode`、demo run、API fetch/reload、SQLite/raw payload IO、格式化 helper、解析 helper 和通用 rounding/hash/path helper 从 `main.rs` 中拆出，统一 worker 顶层支撑函数的归属边界。
+- 这一轮之后，`apps/worker/src/main.rs` 已从约 `7,573` 行继续收缩到约 `5,105` 行，进一步移除了通用格式化/API/IO helper，当前更接近“顶层常量 + 共享导出 + 测试”的收口状态。
+- 当前 `main.rs` 已不再直接承载训练管线、release review 报告结构、动作 episode / scenario 时间窗逻辑，也不再直接承载通用 API/IO helper；下一步可优先继续观察测试夹具与超大测试块是否值得继续拆分。
 
 ### 3.2 API
 

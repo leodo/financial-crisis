@@ -1,7 +1,4 @@
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-};
+use std::env;
 
 mod actionability;
 mod commands;
@@ -12,6 +9,7 @@ mod probability;
 mod release_review;
 mod reporting;
 mod scenario;
+mod support;
 mod training;
 
 pub(crate) use actionability::{
@@ -24,8 +22,6 @@ pub(crate) use actionability::{
     evaluate_actionability_summary, select_actionability_calibration_strategy,
     select_actionability_decision_threshold,
 };
-use anyhow::{bail, Context};
-use chrono::{NaiveDate, Utc};
 pub(crate) use commands::{
     build_formal_dataset_summary, collect_formal_dataset_scenario_ranges, feature_quality_grade,
     formal_dataset_split_profile, has_extension_acute_core_features,
@@ -52,10 +48,11 @@ use commands::{
 #[cfg(test)]
 use commands::{PipelineDatasetSource, PipelineTrainOptions};
 pub(crate) use fc_domain::load_crisis_scenario_catalog;
+#[cfg(test)]
+pub(crate) use fc_domain::ActionabilityLevel;
 use fc_domain::{
-    resolve_probability_feature_value, ActionabilityLevel, AssessmentSnapshot, Frequency,
-    HorizonEvaluationSummary, LogisticProbabilityModel, ModelReleaseManifest,
-    PlattCalibrationArtifact, ProbabilityBundle, ProbabilityCoefficient, ProbabilityFeatureStat,
+    resolve_probability_feature_value, HorizonEvaluationSummary, LogisticProbabilityModel,
+    PlattCalibrationArtifact, ProbabilityCoefficient, ProbabilityFeatureStat,
     FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER,
     FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
     FEATURE_FRESHNESS_STALE_OR_MISSING, FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D,
@@ -67,8 +64,6 @@ use fc_domain::{
     PROBABILITY_MODEL_FAMILY_INTERACTION_TAIL_V1, PROBABILITY_MODEL_FAMILY_LINEAR_V1,
     TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES,
 };
-use fc_ingestion::{Connector, FetchPlan, MockConnector, RunMode};
-use fc_storage::SqliteStore;
 pub(crate) use formal::derive_scenario_label_snapshot;
 #[cfg(test)]
 pub(crate) use model::{
@@ -130,7 +125,19 @@ pub(crate) use scenario::{
     primary_scenario_for_date, protected_context_phase_for_date, scenario_supports_horizon,
     ActionEpisodePhase, CrisisScenario,
 };
-use serde::de::DeserializeOwned;
+pub(crate) use support::{
+    actionability_level_text, backtest_signal_source_text, data_mode_text, fetch_api_json,
+    fetch_assessment_snapshot_for_guard, formal_dataset_key, format_bool_flag,
+    format_optional_bool_flag, format_optional_count, format_optional_date,
+    format_optional_date_with_lead, format_optional_date_with_reason, format_optional_days,
+    format_optional_multiplier, format_optional_pct, format_optional_ratio, format_pct,
+    format_signed_count_delta, format_signed_pct_delta, format_trigger_codes, open_sqlite_store,
+    parse_date_arg, parse_positive_i64, path_to_string, posture_text, raw_data_dir,
+    raw_file_extension, read_probability_bundle, read_release_manifest, reload_api_runtime,
+    reload_api_runtime_with_history_options, round3, round6, run_demo_ingestion, safe_divide,
+    safe_ratio, simple_hash, sqlite_path, time_bucket_text, truncate_text, write_raw_payload,
+    ApiReloadHistoryMode,
+};
 pub(crate) use training::{
     chronological_split, chronological_split_bounds, ensure_positive_labels, forward_crisis_label,
     forward_crisis_training_regime, forward_crisis_training_regime_with_context,
@@ -158,385 +165,6 @@ async fn main() -> anyhow::Result<()> {
 
     let args = env::args().skip(1).collect::<Vec<_>>();
     commands::run_from_args(args).await
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ApiReloadHistoryMode {
-    Default,
-    StrictRebuild,
-}
-
-impl ApiReloadHistoryMode {
-    fn parse(value: &str) -> anyhow::Result<Self> {
-        match value {
-            "default" => Ok(Self::Default),
-            "strict_rebuild" => Ok(Self::StrictRebuild),
-            other => bail!("unsupported API reload history mode: {other}"),
-        }
-    }
-
-    fn as_query_value(self) -> Option<&'static str> {
-        match self {
-            Self::Default => None,
-            Self::StrictRebuild => Some("strict_rebuild"),
-        }
-    }
-
-    fn as_label(self) -> &'static str {
-        match self {
-            Self::Default => "default",
-            Self::StrictRebuild => "strict_rebuild",
-        }
-    }
-}
-
-fn formal_dataset_key(dataset_id: &str, dataset_version: &str) -> String {
-    format!("{dataset_id}:{dataset_version}")
-}
-
-pub(crate) fn round3(value: f64) -> f64 {
-    (value * 1_000.0).round() / 1_000.0
-}
-
-pub(crate) fn round6(value: f64) -> f64 {
-    (value * 1_000_000.0).round() / 1_000_000.0
-}
-
-fn safe_divide(numerator: f64, denominator: f64) -> f64 {
-    if denominator.abs() <= f64::EPSILON {
-        0.0
-    } else {
-        numerator / denominator
-    }
-}
-
-pub(crate) fn safe_ratio(numerator: usize, denominator: usize) -> f64 {
-    safe_divide(numerator as f64, denominator as f64)
-}
-
-fn actionability_level_text(level: ActionabilityLevel) -> &'static str {
-    match level {
-        ActionabilityLevel::Prepare => "prepare",
-        ActionabilityLevel::Hedge => "hedge",
-        ActionabilityLevel::Defend => "defend",
-    }
-}
-
-async fn run_demo_ingestion() -> anyhow::Result<()> {
-    let connector = MockConnector;
-    let plan = FetchPlan {
-        source_id: "mock".to_string(),
-        dataset_id: "demo".to_string(),
-        target_id: "us_market_vix_close".to_string(),
-        external_code: None,
-        run_mode: RunMode::Incremental,
-        requested_start: Some(NaiveDate::from_ymd_opt(2026, 5, 1).expect("valid date")),
-        requested_end: Some(NaiveDate::from_ymd_opt(2026, 5, 30).expect("valid date")),
-        frequency: Frequency::Daily,
-    };
-
-    let payload = connector.fetch(&plan).await?;
-    let batch = connector.parse(&plan, &payload)?;
-
-    tracing::info!(
-        source_id = %batch.source_id,
-        dataset_id = %batch.dataset_id,
-        records = batch.observations.len(),
-        "worker completed one demo ingestion run"
-    );
-    println!("{}", serde_json::to_string_pretty(&batch)?);
-
-    Ok(())
-}
-
-async fn fetch_api_json<T: DeserializeOwned>(
-    client: &reqwest::Client,
-    api_base_url: &str,
-    path: &str,
-) -> anyhow::Result<T> {
-    let response = client
-        .get(format!("{api_base_url}{path}"))
-        .send()
-        .await
-        .with_context(|| format!("request to {api_base_url}{path} failed"))?;
-    let status = response.status();
-    if !status.is_success() {
-        bail!("request to {api_base_url}{path} returned {status}");
-    }
-    response
-        .json::<T>()
-        .await
-        .with_context(|| format!("failed to decode JSON from {api_base_url}{path}"))
-}
-
-async fn fetch_assessment_snapshot_for_guard(
-    api_reload_url: &str,
-) -> anyhow::Result<AssessmentSnapshot> {
-    let api_base_url = api_reload_url
-        .strip_suffix("/api/system/reload")
-        .with_context(|| {
-            format!(
-                "cannot derive API base URL from reload URL {api_reload_url}; expected it to end with /api/system/reload"
-            )
-        })?;
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()?;
-    fetch_api_json(&client, api_base_url, "/api/assessment/current").await
-}
-
-fn read_release_manifest(path: &Path) -> anyhow::Result<ModelReleaseManifest> {
-    let raw = fs::read_to_string(path)
-        .with_context(|| format!("failed to read release manifest {}", path.display()))?;
-    serde_json::from_str::<ModelReleaseManifest>(&raw)
-        .with_context(|| format!("failed to decode release manifest {}", path.display()))
-}
-
-fn read_probability_bundle(path: &Path) -> anyhow::Result<ProbabilityBundle> {
-    let raw = fs::read_to_string(path)
-        .with_context(|| format!("failed to read probability bundle {}", path.display()))?;
-    serde_json::from_str::<ProbabilityBundle>(&raw)
-        .with_context(|| format!("failed to decode probability bundle {}", path.display()))
-}
-
-fn truncate_text(value: &str, max_len: usize) -> String {
-    if value.chars().count() <= max_len {
-        return value.to_string();
-    }
-    let prefix_len = max_len.saturating_sub(1);
-    let mut truncated = value.chars().take(prefix_len).collect::<String>();
-    truncated.push('…');
-    truncated
-}
-
-fn data_mode_text(mode: fc_domain::DataMode) -> &'static str {
-    match mode {
-        fc_domain::DataMode::Demo => "demo",
-        fc_domain::DataMode::Sqlite => "sqlite",
-        fc_domain::DataMode::Postgres => "postgres",
-    }
-}
-
-fn posture_text(posture: fc_domain::DecisionPosture) -> &'static str {
-    match posture {
-        fc_domain::DecisionPosture::Normal => "normal",
-        fc_domain::DecisionPosture::Prepare => "prepare",
-        fc_domain::DecisionPosture::Hedge => "hedge",
-        fc_domain::DecisionPosture::Defend => "defend",
-    }
-}
-
-fn time_bucket_text(bucket: fc_domain::TimeToRiskBucket) -> &'static str {
-    match bucket {
-        fc_domain::TimeToRiskBucket::Normal => "normal",
-        fc_domain::TimeToRiskBucket::Months => "months",
-        fc_domain::TimeToRiskBucket::Weeks => "weeks",
-        fc_domain::TimeToRiskBucket::Now => "now",
-    }
-}
-
-fn backtest_signal_source_text(source: fc_domain::BacktestSignalSource) -> &'static str {
-    match source {
-        fc_domain::BacktestSignalSource::RealHistory => "real_history",
-        fc_domain::BacktestSignalSource::FallbackTemplate => "fallback_template",
-    }
-}
-
-pub(crate) fn format_pct(value: f64) -> String {
-    format!("{:.1}%", value * 100.0)
-}
-
-fn format_optional_pct(value: Option<f64>) -> String {
-    value.map(format_pct).unwrap_or_else(|| "—".to_string())
-}
-
-fn format_optional_date(value: Option<NaiveDate>) -> String {
-    value
-        .map(|date| date.to_string())
-        .unwrap_or_else(|| "—".to_string())
-}
-
-fn format_optional_date_with_reason(value: Option<NaiveDate>, reason: Option<&str>) -> String {
-    match (value, reason) {
-        (Some(date), Some(reason)) if !reason.is_empty() => format!("{date} ({reason})"),
-        (Some(date), _) => date.to_string(),
-        _ => "—".to_string(),
-    }
-}
-
-fn format_optional_date_with_lead(value: Option<NaiveDate>, crisis_start: NaiveDate) -> String {
-    value
-        .map(|date| {
-            let lead_days = crisis_start.signed_duration_since(date).num_days();
-            format!("{date} ({lead_days}d)")
-        })
-        .unwrap_or_else(|| "—".to_string())
-}
-
-fn format_bool_flag(value: bool) -> &'static str {
-    if value {
-        "yes"
-    } else {
-        "no"
-    }
-}
-
-fn format_optional_bool_flag(value: Option<bool>) -> &'static str {
-    match value {
-        Some(true) => "yes",
-        Some(false) => "no",
-        None => "—",
-    }
-}
-
-fn format_optional_count(value: Option<u32>) -> String {
-    value
-        .map(|count| count.to_string())
-        .unwrap_or_else(|| "—".to_string())
-}
-
-fn format_trigger_codes(codes: &[String]) -> String {
-    if codes.is_empty() {
-        "—".to_string()
-    } else {
-        codes.join(", ")
-    }
-}
-
-fn format_optional_multiplier(value: Option<f64>) -> String {
-    value
-        .map(|value| format!("{value:.2}x"))
-        .unwrap_or_else(|| "—".to_string())
-}
-
-fn format_optional_ratio(value: Option<f64>) -> String {
-    value
-        .map(|value| format!("{value:.2}"))
-        .unwrap_or_else(|| "—".to_string())
-}
-
-fn format_signed_pct_delta(value: f64) -> String {
-    format!("{:+.1}pp", value * 100.0)
-}
-
-fn format_signed_count_delta(value: i64) -> String {
-    format!("{value:+}")
-}
-
-fn format_optional_days(value: Option<i64>) -> String {
-    value
-        .map(|days| format!("{days}d"))
-        .unwrap_or_else(|| "—".to_string())
-}
-
-fn parse_date_arg(value: Option<&String>, option: &str) -> anyhow::Result<NaiveDate> {
-    let value = value.with_context(|| format!("{option} requires a YYYY-MM-DD value"))?;
-    NaiveDate::parse_from_str(value, "%Y-%m-%d")
-        .with_context(|| format!("{option} must use YYYY-MM-DD"))
-}
-
-fn parse_positive_i64(value: Option<&String>, option: &str) -> anyhow::Result<i64> {
-    let value = value
-        .with_context(|| format!("{option} requires a positive integer"))?
-        .parse::<i64>()
-        .with_context(|| format!("{option} requires a positive integer"))?;
-    if value <= 0 {
-        bail!("{option} requires a positive integer");
-    }
-    Ok(value)
-}
-
-async fn open_sqlite_store() -> anyhow::Result<SqliteStore> {
-    SqliteStore::connect(sqlite_path())
-        .await
-        .map_err(Into::into)
-}
-
-fn sqlite_path() -> String {
-    env::var("FC_SQLITE_PATH").unwrap_or_else(|_| DEFAULT_SQLITE_PATH.to_string())
-}
-
-fn raw_data_dir() -> PathBuf {
-    env::var("FC_RAW_DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(DEFAULT_RAW_DATA_DIR))
-}
-
-fn write_raw_payload(
-    raw_root: &Path,
-    source_id: &str,
-    external_code: &str,
-    extension: &str,
-    body: &str,
-) -> anyhow::Result<PathBuf> {
-    let year = Utc::now().format("%Y").to_string();
-    let directory = raw_root.join(source_id).join(external_code).join(year);
-    fs::create_dir_all(&directory)?;
-    let path = directory.join(format!("{}.{}", simple_hash(body), extension));
-    fs::write(&path, body)?;
-    Ok(path)
-}
-
-fn raw_file_extension(content_type: &str) -> &'static str {
-    if content_type.contains("csv") {
-        "csv"
-    } else if content_type.contains("json") {
-        "json"
-    } else if content_type.contains("xml") {
-        "xml"
-    } else {
-        "txt"
-    }
-}
-
-fn path_to_string(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
-fn simple_hash(input: &str) -> String {
-    let hash = input.as_bytes().iter().fold(0_u64, |acc, byte| {
-        acc.wrapping_mul(31).wrapping_add(*byte as u64)
-    });
-    format!("{hash:x}")
-}
-
-async fn reload_api_runtime(url: &str) -> anyhow::Result<()> {
-    reload_api_runtime_with_history_mode(url, ApiReloadHistoryMode::Default).await
-}
-
-async fn reload_api_runtime_with_history_mode(
-    url: &str,
-    history_mode: ApiReloadHistoryMode,
-) -> anyhow::Result<()> {
-    reload_api_runtime_with_history_options(url, history_mode, None).await
-}
-
-async fn reload_api_runtime_with_history_options(
-    url: &str,
-    history_mode: ApiReloadHistoryMode,
-    history_limit: Option<usize>,
-) -> anyhow::Result<()> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(1_200))
-        .build()?;
-    let request = client.post(url);
-    let mut query = Vec::<(&str, String)>::new();
-    if let Some(history_mode) = history_mode.as_query_value() {
-        query.push(("history_mode", history_mode.to_string()));
-    }
-    if let Some(history_limit) = history_limit {
-        query.push(("history_limit", history_limit.to_string()));
-    }
-    let request = if query.is_empty() {
-        request
-    } else {
-        request.query(&query)
-    };
-    let response = request.send().await?;
-    if !response.status().is_success() {
-        bail!("reload endpoint returned {}", response.status());
-    }
-    Ok(())
 }
 
 #[cfg(test)]

@@ -99,8 +99,9 @@ config/
 - `apps/worker/src/commands/release.rs` 又进一步把概率切片研究工具拆到 `apps/worker/src/commands/release/probability.rs`，当前 `release.rs` 已不再同时承载 publish/review 主流程和 3 组 probability slice 导出细节；
 - `apps/worker/src/training.rs` 已进一步收走 formal bundle 训练管线、`forward_crisis` 标签 / regime helper；`apps/worker/src/release_review.rs` 也已继续收走 release review 专属 report wire structs、historical audit helper、runtime regime diagnostics 与 Markdown 渲染入口；
 - `apps/worker/src/scenario.rs` 已继续收走 `CrisisScenario`、action episode window、protected context、primary/forward scenario 选择和 action window label；
-- `main.rs` 体量已从约 `7.6k` 行进一步降到约 `5.4k` 行；
-- 因此，worker 当前的主要维护风险已从“所有 release 能力都堆在一个文件里”，下降为“少量顶层 glue helper、共享导出与超大测试块仍集中在 `main.rs`，需要继续按责任切薄”。
+- `apps/worker/src/support.rs` 已继续收走 `ApiReloadHistoryMode`、demo run、API fetch/reload、SQLite/raw payload IO、格式化 helper 和通用 rounding/hash/path helper；
+- `main.rs` 体量已从约 `7.6k` 行进一步降到约 `5.1k` 行；
+- 因此，worker 当前的主要维护风险已从“所有 release 能力都堆在一个文件里”，下降为“共享导出层和超大测试块仍集中在 `main.rs`，需要继续按责任切薄”。
 
 ### 4.2 API runtime、demo、history replay 曾有明显耦合
 
