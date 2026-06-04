@@ -2,7 +2,7 @@
 
 状态：`Review`
 
-最后更新：2026-06-02
+最后更新：2026-06-05
 
 ## 1. 目的
 
@@ -93,9 +93,9 @@ config/
 - review 难度持续上升；
 - 测试粒度难以下沉。
 
-### 4.2 API runtime、demo、history replay 仍有明显耦合
+### 4.2 API runtime、demo、history replay 曾有明显耦合
 
-`apps/api/src/demo.rs` 当前同时处理：
+治理前，`apps/api/src/demo.rs` 同时处理：
 
 - 数据源模式切换；
 - SQLite / Postgres 加载；
@@ -115,8 +115,10 @@ config/
 - `FC_DATA_MODE` 解析与 SQLite/Postgres 装载已拆到 `apps/api/src/data_source.rs`；
 - historical replay / prediction snapshot bridge 已拆到 `apps/api/src/history_replay.rs`；
 - backtest timeline、rolling audit、scenario fallback 和动作级历史判定规则已拆到 `apps/api/src/backtest.rs`。
+- 静态 demo 指标样本、观测样本、源状态样本和 demo alert 构造已拆到 `apps/api/src/demo_seed.rs`；
+- assessment history 装配、SQLite prediction snapshot 重建和窗口筛选已拆到 `apps/api/src/history_builder.rs`。
 
-因此，`demo.rs` 的风险已明显下降，但它仍保留 demo seed、history 装配和 replay 相关编排，后续还可以继续沿“demo seed / history assembly / replay orchestration”三个边界收口。
+因此，`demo.rs` 的风险已明显下降，当前已主要收缩为 demo 当前截面装配、runtime assessment snapshot 组装与用户偏好加载；API 侧后续重点已从 `demo.rs` 主拆分，转向观察这些 runtime helper 是否值得继续下沉到 shared/runtime config 层。
 
 ### 4.3 训练侧与运行侧已有重复实现，后续容易漂移
 
@@ -266,7 +268,7 @@ config/
 
 1. 把 worker 中的 research / release / backfill / report 渲染拆成模块。
 2. 把 API 与 worker 共用的概率数学、校准、观测切片、特征派生收敛到共享模块。
-3. 把 `demo.rs` 中的 demo seed、history replay、sqlite source loader 拆开。
+3. 把 `demo.rs` 中的 demo seed、history replay、sqlite source loader 拆开。该项已基本完成，后续转为观察 runtime helper 是否继续下沉。
 
 ### 第三阶段：再拆前端和 SQLite store
 

@@ -7,9 +7,9 @@ use fc_storage::{PostgresStore, SqliteStore};
 
 use crate::{
     assessment::ServingModelContext,
-    demo::{
-        build_app_data_from_inputs, build_assessment_history, build_demo_data,
-        load_sqlite_assessment_history, load_user_preferences, BuiltAppData, HistoryQueryWindow,
+    demo::{build_app_data_from_inputs, build_demo_data, load_user_preferences, BuiltAppData},
+    history_builder::{
+        build_assessment_history, load_sqlite_assessment_history, HistoryQueryWindow,
     },
     AppData,
 };

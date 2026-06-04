@@ -5,6 +5,7 @@ mod data_source;
 mod demo;
 mod demo_seed;
 mod handlers;
+mod history_builder;
 mod history_replay;
 mod state;
 

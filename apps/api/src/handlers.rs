@@ -13,7 +13,7 @@ use serde_json::json;
 
 use crate::{
     data_source::{AppDataSource, AssessmentHistoryBuildMode},
-    demo::{select_assessment_history, select_backtest_timeline, HistoryQueryWindow},
+    history_builder::{select_assessment_history, select_backtest_timeline, HistoryQueryWindow},
     AppState,
 };
 use fc_storage::SqliteStore;
