@@ -93,6 +93,12 @@ config/
 - review 难度持续上升；
 - 测试粒度难以下沉。
 
+最新进展：
+
+- 顶层 CLI 分发、research 子命令、release 主流程、db/refresh/backfill 入口已先后从 `main.rs` 中拆出；
+- `apps/worker/src/commands/release.rs` 又进一步把概率切片研究工具拆到 `apps/worker/src/commands/release/probability.rs`，当前 `release.rs` 已不再同时承载 publish/review 主流程和 3 组 probability slice 导出细节；
+- 因此，worker 当前的主要维护风险已从“所有 release 能力都堆在一个文件里”，下降为“release review 编排与部分训练 helper 仍然偏重，需要继续按责任切薄”。
+
 ### 4.2 API runtime、demo、history replay 曾有明显耦合
 
 治理前，`apps/api/src/demo.rs` 同时处理：

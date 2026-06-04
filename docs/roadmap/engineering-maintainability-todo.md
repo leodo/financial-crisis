@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-03
+最后更新：2026-06-05
 
 本文档只管理“工程结构、模块边界、共用代码收敛、生成工件治理、维护性约束”，不替代概率模型主线 TODO。
 
@@ -90,9 +90,10 @@
 - release 相关的 `activate_release_with_runtime_guard`、review stage activate/restore、market scope resolve 也已迁到 `commands/release.rs`。
 - `release review` 的 runtime snapshot 抓取与 orchestration 也已迁到 `commands/release.rs`。
 - `release review` 专属的 probability/actionability/runtime sanity guardrail、recommendation、summary helper 也已开始跟随迁移。
+- 已新增 `apps/worker/src/commands/release/probability.rs`，把 `probability-slice`、`formal-probability-slice`、`formal-probability-compare` 的 CLI 选项解析、bundle 评分、CSV/JSON 导出与摘要打印从 `commands/release.rs` 中拆出，release 主模块重新收缩到 publish / activate / rollback / review 主流程。
 - 已新增 `apps/worker/src/commands/db.rs`，把 `db init/seed/check` 从超大入口文件中拆出。
 - 已新增 `apps/worker/src/commands/refresh.rs` 与 `commands/backfill.rs`，开始把免费数据刷新与回填入口从 `main.rs` 中剥离。
-- 当前 `main.rs` 已主要保留底层 research/helper/训练实现；下一步继续按实现体拆出 formal dataset / pipeline 内部 helper，以及剩余 release review runtime 细节。
+- 当前 `main.rs` 已主要保留底层 research/helper/训练实现；下一步继续按实现体拆出 formal dataset / pipeline 内部 helper，并继续观察 `commands/release.rs` 中剩余 release review 编排与 guardrail helper 是否需要再做二次切分。
 
 ### 3.2 API
 
