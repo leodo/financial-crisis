@@ -4550,6 +4550,29 @@ fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope) {
             println!("  - {takeaway}");
         }
     }
+    let failure_mode_summary =
+        crate::summarize_release_review_failure_modes(&report.scenario_focus);
+    if !failure_mode_summary.is_empty() {
+        println!("Failure mode summary:");
+        for row in failure_mode_summary {
+            println!(
+                "  - {} baseline={} ({}) candidate={} ({})",
+                row.failure_mode,
+                row.baseline_count,
+                if row.baseline_scenarios.is_empty() {
+                    "—".to_string()
+                } else {
+                    row.baseline_scenarios.join(", ")
+                },
+                row.candidate_count,
+                if row.candidate_scenarios.is_empty() {
+                    "—".to_string()
+                } else {
+                    row.candidate_scenarios.join(", ")
+                }
+            );
+        }
+    }
     if report.probability_guard_regressions.is_empty() {
         println!("Probability guard summary:");
         println!("  no bundle-level probability guard regressions");

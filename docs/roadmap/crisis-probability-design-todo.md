@@ -456,6 +456,9 @@
             4.2 [x] `Focus Scenarios` 已进一步输出 `Primary failure mode`，
                 先把场景归类成 `strict_gate_mismatch` /
                 `posture_continuity_failure` / `score_confirmation_failure` 等可决策结论；
+            4.3 [x] `release review` 已新增 `Failure Mode Summary`，
+                可直接汇总 baseline / candidate 各有多少历史场景主要卡在
+                `strict_gate_mismatch`、`posture_continuity_failure` 等失败模式；
             5. 下一步不再把两类 missed 场景混成一个问题：
                - 对 `2000-2001` 先专项复核 strict gate 与 runtime floor 的映射；
                - 对 `1990-1993` 先专项复核为什么高 `p20d/p60d` 长期无法推动 `prepare/months` 连续成立。

@@ -198,6 +198,8 @@ vs
   - `Dominant continuity facet`
 - 现在还会再往前走一步，直接给出：
   - `Primary failure mode`
+- 现在又继续上提成跨场景 summary：
+  - `Failure Mode Summary`
 
 当前这层会先把焦点场景归类成几种更容易决策的失败模式：
 
@@ -218,6 +220,12 @@ vs
 - strict review gate 和 runtime floor 口径不一致；
 - 还是 posture / months continuity 根本没有建立起来；
 - 还是 confirmation / bridge 规则过严。
+
+`Failure Mode Summary` 再往上做了一层聚合，会直接按失败模式汇总：
+
+- baseline 有多少历史场景主要卡在 `strict_gate_mismatch`；
+- candidate 有多少历史场景主要卡在 `posture_continuity_failure`；
+- 每类失败模式分别对应哪些历史样本。
 
 这意味着后续不需要再只靠肉眼扫长表，已经可以直接回答：
 
