@@ -428,7 +428,7 @@
             `1990-1993 / 2000-2001` 的 posture continuity failure；
             对应设计已沉淀到
             [release-review-runtime-alignment-design.md](../analytics/release-review-runtime-alignment-design.md)。
-          - [ ] 下一步先补 `release review` 双口径输出，而不是继续做同类 20d 误报压缩：
+          - [x] 已补 `release review` 双口径输出，不再把 runtime 信号和 strict L3 混成一个指标：
             1. 在 point 级输出显式区分 `strict_review_actionable`、`runtime_floor_hit`、
                `runtime_actionable_block_reason`；
             2. 在聚合 summary 中增加 `strict_actionable_point_count` 与

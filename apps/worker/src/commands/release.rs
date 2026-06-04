@@ -17,6 +17,13 @@ use serde::Serialize;
 const RELEASE_REVIEW_SIGNAL_WINDOW: usize = 5;
 const RELEASE_REVIEW_SIGNAL_MIN_HITS: usize = 3;
 
+struct ReleaseReviewComparisonInput<'a> {
+    assessment: &'a fc_domain::AssessmentSnapshot,
+    backtests: &'a [fc_domain::BacktestScenarioSummary],
+    history: &'a [AssessmentHistoryPoint],
+    method: &'a crate::AuditMethodResponseWire,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ReleasePublishOptions {
     pub(crate) manifest_path: PathBuf,
@@ -1488,10 +1495,18 @@ async fn run_release_review(
         baseline_release: baseline_release.clone(),
         candidate_release: candidate_release.clone(),
         comparison: build_release_review_comparison(
-            &baseline_assessment,
-            &candidate_assessment,
-            &baseline_runtime_snapshot.backtests,
-            &candidate_runtime_snapshot.backtests,
+            ReleaseReviewComparisonInput {
+                assessment: &baseline_assessment,
+                backtests: &baseline_runtime_snapshot.backtests,
+                history: &baseline_runtime_snapshot.history,
+                method: &baseline_runtime_snapshot.method,
+            },
+            ReleaseReviewComparisonInput {
+                assessment: &candidate_assessment,
+                backtests: &candidate_runtime_snapshot.backtests,
+                history: &candidate_runtime_snapshot.history,
+                method: &candidate_runtime_snapshot.method,
+            },
         ),
         baseline_assessment,
         candidate_assessment,
@@ -3115,41 +3130,101 @@ fn print_operational_guardrail_summary(
 }
 
 fn build_release_review_comparison(
-    baseline: &fc_domain::AssessmentSnapshot,
-    candidate: &fc_domain::AssessmentSnapshot,
-    baseline_backtests: &[fc_domain::BacktestScenarioSummary],
-    candidate_backtests: &[fc_domain::BacktestScenarioSummary],
+    baseline: ReleaseReviewComparisonInput<'_>,
+    candidate: ReleaseReviewComparisonInput<'_>,
 ) -> crate::ReleaseReviewComparisonSummary {
+    let (baseline_strict_actionable_point_count, baseline_runtime_floor_hit_count) =
+        release_review_structured_signal_counts(
+            baseline.backtests,
+            baseline.history,
+            baseline.method,
+        );
+    let (candidate_strict_actionable_point_count, candidate_runtime_floor_hit_count) =
+        release_review_structured_signal_counts(
+            candidate.backtests,
+            candidate.history,
+            candidate.method,
+        );
     crate::ReleaseReviewComparisonSummary {
         timely_warning_rate: scalar_metric(
-            baseline.backtest_summary.timely_warning_rate,
-            candidate.backtest_summary.timely_warning_rate,
+            baseline.assessment.backtest_summary.timely_warning_rate,
+            candidate.assessment.backtest_summary.timely_warning_rate,
+        ),
+        strict_actionable_point_count: count_metric(
+            baseline_strict_actionable_point_count,
+            candidate_strict_actionable_point_count,
+        ),
+        runtime_floor_hit_count: count_metric(
+            baseline_runtime_floor_hit_count,
+            candidate_runtime_floor_hit_count,
         ),
         actionable_precision: scalar_metric(
-            baseline.backtest_summary.rolling_audit.actionable_precision,
+            baseline
+                .assessment
+                .backtest_summary
+                .rolling_audit
+                .actionable_precision,
             candidate
+                .assessment
                 .backtest_summary
                 .rolling_audit
                 .actionable_precision,
         ),
         longest_false_positive_episode_days: count_metric(
             baseline
+                .assessment
                 .backtest_summary
                 .rolling_audit
                 .longest_false_positive_episode_days,
             candidate
+                .assessment
                 .backtest_summary
                 .rolling_audit
                 .longest_false_positive_episode_days,
         ),
-        current_p_5d: scalar_metric(baseline.probabilities.p_5d, candidate.probabilities.p_5d),
-        current_p_20d: scalar_metric(baseline.probabilities.p_20d, candidate.probabilities.p_20d),
-        current_p_60d: scalar_metric(baseline.probabilities.p_60d, candidate.probabilities.p_60d),
+        current_p_5d: scalar_metric(
+            baseline.assessment.probabilities.p_5d,
+            candidate.assessment.probabilities.p_5d,
+        ),
+        current_p_20d: scalar_metric(
+            baseline.assessment.probabilities.p_20d,
+            candidate.assessment.probabilities.p_20d,
+        ),
+        current_p_60d: scalar_metric(
+            baseline.assessment.probabilities.p_60d,
+            candidate.assessment.probabilities.p_60d,
+        ),
         backtest_scenarios: build_release_review_backtest_scenario_comparisons(
-            baseline_backtests,
-            candidate_backtests,
+            baseline.backtests,
+            candidate.backtests,
         ),
     }
+}
+
+pub(crate) fn release_review_structured_signal_counts(
+    backtests: &[BacktestScenarioSummary],
+    history: &[AssessmentHistoryPoint],
+    method: &crate::AuditMethodResponseWire,
+) -> (u32, u32) {
+    let use_transitional_bridge = release_review_uses_transitional_actionable_bridge(method);
+    let thresholds = method.runtime_thresholds.as_ref();
+    let in_any_pre_crisis_window = |point: &AssessmentHistoryPoint| {
+        backtests.iter().any(|scenario| {
+            let window_start = scenario.crisis_start - Duration::days(90);
+            point.as_of_date >= window_start && point.as_of_date < scenario.crisis_start
+        })
+    };
+    let strict_actionable_point_count = history
+        .iter()
+        .filter(|point| in_any_pre_crisis_window(point))
+        .filter(|point| release_review_is_actionable_warning_point(point, use_transitional_bridge))
+        .count() as u32;
+    let runtime_floor_hit_count = history
+        .iter()
+        .filter(|point| in_any_pre_crisis_window(point))
+        .filter(|point| release_review_hits_runtime_floor(point, thresholds))
+        .count() as u32;
+    (strict_actionable_point_count, runtime_floor_hit_count)
 }
 
 pub(crate) fn build_release_review_backtest_scenario_comparisons(
@@ -3277,6 +3352,18 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                 release_review_first_non_normal_date(&baseline_window_points);
             let candidate_first_non_normal_date =
                 release_review_first_non_normal_date(&candidate_window_points);
+            let baseline_runtime_floor_hit_point_count = baseline_pre_crisis_points
+                .iter()
+                .filter(|point| {
+                    release_review_hits_runtime_floor(point, baseline_runtime_thresholds)
+                })
+                .count() as u32;
+            let candidate_runtime_floor_hit_point_count = candidate_pre_crisis_points
+                .iter()
+                .filter(|point| {
+                    release_review_hits_runtime_floor(point, candidate_runtime_thresholds)
+                })
+                .count() as u32;
             let baseline_actionable_hits = release_review_actionable_forward_hits_by_date(
                 &baseline_pre_crisis_points,
                 baseline_use_transitional_bridge,
@@ -3348,6 +3435,24 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                     if baseline_point.is_none() && candidate_point.is_none() {
                         return None;
                     }
+                    let baseline_strict_review_actionable = baseline_point.is_some_and(|point| {
+                        release_review_is_actionable_warning_point(
+                            point,
+                            baseline_use_transitional_bridge,
+                        )
+                    });
+                    let candidate_strict_review_actionable = candidate_point.is_some_and(|point| {
+                        release_review_is_actionable_warning_point(
+                            point,
+                            candidate_use_transitional_bridge,
+                        )
+                    });
+                    let baseline_runtime_floor_hit = baseline_point.is_some_and(|point| {
+                        release_review_hits_runtime_floor(point, baseline_runtime_thresholds)
+                    });
+                    let candidate_runtime_floor_hit = candidate_point.is_some_and(|point| {
+                        release_review_hits_runtime_floor(point, candidate_runtime_thresholds)
+                    });
                     Some(crate::ReleaseReviewScenarioPointComparison {
                         as_of_date: date,
                         baseline_p20d: baseline_point.map(|point| point.p_20d),
@@ -3366,18 +3471,12 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                         candidate_time_bucket: candidate_point
                             .map(release_review_time_bucket_name)
                             .map(str::to_string),
-                        baseline_actionable: baseline_point.is_some_and(|point| {
-                            release_review_is_actionable_warning_point(
-                                point,
-                                baseline_use_transitional_bridge,
-                            )
-                        }),
-                        candidate_actionable: candidate_point.is_some_and(|point| {
-                            release_review_is_actionable_warning_point(
-                                point,
-                                candidate_use_transitional_bridge,
-                            )
-                        }),
+                        baseline_strict_review_actionable,
+                        candidate_strict_review_actionable,
+                        baseline_runtime_floor_hit,
+                        candidate_runtime_floor_hit,
+                        baseline_actionable: baseline_strict_review_actionable,
+                        candidate_actionable: candidate_strict_review_actionable,
                         baseline_actionable_forward_5d_hits: baseline_actionable_hits
                             .get(&date)
                             .map(|(hit_count, _)| *hit_count),
@@ -3396,6 +3495,24 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                         candidate_trigger_codes: candidate_point
                             .map(|point| point.posture_trigger_codes.clone())
                             .unwrap_or_default(),
+                        baseline_runtime_actionable_block_reason: baseline_point.and_then(
+                            |point| {
+                                release_review_runtime_actionable_block_reason(
+                                    point,
+                                    baseline_use_transitional_bridge,
+                                    baseline_runtime_thresholds,
+                                )
+                            },
+                        ),
+                        candidate_runtime_actionable_block_reason: candidate_point.and_then(
+                            |point| {
+                                release_review_runtime_actionable_block_reason(
+                                    point,
+                                    candidate_use_transitional_bridge,
+                                    candidate_runtime_thresholds,
+                                )
+                            },
+                        ),
                         baseline_actionable_diagnostic: baseline_point.map(|point| {
                             release_review_actionable_diagnostic(
                                 point,
@@ -3452,6 +3569,8 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                         )
                     })
                     .count() as u32,
+                baseline_runtime_floor_hit_point_count,
+                candidate_runtime_floor_hit_point_count,
                 baseline_max_p20d: release_review_max_metric(
                     &baseline_pre_crisis_points,
                     |point| point.p_20d,
@@ -3536,15 +3655,8 @@ fn release_review_first_runtime_floor_hit_without_l3(
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> Option<(NaiveDate, String)> {
     points.iter().find_map(|point| {
-        if release_review_is_actionable_warning_point(point, use_transitional_bridge)
-            || !release_review_hits_runtime_floor(point, thresholds)
-        {
-            return None;
-        }
-        Some((
-            point.as_of_date,
-            release_review_actionable_diagnostic(point, use_transitional_bridge, thresholds),
-        ))
+        release_review_runtime_actionable_block_reason(point, use_transitional_bridge, thresholds)
+            .map(|reason| (point.as_of_date, reason))
     })
 }
 
@@ -3626,6 +3738,24 @@ fn release_review_actionable_diagnostic(
     }
 
     "review L3 gate not satisfied".to_string()
+}
+
+fn release_review_runtime_actionable_block_reason(
+    point: &AssessmentHistoryPoint,
+    use_transitional_bridge: bool,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> Option<String> {
+    if release_review_is_actionable_warning_point(point, use_transitional_bridge)
+        || !release_review_hits_runtime_floor(point, thresholds)
+    {
+        None
+    } else {
+        Some(release_review_actionable_diagnostic(
+            point,
+            use_transitional_bridge,
+            thresholds,
+        ))
+    }
 }
 
 fn release_review_actionable_forward_hits_by_date(
@@ -3828,6 +3958,16 @@ fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope) {
         "  timely_warning_rate   {} -> {}",
         crate::format_pct(report.comparison.timely_warning_rate.baseline),
         crate::format_pct(report.comparison.timely_warning_rate.candidate)
+    );
+    println!(
+        "  strict_actionable_point_count  {} -> {}",
+        report.comparison.strict_actionable_point_count.baseline,
+        report.comparison.strict_actionable_point_count.candidate
+    );
+    println!(
+        "  runtime_floor_hit_count       {} -> {}",
+        report.comparison.runtime_floor_hit_count.baseline,
+        report.comparison.runtime_floor_hit_count.candidate
     );
     println!(
         "  actionable_precision  {} -> {}",

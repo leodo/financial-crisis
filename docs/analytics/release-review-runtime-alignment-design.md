@@ -127,19 +127,22 @@ vs
   - point-level `actionable_diagnostic`
 - `Focus Scenarios` 选择逻辑已扩展到：
   - `lead_time_days.is_some() && actionable_lead_time_days.is_none()`
+- `release review` 输出已新增结构化双口径字段：
+  - point-level:
+    - `strict_review_actionable`
+    - `runtime_floor_hit`
+    - `runtime_actionable_block_reason`
+  - summary-level:
+    - `strict_actionable_point_count`
+    - `runtime_floor_hit_count`
+- markdown / 控制台 summary 已同步展示上述双口径计数与 block reason。
 
-### 5.2 下一步代码改动
+### 5.2 下一步文档与评审对齐
 
-1. 在 release review 输出里增加显式字段：
-   - `runtime_floor_hit`
-   - `strict_review_actionable`
-   - `runtime_actionable_block_reason`
-2. 在聚合 summary 中增加双口径计数：
-   - `strict_actionable_point_count`
-   - `runtime_floor_hit_count`
-3. 在 backtest / guardrail 文档中明确：
+1. 在 backtest / guardrail 文档中明确：
    - 当前正式护栏仍以 strict review 为准；
    - 但训练主线优先修复 `runtime floor 已命中、却长期不能形成 L3` 的场景。
+2. 让正式 `strict_rebuild release review` 产物持续携带这组双口径字段，避免后续新报告回退成只有自由文本。
 
 ### 5.3 posture 审计主线
 

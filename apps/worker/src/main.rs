@@ -315,6 +315,10 @@ struct ReleaseReviewScenarioPointComparison {
     candidate_posture: Option<String>,
     baseline_time_bucket: Option<String>,
     candidate_time_bucket: Option<String>,
+    baseline_strict_review_actionable: bool,
+    candidate_strict_review_actionable: bool,
+    baseline_runtime_floor_hit: bool,
+    candidate_runtime_floor_hit: bool,
     baseline_actionable: bool,
     candidate_actionable: bool,
     baseline_actionable_forward_5d_hits: Option<u32>,
@@ -323,6 +327,8 @@ struct ReleaseReviewScenarioPointComparison {
     candidate_actionable_sustained: Option<bool>,
     baseline_trigger_codes: Vec<String>,
     candidate_trigger_codes: Vec<String>,
+    baseline_runtime_actionable_block_reason: Option<String>,
+    candidate_runtime_actionable_block_reason: Option<String>,
     baseline_actionable_diagnostic: Option<String>,
     candidate_actionable_diagnostic: Option<String>,
 }
@@ -344,6 +350,8 @@ struct ReleaseReviewScenarioFocusDiagnostic {
     candidate_first_non_normal_date: Option<NaiveDate>,
     baseline_actionable_point_count: u32,
     candidate_actionable_point_count: u32,
+    baseline_runtime_floor_hit_point_count: u32,
+    candidate_runtime_floor_hit_point_count: u32,
     baseline_max_p20d: Option<f64>,
     candidate_max_p20d: Option<f64>,
     baseline_max_p60d: Option<f64>,
@@ -358,6 +366,8 @@ struct ReleaseReviewScenarioFocusDiagnostic {
 #[derive(Debug, Clone, Serialize)]
 struct ReleaseReviewComparisonSummary {
     timely_warning_rate: ReleaseReviewScalarMetric,
+    strict_actionable_point_count: ReleaseReviewCountMetric,
+    runtime_floor_hit_count: ReleaseReviewCountMetric,
     actionable_precision: ReleaseReviewScalarMetric,
     longest_false_positive_episode_days: ReleaseReviewCountMetric,
     current_p_5d: ReleaseReviewScalarMetric,
@@ -2879,6 +2889,20 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
     );
     let _ = writeln!(
         markdown,
+        "| strict_actionable_point_count | {} | {} | {} |",
+        report.comparison.strict_actionable_point_count.baseline,
+        report.comparison.strict_actionable_point_count.candidate,
+        format_signed_count_delta(report.comparison.strict_actionable_point_count.delta)
+    );
+    let _ = writeln!(
+        markdown,
+        "| runtime_floor_hit_count | {} | {} | {} |",
+        report.comparison.runtime_floor_hit_count.baseline,
+        report.comparison.runtime_floor_hit_count.candidate,
+        format_signed_count_delta(report.comparison.runtime_floor_hit_count.delta)
+    );
+    let _ = writeln!(
+        markdown,
         "| actionable_precision | {} | {} | {} |",
         format_pct(report.comparison.actionable_precision.baseline),
         format_pct(report.comparison.actionable_precision.candidate),
@@ -2977,6 +3001,12 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
             );
             let _ = writeln!(
                 markdown,
+                "- Pre-crisis runtime-floor hits: baseline={} | candidate={}",
+                scenario.baseline_runtime_floor_hit_point_count,
+                scenario.candidate_runtime_floor_hit_point_count
+            );
+            let _ = writeln!(
+                markdown,
                 "- Pre-crisis max p_20d: baseline={} | candidate={}",
                 format_optional_pct(scenario.baseline_max_p20d),
                 format_optional_pct(scenario.candidate_max_p20d)
@@ -3014,16 +3044,16 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
             }
             let _ = writeln!(
                 markdown,
-                "| Date | Base p_20d | Cand p_20d | Base p_60d | Cand p_60d | Base posture | Cand posture | Base bucket | Cand bucket | Base actionable | Cand actionable | Base 5d hits | Cand 5d hits | Base sustained | Cand sustained | Base triggers | Cand triggers | Base diag | Cand diag |"
+                "| Date | Base p_20d | Cand p_20d | Base p_60d | Cand p_60d | Base posture | Cand posture | Base bucket | Cand bucket | Base strict L3 | Cand strict L3 | Base runtime floor | Cand runtime floor | Base 5d hits | Cand 5d hits | Base sustained | Cand sustained | Base triggers | Cand triggers | Base runtime block | Cand runtime block | Base diag | Cand diag |"
             );
             let _ = writeln!(
                 markdown,
-                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
             );
             for point in &scenario.interesting_points {
                 let _ = writeln!(
                     markdown,
-                    "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                    "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
                     point.as_of_date,
                     format_optional_pct(point.baseline_p20d),
                     format_optional_pct(point.candidate_p20d),
@@ -3033,14 +3063,24 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
                     point.candidate_posture.as_deref().unwrap_or("—"),
                     point.baseline_time_bucket.as_deref().unwrap_or("—"),
                     point.candidate_time_bucket.as_deref().unwrap_or("—"),
-                    format_bool_flag(point.baseline_actionable),
-                    format_bool_flag(point.candidate_actionable),
+                    format_bool_flag(point.baseline_strict_review_actionable),
+                    format_bool_flag(point.candidate_strict_review_actionable),
+                    format_bool_flag(point.baseline_runtime_floor_hit),
+                    format_bool_flag(point.candidate_runtime_floor_hit),
                     format_optional_count(point.baseline_actionable_forward_5d_hits),
                     format_optional_count(point.candidate_actionable_forward_5d_hits),
                     format_optional_bool_flag(point.baseline_actionable_sustained),
                     format_optional_bool_flag(point.candidate_actionable_sustained),
                     format_trigger_codes(&point.baseline_trigger_codes),
                     format_trigger_codes(&point.candidate_trigger_codes),
+                    point
+                        .baseline_runtime_actionable_block_reason
+                        .as_deref()
+                        .unwrap_or("—"),
+                    point
+                        .candidate_runtime_actionable_block_reason
+                        .as_deref()
+                        .unwrap_or("—"),
                     point
                         .baseline_actionable_diagnostic
                         .as_deref()
@@ -3809,9 +3849,10 @@ mod tests {
     use super::commands::release::{
         build_release_review_backtest_scenario_comparisons,
         build_release_review_scenario_focus_diagnostics, compare_actionability_guardrails,
-        compare_probability_guardrails, ReleaseFormalProbabilityCompareOptions,
-        ReleaseFormalProbabilitySliceOptions, ReleaseProbabilitySliceOptions,
-        ReleasePublishOptions, ReleaseReviewOptions, ReleaseSwitchOptions,
+        compare_probability_guardrails, release_review_structured_signal_counts,
+        ReleaseFormalProbabilityCompareOptions, ReleaseFormalProbabilitySliceOptions,
+        ReleaseProbabilitySliceOptions, ReleasePublishOptions, ReleaseReviewOptions,
+        ReleaseSwitchOptions,
     };
     use super::commands::{
         render_formal_dataset_slice_csv, sanitize_filename_component, FormalDatasetSliceOptions,
@@ -7454,6 +7495,8 @@ mod tests {
         assert_eq!(rows[0].candidate_first_l3_date, None);
         assert_eq!(rows[0].baseline_actionable_point_count, 4);
         assert_eq!(rows[0].candidate_actionable_point_count, 1);
+        assert_eq!(rows[0].baseline_runtime_floor_hit_point_count, 5);
+        assert_eq!(rows[0].candidate_runtime_floor_hit_point_count, 5);
         assert_eq!(
             rows[0].candidate_first_runtime_floor_hit_without_l3_date,
             Some(first_l2)
@@ -7470,10 +7513,22 @@ mod tests {
             .expect("first_l3 point should be present");
         assert!(first_l3_point.baseline_actionable);
         assert!(!first_l3_point.candidate_actionable);
+        assert!(first_l3_point.baseline_strict_review_actionable);
+        assert!(!first_l3_point.candidate_strict_review_actionable);
+        assert!(first_l3_point.baseline_runtime_floor_hit);
+        assert!(first_l3_point.candidate_runtime_floor_hit);
         assert_eq!(first_l3_point.baseline_actionable_forward_5d_hits, Some(4));
         assert_eq!(first_l3_point.candidate_actionable_forward_5d_hits, Some(1));
         assert_eq!(first_l3_point.baseline_actionable_sustained, Some(true));
         assert_eq!(first_l3_point.candidate_actionable_sustained, Some(false));
+        assert_eq!(
+            first_l3_point.baseline_runtime_actionable_block_reason,
+            None
+        );
+        assert!(first_l3_point
+            .candidate_runtime_actionable_block_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("hit runtime floor")));
         assert_eq!(
             first_l3_point.baseline_actionable_diagnostic.as_deref(),
             Some("actionable")
@@ -7556,6 +7611,8 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].scenario_id, "scenario_structural");
         assert_eq!(rows[0].outcome, "missed_to_missed");
+        assert_eq!(rows[0].baseline_runtime_floor_hit_point_count, 2);
+        assert_eq!(rows[0].candidate_runtime_floor_hit_point_count, 2);
         assert_eq!(
             rows[0].baseline_first_runtime_floor_hit_without_l3_date,
             Some(runtime_floor_date)
@@ -7568,6 +7625,62 @@ mod tests {
             .interesting_points
             .iter()
             .any(|point| point.as_of_date == runtime_floor_date));
+    }
+
+    #[test]
+    fn release_review_structured_signal_counts_distinguish_strict_and_runtime_hits() {
+        let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+        let backtests = vec![synthetic_backtest_summary_with_dates(
+            "scenario_structural",
+            "Structural Only",
+            Some(NaiveDate::from_ymd_opt(2023, 2, 20).unwrap()),
+            None,
+            Some(18),
+            None,
+            0,
+        )];
+        let history = vec![
+            runtime_history_point_with_state(
+                NaiveDate::from_ymd_opt(2023, 2, 10).unwrap(),
+                52.0,
+                0.02,
+                0.08,
+                0.14,
+                DecisionPosture::Normal,
+                TimeToRiskBucket::Normal,
+                41.0,
+                &[],
+            ),
+            runtime_history_point_with_state(
+                NaiveDate::from_ymd_opt(2023, 2, 20).unwrap(),
+                54.0,
+                0.02,
+                0.09,
+                0.16,
+                DecisionPosture::Normal,
+                TimeToRiskBucket::Normal,
+                42.0,
+                &[],
+            ),
+            runtime_history_point_with_state(
+                crisis_start,
+                60.0,
+                0.05,
+                0.21,
+                0.32,
+                DecisionPosture::Normal,
+                TimeToRiskBucket::Normal,
+                44.0,
+                &[],
+            ),
+        ];
+        let method = formal_main_audit_method_wire();
+
+        let (strict_actionable_point_count, runtime_floor_hit_count) =
+            release_review_structured_signal_counts(&backtests, &history, &method);
+
+        assert_eq!(strict_actionable_point_count, 0);
+        assert_eq!(runtime_floor_hit_count, 2);
     }
 
     #[test]
