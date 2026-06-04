@@ -50,9 +50,10 @@ use fc_domain::{
     probability_feature_names_for_transform, resolve_probability_feature_value,
     ActionEpisodeTemplateId, ActionabilityBundle, ActionabilityLevel, AssessmentHistoryPoint,
     AssessmentMethodVersions, AssessmentSnapshot, BacktestScenarioSummary,
-    CrisisScenarioActionEpisodeOverrides, Frequency, HorizonEvaluationSummary,
-    LogisticProbabilityModel, ModelReleaseManifest, ModelReleaseRecord, PlattCalibrationArtifact,
-    ProbabilityBundle, ProbabilityBundleEvaluation, ProbabilityCoefficient, ProbabilityFeatureStat,
+    CrisisScenarioActionEpisodeOverrides, CrisisScenarioDefinition, CrisisScenarioFamily,
+    CrisisScenarioTrainingRole, Frequency, HorizonEvaluationSummary, LogisticProbabilityModel,
+    ModelReleaseManifest, ModelReleaseRecord, PlattCalibrationArtifact, ProbabilityBundle,
+    ProbabilityBundleEvaluation, ProbabilityCoefficient, ProbabilityFeatureStat,
     ProbabilityHorizonBundle, ProtectedStressWindowCatalog, FEATURE_BUCKET_MONTHS_OR_HIGHER,
     FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER, FEATURE_COVERAGE_SCORE,
     FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
@@ -397,6 +398,19 @@ struct ReleaseReviewFailureModeSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct ReleaseReviewHistoricalAuditPriority {
+    scenario_id: String,
+    scenario_name: String,
+    scenario_family: String,
+    training_role: String,
+    protected_window: bool,
+    baseline_failure_mode: String,
+    candidate_failure_mode: String,
+    primary_workstream: String,
+    suggested_review: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct ReleaseReviewComparisonSummary {
     timely_warning_rate: ReleaseReviewScalarMetric,
     strict_actionable_point_count: ReleaseReviewCountMetric,
@@ -564,6 +578,7 @@ struct ReleaseReviewEnvelope {
     baseline_actionability_review: ReleaseActionabilityReview,
     candidate_actionability_review: ReleaseActionabilityReview,
     scenario_focus: Vec<ReleaseReviewScenarioFocusDiagnostic>,
+    historical_audit_priorities: Vec<ReleaseReviewHistoricalAuditPriority>,
     comparison: ReleaseReviewComparisonSummary,
     probability_guard_regressions: Vec<String>,
     probability_guard_passed: bool,
@@ -3076,6 +3091,33 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
         }
         let _ = writeln!(markdown);
     }
+    if !report.historical_audit_priorities.is_empty() {
+        let _ = writeln!(markdown, "## Historical Audit Priorities");
+        let _ = writeln!(markdown);
+        let _ = writeln!(
+            markdown,
+            "| Scenario | Family | Role | Protected | Baseline mode | Candidate mode | Workstream | Suggested review |"
+        );
+        let _ = writeln!(
+            markdown,
+            "| --- | --- | --- | --- | --- | --- | --- | --- |"
+        );
+        for row in &report.historical_audit_priorities {
+            let _ = writeln!(
+                markdown,
+                "| {} | {} | {} | {} | {} | {} | {} | {} |",
+                row.scenario_name,
+                row.scenario_family,
+                row.training_role,
+                if row.protected_window { "yes" } else { "no" },
+                row.baseline_failure_mode,
+                row.candidate_failure_mode,
+                row.primary_workstream,
+                row.suggested_review,
+            );
+        }
+        let _ = writeln!(markdown);
+    }
     if !report.scenario_focus.is_empty() {
         let _ = writeln!(markdown, "## Focus Scenarios");
         let _ = writeln!(markdown);
@@ -3458,6 +3500,140 @@ pub(crate) fn summarize_release_review_failure_modes(
             .then_with(|| left.failure_mode.cmp(&right.failure_mode))
     });
     rows
+}
+
+pub(crate) fn summarize_release_review_historical_audit_priorities(
+    scenarios: &[ReleaseReviewScenarioFocusDiagnostic],
+) -> Vec<ReleaseReviewHistoricalAuditPriority> {
+    let catalog = load_crisis_scenario_catalog();
+    let scenarios_by_id = catalog
+        .scenarios
+        .iter()
+        .map(|scenario| (scenario.scenario_id.as_str(), scenario))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut rows = scenarios
+        .iter()
+        .filter_map(|scenario| {
+            let definition = scenarios_by_id
+                .get(scenario.scenario_id.as_str())
+                .copied()?;
+            if !definition.protected_window
+                && definition.training_role == CrisisScenarioTrainingRole::Mandatory
+            {
+                return None;
+            }
+
+            let baseline_failure_mode = scenario
+                .baseline_primary_failure_mode
+                .clone()
+                .unwrap_or_else(|| "unclassified".to_string());
+            let candidate_failure_mode = scenario
+                .candidate_primary_failure_mode
+                .clone()
+                .unwrap_or_else(|| baseline_failure_mode.clone());
+            let primary_workstream = release_review_primary_workstream(
+                scenario.baseline_primary_failure_mode.as_deref(),
+                scenario.candidate_primary_failure_mode.as_deref(),
+            )
+            .to_string();
+
+            Some(ReleaseReviewHistoricalAuditPriority {
+                scenario_id: scenario.scenario_id.clone(),
+                scenario_name: scenario.name.clone(),
+                scenario_family: release_review_scenario_family_name(definition.family).to_string(),
+                training_role: release_review_scenario_training_role_name(definition.training_role)
+                    .to_string(),
+                protected_window: definition.protected_window,
+                baseline_failure_mode,
+                candidate_failure_mode,
+                primary_workstream: primary_workstream.clone(),
+                suggested_review: release_review_suggested_historical_audit(
+                    definition,
+                    &primary_workstream,
+                )
+                .to_string(),
+            })
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| {
+        release_review_historical_workstream_priority(&left.primary_workstream)
+            .cmp(&release_review_historical_workstream_priority(
+                &right.primary_workstream,
+            ))
+            .then_with(|| left.scenario_id.cmp(&right.scenario_id))
+    });
+    rows
+}
+
+fn release_review_primary_workstream(
+    baseline_failure_mode: Option<&str>,
+    candidate_failure_mode: Option<&str>,
+) -> &'static str {
+    match candidate_failure_mode
+        .or(baseline_failure_mode)
+        .unwrap_or_default()
+    {
+        "strict_gate_mismatch" => "strict_review_vs_runtime_mapping",
+        "posture_continuity_failure" => "posture_continuity",
+        "score_confirmation_failure" => "score_confirmation",
+        "transitional_bridge_failure" => "transitional_bridge",
+        _ => "residual_release_review_audit",
+    }
+}
+
+fn release_review_historical_workstream_priority(workstream: &str) -> u8 {
+    match workstream {
+        "strict_review_vs_runtime_mapping" => 0,
+        "posture_continuity" => 1,
+        "score_confirmation" => 2,
+        "transitional_bridge" => 3,
+        _ => 4,
+    }
+}
+
+fn release_review_suggested_historical_audit(
+    scenario: &CrisisScenarioDefinition,
+    primary_workstream: &str,
+) -> &'static str {
+    match primary_workstream {
+        "strict_review_vs_runtime_mapping" => {
+            "复核 strict review gate 与 runtime floor 的映射，先确认长窗结构性样本是否被过高的 p20d/p60d 硬门槛过早挡住。"
+        }
+        "posture_continuity" => {
+            "复核 prepare/months 连续性，重点看高 p20d/p60d 日期为何仍长期停在 normal，以及 3/5 sustained 命中为何建不起来。"
+        }
+        "score_confirmation" => {
+            "复核 months/prepare 的 score confirmation，确认 overall_score 与 external_shock_score 的确认门槛是否对结构性样本过严。"
+        }
+        "transitional_bridge" => {
+            "复核 prepare/months bridge 的启用条件，确认 bridge 只是在过渡模型中失效，还是正式策略本身就缺少连续触发。"
+        }
+        _ if scenario.family == CrisisScenarioFamily::MixedSystemicStress => {
+            "继续逐点复核 mixed_systemic_stress 的 runtime block mix，确认问题更像 gate、continuity，还是 residual review clause。"
+        }
+        _ => {
+            "继续逐点复核 runtime block mix 与 continuity facets，确认未分类阻塞到底落在 gate、continuity 还是 residual review clause。"
+        }
+    }
+}
+
+fn release_review_scenario_family_name(family: CrisisScenarioFamily) -> &'static str {
+    match family {
+        CrisisScenarioFamily::AcuteMarketLiquidityCrash => "acute_market_liquidity_crash",
+        CrisisScenarioFamily::SystemicCreditBankingCrisis => "systemic_credit_banking_crisis",
+        CrisisScenarioFamily::MixedSystemicStress => "mixed_systemic_stress",
+        CrisisScenarioFamily::RateShockOrPolicyDislocation => "rate_shock_or_policy_dislocation",
+    }
+}
+
+fn release_review_scenario_training_role_name(role: CrisisScenarioTrainingRole) -> &'static str {
+    match role {
+        CrisisScenarioTrainingRole::Mandatory => "mandatory",
+        CrisisScenarioTrainingRole::CandidateOptional => "candidate_optional",
+        CrisisScenarioTrainingRole::ExtensionOnly => "extension_only",
+        CrisisScenarioTrainingRole::NoPositiveMain => "no_positive_main",
+    }
 }
 
 fn format_runtime_category_list(categories: &[String]) -> String {
@@ -4171,6 +4347,7 @@ mod tests {
         scenario_count_for_index_range, select_actionability_calibration_strategy,
         select_actionability_decision_threshold, select_probability_calibration_strategy,
         select_probability_decision_threshold, summarize_release_review_failure_modes,
+        summarize_release_review_historical_audit_priorities,
         summarize_release_runtime_regime_probabilities,
         summarize_release_runtime_regime_separation, ActionabilityLevel, AuditExportOptions,
         CrisisScenario, FeatureSnapshotBuildOptions, FormalDatasetBuildOptions,
@@ -8292,6 +8469,164 @@ mod tests {
             vec!["Posture Continuity".to_string()]
         );
         assert!(posture.candidate_scenarios.is_empty());
+    }
+
+    #[test]
+    fn release_review_historical_audit_priorities_map_scenarios_to_workstreams() {
+        let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+        let summary = summarize_release_review_historical_audit_priorities(&[
+            ReleaseReviewScenarioFocusDiagnostic {
+                scenario_id: "us_dotcom_unwind_2000".to_string(),
+                name: "2000-2001 科网泡沫出清".to_string(),
+                outcome: "missed_to_missed".to_string(),
+                window_start: crisis_start,
+                window_end: crisis_start,
+                crisis_start,
+                crisis_end: crisis_start,
+                baseline_first_l2_date: None,
+                candidate_first_l2_date: None,
+                baseline_first_l3_date: None,
+                candidate_first_l3_date: None,
+                baseline_first_non_normal_date: None,
+                candidate_first_non_normal_date: None,
+                baseline_actionable_point_count: 0,
+                candidate_actionable_point_count: 0,
+                baseline_runtime_floor_hit_point_count: 3,
+                candidate_runtime_floor_hit_point_count: 2,
+                baseline_max_p20d: None,
+                candidate_max_p20d: None,
+                baseline_max_p60d: None,
+                candidate_max_p60d: None,
+                baseline_first_runtime_floor_hit_without_l3_date: None,
+                candidate_first_runtime_floor_hit_without_l3_date: None,
+                baseline_first_runtime_floor_hit_without_l3_reason: None,
+                candidate_first_runtime_floor_hit_without_l3_reason: None,
+                baseline_primary_failure_mode: Some("strict_gate_mismatch".to_string()),
+                candidate_primary_failure_mode: Some("strict_gate_mismatch".to_string()),
+                dominant_runtime_blocks: ReleaseReviewRuntimeDominantCategories {
+                    baseline_categories: vec!["review_gate_gap".to_string()],
+                    baseline_count: 3,
+                    candidate_categories: vec!["review_gate_gap".to_string()],
+                    candidate_count: 2,
+                },
+                dominant_runtime_continuity_facets: ReleaseReviewRuntimeDominantCategories {
+                    baseline_categories: vec!["gate_gap:p20d_and_p60d".to_string()],
+                    baseline_count: 3,
+                    candidate_categories: vec!["gate_gap:p20d_and_p60d".to_string()],
+                    candidate_count: 2,
+                },
+                runtime_block_counts: Vec::new(),
+                runtime_continuity_facet_counts: Vec::new(),
+                interesting_points: Vec::new(),
+            },
+            ReleaseReviewScenarioFocusDiagnostic {
+                scenario_id: "us_early_90s_banking_stress".to_string(),
+                name: "1990-1993 美国银行与衰退压力".to_string(),
+                outcome: "missed_to_missed".to_string(),
+                window_start: crisis_start,
+                window_end: crisis_start,
+                crisis_start,
+                crisis_end: crisis_start,
+                baseline_first_l2_date: None,
+                candidate_first_l2_date: None,
+                baseline_first_l3_date: None,
+                candidate_first_l3_date: None,
+                baseline_first_non_normal_date: None,
+                candidate_first_non_normal_date: None,
+                baseline_actionable_point_count: 0,
+                candidate_actionable_point_count: 0,
+                baseline_runtime_floor_hit_point_count: 5,
+                candidate_runtime_floor_hit_point_count: 5,
+                baseline_max_p20d: None,
+                candidate_max_p20d: None,
+                baseline_max_p60d: None,
+                candidate_max_p60d: None,
+                baseline_first_runtime_floor_hit_without_l3_date: None,
+                candidate_first_runtime_floor_hit_without_l3_date: None,
+                baseline_first_runtime_floor_hit_without_l3_reason: None,
+                candidate_first_runtime_floor_hit_without_l3_reason: None,
+                baseline_primary_failure_mode: Some("posture_continuity_failure".to_string()),
+                candidate_primary_failure_mode: Some("posture_continuity_failure".to_string()),
+                dominant_runtime_blocks: ReleaseReviewRuntimeDominantCategories {
+                    baseline_categories: vec!["posture_bucket_normal".to_string()],
+                    baseline_count: 5,
+                    candidate_categories: vec!["posture_bucket_normal".to_string()],
+                    candidate_count: 5,
+                },
+                dominant_runtime_continuity_facets: ReleaseReviewRuntimeDominantCategories {
+                    baseline_categories: vec!["posture:normal".to_string()],
+                    baseline_count: 5,
+                    candidate_categories: vec!["posture:normal".to_string()],
+                    candidate_count: 5,
+                },
+                runtime_block_counts: Vec::new(),
+                runtime_continuity_facet_counts: Vec::new(),
+                interesting_points: Vec::new(),
+            },
+            ReleaseReviewScenarioFocusDiagnostic {
+                scenario_id: "us_regional_banks_2023".to_string(),
+                name: "2023 美国区域银行危机".to_string(),
+                outcome: "timely_to_missed".to_string(),
+                window_start: crisis_start,
+                window_end: crisis_start,
+                crisis_start,
+                crisis_end: crisis_start,
+                baseline_first_l2_date: None,
+                candidate_first_l2_date: None,
+                baseline_first_l3_date: None,
+                candidate_first_l3_date: None,
+                baseline_first_non_normal_date: None,
+                candidate_first_non_normal_date: None,
+                baseline_actionable_point_count: 0,
+                candidate_actionable_point_count: 0,
+                baseline_runtime_floor_hit_point_count: 1,
+                candidate_runtime_floor_hit_point_count: 0,
+                baseline_max_p20d: None,
+                candidate_max_p20d: None,
+                baseline_max_p60d: None,
+                candidate_max_p60d: None,
+                baseline_first_runtime_floor_hit_without_l3_date: None,
+                candidate_first_runtime_floor_hit_without_l3_date: None,
+                baseline_first_runtime_floor_hit_without_l3_reason: None,
+                candidate_first_runtime_floor_hit_without_l3_reason: None,
+                baseline_primary_failure_mode: Some("residual_review_l3_failure".to_string()),
+                candidate_primary_failure_mode: Some("score_confirmation_failure".to_string()),
+                dominant_runtime_blocks: ReleaseReviewRuntimeDominantCategories {
+                    baseline_categories: vec!["review_l3_gate_not_satisfied".to_string()],
+                    baseline_count: 1,
+                    candidate_categories: vec!["prepare_score_low".to_string()],
+                    candidate_count: 1,
+                },
+                dominant_runtime_continuity_facets: ReleaseReviewRuntimeDominantCategories {
+                    baseline_categories: vec!["confirmation:ok_or_not_needed".to_string()],
+                    baseline_count: 1,
+                    candidate_categories: vec!["confirmation:prepare_score_low".to_string()],
+                    candidate_count: 1,
+                },
+                runtime_block_counts: Vec::new(),
+                runtime_continuity_facet_counts: Vec::new(),
+                interesting_points: Vec::new(),
+            },
+        ]);
+
+        assert_eq!(summary.len(), 2);
+        assert_eq!(summary[0].scenario_id, "us_dotcom_unwind_2000");
+        assert_eq!(
+            summary[0].primary_workstream,
+            "strict_review_vs_runtime_mapping"
+        );
+        assert_eq!(summary[0].training_role, "candidate_optional");
+        assert!(summary[0].protected_window);
+        assert!(summary[0]
+            .suggested_review
+            .contains("strict review gate 与 runtime floor"));
+
+        assert_eq!(summary[1].scenario_id, "us_early_90s_banking_stress");
+        assert_eq!(summary[1].primary_workstream, "posture_continuity");
+        assert_eq!(summary[1].training_role, "extension_only");
+        assert!(summary[1]
+            .suggested_review
+            .contains("prepare/months 连续性"));
     }
 
     #[test]

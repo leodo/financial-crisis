@@ -459,6 +459,11 @@
             4.3 [x] `release review` 已新增 `Failure Mode Summary`，
                 可直接汇总 baseline / candidate 各有多少历史场景主要卡在
                 `strict_gate_mismatch`、`posture_continuity_failure` 等失败模式；
+            4.4 [x] `release review` 已新增 `Historical Audit Priorities`，
+                会把 `2000-2001 / 1990-1993` 这类历史样本直接归到
+                `strict_review_vs_runtime_mapping` /
+                `posture_continuity` 等下一步工作流，
+                同时保留 `family / training_role / protected_window` 约束；
             5. 下一步不再把两类 missed 场景混成一个问题：
                - 对 `2000-2001` 先专项复核 strict gate 与 runtime floor 的映射；
                - 对 `1990-1993` 先专项复核为什么高 `p20d/p60d` 长期无法推动 `prepare/months` 连续成立。

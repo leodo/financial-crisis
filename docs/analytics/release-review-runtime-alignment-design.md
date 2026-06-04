@@ -227,6 +227,15 @@ vs
 - candidate 有多少历史场景主要卡在 `posture_continuity_failure`；
 - 每类失败模式分别对应哪些历史样本。
 
+现在又继续往前推了一层 `Historical Audit Priorities`，会直接把这些历史样本落到下一步该修的工作流：
+
+- `2000-2001` 这类 `strict_gate_mismatch` 场景，会直接归到
+  `strict_review_vs_runtime_mapping`；
+- `1990-1993` 这类 `posture_continuity_failure` 场景，会直接归到
+  `posture_continuity`；
+- 同时还会保留该场景的 `family / training_role / protected_window`，
+  避免把 `candidate_optional / extension_only / protected stress` 样本和正式主正例混在一起讨论。
+
 这意味着后续不需要再只靠肉眼扫长表，已经可以直接回答：
 
 - 是 `review gate` 挡住更多；
@@ -277,3 +286,6 @@ vs
 - `2000-2001` 应优先复核 strict review gate 与 runtime floor 的映射是否过严；
 - `1990-1993` 应优先复核为什么长期高 `p20d/p60d` 仍无法把 posture/bucket 从 `normal` 推到 `prepare/months`；
 - 只有把这两类失败拆开，后续训练和 policy 修改才不会继续混成一个问题处理。
+
+而 `Historical Audit Priorities` 的意义，就是把这两条下一步直接固化到正式
+`release review` 产物里，避免后续每一轮 review 都重新手工解释一遍。

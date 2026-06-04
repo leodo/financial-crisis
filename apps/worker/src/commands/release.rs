@@ -1484,6 +1484,17 @@ async fn run_release_review(
     overall_regressions.extend(probability_regressions.iter().cloned());
     overall_regressions.extend(actionability_regressions.iter().cloned());
     overall_regressions.extend(runtime_sanity_regressions.iter().cloned());
+    let scenario_focus = build_release_review_scenario_focus_diagnostics(
+        &baseline_runtime_snapshot.backtests,
+        &candidate_runtime_snapshot.backtests,
+        &baseline_runtime_snapshot.history,
+        &candidate_runtime_snapshot.history,
+        &baseline_runtime_snapshot.method,
+        &candidate_runtime_snapshot.method,
+    );
+    let historical_audit_priorities =
+        crate::summarize_release_review_historical_audit_priorities(&scenario_focus);
+
     let report = crate::ReleaseReviewEnvelope {
         reviewed_at: Utc::now().to_rfc3339(),
         market_scope: market_scope.to_string(),
@@ -1516,14 +1527,8 @@ async fn run_release_review(
         candidate_runtime_review,
         baseline_actionability_review,
         candidate_actionability_review,
-        scenario_focus: build_release_review_scenario_focus_diagnostics(
-            &baseline_runtime_snapshot.backtests,
-            &candidate_runtime_snapshot.backtests,
-            &baseline_runtime_snapshot.history,
-            &candidate_runtime_snapshot.history,
-            &baseline_runtime_snapshot.method,
-            &candidate_runtime_snapshot.method,
-        ),
+        scenario_focus,
+        historical_audit_priorities,
         probability_guard_passed: probability_regressions.is_empty(),
         operational_guard_passed: operational_regressions.is_empty(),
         actionability_guard_passed: actionability_regressions.is_empty(),
@@ -4570,6 +4575,21 @@ fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope) {
                 } else {
                     row.candidate_scenarios.join(", ")
                 }
+            );
+        }
+    }
+    if !report.historical_audit_priorities.is_empty() {
+        println!("Historical audit priorities:");
+        for row in &report.historical_audit_priorities {
+            println!(
+                "  - {} [{}] workstream={} baseline={} candidate={} protected={} review={}",
+                row.scenario_name,
+                row.training_role,
+                row.primary_workstream,
+                row.baseline_failure_mode,
+                row.candidate_failure_mode,
+                if row.protected_window { "yes" } else { "no" },
+                row.suggested_review
             );
         }
     }
