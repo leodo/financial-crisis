@@ -34,10 +34,6 @@ import type {
   DecisionRollingAuditEpisodeRow
 } from "./useDecisionViewModel";
 
-function humanizeDecisionCopy(text: string) {
-  return humanizeNarrativeCopy(text);
-}
-
 export function DecisionWhyNowPanel({
   assessment,
   posture
@@ -48,12 +44,12 @@ export function DecisionWhyNowPanel({
   return (
     <section className="surface">
       <SurfaceHeader title="为什么是现在" icon={Activity} />
-      <BulletList items={posture.reasons.map(humanizeDecisionCopy)} />
+      <BulletList items={posture.reasons.map(humanizeNarrativeCopy)} />
       <div className="driver-preview">
         <strong>{decisionContent.panels.whyNowTopDrivers}</strong>
         <DriverList rows={assessment.top_risk_drivers.slice(0, 3)} />
       </div>
-      <RuleBox label="升级条件">{humanizeDecisionCopy(posture.upgrade_condition)}</RuleBox>
+      <RuleBox label="升级条件">{humanizeNarrativeCopy(posture.upgrade_condition)}</RuleBox>
     </section>
   );
 }
@@ -72,8 +68,8 @@ export function DecisionReliefPanel({
       <SurfaceHeader title="为什么还没更糟" icon={ShieldCheck} />
       <p className="body-copy">{decisionContent.panels.reliefBody}</p>
       <DriverList rows={assessment.top_relief_drivers.slice(0, 3)} />
-      <RuleBox label="降级条件">{humanizeDecisionCopy(posture.downgrade_condition)}</RuleBox>
-      <RuleBox label="旧版评分层辅助解释">{humanizeDecisionCopy(overview.level_reason)}</RuleBox>
+      <RuleBox label="降级条件">{humanizeNarrativeCopy(posture.downgrade_condition)}</RuleBox>
+      <RuleBox label="旧版评分层辅助解释">{humanizeNarrativeCopy(overview.level_reason)}</RuleBox>
     </section>
   );
 }
@@ -114,10 +110,10 @@ export function DecisionActionPlanPanel({
   return (
     <section className="surface">
       <SurfaceHeader title="组合动作建议" icon={ChartColumnIncreasing} />
-      <p className="body-copy">{humanizeDecisionCopy(assessment.position_guidance.action_summary)}</p>
+      <p className="body-copy">{humanizeNarrativeCopy(assessment.position_guidance.action_summary)}</p>
       <MetricGrid items={actionPlanMetrics} />
-      <RuleBox label="执行节奏">{humanizeDecisionCopy(assessment.position_guidance.execution_urgency)}</RuleBox>
-      <RuleBox label="可信度门槛">{humanizeDecisionCopy(assessment.position_guidance.confidence_gate)}</RuleBox>
+      <RuleBox label="执行节奏">{humanizeNarrativeCopy(assessment.position_guidance.execution_urgency)}</RuleBox>
+      <RuleBox label="可信度门槛">{humanizeNarrativeCopy(assessment.position_guidance.confidence_gate)}</RuleBox>
       {assessment.position_guidance.capital_preservation_overlay_enabled ? (
         <RuleBox label="资本保全叠加已打开">
           {decisionContent.panels.actionPlanCapitalPreservation}
@@ -157,17 +153,17 @@ export function DecisionActionPlanPanel({
       </div>
       <div className="surface-grid">
         <RuleBox label="建议动作">
-          <BulletList items={assessment.position_guidance.actions.map(humanizeDecisionCopy)} compact />
+          <BulletList items={assessment.position_guidance.actions.map(humanizeNarrativeCopy)} compact />
         </RuleBox>
         <RuleBox label="当前先不要做什么">
-          <BulletList items={assessment.position_guidance.forbidden_actions.map(humanizeDecisionCopy)} compact />
+          <BulletList items={assessment.position_guidance.forbidden_actions.map(humanizeNarrativeCopy)} compact />
         </RuleBox>
       </div>
       <RuleBox label="什么情况下再恢复仓位">
-        <BulletList items={assessment.position_guidance.reentry_conditions.map(humanizeDecisionCopy)} compact />
+        <BulletList items={assessment.position_guidance.reentry_conditions.map(humanizeNarrativeCopy)} compact />
       </RuleBox>
       <RuleBox label="执行护栏">
-        <BulletList items={assessment.position_guidance.guardrails.map(humanizeDecisionCopy)} compact />
+        <BulletList items={assessment.position_guidance.guardrails.map(humanizeNarrativeCopy)} compact />
       </RuleBox>
     </section>
   );
@@ -184,12 +180,12 @@ export function DecisionEventPanel({
       <StateSummary
         pillLabel={eventStateLabel(assessment.event_assessment.state)}
         score={formatNumber(assessment.event_assessment.confirmation_score)}
-        summary={humanizeDecisionCopy(assessment.event_assessment.summary)}
+        summary={humanizeNarrativeCopy(assessment.event_assessment.summary)}
       />
       <div className="surface-grid">
         <RuleBox label={decisionContent.panels.eventConfirmedTitle}>
           <BulletList
-            items={assessment.event_assessment.confirmed_signals.map(humanizeDecisionCopy)}
+            items={assessment.event_assessment.confirmed_signals.map(humanizeNarrativeCopy)}
             compact
             emptyText={decisionContent.panels.eventConfirmedEmpty}
             emptyVariant="inline"
@@ -197,7 +193,7 @@ export function DecisionEventPanel({
         </RuleBox>
         <RuleBox label={decisionContent.panels.eventPendingTitle}>
           <BulletList
-            items={assessment.event_assessment.pending_gaps.map(humanizeDecisionCopy)}
+            items={assessment.event_assessment.pending_gaps.map(humanizeNarrativeCopy)}
             compact
             emptyText={decisionContent.panels.eventPendingEmpty}
             emptyVariant="inline"
@@ -222,7 +218,7 @@ export function DecisionJpyCarryPanel({
         pillLabel={jpyStateLabel(assessment.jpy_carry.state)}
         pillClassName={`state-${assessment.jpy_carry.state}`}
         score={formatNumber(assessment.jpy_carry.score)}
-        summary={humanizeDecisionCopy(assessment.jpy_carry.reason)}
+        summary={humanizeNarrativeCopy(assessment.jpy_carry.reason)}
       />
       <MetricGrid items={jpyCarryMetrics} />
       <div className="legend-note">
@@ -245,7 +241,7 @@ export function DecisionBacktestSummaryPanel({
     <section className="surface">
       <SurfaceHeader title="历史表现与当前约束" icon={Database} />
       <RuleBox label="历史表现摘要">
-        {humanizeDecisionCopy(assessment.backtest_summary.summary)}
+        {humanizeNarrativeCopy(assessment.backtest_summary.summary)}
       </RuleBox>
       <MetricGrid items={backtestSummaryMetrics} />
       <div className="surface-grid">
@@ -273,7 +269,7 @@ export function DecisionRollingAuditPanel({
     <section className="surface">
       <SurfaceHeader title="滚动审计与误报边界" icon={Database} />
       <RuleBox label="历史滚动审计结论">
-        {humanizeDecisionCopy(assessment.backtest_summary.rolling_audit.summary)}
+        {humanizeNarrativeCopy(assessment.backtest_summary.rolling_audit.summary)}
       </RuleBox>
       <MetricGrid items={rollingAuditMetrics} />
       <RuleBox label="统计口径">{decisionContent.panels.rollingAuditDefinition}</RuleBox>
@@ -289,7 +285,7 @@ export function DecisionRollingAuditPanel({
                 <td>{episode.interval}</td>
                 <td>{episode.duration}</td>
                 <td>{episode.signalCount}</td>
-                <td>{humanizeDecisionCopy(episode.note)}</td>
+                <td>{humanizeNarrativeCopy(episode.note)}</td>
               </tr>
             ))}
         </ResponsiveTable>

@@ -1,4 +1,4 @@
-import { formatDate } from "../../format";
+import { formatDate, wrapTimelineLabel } from "../../format";
 import type {
   AssessmentHistoryPoint,
   AssessmentSnapshot,
@@ -170,7 +170,7 @@ export function buildAnalogChart(
   assessment: AssessmentSnapshot,
   backtests: BacktestScenarioSummary[]
 ): GroupedBarChartModel {
-  const analogNames = assessment.historical_analogs.map((analog) => wrapAnalogLabel(analog.name));
+  const analogNames = assessment.historical_analogs.map((analog) => wrapTimelineLabel(analog.name));
   const peakScores = assessment.historical_analogs.map((analog) => analog.peak_score);
   const scenarioPeaks = assessment.historical_analogs.map((analog) => {
     const match = backtests.find((scenario) => scenario.name === analog.name);
@@ -193,14 +193,4 @@ export function buildAnalogChart(
       }
     ]
   };
-}
-
-function wrapAnalogLabel(value: string) {
-  const match = value.match(/^(\d{4}(?:-\d{4})?)(.*)$/);
-  if (!match) {
-    return value;
-  }
-
-  const [, prefix, suffix] = match;
-  return `${prefix}\n${suffix.trim()}`;
 }

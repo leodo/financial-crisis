@@ -3,60 +3,21 @@ import {
   formatDateTime,
   formatNumber,
   formatPercent,
+  humanizeSourceLicenseNote,
   qualityDetailLabel,
+  sourceLagLabel,
   sourceAccessMethodLabel,
   sourceHealthStatusLabel,
   sourcePriorityLabel,
+  sourceQualityBandLabel,
   sourceTypeLabel
 } from "../../format";
 import type { AssessmentSnapshot, DataSource } from "../../types";
 import type { MetricItem } from "../shared/panelHelpers";
 
-function qualityBandLabel(score: number) {
-  if (score >= 90) {
-    return "高";
-  }
-  if (score >= 80) {
-    return "可用";
-  }
-  if (score >= 70) {
-    return "一般";
-  }
-  return "偏弱";
-}
-
 function extractDatasetId(message: string) {
   const match = message.match(/dataset=([^)]+)/);
   return match?.[1] ?? null;
-}
-
-function formatLagText(seconds: number | null | undefined) {
-  if (seconds === null || seconds === undefined) {
-    return "滞后未知";
-  }
-
-  const days = Math.round(seconds / 86_400);
-  if (days >= 1) {
-    return `滞后 ${days} 天`;
-  }
-
-  const hours = Math.round(seconds / 3_600);
-  if (hours >= 1) {
-    return `滞后 ${hours} 小时`;
-  }
-
-  return "近实时";
-}
-
-function humanizeSourceCopy(text: string) {
-  return text
-    .replaceAll("Official no-key Treasury yield curve data.", "官方免 key 的美债收益率曲线数据。")
-    .replaceAll("FRED graph CSV is the default no-key source; official API remains optional.", "FRED Graph CSV 是默认免 key 路径，官方 API 只是可选增强。")
-    .replaceAll("Official SEC JSON filings metadata aggregated into daily event features. No paid key is required.", "SEC 官方 JSON 公告元数据已聚合成日频事件特征，无需付费 key。")
-    .replaceAll("Official World Bank Indicators API.", "World Bank 官方指标 API。")
-    .replaceAll("Official BOJ FX and money-market endpoints are used for the JPY carry monitor.", "BOJ 官方汇率和货币市场接口用于日元套息监控。")
-    .replaceAll("Development-only market data prototype; not a production dependency.", "仅开发期市场数据原型，不属于正式依赖。")
-    .replaceAll("prototype source, not for production", "原型源，不进入正式评估");
 }
 
 export function useSourcesViewModel({
@@ -115,10 +76,10 @@ export function useSourcesViewModel({
         source.health.last_success_at
           ? `最近成功 ${formatDateTime(source.health.last_success_at)}`
           : "暂时没有成功抓取记录",
-        formatLagText(source.health.lag_seconds)
+        sourceLagLabel(source.health.lag_seconds)
       ],
       qualityScore: formatNumber(source.health.quality_score),
-      qualityDetail: qualityBandLabel(source.health.quality_score),
+      qualityDetail: sourceQualityBandLabel(source.health.quality_score),
       productionAllowed: source.production_allowed ? "可进入正式评估" : "仅研究参考",
       productionDetail: source.production_allowed
         ? sourceAccessMethodLabel(source.access_method)
@@ -127,7 +88,7 @@ export function useSourcesViewModel({
         source.health.status === "prototype"
           ? "当前仍按原型辅助信号处理，不直接进入正式评估。"
           : `当前使用 ${datasetName}`,
-      licenseNote: humanizeSourceCopy(source.license_note)
+      licenseNote: humanizeSourceLicenseNote(source.license_note)
     };
   });
 

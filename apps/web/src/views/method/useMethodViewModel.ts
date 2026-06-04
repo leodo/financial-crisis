@@ -3,6 +3,7 @@ import {
   compactTechnicalId,
   describePostureClause,
   formatPercent,
+  humanizeMethodNote,
   methodVersionFieldLabel,
   pointInTimeModeLabel,
   postureLabel,
@@ -19,13 +20,6 @@ import type {
 import type { DetailRowItem, MetricItem, VersionRowItem } from "../shared/panelHelpers";
 import { buildProbabilityOverlayViewModel } from "../shared/probabilityOverlay";
 import { methodContent } from "./content";
-
-function humanizeMethodCopy(text: string) {
-  return text
-    .replaceAll(/\bposture\b/g, "执行节奏")
-    .replaceAll("protected stress window", "受保护压力窗口")
-    .replaceAll("stress window catalog", "压力窗口目录");
-}
 
 export function useMethodViewModel({
   assessment,
@@ -181,6 +175,6 @@ export function useMethodViewModel({
     historyPolicyVersion,
     protectedCatalogId,
     protectedCatalogSource,
-    protectedCatalogNote: humanizeMethodCopy(method.protected_stress_window_catalog.note)
+    protectedCatalogNote: humanizeMethodNote(method.protected_stress_window_catalog.note)
   };
 }

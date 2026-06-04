@@ -5,9 +5,15 @@ import {
   formatDateTime,
   formatPercent,
   freshnessLabel,
+  humanizeAuditNote,
   pointInTimeModeLabel,
   postureLabel,
   probabilityModeLabel,
+  releaseReviewActionTypeLabel,
+  releaseReviewAttributionLabel,
+  releaseReviewHistoryModeLabel,
+  releaseReviewVerdictLabel,
+  releaseReviewWorkstreamLabel,
   releaseManifestStatusLabel,
   releaseIdLabel,
   releaseServingStatusLabel,
@@ -23,74 +29,6 @@ import type {
 import type { MetricItem } from "../shared/panelHelpers";
 import { buildProbabilityOverlayViewModel } from "../shared/probabilityOverlay";
 import { auditContent } from "./content";
-
-function releaseReviewHistoryModeLabel(mode: string) {
-  switch (mode) {
-    case "strict_rebuild":
-      return "严格重放";
-    case "default":
-      return "默认历史缓存";
-    default:
-      return mode || "—";
-  }
-}
-
-function releaseReviewWorkstreamLabel(workstream: string) {
-  switch (workstream) {
-    case "strict_review_vs_runtime_mapping":
-      return "strict gate vs runtime floor";
-    case "posture_continuity":
-      return "posture continuity";
-    case "score_confirmation":
-      return "score confirmation";
-    case "transitional_bridge":
-      return "transitional bridge";
-    default:
-      return workstream;
-  }
-}
-
-function releaseReviewAttributionLabel(attribution: string) {
-  switch (attribution) {
-    case "candidate_regression":
-      return "候选版新增退化";
-    case "both_baseline_and_candidate":
-      return "主线已有短板，候选未修复";
-    case "baseline_shared_weakness":
-      return "主线既有短板";
-    default:
-      return attribution;
-  }
-}
-
-function releaseReviewActionTypeLabel(actionType: string) {
-  switch (actionType) {
-    case "candidate_reject_or_retrain":
-      return "判退 / 重训";
-    case "shared_blocker_fix_before_promotion":
-      return "晋升前先修";
-    case "baseline_research_fix":
-      return "主线研究修复";
-    case "manual_review":
-      return "继续人工复核";
-    default:
-      return actionType;
-  }
-}
-
-function releaseReviewVerdictLabel(passed: boolean) {
-  return passed ? "通过当前 guard" : "存在 guard blocker";
-}
-
-function humanizeAuditNote(note: string) {
-  return note
-    .replaceAll("release registry", "版本登记册")
-    .replaceAll("historical replay run / point", "历史回放结果")
-    .replaceAll("prediction snapshot", "预测快照")
-    .replaceAll("runtime probability mode", "运行中的概率层")
-    .replaceAll("release manifest", "版本登记状态")
-    .replaceAll("heuristic", "启发式过渡层");
-}
 
 export function useAuditViewModel({
   assessment,

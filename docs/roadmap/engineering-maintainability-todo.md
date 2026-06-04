@@ -151,7 +151,7 @@
 ### 4.2 Web
 
 - [x] 把 `apps/web/src/App.tsx` 拆成按页面和卡片组织的 view/container/component。
-- [ ] 把领域解释文本和格式化逻辑继续从页面组件中剥离。
+- [x] 把领域解释文本和格式化逻辑继续从页面组件中剥离。
 - [x] 为决策面板、方法页、审计页明确单独的数据装配层。
 
 当前进展（2026-06-03）：
@@ -217,7 +217,8 @@
 - 已给 method 页补“当前方法摘要”首屏，把概率模式、动作层、PIT 状态和运行状态先翻成人话，再把版本清单下沉到单独的“版本与边界”区块。
 - 已继续清理 audit / method / decision 的 release id 展示，把 `extmix`、完整 bundle 文件名和原始模型路径从正文显示中移出，统一通过 `releaseIdLabel` 输出“候选版本 / 主线版本 + 日期”。
 - 已把 indicators 页摘要、焦点指标和明细表接入统一指标名映射，避免不同页面继续各自暴露后端 `display_name` 或内部 indicator id。
-- Web 页面当前剩余重点：继续抽共享文案/格式化 helper，并视需要继续把 `builders.ts` 中的高复用行模型向 shared 层沉淀。
+- 已继续把 sources / audit / method / decision / charts 里残留的页面私有 helper（如 source lag/quality、release review 标签、人话翻译、时间轴换行）抽到 `apps/web/src/format.ts`，页面层不再持有这些解释/格式化细节。
+- Web 页面当前剩余重点：视需要继续把 `builders.ts` 中的高复用行模型向 shared 层沉淀。
 
 ## 5. 约束机制
 

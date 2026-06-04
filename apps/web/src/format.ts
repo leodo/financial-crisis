@@ -183,6 +183,60 @@ export function sourceAccessMethodLabel(accessMethod: string | null | undefined)
   return SOURCE_ACCESS_METHOD_LABELS[accessMethod] ?? accessMethod;
 }
 
+export function sourceQualityBandLabel(score: number): string {
+  if (score >= 90) {
+    return "高";
+  }
+  if (score >= 80) {
+    return "可用";
+  }
+  if (score >= 70) {
+    return "一般";
+  }
+  return "偏弱";
+}
+
+export function sourceLagLabel(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) {
+    return "滞后未知";
+  }
+
+  const days = Math.round(seconds / 86_400);
+  if (days >= 1) {
+    return `滞后 ${days} 天`;
+  }
+
+  const hours = Math.round(seconds / 3_600);
+  if (hours >= 1) {
+    return `滞后 ${hours} 小时`;
+  }
+
+  return "近实时";
+}
+
+export function humanizeSourceLicenseNote(text: string): string {
+  return text
+    .replaceAll("Official no-key Treasury yield curve data.", "官方免 key 的美债收益率曲线数据。")
+    .replaceAll(
+      "FRED graph CSV is the default no-key source; official API remains optional.",
+      "FRED Graph CSV 是默认免 key 路径，官方 API 只是可选增强。"
+    )
+    .replaceAll(
+      "Official SEC JSON filings metadata aggregated into daily event features. No paid key is required.",
+      "SEC 官方 JSON 公告元数据已聚合成日频事件特征，无需付费 key。"
+    )
+    .replaceAll("Official World Bank Indicators API.", "World Bank 官方指标 API。")
+    .replaceAll(
+      "Official BOJ FX and money-market endpoints are used for the JPY carry monitor.",
+      "BOJ 官方汇率和货币市场接口用于日元套息监控。"
+    )
+    .replaceAll(
+      "Development-only market data prototype; not a production dependency.",
+      "仅开发期市场数据原型，不属于正式依赖。"
+    )
+    .replaceAll("prototype source, not for production", "原型源，不进入正式评估");
+}
+
 export function backtestSignalSourceLabel(source: BacktestSignalSource): string {
   const labels: Record<BacktestSignalSource, string> = {
     real_history: "真实历史",
@@ -424,6 +478,51 @@ export function runtimeThresholdLabel(label: string): string {
   return RUNTIME_THRESHOLD_LABELS[label] ?? label;
 }
 
+const RELEASE_REVIEW_HISTORY_MODE_LABELS: Record<string, string> = {
+  strict_rebuild: "严格重放",
+  default: "默认历史缓存"
+};
+
+export function releaseReviewHistoryModeLabel(mode: string): string {
+  return RELEASE_REVIEW_HISTORY_MODE_LABELS[mode] ?? mode ?? "—";
+}
+
+const RELEASE_REVIEW_WORKSTREAM_LABELS: Record<string, string> = {
+  strict_review_vs_runtime_mapping: "严格评审 vs 运行映射",
+  posture_continuity: "执行节奏连续性",
+  score_confirmation: "评分确认层",
+  transitional_bridge: "过渡桥接层"
+};
+
+export function releaseReviewWorkstreamLabel(workstream: string): string {
+  return RELEASE_REVIEW_WORKSTREAM_LABELS[workstream] ?? workstream;
+}
+
+const RELEASE_REVIEW_ATTRIBUTION_LABELS: Record<string, string> = {
+  candidate_regression: "候选版新增退化",
+  both_baseline_and_candidate: "主线已有短板，候选未修复",
+  baseline_shared_weakness: "主线既有短板"
+};
+
+export function releaseReviewAttributionLabel(attribution: string): string {
+  return RELEASE_REVIEW_ATTRIBUTION_LABELS[attribution] ?? attribution;
+}
+
+const RELEASE_REVIEW_ACTION_TYPE_LABELS: Record<string, string> = {
+  candidate_reject_or_retrain: "判退 / 重训",
+  shared_blocker_fix_before_promotion: "晋升前先修",
+  baseline_research_fix: "主线研究修复",
+  manual_review: "继续人工复核"
+};
+
+export function releaseReviewActionTypeLabel(actionType: string): string {
+  return RELEASE_REVIEW_ACTION_TYPE_LABELS[actionType] ?? actionType;
+}
+
+export function releaseReviewVerdictLabel(passed: boolean): string {
+  return passed ? "通过当前 guard" : "存在 guard blocker";
+}
+
 export function technicalWithLabel(label: string, technical: string | null | undefined): string {
   if (!technical) {
     return label;
@@ -456,6 +555,22 @@ export function humanizeNarrativeCopy(text: string): string {
     .replaceAll("按人工规则评分", "按规则触发评分")
     .replaceAll("当前处于相对低压区。", "当前处在低压区，更像缓冲项。")
     .replaceAll("压力 公告", "压力公告");
+}
+
+export function humanizeMethodNote(text: string): string {
+  return humanizeNarrativeCopy(text)
+    .replaceAll("protected stress window", "受保护压力窗口")
+    .replaceAll("stress window catalog", "压力窗口目录");
+}
+
+export function humanizeAuditNote(text: string): string {
+  return humanizeNarrativeCopy(text)
+    .replaceAll("release registry", "版本登记册")
+    .replaceAll("historical replay run / point", "历史回放结果")
+    .replaceAll("prediction snapshot", "预测快照")
+    .replaceAll("runtime probability mode", "运行中的概率层")
+    .replaceAll("release manifest", "版本登记状态")
+    .replaceAll("heuristic", "启发式过渡层");
 }
 
 function humanizeTechnicalFamily(family: string) {
@@ -714,4 +829,14 @@ export function formatDateTime(value: string | null | undefined): string {
 
   const normalized = value.replace("T", " ");
   return `${normalized.slice(0, 16)} UTC`;
+}
+
+export function wrapTimelineLabel(value: string): string {
+  const match = value.match(/^(\d{4}(?:-\d{4})?)(.*)$/);
+  if (!match) {
+    return value;
+  }
+
+  const [, prefix, suffix] = match;
+  return `${prefix}\n${suffix.trim()}`;
 }
