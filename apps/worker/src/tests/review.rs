@@ -1,3 +1,5 @@
+use super::*;
+
 #[test]
 fn release_review_backtest_comparison_marks_lost_timely_warning() {
     let baseline = vec![

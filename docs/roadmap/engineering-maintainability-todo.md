@@ -98,9 +98,9 @@
 - 已新增 `apps/worker/src/scenario.rs`，把 `CrisisScenario`、action episode window、protected context、primary/forward scenario 选择和 action window label 这组场景时间窗逻辑从 `main.rs` 中拆出，固定场景标签与动作窗口 helper 的归属边界。
 - 已新增 `apps/worker/src/support.rs`，把 `ApiReloadHistoryMode`、demo run、API fetch/reload、SQLite/raw payload IO、格式化 helper、解析 helper 和通用 rounding/hash/path helper 从 `main.rs` 中拆出，统一 worker 顶层支撑函数的归属边界。
 - 已新增 `apps/worker/src/tests.rs`，把原先内联在 `main.rs` 的超大测试模块整体迁出，先把测试代码和运行时入口彻底解耦。
-- `tests.rs` 已进一步收口为第一层测试聚合壳层，并按 `options / training / quality / review / split_requirements` 拆到 `apps/worker/src/tests/*.rs`，避免把超大测试文件只从 `main.rs` 平移。
+- `tests.rs` 已进一步收口为第一层测试聚合壳层，并按 `options / training / quality / review / split_requirements` 拆到 `apps/worker/src/tests/*.rs`；共享测试构造器已继续收敛到 `apps/worker/src/tests/fixtures.rs`，专题测试也已改成真实子模块，避免继续依赖 `include!` 共享词法作用域。
 - 这一轮之后，`apps/worker/src/main.rs` 已从约 `7,573` 行继续收缩到约 `165` 行，当前已基本收口为“顶层模块声明 + 共享导出 + 常量 + 入口壳层”。
-- 当前 `main.rs` 已不再直接承载训练管线、release review 报告结构、动作 episode / scenario 时间窗逻辑、通用 API/IO helper，也不再直接承载超大测试块；下一步可优先继续把 `tests.rs` 里的共享 helper、fixture builder 和 review/training 交叉夹具继续收束，避免测试聚合层重新长胖。
+- 当前 `main.rs` 已不再直接承载训练管线、release review 报告结构、动作 episode / scenario 时间窗逻辑、通用 API/IO helper，也不再直接承载超大测试块；下一步可优先继续评估是否还需要把跨专题的少量测试导入/夹具进一步下沉，避免测试聚合壳层重新长胖。
 
 ### 3.2 API
 

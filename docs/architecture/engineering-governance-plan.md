@@ -147,8 +147,9 @@ apps/worker/src/
   reporting.rs
   scenario.rs
   support.rs
-  tests.rs                 # 第一层测试聚合，include! tests/*.rs
+  tests.rs                 # 第一层测试聚合壳层
   tests/
+    fixtures.rs
     options.rs
     training.rs
     quality.rs
@@ -177,7 +178,7 @@ apps/worker/src/
 - `reporting.rs` 负责结构化报告渲染与导出，`release_review.rs` 负责 release review 专属报告结构、诊断与解释 helper。
 - `scenario.rs` 负责 `CrisisScenario`、action episode window、protected context、primary/forward scenario 选择和 action window label 这组场景时间窗逻辑。
 - `support.rs` 负责 `ApiReloadHistoryMode`、demo run、API fetch/reload、SQLite/raw payload IO、格式化 helper 和通用 rounding/hash/path helper。
-- `tests.rs` 作为第一层测试聚合壳层；主题测试先拆到 `tests/*.rs`，共享 helper 仍可暂留在聚合层，等边界稳定后再继续抽成更细的夹具模块。
+- `tests.rs` 作为第一层测试聚合壳层；共享测试构造器下沉到 `tests/fixtures.rs`，主题测试以真实子模块形式落在 `tests/*.rs`，避免继续依赖 `include!` 共享词法作用域。
 - `actionability.rs`、`probability.rs`、`model.rs`、`training.rs`、`formal.rs` 负责训练、特征、数据集构建与共享数学/标签逻辑；其中 `training.rs` 还承接 formal bundle 训练管线和 `forward_crisis` 标签 / regime helper。
 - `commands/release.rs` 负责 release 生命周期总入口、共享 activate/runtime guard 与 market scope resolve。
 - `commands/release/review.rs` 负责 release review 的 CLI 选项解析、runtime snapshot、对比诊断、建议与总结。

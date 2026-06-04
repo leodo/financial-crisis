@@ -1,3 +1,5 @@
+use super::*;
+
 #[test]
 fn render_dataset_csv_includes_scenario_role_columns() {
     let mut row = forward_crisis_row(
@@ -8,7 +10,7 @@ fn render_dataset_csv_includes_scenario_role_columns() {
     row.scenario_training_role = Some("mandatory".to_string());
     row.features.insert("stress".to_string(), 0.42);
 
-    let csv = super::commands::snapshot::render_dataset_csv(&[row], &[String::from("stress")]);
+    let csv = crate::commands::snapshot::render_dataset_csv(&[row], &[String::from("stress")]);
     let mut lines = csv.lines();
     let header = lines.next().unwrap_or_default();
     let first_row = lines.next().unwrap_or_default();

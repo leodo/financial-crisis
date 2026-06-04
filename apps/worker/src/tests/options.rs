@@ -1,3 +1,5 @@
+use super::*;
+
 #[test]
 fn parses_refresh_latest_defaults() {
     let options = RefreshLatestOptions::parse(&[]).unwrap();
@@ -98,7 +100,7 @@ fn parses_release_review_options() {
     assert_eq!(options.baseline_release_id.as_deref(), Some("baseline-456"));
     assert_eq!(options.market_scope.as_deref(), Some("financial_system"));
     assert_eq!(options.output_dir, PathBuf::from("reports/release-review"));
-    assert_eq!(options.history_mode, super::ApiReloadHistoryMode::Default);
+    assert_eq!(options.history_mode, crate::ApiReloadHistoryMode::Default);
     assert_eq!(options.history_limit, 5000);
 }
 
@@ -115,7 +117,7 @@ fn release_review_defaults_to_ignored_artifact_dir() {
     );
     assert_eq!(
         options.history_mode,
-        super::ApiReloadHistoryMode::StrictRebuild
+        crate::ApiReloadHistoryMode::StrictRebuild
     );
     assert_eq!(options.history_limit, 20_000);
 }
@@ -153,7 +155,7 @@ fn parses_release_probability_slice_options() {
         options.output_dir,
         PathBuf::from("reports/release-probability-slices")
     );
-    assert_eq!(options.history_mode, super::ApiReloadHistoryMode::Default);
+    assert_eq!(options.history_mode, crate::ApiReloadHistoryMode::Default);
     assert_eq!(options.history_limit, 5000);
 }
 
@@ -174,7 +176,7 @@ fn release_probability_slice_defaults_to_ignored_artifact_dir() {
     );
     assert_eq!(
         options.history_mode,
-        super::ApiReloadHistoryMode::StrictRebuild
+        crate::ApiReloadHistoryMode::StrictRebuild
     );
     assert_eq!(options.history_limit, 20_000);
 }
@@ -387,11 +389,11 @@ fn parses_formal_dataset_build_options() {
 #[test]
 fn extension_acute_dataset_min_date_allows_pre1990_history() {
     assert_eq!(
-        super::formal_dataset_min_date("formal_label_v1_ext_acute"),
+        crate::formal_dataset_min_date("formal_label_v1_ext_acute"),
         NaiveDate::from_ymd_opt(1987, 1, 1).unwrap()
     );
     assert_eq!(
-        super::formal_dataset_min_date("formal_label_v1_main"),
+        crate::formal_dataset_min_date("formal_label_v1_main"),
         NaiveDate::from_ymd_opt(1990, 1, 2).unwrap()
     );
 }
@@ -422,11 +424,11 @@ fn extension_acute_dataset_allows_proxy_feature_gate_without_vix() {
         created_at: Utc::now(),
     };
 
-    assert!(super::formal_dataset_snapshot_is_usable(
+    assert!(crate::formal_dataset_snapshot_is_usable(
         &snapshot,
         "formal_label_v1_ext_acute"
     ));
-    assert!(!super::formal_dataset_snapshot_is_usable(
+    assert!(!crate::formal_dataset_snapshot_is_usable(
         &snapshot,
         "formal_label_v1_main"
     ));
@@ -458,11 +460,11 @@ fn extension_stress_dataset_allows_1990s_partial_coverage_gate() {
         created_at: Utc::now(),
     };
 
-    assert!(super::formal_dataset_snapshot_is_usable(
+    assert!(crate::formal_dataset_snapshot_is_usable(
         &snapshot,
         "formal_label_v1_ext_stress"
     ));
-    assert!(!super::formal_dataset_snapshot_is_usable(
+    assert!(!crate::formal_dataset_snapshot_is_usable(
         &snapshot,
         "formal_label_v1_main"
     ));

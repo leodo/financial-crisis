@@ -1,3 +1,5 @@
+use super::*;
+
 #[test]
 fn best_effort_visibility_uses_release_rule_not_backfill_fetch_time_for_fred() {
     let observation = observation(
@@ -231,9 +233,9 @@ fn forward_crisis_training_regime_marks_buffer_crisis_and_cooldown() {
 
 #[test]
 fn protected_context_promotes_main_regime_buffer_without_changing_positive_labels() {
-    let scenario_sets = super::load_formal_dataset_scenario_sets(
-        super::DEFAULT_FORMAL_SCENARIO_SET_VERSION,
-        super::DEFAULT_FORMAL_LABEL_VERSION,
+    let scenario_sets = crate::load_formal_dataset_scenario_sets(
+        crate::DEFAULT_FORMAL_SCENARIO_SET_VERSION,
+        crate::DEFAULT_FORMAL_LABEL_VERSION,
     )
     .unwrap();
     let protected_date = NaiveDate::from_ymd_opt(2021, 11, 15).unwrap();
@@ -463,9 +465,9 @@ fn forward_crisis_negative_weights_and_calibration_scope_follow_regime() {
 
 #[test]
 fn formal_main_context_scenarios_include_protected_window_set() {
-    let scenario_sets = super::load_formal_dataset_scenario_sets(
-        super::DEFAULT_FORMAL_SCENARIO_SET_VERSION,
-        super::DEFAULT_FORMAL_LABEL_VERSION,
+    let scenario_sets = crate::load_formal_dataset_scenario_sets(
+        crate::DEFAULT_FORMAL_SCENARIO_SET_VERSION,
+        crate::DEFAULT_FORMAL_LABEL_VERSION,
     )
     .unwrap();
     let positive_ids = scenario_sets
@@ -539,7 +541,7 @@ fn forward_crisis_pairwise_targets_push_buffer_centroid_above_normal() {
         make_row(1.1, ProbabilityTrainingRegime::PositiveWindow, 1),
         make_row(1.0, ProbabilityTrainingRegime::PostCrisisCooldown, 0),
     ];
-    let feature_stats = vec![super::build_feature_stat(&rows, "stress")];
+    let feature_stats = vec![crate::build_feature_stat(&rows, "stress")];
     let targets = forward_crisis_regime_pairwise_targets(
         &rows,
         &feature_stats,
@@ -550,7 +552,7 @@ fn forward_crisis_pairwise_targets_push_buffer_centroid_above_normal() {
     assert!(!targets.is_empty());
     assert!(targets.len() >= 5);
     let mut gradients = vec![0.0];
-    super::apply_regime_pairwise_gradient(&mut gradients, &[0.0], &targets, 100.0, 20, false);
+    crate::apply_regime_pairwise_gradient(&mut gradients, &[0.0], &targets, 100.0, 20, false);
     assert!(gradients[0] < 0.0);
 }
 
@@ -566,7 +568,7 @@ fn forward_crisis_sign_gradient_pushes_wrong_direction_coefficients_toward_zero(
     let weights = vec![-0.8, 0.5, -0.4, -0.6, -0.3];
     let mut gradients = vec![0.0; weights.len()];
 
-    super::apply_forward_crisis_sign_gradient(
+    crate::apply_forward_crisis_sign_gradient(
         &mut gradients,
         &weights,
         &feature_names,
@@ -592,7 +594,7 @@ fn forward_crisis_sign_projection_clips_wrong_direction_coefficients() {
     ];
     let mut weights = vec![-0.8, 0.5, -0.2, -0.7];
 
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut weights,
         &feature_names,
         60,
@@ -614,7 +616,7 @@ fn forward_crisis_sign_projection_clips_wrong_direction_monotonic_interactions()
     ];
     let mut weights = vec![-0.2, -0.6, -0.4];
 
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut weights,
         &feature_names,
         60,
@@ -633,7 +635,7 @@ fn forward_crisis_tail_sign_projection_applies_on_20d_only() {
         "tail_pos__us_baa_10y_spread_level__2".to_string(),
     ];
     let mut weights_20d = vec![-0.4, -0.1];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut weights_20d,
         &feature_names,
         20,
@@ -643,7 +645,7 @@ fn forward_crisis_tail_sign_projection_applies_on_20d_only() {
     assert_eq!(weights_20d[1], 0.0);
 
     let mut weights_60d = vec![-0.4, -0.1];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut weights_60d,
         &feature_names,
         60,
@@ -659,7 +661,7 @@ fn forward_crisis_curve_tail_bound_gradient_pushes_too_negative_weight_up() {
     let weights = vec![-0.30];
     let mut gradients = vec![0.0; weights.len()];
 
-    super::apply_forward_crisis_coefficient_bound_gradient(
+    crate::apply_forward_crisis_coefficient_bound_gradient(
         &mut gradients,
         &weights,
         &feature_names,
@@ -678,7 +680,7 @@ fn forward_crisis_rate_shock_family_caps_apply_on_20d_only() {
         "family_proxy__rate_shock".to_string(),
     ];
     let mut weights_20d = vec![0.32, 0.14];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut weights_20d,
         &feature_names,
         20,
@@ -688,7 +690,7 @@ fn forward_crisis_rate_shock_family_caps_apply_on_20d_only() {
     assert_eq!(weights_20d[1], 0.06);
 
     let mut weights_60d = vec![0.32, 0.14];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut weights_60d,
         &feature_names,
         60,
@@ -705,7 +707,7 @@ fn forward_crisis_jpy_carry_caps_apply_on_20d_only() {
         "family_proxy__jpy_carry".to_string(),
     ];
     let mut weights_20d = vec![0.24, 0.11];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut weights_20d,
         &feature_names,
         20,
@@ -715,7 +717,7 @@ fn forward_crisis_jpy_carry_caps_apply_on_20d_only() {
     assert_eq!(weights_20d[1], 0.06);
 
     let mut weights_60d = vec![0.24, 0.11];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut weights_60d,
         &feature_names,
         60,
@@ -733,7 +735,7 @@ fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
         "family_proxy__rate_shock".to_string(),
     ];
     let mut family_weights_20d = vec![-0.90, 0.60, 0.05];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut family_weights_20d,
         &family_feature_names,
         20,
@@ -744,7 +746,7 @@ fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
     assert_eq!(family_weights_20d[2], 0.05);
 
     let mut family_weights_60d = vec![-0.90, 0.60, 0.05];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut family_weights_60d,
         &family_feature_names,
         60,
@@ -759,7 +761,7 @@ fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
         "interaction__us_curve_10y2y_level__us_fed_funds_level".to_string(),
     ];
     let mut plain_weights_20d = vec![-0.90, 0.60];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut plain_weights_20d,
         &plain_feature_names,
         20,
@@ -776,7 +778,7 @@ fn forward_crisis_usdjpy_level_family_cap_only_applies_when_family_context_exist
         "family_proxy__rate_shock".to_string(),
     ];
     let mut family_weights_20d = vec![0.20, 0.05];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut family_weights_20d,
         &family_feature_names,
         20,
@@ -786,7 +788,7 @@ fn forward_crisis_usdjpy_level_family_cap_only_applies_when_family_context_exist
     assert_eq!(family_weights_20d[1], 0.05);
 
     let mut family_weights_60d = vec![0.20, 0.05];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut family_weights_60d,
         &family_feature_names,
         60,
@@ -797,7 +799,7 @@ fn forward_crisis_usdjpy_level_family_cap_only_applies_when_family_context_exist
 
     let plain_feature_names = vec!["us_usdjpy_level".to_string()];
     let mut plain_weights_20d = vec![0.20];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut plain_weights_20d,
         &plain_feature_names,
         20,
@@ -813,7 +815,7 @@ fn forward_crisis_usdjpy_interaction_family_cap_only_applies_when_family_context
         "family_proxy__jpy_carry".to_string(),
     ];
     let mut family_weights_20d = vec![0.72, 0.03];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut family_weights_20d,
         &family_feature_names,
         20,
@@ -823,7 +825,7 @@ fn forward_crisis_usdjpy_interaction_family_cap_only_applies_when_family_context
     assert_eq!(family_weights_20d[1], 0.03);
 
     let mut family_weights_60d = vec![0.72, 0.03];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut family_weights_60d,
         &family_feature_names,
         60,
@@ -835,7 +837,7 @@ fn forward_crisis_usdjpy_interaction_family_cap_only_applies_when_family_context
     let plain_feature_names =
         vec!["interaction__external_dimension_score__us_usdjpy_level".to_string()];
     let mut plain_weights_20d = vec![0.72];
-    super::project_forward_crisis_sign_constraints(
+    crate::project_forward_crisis_sign_constraints(
         &mut plain_weights_20d,
         &plain_feature_names,
         20,
@@ -853,7 +855,7 @@ fn forward_crisis_rate_shock_family_cap_gradient_pushes_excess_weight_down() {
     let weights = vec![0.30, 0.12];
     let mut gradients = vec![0.0; weights.len()];
 
-    super::apply_forward_crisis_coefficient_bound_gradient(
+    crate::apply_forward_crisis_coefficient_bound_gradient(
         &mut gradients,
         &weights,
         &feature_names,
@@ -875,7 +877,7 @@ fn forward_crisis_jpy_carry_family_cap_gradient_pushes_excess_weight_down() {
     let weights = vec![0.22, 0.09];
     let mut gradients = vec![0.0; weights.len()];
 
-    super::apply_forward_crisis_coefficient_bound_gradient(
+    crate::apply_forward_crisis_coefficient_bound_gradient(
         &mut gradients,
         &weights,
         &feature_names,
@@ -897,7 +899,7 @@ fn forward_crisis_monotonic_interaction_sign_gradient_pushes_wrong_direction_up(
     let weights = vec![-0.20, -0.60];
     let mut gradients = vec![0.0; weights.len()];
 
-    super::apply_forward_crisis_sign_gradient(
+    crate::apply_forward_crisis_sign_gradient(
         &mut gradients,
         &weights,
         &feature_names,
@@ -920,7 +922,7 @@ fn forward_crisis_curve_family_cap_gradient_only_activates_for_family_context_se
     let family_weights = vec![-0.90, 0.60, 0.05];
     let mut family_gradients = vec![0.0; family_weights.len()];
 
-    super::apply_forward_crisis_coefficient_bound_gradient(
+    crate::apply_forward_crisis_coefficient_bound_gradient(
         &mut family_gradients,
         &family_weights,
         &family_feature_names,
@@ -940,7 +942,7 @@ fn forward_crisis_curve_family_cap_gradient_only_activates_for_family_context_se
     let plain_weights = vec![-0.90, 0.60];
     let mut plain_gradients = vec![0.0; plain_weights.len()];
 
-    super::apply_forward_crisis_coefficient_bound_gradient(
+    crate::apply_forward_crisis_coefficient_bound_gradient(
         &mut plain_gradients,
         &plain_weights,
         &plain_feature_names,
@@ -962,7 +964,7 @@ fn forward_crisis_usdjpy_level_family_cap_gradient_only_activates_for_family_con
     let family_weights = vec![0.48, 0.05];
     let mut family_gradients = vec![0.0; family_weights.len()];
 
-    super::apply_forward_crisis_coefficient_bound_gradient(
+    crate::apply_forward_crisis_coefficient_bound_gradient(
         &mut family_gradients,
         &family_weights,
         &family_feature_names,
@@ -978,7 +980,7 @@ fn forward_crisis_usdjpy_level_family_cap_gradient_only_activates_for_family_con
     let plain_weights = vec![0.38];
     let mut plain_gradients = vec![0.0; plain_weights.len()];
 
-    super::apply_forward_crisis_coefficient_bound_gradient(
+    crate::apply_forward_crisis_coefficient_bound_gradient(
         &mut plain_gradients,
         &plain_weights,
         &plain_feature_names,
@@ -999,7 +1001,7 @@ fn forward_crisis_usdjpy_interaction_family_cap_gradient_only_activates_for_fami
     let family_weights = vec![0.72, 0.03];
     let mut family_gradients = vec![0.0; family_weights.len()];
 
-    super::apply_forward_crisis_coefficient_bound_gradient(
+    crate::apply_forward_crisis_coefficient_bound_gradient(
         &mut family_gradients,
         &family_weights,
         &family_feature_names,
@@ -1016,7 +1018,7 @@ fn forward_crisis_usdjpy_interaction_family_cap_gradient_only_activates_for_fami
     let plain_weights = vec![0.72];
     let mut plain_gradients = vec![0.0; plain_weights.len()];
 
-    super::apply_forward_crisis_coefficient_bound_gradient(
+    crate::apply_forward_crisis_coefficient_bound_gradient(
         &mut plain_gradients,
         &plain_weights,
         &plain_feature_names,
@@ -1087,7 +1089,7 @@ fn forward_crisis_training_target_softens_buffer_and_cooldown_negatives() {
     );
 
     assert_eq!(
-        super::probability_training_target_label(
+        crate::probability_training_target_label(
             &buffer_row,
             20,
             ProbabilityTargetLabelMode::ForwardCrisis
@@ -1095,7 +1097,7 @@ fn forward_crisis_training_target_softens_buffer_and_cooldown_negatives() {
         0.18
     );
     assert_eq!(
-        super::probability_training_target_label(
+        crate::probability_training_target_label(
             &buffer_row,
             60,
             ProbabilityTargetLabelMode::ForwardCrisis
@@ -1103,7 +1105,7 @@ fn forward_crisis_training_target_softens_buffer_and_cooldown_negatives() {
         0.26
     );
     assert_eq!(
-        super::probability_training_target_label(
+        crate::probability_training_target_label(
             &cooldown_row,
             20,
             ProbabilityTargetLabelMode::ForwardCrisis
@@ -1111,7 +1113,7 @@ fn forward_crisis_training_target_softens_buffer_and_cooldown_negatives() {
         0.01
     );
     assert_eq!(
-        super::probability_training_target_label(
+        crate::probability_training_target_label(
             &cooldown_row,
             60,
             ProbabilityTargetLabelMode::ForwardCrisis
@@ -1119,7 +1121,7 @@ fn forward_crisis_training_target_softens_buffer_and_cooldown_negatives() {
         0.02
     );
     assert_eq!(
-        super::probability_training_target_label(
+        crate::probability_training_target_label(
             &positive_row,
             20,
             ProbabilityTargetLabelMode::ForwardCrisis
@@ -1185,7 +1187,7 @@ fn forward_crisis_60d_prepare_buffer_uses_episode_native_objective() {
         false,
     );
     assert_eq!(
-        super::probability_training_target_label(
+        crate::probability_training_target_label(
             &mandatory_prepare,
             60,
             ProbabilityTargetLabelMode::ForwardCrisis
@@ -1210,7 +1212,7 @@ fn forward_crisis_60d_prepare_buffer_uses_episode_native_objective() {
         true,
     );
     assert_eq!(
-        super::probability_training_target_label(
+        crate::probability_training_target_label(
             &protected_extension,
             60,
             ProbabilityTargetLabelMode::ForwardCrisis
@@ -1235,7 +1237,7 @@ fn forward_crisis_60d_prepare_buffer_uses_episode_native_objective() {
         false,
     );
     assert_eq!(
-        super::probability_training_target_label(
+        crate::probability_training_target_label(
             &outside_prepare,
             60,
             ProbabilityTargetLabelMode::ForwardCrisis
@@ -1252,7 +1254,7 @@ fn forward_crisis_60d_prepare_buffer_uses_episode_native_objective() {
         false,
     );
     assert_eq!(
-        super::probability_training_target_label(
+        crate::probability_training_target_label(
             &acute_prepare,
             60,
             ProbabilityTargetLabelMode::ForwardCrisis
@@ -1269,7 +1271,7 @@ fn forward_crisis_60d_prepare_buffer_uses_episode_native_objective() {
         false,
     );
     assert_eq!(
-        super::probability_training_target_label(
+        crate::probability_training_target_label(
             &unsupported_prepare,
             60,
             ProbabilityTargetLabelMode::ForwardCrisis
@@ -1423,7 +1425,7 @@ fn forward_crisis_positive_weight_boosts_extension_role_on_supported_horizon() {
     };
 
     assert!(
-        super::forward_crisis_positive_sample_weight(&extension, 60)
-            > super::forward_crisis_positive_sample_weight(&mandatory, 60)
+        crate::forward_crisis_positive_sample_weight(&extension, 60)
+            > crate::forward_crisis_positive_sample_weight(&mandatory, 60)
     );
 }
