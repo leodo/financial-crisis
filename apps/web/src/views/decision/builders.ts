@@ -314,6 +314,7 @@ export function buildActionPlanMetrics(
   const probabilityMode = describeProbabilityMode(assessment.method);
   const releaseHealth = describeReleaseHealth(assessment.method.release_status);
   const compactReleaseId = releaseIdLabel(assessment.method.release_id);
+  const governance = assessment.position_guidance.governance;
 
   return [
     { label: "概率模式", value: probabilityMode.label, hint: probabilityMode.hint },
@@ -330,6 +331,29 @@ export function buildActionPlanMetrics(
         ? "资本保全"
         : "分层防守",
       hint: compactTechnicalId(assessment.position_guidance.action_playbook_version).value
+    },
+    {
+      label: "建议性质",
+      value: governance.system_budget_only ? "系统预算建议" : "可执行指令",
+      hint: governance.system_budget_only
+        ? "只回答系统层面的减震、对冲和现金预算，不替代个性化投资建议。"
+        : "当前版本允许直接执行。"
+    },
+    {
+      label: "自动执行",
+      value: governance.auto_execution_allowed ? "允许" : "禁止",
+      hint: governance.auto_execution_allowed
+        ? "当前版本允许自动执行动作。"
+        : "当前面板不下交易指令，仍需人工确认。"
+    },
+    {
+      label: "规则治理",
+      value:
+        governance.policy_change_requires_release_review && governance.policy_change_requires_go_no_go
+          ? "需评审 + Go/No-Go"
+          : "普通变更",
+      hint:
+        "任何动作规则升级都应先经过 release review，再满足正式 Go/No-Go，不能只凭页面观感放行。"
     }
   ];
 }

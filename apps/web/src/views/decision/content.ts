@@ -43,6 +43,10 @@ export const decisionContent = {
       "这些缓冲因素解释了为什么当前评估还没有被推到更高执行档位，也提醒你不要只盯着单个高分指标。",
     actionPlanCapitalPreservation:
       "当前已满足防守档、当下风险窗口、高可信度和事件确认，不必默认清仓，但应把去杠杆、现金和核心保护放在收益追逐之前。",
+    actionPlanGovernance:
+      "下面这组边界回答的是这套建议能做到什么、不能做到什么。它给的是系统层预算和执行顺序，不会替你下单。",
+    actionPlanChecks:
+      "执行前先按这份清单做人工复核，确认当前输出没有绕开动作手册、release review 和 Go/No-Go 边界。",
     eventConfirmedTitle: "已确认信号",
     eventPendingTitle: "待补缺口",
     eventConfirmedEmpty: "当前没有新增确认信号。",

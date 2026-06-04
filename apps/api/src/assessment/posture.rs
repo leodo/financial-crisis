@@ -1,8 +1,8 @@
 use fc_domain::{
     ActionabilityBlock, DataTrust, DecisionPosture, EventAssessment, EventConfirmationState,
-    HistoricalAnalog, JpyCarrySnapshot, ModelReleaseRecord, PositionGuidance, PostureGuidance,
-    ProbabilityBlock, QualityGrade, RiskSnapshot, TimeToRiskBucket, UserRiskPreferences,
-    UserRiskProfile,
+    HistoricalAnalog, JpyCarrySnapshot, ModelReleaseRecord, PositionGuidance,
+    PositionGuidanceGovernance, PostureGuidance, ProbabilityBlock, QualityGrade, RiskSnapshot,
+    TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
 };
 
 use super::{
@@ -750,6 +750,12 @@ pub(super) fn build_position_guidance(
         DecisionPosture::Hedge => "进入保护性对冲区间，优先减少组合脆弱性。".to_string(),
         DecisionPosture::Defend => "进入资本保全区间，优先流动性、现金和保护覆盖。".to_string(),
     };
+    let governance = build_position_guidance_governance(
+        data_trust,
+        event_assessment,
+        active_release,
+        capital_preservation_overlay_enabled,
+    );
 
     PositionGuidance {
         action_playbook_version: active_release
@@ -768,6 +774,62 @@ pub(super) fn build_position_guidance(
         reentry_conditions,
         guardrails,
         capital_preservation_overlay_enabled,
+        governance,
+    }
+}
+
+fn build_position_guidance_governance(
+    data_trust: &DataTrust,
+    event_assessment: &EventAssessment,
+    active_release: Option<&ModelReleaseRecord>,
+    capital_preservation_overlay_enabled: bool,
+) -> PositionGuidanceGovernance {
+    let mut required_operator_checks = vec![
+        "先确认当前动作框架版本与 active release 一致，再解释仓位预算。".to_string(),
+        "先检查数据模式、关键指标日期和 stale warning，避免把演示值或陈旧值当成当前市场。"
+            .to_string(),
+        "执行前必须结合你自己的流动性、税务、账户约束和持仓结构做人为确认。".to_string(),
+        "任何会改变仓位规则的变更都要先经过 release review，不能直接跳过动作手册边界。".to_string(),
+        "正式主模型的动作规则升级仍需满足 Go/No-Go，不允许只凭页面观感直接放行。".to_string(),
+    ];
+
+    if !matches!(data_trust.quality_grade, QualityGrade::A | QualityGrade::B) {
+        required_operator_checks.push(
+            "当前数据可信度不足，先把输出当成减震与排查信号，不要直接执行极端仓位动作。"
+                .to_string(),
+        );
+    }
+
+    if matches!(
+        event_assessment.state,
+        EventConfirmationState::Confirmed | EventConfirmationState::Escalating
+    ) {
+        required_operator_checks.push(
+            "事件层已确认或升级，执行时要优先核对保护工具、对手方和流动性是否可用。".to_string(),
+        );
+    }
+
+    if capital_preservation_overlay_enabled {
+        required_operator_checks.push(
+            "资本保全叠加已打开；若要进一步收缩风险暴露，先确认该动作仍符合当前 playbook 与人工风控边界。"
+                .to_string(),
+        );
+    }
+
+    if active_release.is_none() {
+        required_operator_checks.push(
+            "当前没有绑定 active release，说明动作框架仍处于默认/降级路径，更需要人工复核。"
+                .to_string(),
+        );
+    }
+
+    PositionGuidanceGovernance {
+        system_budget_only: true,
+        auto_execution_allowed: false,
+        manual_confirmation_required: true,
+        policy_change_requires_release_review: true,
+        policy_change_requires_go_no_go: true,
+        required_operator_checks,
     }
 }
 

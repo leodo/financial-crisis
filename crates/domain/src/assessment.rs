@@ -185,6 +185,29 @@ pub struct PostureGuidance {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PositionGuidanceGovernance {
+    pub system_budget_only: bool,
+    pub auto_execution_allowed: bool,
+    pub manual_confirmation_required: bool,
+    pub policy_change_requires_release_review: bool,
+    pub policy_change_requires_go_no_go: bool,
+    pub required_operator_checks: Vec<String>,
+}
+
+impl Default for PositionGuidanceGovernance {
+    fn default() -> Self {
+        Self {
+            system_budget_only: true,
+            auto_execution_allowed: false,
+            manual_confirmation_required: true,
+            policy_change_requires_release_review: true,
+            policy_change_requires_go_no_go: true,
+            required_operator_checks: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PositionGuidance {
     pub action_playbook_version: String,
     pub execution_urgency: String,
@@ -200,6 +223,8 @@ pub struct PositionGuidance {
     pub reentry_conditions: Vec<String>,
     pub guardrails: Vec<String>,
     pub capital_preservation_overlay_enabled: bool,
+    #[serde(default)]
+    pub governance: PositionGuidanceGovernance,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -165,6 +165,34 @@ export function DecisionActionPlanPanel({
       <RuleBox label="执行护栏">
         <BulletList items={assessment.position_guidance.guardrails.map(humanizeNarrativeCopy)} compact />
       </RuleBox>
+      <RuleBox label="系统边界">
+        <span>{decisionContent.panels.actionPlanGovernance}</span>
+        <span>
+          {assessment.position_guidance.governance.system_budget_only
+            ? "当前输出是系统预算建议，不是个性化投资建议。"
+            : "当前输出可直接执行。"}
+        </span>
+        <span>
+          {assessment.position_guidance.governance.auto_execution_allowed
+            ? "当前版本允许自动执行。"
+            : "当前版本禁止自动执行，仍需人工确认。"}
+        </span>
+        <span>
+          {assessment.position_guidance.governance.policy_change_requires_release_review &&
+          assessment.position_guidance.governance.policy_change_requires_go_no_go
+            ? "任何动作规则升级都必须先过 release review，再满足正式 Go/No-Go。"
+            : "当前版本没有额外的 release review / Go-No-Go 约束。"}
+        </span>
+      </RuleBox>
+      <RuleBox label="执行前人工复核">
+        <span>{decisionContent.panels.actionPlanChecks}</span>
+        <BulletList
+          items={assessment.position_guidance.governance.required_operator_checks.map(
+            humanizeNarrativeCopy
+          )}
+          compact
+        />
+      </RuleBox>
     </section>
   );
 }

@@ -296,6 +296,16 @@ export interface PositionGuidance {
   reentry_conditions: string[];
   guardrails: string[];
   capital_preservation_overlay_enabled: boolean;
+  governance: PositionGuidanceGovernance;
+}
+
+export interface PositionGuidanceGovernance {
+  system_budget_only: boolean;
+  auto_execution_allowed: boolean;
+  manual_confirmation_required: boolean;
+  policy_change_requires_release_review: boolean;
+  policy_change_requires_go_no_go: boolean;
+  required_operator_checks: string[];
 }
 
 export interface RuntimeMetadata {

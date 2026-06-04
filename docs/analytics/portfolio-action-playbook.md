@@ -285,6 +285,12 @@ forbidden_actions
 reentry_conditions
 confidence_gate
 capital_preservation_overlay_enabled
+governance.system_budget_only
+governance.auto_execution_allowed
+governance.manual_confirmation_required
+governance.policy_change_requires_release_review
+governance.policy_change_requires_go_no_go
+governance.required_operator_checks[]
 ```
 
 前端应明确展示：
@@ -293,6 +299,8 @@ capital_preservation_overlay_enabled
 - 系统为何没有建议“清仓”
 - 从当前 posture 升级或降级需要什么条件
 - 再入场不是一次完成，而是分批恢复
+- 这套输出只是系统预算建议，不是自动交易指令
+- 任何动作规则升级都要先经过 release review 与正式 Go/No-Go
 
 ## 15. 需要落库的对象
 

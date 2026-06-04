@@ -236,6 +236,19 @@ mod tests {
         assert!(json["position_guidance"]["reentry_conditions"].is_array());
         assert!(json["position_guidance"]["guardrails"].is_array());
         assert!(json["position_guidance"]["capital_preservation_overlay_enabled"].is_boolean());
+        assert!(json["position_guidance"]["governance"]["system_budget_only"].is_boolean());
+        assert!(json["position_guidance"]["governance"]["auto_execution_allowed"].is_boolean());
+        assert!(
+            json["position_guidance"]["governance"]["manual_confirmation_required"].is_boolean()
+        );
+        assert!(
+            json["position_guidance"]["governance"]["policy_change_requires_release_review"]
+                .is_boolean()
+        );
+        assert!(
+            json["position_guidance"]["governance"]["policy_change_requires_go_no_go"].is_boolean()
+        );
+        assert!(json["position_guidance"]["governance"]["required_operator_checks"].is_array());
     }
 
     #[tokio::test]

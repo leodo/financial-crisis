@@ -114,6 +114,9 @@ entity_id
     "reason": "USDJPY 波动与美股/信用压力暂未形成明显共振，美日短端利差约 4.64%。"
   },
   "position_guidance": {
+    "action_playbook_version": "action_playbook_v1_20260531",
+    "execution_urgency": "立即执行；当日到 2 个交易日内优先去杠杆、补现金并建立核心保护覆盖。",
+    "confidence_gate": "当前数据可信度和事件确认度足以支持执行主要防守动作。",
     "target_equity_exposure_pct": 25.0,
     "target_cash_pct": 45.0,
     "hedge_ratio_pct": 40.0,
@@ -121,7 +124,21 @@ entity_id
     "option_overlay_pct": 15.0,
     "action_summary": "进入资本保全区间，优先流动性、现金和保护覆盖。",
     "actions": [],
-    "guardrails": []
+    "forbidden_actions": [],
+    "reentry_conditions": [],
+    "guardrails": [],
+    "capital_preservation_overlay_enabled": true,
+    "governance": {
+      "system_budget_only": true,
+      "auto_execution_allowed": false,
+      "manual_confirmation_required": true,
+      "policy_change_requires_release_review": true,
+      "policy_change_requires_go_no_go": true,
+      "required_operator_checks": [
+        "先确认当前动作框架版本与 active release 一致，再解释仓位预算。",
+        "先检查数据模式、关键指标日期和 stale warning，避免把演示值或陈旧值当成当前市场。"
+      ]
+    }
   },
   "runtime": {
     "data_mode": "demo",
@@ -354,6 +371,9 @@ reason
 ### 5.8 PositionGuidance
 
 ```text
+action_playbook_version
+execution_urgency
+confidence_gate
 target_equity_exposure_pct
 target_cash_pct
 hedge_ratio_pct
@@ -361,13 +381,23 @@ leverage_cap_pct
 option_overlay_pct
 action_summary
 actions[]
+forbidden_actions[]
+reentry_conditions[]
 guardrails[]
+capital_preservation_overlay_enabled
+governance.system_budget_only
+governance.auto_execution_allowed
+governance.manual_confirmation_required
+governance.policy_change_requires_release_review
+governance.policy_change_requires_go_no_go
+governance.required_operator_checks[]
 ```
 
 说明：
 
 - 这是系统级仓位预算和保护建议。
 - 不能当成用户个性化投资建议或自动交易指令。
+- `governance` 是动作层治理边界，明确这套输出只能作为系统预算建议，任何规则升级都要先经过 `release review` 与正式 `Go/No-Go`。
 
 ### 5.9 RuntimeMetadata
 
