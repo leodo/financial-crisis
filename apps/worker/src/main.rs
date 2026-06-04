@@ -378,6 +378,8 @@ struct ReleaseReviewScenarioFocusDiagnostic {
     candidate_first_runtime_floor_hit_without_l3_date: Option<NaiveDate>,
     baseline_first_runtime_floor_hit_without_l3_reason: Option<String>,
     candidate_first_runtime_floor_hit_without_l3_reason: Option<String>,
+    baseline_primary_failure_mode: Option<String>,
+    candidate_primary_failure_mode: Option<String>,
     dominant_runtime_blocks: ReleaseReviewRuntimeDominantCategories,
     dominant_runtime_continuity_facets: ReleaseReviewRuntimeDominantCategories,
     runtime_block_counts: Vec<ReleaseReviewRuntimeBlockCount>,
@@ -3127,6 +3129,18 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
                         .candidate_first_runtime_floor_hit_without_l3_reason
                         .as_deref()
                 )
+            );
+            let _ = writeln!(
+                markdown,
+                "- Primary failure mode: baseline={} | candidate={}",
+                scenario
+                    .baseline_primary_failure_mode
+                    .as_deref()
+                    .unwrap_or("—"),
+                scenario
+                    .candidate_primary_failure_mode
+                    .as_deref()
+                    .unwrap_or("—")
             );
             let _ = writeln!(
                 markdown,
@@ -7711,6 +7725,14 @@ mod tests {
         assert_eq!(rows[0].candidate_actionable_point_count, 1);
         assert_eq!(rows[0].baseline_runtime_floor_hit_point_count, 5);
         assert_eq!(rows[0].candidate_runtime_floor_hit_point_count, 5);
+        assert_eq!(
+            rows[0].baseline_primary_failure_mode.as_deref(),
+            Some("strict_gate_mismatch")
+        );
+        assert_eq!(
+            rows[0].candidate_primary_failure_mode.as_deref(),
+            Some("strict_gate_mismatch")
+        );
         assert_eq!(rows[0].runtime_block_counts.len(), 1);
         assert_eq!(rows[0].runtime_block_counts[0].category, "review_gate_gap");
         assert_eq!(rows[0].runtime_block_counts[0].baseline_count, 1);
@@ -7894,6 +7916,14 @@ mod tests {
         assert_eq!(rows[0].outcome, "missed_to_missed");
         assert_eq!(rows[0].baseline_runtime_floor_hit_point_count, 2);
         assert_eq!(rows[0].candidate_runtime_floor_hit_point_count, 2);
+        assert_eq!(
+            rows[0].baseline_primary_failure_mode.as_deref(),
+            Some("strict_gate_mismatch")
+        );
+        assert_eq!(
+            rows[0].candidate_primary_failure_mode.as_deref(),
+            Some("strict_gate_mismatch")
+        );
         assert_eq!(rows[0].runtime_block_counts.len(), 1);
         assert_eq!(rows[0].runtime_block_counts[0].category, "review_gate_gap");
         assert_eq!(rows[0].runtime_block_counts[0].baseline_count, 2);
@@ -8001,6 +8031,14 @@ mod tests {
         );
 
         assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].baseline_primary_failure_mode.as_deref(),
+            Some("posture_continuity_failure")
+        );
+        assert_eq!(
+            rows[0].candidate_primary_failure_mode.as_deref(),
+            Some("posture_continuity_failure")
+        );
         assert_eq!(rows[0].runtime_block_counts.len(), 1);
         assert_eq!(
             rows[0].runtime_block_counts[0].category,

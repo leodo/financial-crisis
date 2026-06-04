@@ -196,12 +196,28 @@ vs
 - `Focus Scenarios` 还会直接给出两组主导项 summary：
   - `Dominant runtime block`
   - `Dominant continuity facet`
+- 现在还会再往前走一步，直接给出：
+  - `Primary failure mode`
+
+当前这层会先把焦点场景归类成几种更容易决策的失败模式：
+
+- `strict_gate_mismatch`
+- `posture_continuity_failure`
+- `score_confirmation_failure`
+- `transitional_bridge_failure`
+- `residual_review_l3_failure`
 
 这样正式报告不需要先读完整个 block mix 长列表，先看主导项就能快速判断：
 
 - 这一段主要是 `review_gate_gap` 在挡；
 - 还是 `posture_bucket_normal` 在挡；
 - 还是 `months_score_low / trigger:none` 这类 continuity 问题在挡。
+
+并且现在还能直接在同一行看到，这个场景更应该优先归到：
+
+- strict review gate 和 runtime floor 口径不一致；
+- 还是 posture / months continuity 根本没有建立起来；
+- 还是 confirmation / bridge 规则过严。
 
 这意味着后续不需要再只靠肉眼扫长表，已经可以直接回答：
 
