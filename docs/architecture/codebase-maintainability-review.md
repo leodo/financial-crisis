@@ -100,8 +100,9 @@ config/
 - `apps/worker/src/training.rs` 已进一步收走 formal bundle 训练管线、`forward_crisis` 标签 / regime helper；`apps/worker/src/release_review.rs` 也已继续收走 release review 专属 report wire structs、historical audit helper、runtime regime diagnostics 与 Markdown 渲染入口；
 - `apps/worker/src/scenario.rs` 已继续收走 `CrisisScenario`、action episode window、protected context、primary/forward scenario 选择和 action window label；
 - `apps/worker/src/support.rs` 已继续收走 `ApiReloadHistoryMode`、demo run、API fetch/reload、SQLite/raw payload IO、格式化 helper 和通用 rounding/hash/path helper；
-- `main.rs` 体量已从约 `7.6k` 行进一步降到约 `5.1k` 行；
-- 因此，worker 当前的主要维护风险已从“所有 release 能力都堆在一个文件里”，下降为“共享导出层和超大测试块仍集中在 `main.rs`，需要继续按责任切薄”。
+- 原先内联在 `main.rs` 的超大测试块已整体迁到 `apps/worker/src/tests.rs`，并继续按 option parsing / training / quality / review / split requirement 分片到 `apps/worker/src/tests/*.rs`；
+- `main.rs` 体量已从约 `7.6k` 行进一步降到约 `165` 行；
+- 因此，worker 当前的主要维护风险已从“所有 release 能力都堆在一个文件里”，下降为“运行时代码已基本按边界收口，但测试侧仍有较大的共享 helper 与聚合层，需要继续把公共夹具和专题用例进一步切薄”。
 
 ### 4.2 API runtime、demo、history replay 曾有明显耦合
 
