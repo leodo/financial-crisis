@@ -2,15 +2,16 @@ use std::collections::BTreeMap;
 
 use fc_domain::{
     apply_platt_probability_calibration, formal_observation_feature_value,
-    score_logistic_probability_model, ActionabilityBlock, ActionabilityBundle, ActionabilityLevel,
-    DataTrust, FreshnessStatus, JpyCarrySnapshot, KeyIndicatorStatus, Observation,
-    ProbabilityBlock, ProbabilityBundle, RiskDimension, RiskSnapshot, TimeToRiskBucket,
-    FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER,
-    FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_DIMENSION_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE,
-    FEATURE_FRESHNESS_DELAYED_OR_WORSE, FEATURE_FRESHNESS_STALE_OR_MISSING,
-    FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D, FEATURE_HEURISTIC_P_60D,
-    FEATURE_OVERALL_SCORE, FEATURE_STRUCTURAL_SCORE, FEATURE_TRIGGER_SCORE,
-    FORMAL_OBSERVATION_FEATURE_SPECS,
+    score_logistic_probability_model, score_probability_horizon_bundle, ActionabilityBlock,
+    ActionabilityBundle, ActionabilityLevel, DataTrust, FreshnessStatus, JpyCarrySnapshot,
+    KeyIndicatorStatus, Observation, ProbabilityBlock, ProbabilityBundle, ProbabilityDiagnostics,
+    ProbabilityHorizonOverlayDiagnostics, ProbabilityHorizonScore, RiskDimension, RiskSnapshot,
+    TimeToRiskBucket, FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW,
+    FEATURE_BUCKET_WEEKS_OR_HIGHER, FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_DIMENSION_SCORE,
+    FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
+    FEATURE_FRESHNESS_STALE_OR_MISSING, FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D,
+    FEATURE_HEURISTIC_P_60D, FEATURE_OVERALL_SCORE, FEATURE_STRUCTURAL_SCORE,
+    FEATURE_TRIGGER_SCORE, FORMAL_OBSERVATION_FEATURE_SPECS,
 };
 
 use super::{
@@ -22,6 +23,7 @@ use super::{
 pub(crate) struct ProbabilityComputationTrace {
     pub raw_probabilities: ProbabilityBlock,
     pub calibrated_probabilities: ProbabilityBlock,
+    pub probability_diagnostics: ProbabilityDiagnostics,
     pub actionability: ActionabilityBlock,
     pub actionability_enabled: bool,
     pub actionability_model_version: Option<String>,
@@ -147,6 +149,7 @@ pub(super) fn build_probability_trace(
         return ProbabilityComputationTrace {
             raw_probabilities: heuristic_probabilities.clone(),
             calibrated_probabilities: heuristic_probabilities.clone(),
+            probability_diagnostics: ProbabilityDiagnostics::default(),
             actionability: heuristic_actionability,
             actionability_enabled: false,
             actionability_model_version: None,
@@ -158,6 +161,7 @@ pub(super) fn build_probability_trace(
         return ProbabilityComputationTrace {
             raw_probabilities: heuristic_probabilities.clone(),
             calibrated_probabilities: heuristic_probabilities.clone(),
+            probability_diagnostics: ProbabilityDiagnostics::default(),
             actionability: heuristic_actionability,
             actionability_enabled: false,
             actionability_model_version: None,
@@ -176,12 +180,33 @@ pub(super) fn build_probability_trace(
         key_indicators,
     );
 
-    let (raw_p_5d, calibrated_p_5d_raw) = score_bundle_horizon(bundle, 5, &features)
-        .unwrap_or((heuristic_probabilities.p_5d, heuristic_probabilities.p_5d));
-    let (raw_p_20d, calibrated_p_20d_raw) = score_bundle_horizon(bundle, 20, &features)
-        .unwrap_or((heuristic_probabilities.p_20d, heuristic_probabilities.p_20d));
-    let (raw_p_60d, calibrated_p_60d_raw) = score_bundle_horizon(bundle, 60, &features)
-        .unwrap_or((heuristic_probabilities.p_60d, heuristic_probabilities.p_60d));
+    let score_5d = score_bundle_horizon(bundle, 5, &features);
+    let score_20d = score_bundle_horizon(bundle, 20, &features);
+    let score_60d = score_bundle_horizon(bundle, 60, &features);
+    let raw_p_5d = score_5d
+        .as_ref()
+        .map_or(heuristic_probabilities.p_5d, |score| score.raw_probability);
+    let calibrated_p_5d_raw = score_5d
+        .as_ref()
+        .map_or(heuristic_probabilities.p_5d, |score| {
+            score.final_probability
+        });
+    let raw_p_20d = score_20d
+        .as_ref()
+        .map_or(heuristic_probabilities.p_20d, |score| score.raw_probability);
+    let calibrated_p_20d_raw = score_20d
+        .as_ref()
+        .map_or(heuristic_probabilities.p_20d, |score| {
+            score.final_probability
+        });
+    let raw_p_60d = score_60d
+        .as_ref()
+        .map_or(heuristic_probabilities.p_60d, |score| score.raw_probability);
+    let calibrated_p_60d_raw = score_60d
+        .as_ref()
+        .map_or(heuristic_probabilities.p_60d, |score| {
+            score.final_probability
+        });
 
     let raw_probabilities = ProbabilityBlock {
         p_5d: round3(raw_p_5d),
@@ -201,6 +226,46 @@ pub(super) fn build_probability_trace(
         p_5d: round3(calibrated_p_5d),
         p_20d: round3(calibrated_p_20d),
         p_60d: round3(calibrated_p_60d),
+    };
+    let probability_diagnostics = ProbabilityDiagnostics {
+        horizon_overlays: bundle
+            .horizons
+            .iter()
+            .filter_map(|horizon| {
+                let score = match horizon.horizon_days {
+                    5 => score_5d.as_ref(),
+                    20 => score_20d.as_ref(),
+                    60 => score_60d.as_ref(),
+                    _ => None,
+                }?;
+                let diagnostics = ProbabilityHorizonOverlayDiagnostics {
+                    horizon_days: horizon.horizon_days,
+                    raw_probability: round3(score.raw_probability),
+                    calibrated_probability: round3(score.calibrated_probability),
+                    final_probability: round3(score.final_probability),
+                    runtime_final_probability: Some(match horizon.horizon_days {
+                        5 => round3(calibrated_p_5d),
+                        20 => round3(calibrated_p_20d),
+                        60 => round3(calibrated_p_60d),
+                        _ => round3(score.final_probability),
+                    }),
+                    monotonic_lift: round3(match horizon.horizon_days {
+                        5 => calibrated_p_5d - score.final_probability,
+                        20 => calibrated_p_20d - score.final_probability,
+                        60 => calibrated_p_60d - score.final_probability,
+                        _ => 0.0,
+                    }),
+                    configured_overlay_count: horizon.family_overlays.len() as u32,
+                    contributions: score.overlay_contributions.clone(),
+                    overlay_audits: horizon.family_overlay_audits.clone(),
+                };
+                (diagnostics.configured_overlay_count > 0
+                    || diagnostics.monotonic_lift.abs() > f64::EPSILON
+                    || !diagnostics.contributions.is_empty()
+                    || !diagnostics.overlay_audits.is_empty())
+                .then_some(diagnostics)
+            })
+            .collect(),
     };
     let action_thresholds = probability_action_thresholds(Some(serving_model));
 
@@ -253,6 +318,7 @@ pub(super) fn build_probability_trace(
     ProbabilityComputationTrace {
         raw_probabilities,
         calibrated_probabilities,
+        probability_diagnostics,
         actionability,
         actionability_enabled: bundle.actionability.is_some(),
         actionability_model_version: bundle
@@ -281,6 +347,7 @@ fn build_probability_feature_map(
 ) -> BTreeMap<String, f64> {
     let heuristic_bucket = build_time_to_risk_bucket(
         heuristic_probabilities,
+        None,
         None,
         snapshot.structural_score,
         snapshot.trigger_score,
@@ -405,17 +472,12 @@ fn score_bundle_horizon(
     bundle: &ProbabilityBundle,
     horizon_days: u32,
     features: &BTreeMap<String, f64>,
-) -> Option<(f64, f64)> {
+) -> Option<ProbabilityHorizonScore> {
     let horizon = bundle
         .horizons
         .iter()
         .find(|horizon| horizon.horizon_days == horizon_days)?;
-    let raw_probability = score_logistic_probability_model(&horizon.raw_model, features);
-    let calibrated_probability = match horizon.calibration.as_ref() {
-        Some(calibration) => apply_platt_probability_calibration(raw_probability, calibration),
-        None => raw_probability,
-    };
-    Some((raw_probability, calibrated_probability))
+    Some(score_probability_horizon_bundle(horizon, features))
 }
 
 fn score_actionability_level(

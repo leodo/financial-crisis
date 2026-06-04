@@ -4,7 +4,8 @@ use chrono::{NaiveDate, Utc};
 use fc_domain::{
     AssessmentHistoryPoint, AssessmentSnapshot, DecisionPosture, FreshnessStatus,
     HistoricalAssessmentPointRecord, HistoricalReplayRunRecord, Observation, PostureGuidance,
-    PredictionSnapshotRecord, TimeToRiskBucket,
+    PredictionSnapshotRecord, ProbabilityDiagnostics, ProbabilityHorizonOverlayDiagnostics,
+    TimeToRiskBucket,
 };
 use fc_storage::SqliteStore;
 use uuid::Uuid;
@@ -52,6 +53,7 @@ pub(crate) struct HistoricalReplayPointDraft {
     pub(crate) actionability_prepare: f64,
     pub(crate) actionability_hedge: f64,
     pub(crate) actionability_defend: f64,
+    pub(crate) probability_diagnostics: ProbabilityDiagnostics,
     pub(crate) posture_trigger_codes: Vec<String>,
     pub(crate) posture_blocker_codes: Vec<String>,
     pub(crate) coverage_score: f64,
@@ -127,6 +129,7 @@ pub(crate) async fn persist_historical_replay_output(
             actionability_prepare: point.actionability_prepare,
             actionability_hedge: point.actionability_hedge,
             actionability_defend: point.actionability_defend,
+            probability_diagnostics: point.probability_diagnostics,
             posture_trigger_codes: point.posture_trigger_codes,
             posture_blocker_codes: point.posture_blocker_codes,
             coverage_score: point.coverage_score,
@@ -145,6 +148,7 @@ pub(crate) async fn persist_historical_replay_output(
 pub(crate) async fn load_cached_historical_replay_output(
     store: &SqliteStore,
     serving_model: Option<&ServingModelContext>,
+    observations: &[Observation],
     target_dates: &BTreeSet<NaiveDate>,
 ) -> anyhow::Result<Option<HistoricalAssessmentOutput>> {
     let Some(from_date) = target_dates.first().copied() else {
@@ -167,6 +171,17 @@ pub(crate) async fn load_cached_historical_replay_output(
     else {
         return Ok(None);
     };
+
+    let expected_source_watermark = historical_replay_source_watermark(observations);
+    if !historical_replay_run_has_expected_source_watermark(&run, &expected_source_watermark) {
+        tracing::warn!(
+            replay_run_id = run.replay_run_id,
+            cached_source_watermark = %run.source_watermark,
+            expected_source_watermark = %expected_source_watermark,
+            "cached historical replay run source watermark is stale; skipping replay cache reuse"
+        );
+        return Ok(None);
+    }
 
     let points = store
         .list_historical_assessment_points(
@@ -195,7 +210,7 @@ pub(crate) async fn load_cached_historical_replay_output(
     Ok(Some(historical_output_from_replay_points(points)))
 }
 
-fn historical_replay_source_watermark(observations: &[Observation]) -> String {
+pub(crate) fn historical_replay_source_watermark(observations: &[Observation]) -> String {
     observations
         .iter()
         .filter(|observation| observation.entity_id == "us")
@@ -203,6 +218,13 @@ fn historical_replay_source_watermark(observations: &[Observation]) -> String {
         .max()
         .map(|date| format!("us_observations={date}"))
         .unwrap_or_else(|| "us_observations=missing".to_string())
+}
+
+fn historical_replay_run_has_expected_source_watermark(
+    run: &HistoricalReplayRunRecord,
+    expected_source_watermark: &str,
+) -> bool {
+    run.source_watermark == expected_source_watermark
 }
 
 pub(crate) fn historical_output_from_prediction_snapshots(
@@ -370,11 +392,36 @@ pub(crate) fn historical_replay_point_draft_from_assessment(
         actionability_prepare: assessment.actionability.prepare,
         actionability_hedge: assessment.actionability.hedge,
         actionability_defend: assessment.actionability.defend,
+        probability_diagnostics: historical_probability_diagnostics(
+            &probability_trace.probability_diagnostics,
+        ),
         posture_trigger_codes: posture_guidance.trigger_codes.clone(),
         posture_blocker_codes: posture_guidance.blocker_codes.clone(),
         coverage_score: assessment.data_trust.coverage_score,
         freshness_status: worst_freshness_status(&assessment.key_indicators).to_string(),
         generated_at: assessment.runtime.generated_at,
+    }
+}
+
+fn historical_probability_diagnostics(
+    diagnostics: &ProbabilityDiagnostics,
+) -> ProbabilityDiagnostics {
+    ProbabilityDiagnostics {
+        horizon_overlays: diagnostics
+            .horizon_overlays
+            .iter()
+            .map(|horizon| ProbabilityHorizonOverlayDiagnostics {
+                horizon_days: horizon.horizon_days,
+                raw_probability: horizon.raw_probability,
+                calibrated_probability: horizon.calibrated_probability,
+                final_probability: horizon.final_probability,
+                runtime_final_probability: horizon.runtime_final_probability,
+                monotonic_lift: horizon.monotonic_lift,
+                configured_overlay_count: horizon.configured_overlay_count,
+                contributions: horizon.contributions.clone(),
+                overlay_audits: Vec::new(),
+            })
+            .collect(),
     }
 }
 
@@ -593,5 +640,84 @@ fn parse_time_to_risk_bucket_code(value: &str) -> TimeToRiskBucket {
         "weeks" => TimeToRiskBucket::Weeks,
         "now" => TimeToRiskBucket::Now,
         _ => TimeToRiskBucket::Normal,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{NaiveDate, TimeZone, Utc};
+    use fc_domain::{HistoricalReplayRunRecord, Observation};
+
+    use super::{
+        historical_replay_run_has_expected_source_watermark, historical_replay_source_watermark,
+    };
+
+    fn observation(entity_id: &str, as_of_date: NaiveDate) -> Observation {
+        Observation {
+            indicator_id: "indicator".to_string(),
+            entity_id: entity_id.to_string(),
+            as_of_date,
+            period_start: None,
+            period_end: None,
+            frequency: fc_domain::Frequency::Daily,
+            value: 1.0,
+            unit: "unit".to_string(),
+            source_id: "source".to_string(),
+            dataset_id: "dataset".to_string(),
+            revision_time: None,
+            publication_time: None,
+            quality_score: 100.0,
+            quality_flags: Vec::new(),
+        }
+    }
+
+    fn replay_run(source_watermark: &str) -> HistoricalReplayRunRecord {
+        HistoricalReplayRunRecord {
+            replay_run_id: "run".to_string(),
+            release_id: Some("release".to_string()),
+            market_scope: "financial_system".to_string(),
+            from_date: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            to_date: NaiveDate::from_ymd_opt(2026, 5, 2).unwrap(),
+            history_cache_key: "cache".to_string(),
+            feature_set_version: "feature".to_string(),
+            label_version: "label".to_string(),
+            point_in_time_mode: "best_effort".to_string(),
+            runtime_policy_version: "runtime".to_string(),
+            action_playbook_version: "action".to_string(),
+            protected_window_catalog_id: "catalog".to_string(),
+            source_watermark: source_watermark.to_string(),
+            status: "success".to_string(),
+            point_count: 2,
+            failure_reason: None,
+            created_at: Utc.with_ymd_and_hms(2026, 6, 4, 8, 0, 0).single().unwrap(),
+        }
+    }
+
+    #[test]
+    fn historical_replay_source_watermark_uses_latest_us_observation_date() {
+        let observations = vec![
+            observation("jp", NaiveDate::from_ymd_opt(2026, 5, 3).unwrap()),
+            observation("us", NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
+            observation("us", NaiveDate::from_ymd_opt(2026, 5, 2).unwrap()),
+        ];
+
+        assert_eq!(
+            historical_replay_source_watermark(&observations),
+            "us_observations=2026-05-02"
+        );
+    }
+
+    #[test]
+    fn historical_replay_run_reuse_requires_matching_source_watermark() {
+        let expected = "us_observations=2026-05-02";
+
+        assert!(historical_replay_run_has_expected_source_watermark(
+            &replay_run(expected),
+            expected
+        ));
+        assert!(!historical_replay_run_has_expected_source_watermark(
+            &replay_run("us_observations=2026-05-01"),
+            expected
+        ));
     }
 }

@@ -116,6 +116,19 @@ just snapshot-dataset
 just formal-train
 ```
 
+对 family-hybrid 候选先做离线筛选，再决定是否值得跑 `release-review-fast`：
+
+```powershell
+just formal-candidate-screen us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930
+```
+
+如果只想看固定窗口或关键特征差异，也可以分别运行：
+
+```powershell
+just formal-candidate-window-audit us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930
+just formal-candidate-feature-audit us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930
+```
+
 一键训练并激活 formal bundle：
 
 ```powershell

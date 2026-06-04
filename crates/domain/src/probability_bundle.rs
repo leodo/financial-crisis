@@ -31,9 +31,11 @@ pub const FEATURE_US_USDJPY_CHANGE_20D: &str = "us_usdjpy_change_20d";
 pub const PROBABILITY_MODEL_FAMILY_LINEAR_V1: &str = "linear_v1";
 pub const PROBABILITY_MODEL_FAMILY_INTERACTION_TAIL_V1: &str = "interaction_tail_v1";
 pub const PROBABILITY_MODEL_FAMILY_FAMILY_CONDITIONAL_V1: &str = "family_conditional_v1";
+pub const PROBABILITY_MODEL_FAMILY_FAMILY_HYBRID_V1: &str = "family_hybrid_v1";
 pub const PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1: &str = "identity_v1";
 pub const PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1: &str = "interaction_tail_v1";
 pub const PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1: &str = "family_conditional_v1";
+pub const PROBABILITY_FEATURE_TRANSFORM_FAMILY_HYBRID_V1: &str = "family_hybrid_v1";
 
 pub const TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES: &[&str] = &[
     FEATURE_OVERALL_SCORE,
@@ -119,6 +121,7 @@ pub fn probability_feature_names_for_transform(
     let mut names = base_feature_names.to_vec();
     if feature_transform == PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1
         || feature_transform == PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1
+        || feature_transform == PROBABILITY_FEATURE_TRANSFORM_FAMILY_HYBRID_V1
     {
         for feature_name in INTERACTION_TAIL_DERIVED_FEATURES {
             if !names.iter().any(|existing| existing == feature_name) {
@@ -126,7 +129,9 @@ pub fn probability_feature_names_for_transform(
             }
         }
     }
-    if feature_transform == PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1 {
+    if feature_transform == PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1
+        || feature_transform == PROBABILITY_FEATURE_TRANSFORM_FAMILY_HYBRID_V1
+    {
         for feature_name in FAMILY_CONDITIONAL_DERIVED_FEATURES {
             if !names.iter().any(|existing| existing == feature_name) {
                 names.push((*feature_name).to_string());
@@ -145,11 +150,10 @@ pub fn resolve_probability_feature_value(
     }
 
     let parts = feature_name.split("__").collect::<Vec<_>>();
+    if parts.first() == Some(&"interaction") && parts.len() > 2 {
+        return resolve_interaction_feature_value(&parts[1..], features);
+    }
     match parts.as_slice() {
-        ["interaction", left, right] => Some(
-            resolve_probability_feature_value(left, features)?
-                * resolve_probability_feature_value(right, features)?,
-        ),
         ["tail_pos", base, threshold] => Some(
             (resolve_probability_feature_value(base, features)? - threshold.parse::<f64>().ok()?)
                 .max(0.0),
@@ -170,6 +174,23 @@ pub fn resolve_probability_feature_value(
         ),
         _ => None,
     }
+}
+
+fn resolve_interaction_feature_value(
+    parts: &[&str],
+    features: &BTreeMap<String, f64>,
+) -> Option<f64> {
+    for split_index in 1..parts.len() {
+        let left = parts[..split_index].join("__");
+        let right = parts[split_index..].join("__");
+        if let (Some(left_value), Some(right_value)) = (
+            resolve_probability_feature_value(&left, features),
+            resolve_probability_feature_value(&right, features),
+        ) {
+            return Some(left_value * right_value);
+        }
+    }
+    None
 }
 
 fn resolve_family_proxy_value(family: &str, features: &BTreeMap<String, f64>) -> Option<f64> {
@@ -196,12 +217,22 @@ fn resolve_family_proxy_value(family: &str, features: &BTreeMap<String, f64>) ->
             0.55 * scaled_tail_pos(features, FEATURE_US_VIX_LEVEL, 32.0, 20.0)?
                 + 0.45 * scaled_tail_pos(features, FEATURE_US_STLFSI_LEVEL, 1.0, 3.0)?,
         ),
-        "jpy_carry" => Some(
-            0.35 * scaled_tail_pos(features, FEATURE_US_USDJPY_LEVEL, 145.0, 20.0)?
-                + 0.35 * scaled_tail_abs(features, FEATURE_US_USDJPY_CHANGE_20D, 4.0, 8.0)?
-                + 0.15 * scaled_tail_pos(features, FEATURE_US_FED_FUNDS_LEVEL, 4.0, 3.0)?
-                + 0.15 * scaled_tail_pos(features, FEATURE_EXTERNAL_DIMENSION_SCORE, 50.0, 35.0)?,
-        ),
+        "jpy_carry" => {
+            let level_tail = scaled_tail_pos(features, FEATURE_US_USDJPY_LEVEL, 145.0, 20.0)?;
+            let change_tail = scaled_tail_abs(features, FEATURE_US_USDJPY_CHANGE_20D, 4.0, 8.0)?;
+            let funding_tail = scaled_tail_pos(features, FEATURE_US_FED_FUNDS_LEVEL, 4.0, 3.0)?;
+            let external_tail =
+                scaled_tail_pos(features, FEATURE_EXTERNAL_DIMENSION_SCORE, 50.0, 35.0)?;
+            let stress_confirmation = change_tail.max(external_tail);
+            let confirmed_level = level_tail * (0.25 + 0.75 * stress_confirmation);
+            Some(
+                (0.45 * confirmed_level
+                    + 0.25 * change_tail
+                    + 0.15 * funding_tail * stress_confirmation
+                    + 0.15 * external_tail)
+                    .clamp(0.0, 1.0),
+            )
+        }
         _ => None,
     }
 }
@@ -249,7 +280,15 @@ pub fn score_logistic_probability_model(
     model: &LogisticProbabilityModel,
     features: &BTreeMap<String, f64>,
 ) -> f64 {
+    score_logistic_probability_model_with_diagnostics(model, features).probability
+}
+
+pub fn score_logistic_probability_model_with_diagnostics(
+    model: &LogisticProbabilityModel,
+    features: &BTreeMap<String, f64>,
+) -> LogisticProbabilityModelScoreDiagnostics {
     let mut linear = model.intercept;
+    let mut feature_contributions = Vec::with_capacity(model.coefficients.len());
     for coefficient in &model.coefficients {
         let stat = model
             .feature_stats
@@ -266,9 +305,72 @@ pub fn score_logistic_probability_model(
             };
             (raw_value - stat.mean) / std_dev
         });
-        linear += normalized * coefficient.weight;
+        let contribution = normalized * coefficient.weight;
+        linear += contribution;
+        feature_contributions.push(LogisticProbabilityFeatureContribution {
+            name: coefficient.name.clone(),
+            raw_value,
+            normalized_value: normalized,
+            weight: coefficient.weight,
+            contribution,
+        });
     }
-    probability_sigmoid(linear)
+    LogisticProbabilityModelScoreDiagnostics {
+        intercept: model.intercept,
+        linear_score: linear,
+        probability: probability_sigmoid(linear),
+        feature_contributions,
+    }
+}
+
+pub fn score_probability_horizon_bundle(
+    horizon: &ProbabilityHorizonBundle,
+    features: &BTreeMap<String, f64>,
+) -> ProbabilityHorizonScore {
+    let raw_probability = score_logistic_probability_model(&horizon.raw_model, features);
+    let calibrated_probability = horizon
+        .calibration
+        .as_ref()
+        .map_or(raw_probability, |calibration| {
+            apply_platt_probability_calibration(raw_probability, calibration)
+        });
+    let mut final_probability = calibrated_probability;
+    let mut overlay_contributions = Vec::new();
+
+    for overlay in &horizon.family_overlays {
+        let Some(gate_value) = resolve_probability_feature_value(&overlay.gate_feature, features)
+        else {
+            continue;
+        };
+        let gate = probability_sigmoid((gate_value - overlay.gate_threshold) * overlay.gate_slope);
+        let overlay_raw_probability =
+            score_logistic_probability_model(&overlay.raw_model, features);
+        let overlay_probability = overlay
+            .calibration
+            .as_ref()
+            .map_or(overlay_raw_probability, |calibration| {
+                apply_platt_probability_calibration(overlay_raw_probability, calibration)
+            });
+        let blend = (gate * overlay.blend_weight).clamp(0.0, 0.50);
+        let before = final_probability;
+        final_probability = final_probability * (1.0 - blend) + overlay_probability * blend;
+        overlay_contributions.push(ProbabilityOverlayContribution {
+            family_id: overlay.family_id.clone(),
+            gate_feature: overlay.gate_feature.clone(),
+            gate_value,
+            gate,
+            blend,
+            overlay_probability,
+            contribution: final_probability - before,
+        });
+    }
+
+    ProbabilityHorizonScore {
+        raw_probability,
+        calibrated_probability,
+        final_probability,
+        overlay_contributions,
+    }
 }
 
 pub fn apply_platt_probability_calibration(
@@ -313,6 +415,83 @@ pub struct ProbabilityHorizonBundle {
     pub raw_model: LogisticProbabilityModel,
     pub calibration: Option<PlattCalibrationArtifact>,
     pub evaluation: HorizonEvaluationSummary,
+    #[serde(default)]
+    pub family_overlays: Vec<ProbabilityFamilyOverlayBundle>,
+    #[serde(default)]
+    pub family_overlay_audits: Vec<ProbabilityFamilyOverlayAudit>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbabilityFamilyOverlayBundle {
+    pub family_id: String,
+    pub gate_feature: String,
+    pub gate_threshold: f64,
+    pub gate_slope: f64,
+    pub blend_weight: f64,
+    pub raw_model: LogisticProbabilityModel,
+    #[serde(default)]
+    pub calibration: Option<PlattCalibrationArtifact>,
+    #[serde(default)]
+    pub decision_threshold: Option<f64>,
+    #[serde(default)]
+    pub evaluation: Option<HorizonEvaluationSummary>,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbabilityHorizonScore {
+    pub raw_probability: f64,
+    pub calibrated_probability: f64,
+    pub final_probability: f64,
+    pub overlay_contributions: Vec<ProbabilityOverlayContribution>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbabilityOverlayContribution {
+    pub family_id: String,
+    pub gate_feature: String,
+    pub gate_value: f64,
+    pub gate: f64,
+    pub blend: f64,
+    pub overlay_probability: f64,
+    pub contribution: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogisticProbabilityModelScoreDiagnostics {
+    pub intercept: f64,
+    pub linear_score: f64,
+    pub probability: f64,
+    pub feature_contributions: Vec<LogisticProbabilityFeatureContribution>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogisticProbabilityFeatureContribution {
+    pub name: String,
+    pub raw_value: f64,
+    pub normalized_value: f64,
+    pub weight: f64,
+    pub contribution: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbabilityFamilyOverlayAudit {
+    pub family_id: String,
+    pub gate_feature: String,
+    pub gate_active_threshold: f64,
+    pub scenario_count: u32,
+    pub train_row_count: u32,
+    pub calibration_row_count: u32,
+    pub evaluation_row_count: u32,
+    pub train_gate_active_row_count: u32,
+    pub calibration_gate_active_row_count: u32,
+    pub evaluation_gate_active_row_count: u32,
+    pub positive_label_count: u32,
+    pub early_warning_row_count: u32,
+    pub protected_action_window_count: u32,
+    pub avg_gate_value: f64,
+    pub max_gate_value: f64,
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -588,11 +767,28 @@ mod tests {
     }
 
     #[test]
+    fn family_hybrid_transform_reuses_family_feature_expansion() {
+        let base = FORMAL_PROBABILITY_BUNDLE_FEATURES
+            .iter()
+            .map(|feature| (*feature).to_string())
+            .collect::<Vec<_>>();
+        let expanded = probability_feature_names_for_transform(
+            &base,
+            PROBABILITY_FEATURE_TRANSFORM_FAMILY_HYBRID_V1,
+        );
+
+        assert!(expanded.contains(&"interaction__overall_score__us_vix_level".to_string()));
+        assert!(expanded.contains(&"family_proxy__rate_shock".to_string()));
+    }
+
+    #[test]
     fn derived_feature_resolver_handles_interactions_and_tail_features() {
         let mut features = BTreeMap::new();
         features.insert(FEATURE_OVERALL_SCORE.to_string(), 60.0);
+        features.insert(FEATURE_EXTERNAL_DIMENSION_SCORE.to_string(), 65.0);
         features.insert(FEATURE_US_VIX_LEVEL.to_string(), 28.0);
         features.insert(FEATURE_US_CURVE_10Y2Y_LEVEL.to_string(), -0.5);
+        features.insert(FEATURE_US_USDJPY_LEVEL.to_string(), 160.0);
         features.insert(FEATURE_US_USDJPY_CHANGE_20D.to_string(), -6.0);
 
         assert_eq!(
@@ -613,6 +809,13 @@ mod tests {
         assert_eq!(
             resolve_probability_feature_value("tail_abs_pos__us_usdjpy_change_20d__4", &features),
             Some(2.0)
+        );
+        assert_eq!(
+            resolve_probability_feature_value(
+                "interaction__external_dimension_score__tail_pos__us_usdjpy_level__145",
+                &features,
+            ),
+            Some(975.0)
         );
     }
 
@@ -642,8 +845,22 @@ mod tests {
         .unwrap();
 
         assert!(systemic > 0.70 && systemic <= 1.0);
-        assert!(carry > 0.55 && carry <= 1.0);
+        assert!(carry > 0.35 && carry <= 1.0);
         assert!((carry_context - carry * 65.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn jpy_carry_proxy_requires_change_or_external_confirmation() {
+        let mut features = BTreeMap::new();
+        features.insert(FEATURE_EXTERNAL_DIMENSION_SCORE.to_string(), 40.0);
+        features.insert(FEATURE_US_FED_FUNDS_LEVEL.to_string(), 5.5);
+        features.insert(FEATURE_US_USDJPY_LEVEL.to_string(), 160.0);
+        features.insert(FEATURE_US_USDJPY_CHANGE_20D.to_string(), -1.0);
+
+        let carry =
+            resolve_probability_feature_value("family_proxy__jpy_carry", &features).unwrap();
+
+        assert!(carry < 0.20);
     }
 
     #[test]
@@ -682,6 +899,142 @@ mod tests {
         let probability = score_logistic_probability_model(&model, &features);
 
         assert!(probability > 0.69 && probability < 0.70);
+    }
+
+    #[test]
+    fn shared_probability_scorer_exposes_feature_contributions() {
+        let model = LogisticProbabilityModel {
+            intercept: 0.5,
+            feature_transform: PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1.to_string(),
+            feature_stats: vec![
+                ProbabilityFeatureStat {
+                    name: FEATURE_OVERALL_SCORE.to_string(),
+                    mean: 50.0,
+                    std_dev: 10.0,
+                    fill_value: 42.0,
+                },
+                ProbabilityFeatureStat {
+                    name: FEATURE_US_VIX_LEVEL.to_string(),
+                    mean: 20.0,
+                    std_dev: 5.0,
+                    fill_value: 18.0,
+                },
+            ],
+            coefficients: vec![
+                ProbabilityCoefficient {
+                    name: FEATURE_OVERALL_SCORE.to_string(),
+                    weight: 0.4,
+                },
+                ProbabilityCoefficient {
+                    name: FEATURE_US_VIX_LEVEL.to_string(),
+                    weight: 0.2,
+                },
+            ],
+        };
+        let mut features = BTreeMap::new();
+        features.insert(FEATURE_OVERALL_SCORE.to_string(), 60.0);
+
+        let diagnostics = score_logistic_probability_model_with_diagnostics(&model, &features);
+
+        assert_eq!(diagnostics.feature_contributions.len(), 2);
+        assert_eq!(
+            diagnostics.feature_contributions[0].name,
+            FEATURE_OVERALL_SCORE
+        );
+        assert!((diagnostics.feature_contributions[0].contribution - 0.4).abs() < 1e-12);
+        assert_eq!(
+            diagnostics.feature_contributions[1].name,
+            FEATURE_US_VIX_LEVEL
+        );
+        assert!((diagnostics.feature_contributions[1].raw_value - 18.0).abs() < 1e-12);
+        let contribution_sum = diagnostics
+            .feature_contributions
+            .iter()
+            .map(|item| item.contribution)
+            .sum::<f64>();
+        assert!(
+            (diagnostics.linear_score - (diagnostics.intercept + contribution_sum)).abs() < 1e-12
+        );
+        assert!(
+            (diagnostics.probability - score_logistic_probability_model(&model, &features)).abs()
+                < 1e-12
+        );
+    }
+
+    #[test]
+    fn horizon_bundle_score_without_overlays_matches_base_probability() {
+        let horizon = ProbabilityHorizonBundle {
+            horizon_days: 60,
+            decision_threshold: None,
+            threshold_diagnostics: None,
+            raw_model: LogisticProbabilityModel {
+                intercept: 0.0,
+                feature_transform: PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1.to_string(),
+                feature_stats: Vec::new(),
+                coefficients: Vec::new(),
+            },
+            calibration: None,
+            evaluation: HorizonEvaluationSummary::default(),
+            family_overlays: Vec::new(),
+            family_overlay_audits: Vec::new(),
+        };
+        let features = BTreeMap::new();
+
+        let score = score_probability_horizon_bundle(&horizon, &features);
+
+        assert_eq!(score.raw_probability, 0.5);
+        assert_eq!(score.calibrated_probability, 0.5);
+        assert_eq!(score.final_probability, 0.5);
+        assert!(score.overlay_contributions.is_empty());
+    }
+
+    #[test]
+    fn horizon_bundle_score_blends_family_overlay_when_gate_is_visible() {
+        let base_model = LogisticProbabilityModel {
+            intercept: 0.0,
+            feature_transform: PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1.to_string(),
+            feature_stats: Vec::new(),
+            coefficients: Vec::new(),
+        };
+        let overlay_model = LogisticProbabilityModel {
+            intercept: 2.0,
+            feature_transform: PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1.to_string(),
+            feature_stats: Vec::new(),
+            coefficients: Vec::new(),
+        };
+        let horizon = ProbabilityHorizonBundle {
+            horizon_days: 60,
+            decision_threshold: None,
+            threshold_diagnostics: None,
+            raw_model: base_model,
+            calibration: None,
+            evaluation: HorizonEvaluationSummary::default(),
+            family_overlays: vec![ProbabilityFamilyOverlayBundle {
+                family_id: "jpy_carry".to_string(),
+                gate_feature: "family_proxy__jpy_carry".to_string(),
+                gate_threshold: 0.2,
+                gate_slope: 8.0,
+                blend_weight: 0.4,
+                raw_model: overlay_model,
+                calibration: None,
+                decision_threshold: None,
+                evaluation: None,
+                note: "test overlay".to_string(),
+            }],
+            family_overlay_audits: Vec::new(),
+        };
+        let mut features = BTreeMap::new();
+        features.insert(FEATURE_US_USDJPY_LEVEL.to_string(), 160.0);
+        features.insert(FEATURE_US_USDJPY_CHANGE_20D.to_string(), -8.0);
+        features.insert(FEATURE_US_FED_FUNDS_LEVEL.to_string(), 5.5);
+        features.insert(FEATURE_EXTERNAL_DIMENSION_SCORE.to_string(), 65.0);
+
+        let score = score_probability_horizon_bundle(&horizon, &features);
+
+        assert!(score.final_probability > score.calibrated_probability);
+        assert_eq!(score.overlay_contributions.len(), 1);
+        assert_eq!(score.overlay_contributions[0].family_id, "jpy_carry");
+        assert!(score.overlay_contributions[0].blend > 0.0);
     }
 
     #[test]

@@ -327,6 +327,17 @@ pub(crate) async fn load_sqlite_assessment_history(
         history_build_mode,
         AssessmentHistoryBuildMode::StrictRebuild
     ) {
+        if let Some(cached_replay) =
+            load_cached_historical_replay_output(store, serving_model, observations, &target_dates)
+                .await?
+        {
+            tracing::info!(
+                release_id = release_filter.unwrap_or("heuristic"),
+                cached_dates = cached_replay.history_points.len(),
+                "reusing cached strict-rebuild historical replay for current reload"
+            );
+            return Ok(cached_replay.history_points);
+        }
         let rebuild_dates = target_dates.into_iter().collect::<Vec<_>>();
         tracing::info!(
             release_id = release_filter.unwrap_or("heuristic"),
@@ -375,7 +386,8 @@ pub(crate) async fn load_sqlite_assessment_history(
     }
 
     if let Some(cached_replay) =
-        load_cached_historical_replay_output(store, serving_model, &target_dates).await?
+        load_cached_historical_replay_output(store, serving_model, observations, &target_dates)
+            .await?
     {
         return Ok(cached_replay.history_points);
     }

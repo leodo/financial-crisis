@@ -22,8 +22,9 @@ pub(crate) use dataset::{
 #[cfg(test)]
 pub(crate) use dataset::{
     formal_dataset_min_date, formal_dataset_snapshot_is_usable, formal_dataset_split_requirements,
+    render_formal_dataset_slice_csv, sanitize_filename_component,
     scenario_aware_formal_split_bounds, scenario_count_for_index_range, FormalDatasetBuildOptions,
-    FormalDatasetSummaryOptions, FormalSplitLabelSupport,
+    FormalDatasetSliceOptions, FormalDatasetSummaryOptions, FormalSplitLabelSupport,
 };
 pub(crate) use db::{db_check, db_init, db_seed};
 pub(crate) use feature::{
@@ -104,6 +105,15 @@ fn print_help() {
   cargo run -p fc-worker -- research release review --candidate-release-id ID [--baseline-release-id ID] [--market-scope SCOPE] [--api-reload-url URL] [--history-mode default|strict_rebuild] [--history-limit N] [--output-dir DIR] [--updated-by NAME]
       Temporarily switch the running API between baseline and candidate releases. Review reloads default to strict_rebuild raw history replay and history-limit=20000 before exporting JSON + Markdown, then restore the original active release. Use --history-mode default with a smaller --history-limit only for quick triage when strict rebuild is too slow.
 
+  cargo run -p fc-worker -- research release probability-slice --release-id ID [--market-scope SCOPE] --from YYYY-MM-DD --to YYYY-MM-DD [--api-reload-url URL] [--history-mode default|strict_rebuild] [--history-limit N] [--output-dir DIR] [--updated-by NAME]
+      Temporarily activate one release, rebuild its historical replay, export per-day raw/calibrated/final probability decomposition as JSON + CSV, then restore the original active release.
+
+  cargo run -p fc-worker -- research release formal-probability-slice --release-id ID [--market-scope SCOPE] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--scenario-id ID] --from YYYY-MM-DD --to YYYY-MM-DD [--output-dir DIR]
+      Score a persisted formal dataset window with one release bundle offline and export per-day raw/calibrated/final probability decomposition as JSON + CSV. This is the fastest root-cause tool for scenario-level model comparison.
+
+  cargo run -p fc-worker -- research release formal-probability-compare --baseline-release-id ID --candidate-release-id ID [--market-scope SCOPE] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--scenario-id ID] --from YYYY-MM-DD --to YYYY-MM-DD [--output-dir DIR]
+      Compare two releases on the same persisted formal dataset window offline and export per-day probability deltas, threshold-hit deltas, and top base-model feature contribution deltas as JSON + CSV.
+
   cargo run -p fc-worker -- research snapshot list [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N]
       List persisted prediction snapshots stored in SQLite for audit and release-review work.
 
@@ -128,10 +138,13 @@ fn print_help() {
   cargo run -p fc-worker -- research dataset summarize-main [--market-scope SCOPE] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--output-dir DIR]
       Summarize a persisted formal dataset, export JSON + Markdown stats, and show split/scenario/coverage diagnostics before training. Default output goes to ignored artifacts/research; pass --output-dir reports/formal-dataset to curate evidence into Git.
 
-  cargo run -p fc-worker -- research pipeline train-probability [--dataset-source formal|snapshot] [--model-shape linear_v1|interaction_tail_v1|family_conditional_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--manifest-dir DIR] [--release-prefix PREFIX]
+  cargo run -p fc-worker -- research dataset slice-main [--market-scope SCOPE] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] --scenario-id ID [--split-name NAME] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N] [--output-dir DIR]
+      Export a scenario-focused formal dataset slice as JSON + CSV, preserving split/label/feature columns for root-cause analysis of one crisis window.
+
+  cargo run -p fc-worker -- research pipeline train-probability [--dataset-source formal|snapshot] [--model-shape linear_v1|interaction_tail_v1|family_conditional_v1|family_hybrid_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--manifest-dir DIR] [--release-prefix PREFIX]
       Train a formal probability bundle. By default it uses the latest persisted formal dataset with model-shape=linear_v1 and writes generated artifacts to ignored artifacts/research directories; pass explicit output dirs only when curating evidence into Git.
 
-  cargo run -p fc-worker -- research pipeline bootstrap-formal-release [--dataset-source formal|snapshot] [--model-shape linear_v1|interaction_tail_v1|family_conditional_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--manifest-dir DIR] [--release-prefix PREFIX] [--no-activate] [--no-reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
+  cargo run -p fc-worker -- research pipeline bootstrap-formal-release [--dataset-source formal|snapshot] [--model-shape linear_v1|interaction_tail_v1|family_conditional_v1|family_hybrid_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--manifest-dir DIR] [--release-prefix PREFIX] [--no-activate] [--no-reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
       Train a formal bundle, publish it into SQLite as a model release, optionally activate it, and optionally reload the API runtime. Default source is the latest persisted formal dataset; generated files default to ignored artifacts/research directories.
 
   cargo run -p fc-worker -- refresh latest-free [--fast-lookback-days N] [--slow-lookback-years N] [--fred-chunk-days N] [--skip-world-bank] [--include-gdelt] [--no-reload-api] [--api-reload-url URL]

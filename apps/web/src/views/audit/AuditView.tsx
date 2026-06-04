@@ -1,6 +1,7 @@
-import { Database, History, ShieldCheck } from "lucide-react";
+import { Activity, Database, History, ShieldCheck } from "lucide-react";
 import type { AssessmentSnapshot, ResearchAuditResponse } from "../../types";
 import {
+  DetailRows,
   GuideList,
   MetricGrid,
   ResponsiveTable,
@@ -18,11 +19,21 @@ export default function AuditView({
   assessment: AssessmentSnapshot;
   audit: ResearchAuditResponse;
 }) {
-  const { auditNote, runtimeMetrics, summaryMetrics, methodSummary, releaseRows, snapshotRows } =
-    useAuditViewModel({
-      assessment,
-      audit
-    });
+  const {
+    auditNote,
+    runtimeMetrics,
+    summaryMetrics,
+    methodSummary,
+    overlayHeadlineMetrics,
+    overlayHorizonRows,
+    overlayAuditRows,
+    overlaySummary,
+    releaseRows,
+    snapshotRows
+  } = useAuditViewModel({
+    assessment,
+    audit
+  });
 
   return (
     <section className="workspace">
@@ -54,6 +65,36 @@ export default function AuditView({
             <SurfaceHeader title="审计摘要" icon={Database} />
             <MetricGrid items={summaryMetrics} />
             <p className="legend-note">{auditContent.summaryNote}</p>
+          </section>
+
+          <section className="surface">
+            <SurfaceHeader title="Overlay 运行审计" icon={Activity} />
+            <MetricGrid items={overlayHeadlineMetrics} />
+            <RuleBox label="怎么看">{auditContent.overlaySummary}</RuleBox>
+            <RuleBox label="当前结论">{overlaySummary}</RuleBox>
+            {overlayHorizonRows.length > 0 ? (
+              <DetailRows items={overlayHorizonRows} />
+            ) : (
+              <RuleBox label="当前状态">{auditContent.overlayEmpty}</RuleBox>
+            )}
+            {overlayAuditRows.length > 0 ? (
+              <ResponsiveTable
+                className="wide-table xwide-table"
+                columns={["窗口", "Family", "场景/正例", "Train/Calib/Eval", "Gate active", "说明"]}
+                note={auditContent.overlayTableNote}
+              >
+                {overlayAuditRows.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.horizonLabel}</td>
+                    <td>{row.familyLabel}</td>
+                    <td>{row.scenarioSummary}</td>
+                    <td>{row.splitSummary}</td>
+                    <td>{row.gateSummary}</td>
+                    <td>{row.note}</td>
+                  </tr>
+                ))}
+              </ResponsiveTable>
+            ) : null}
           </section>
 
           <section className="surface">

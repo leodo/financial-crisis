@@ -51,6 +51,7 @@ impl PostureClauseDiagnostics {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build_time_to_risk_bucket(
     probabilities: &ProbabilityBlock,
+    prepare_reference_p60d: Option<f64>,
     actionability: Option<&ActionabilityBlock>,
     structural_score: f64,
     trigger_score: f64,
@@ -59,6 +60,7 @@ pub(super) fn build_time_to_risk_bucket(
     jpy_carry: &JpyCarrySnapshot,
     thresholds: ProbabilityActionThresholds,
 ) -> TimeToRiskBucket {
+    let prepare_p60d = prepare_reference_p60d.unwrap_or(probabilities.p_60d);
     let severe_carry = jpy_carry.score >= 70.0 && jpy_carry.funding_pressure_score >= 55.0;
     let stressed_carry = jpy_carry.score >= 58.0 && jpy_carry.funding_pressure_score >= 48.0;
     let prepare_confirmation_count = prepare_context_confirmation_count_without_events(
@@ -88,7 +90,7 @@ pub(super) fn build_time_to_risk_bucket(
     });
     let prepare_head_months = actionability.is_some_and(|scores| {
         scores.prepare >= 0.38
-            && probabilities.p_60d >= thresholds.downgrade_prepare_p60d()
+            && prepare_p60d >= thresholds.downgrade_prepare_p60d()
             && prepare_confirmation_count >= 2
             && (structural_score >= 56.0 || external_shock_score >= 55.0)
     });
@@ -115,12 +117,12 @@ pub(super) fn build_time_to_risk_bucket(
         || hedge_head_weeks
     {
         TimeToRiskBucket::Weeks
-    } else if (probabilities.p_60d >= thresholds.prepare_p60d
+    } else if (prepare_p60d >= thresholds.prepare_p60d
         && structural_score >= 58.0
         && prepare_confirmation_count >= 2)
         || (structural_score >= 62.0
             && prepare_confirmation_count >= 2
-            && probabilities.p_60d >= thresholds.downgrade_prepare_p60d())
+            && prepare_p60d >= thresholds.downgrade_prepare_p60d())
         || (external_shock_score >= 58.0
             && structural_score >= 54.0
             && prepare_non_external_confirmation_count >= 1
@@ -128,7 +130,7 @@ pub(super) fn build_time_to_risk_bucket(
         || (stressed_carry
             && structural_score >= 56.0
             && prepare_non_carry_confirmation_count >= 1
-            && probabilities.p_60d >= thresholds.carry_prepare_p60d())
+            && prepare_p60d >= thresholds.carry_prepare_p60d())
         || prepare_head_months
     {
         TimeToRiskBucket::Months
@@ -141,6 +143,7 @@ pub(super) fn build_time_to_risk_bucket(
 fn build_posture_clause_diagnostics(
     snapshot: &RiskSnapshot,
     probabilities: &ProbabilityBlock,
+    prepare_reference_p60d: Option<f64>,
     actionability: Option<&ActionabilityBlock>,
     conviction_score: f64,
     data_trust: &DataTrust,
@@ -152,6 +155,7 @@ fn build_posture_clause_diagnostics(
 ) -> PostureClauseDiagnostics {
     let severe_quality_block =
         matches!(data_trust.quality_grade, QualityGrade::D | QualityGrade::F);
+    let prepare_p60d = prepare_reference_p60d.unwrap_or(probabilities.p_60d);
     let defend_quality_gate = matches!(data_trust.quality_grade, QualityGrade::A | QualityGrade::B);
     let confirmation_count = posture_confirmation_count(
         snapshot.trigger_score,
@@ -249,14 +253,14 @@ fn build_posture_clause_diagnostics(
 
     let mut prepare_trigger_codes = Vec::new();
     if conviction_score >= 0.54 {
-        if probabilities.p_60d >= thresholds.prepare_p60d
+        if prepare_p60d >= thresholds.prepare_p60d
             && snapshot.structural_score >= 58.0
             && prepare_confirmation_count >= 2
         {
             prepare_trigger_codes.push("prepare_p60d_structural");
         }
         if snapshot.structural_score >= 64.0
-            && probabilities.p_60d >= thresholds.downgrade_prepare_p60d()
+            && prepare_p60d >= thresholds.downgrade_prepare_p60d()
             && prepare_confirmation_count >= 2
         {
             prepare_trigger_codes.push("prepare_structural_downgrade");
@@ -270,14 +274,14 @@ fn build_posture_clause_diagnostics(
         }
         if stressed_carry
             && snapshot.structural_score >= 56.0
-            && probabilities.p_60d >= thresholds.carry_prepare_p60d()
+            && prepare_p60d >= thresholds.carry_prepare_p60d()
             && prepare_non_carry_confirmation_count >= 1
         {
             prepare_trigger_codes.push("prepare_carry_structural");
         }
         if actionability.is_some_and(|scores| {
             scores.prepare >= 0.40
-                && probabilities.p_60d >= thresholds.downgrade_prepare_p60d()
+                && prepare_p60d >= thresholds.downgrade_prepare_p60d()
                 && prepare_confirmation_count >= 2
                 && (snapshot.structural_score >= 56.0 || external_shock_score >= 55.0)
         }) {
@@ -302,6 +306,7 @@ fn build_posture_clause_diagnostics(
 pub(super) fn build_posture_guidance(
     snapshot: &RiskSnapshot,
     probabilities: &ProbabilityBlock,
+    prepare_reference_p60d: Option<f64>,
     actionability: Option<&ActionabilityBlock>,
     conviction_score: f64,
     data_trust: &DataTrust,
@@ -318,6 +323,7 @@ pub(super) fn build_posture_guidance(
     let clause_diagnostics = build_posture_clause_diagnostics(
         snapshot,
         probabilities,
+        prepare_reference_p60d,
         actionability,
         conviction_score,
         data_trust,

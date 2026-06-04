@@ -10,10 +10,11 @@ pub(crate) fn write_release_review_report(
     report: &ReleaseReviewEnvelope,
 ) -> Result<()> {
     let stem = format!(
-        "{}-{}-vs-{}-release-review",
+        "{}-{}-vs-{}-{}-release-review",
         report.candidate_assessment.as_of_date,
         report.baseline_release.manifest.release_id,
-        report.candidate_release.manifest.release_id
+        report.candidate_release.manifest.release_id,
+        report.history_mode,
     );
     write_json_markdown_report(
         output_dir,

@@ -26,6 +26,13 @@ async fn handle_release_command(action: &str, rest: &[String]) -> Result<()> {
         "activate" => super::release::research_release_activate(rest).await,
         "rollback" => super::release::research_release_rollback(rest).await,
         "review" => super::release::research_release_review(rest).await,
+        "probability-slice" => super::release::research_release_probability_slice(rest).await,
+        "formal-probability-slice" => {
+            super::release::research_release_formal_probability_slice(rest).await
+        }
+        "formal-probability-compare" => {
+            super::release::research_release_formal_probability_compare(rest).await
+        }
         _ => {
             super::print_help();
             bail!("unknown research release command: {action}")
@@ -61,6 +68,7 @@ async fn handle_dataset_command(action: &str, rest: &[String]) -> Result<()> {
         "build-main" => super::dataset::research_formal_dataset_build_main(rest).await,
         "list-main" => super::dataset::research_formal_dataset_list_main(rest).await,
         "summarize-main" => super::dataset::research_formal_dataset_summarize_main(rest).await,
+        "slice-main" => super::dataset::research_formal_dataset_slice_main(rest).await,
         _ => {
             super::print_help();
             bail!("unknown research dataset command: {action}")

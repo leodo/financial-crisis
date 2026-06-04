@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write,
+    fs,
     path::PathBuf,
 };
 
@@ -199,6 +200,145 @@ impl FormalDatasetSummaryOptions {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct FormalDatasetSliceOptions {
+    pub(crate) market_scope: Option<String>,
+    pub(crate) dataset_id: String,
+    pub(crate) dataset_version: Option<String>,
+    pub(crate) dataset_key: Option<String>,
+    pub(crate) scenario_id: String,
+    pub(crate) split_name: Option<String>,
+    pub(crate) from_date: Option<NaiveDate>,
+    pub(crate) to_date: Option<NaiveDate>,
+    pub(crate) limit: Option<usize>,
+    pub(crate) output_dir: PathBuf,
+}
+
+impl FormalDatasetSliceOptions {
+    pub(crate) fn parse(args: &[String]) -> anyhow::Result<Self> {
+        let mut market_scope = None;
+        let mut dataset_id = crate::DEFAULT_FORMAL_DATASET_ID.to_string();
+        let mut dataset_version = None;
+        let mut dataset_key = None;
+        let mut scenario_id = None;
+        let mut split_name = None;
+        let mut from_date = None;
+        let mut to_date = None;
+        let mut limit = None;
+        let mut output_dir = PathBuf::from(crate::DEFAULT_FORMAL_DATASET_SLICE_OUTPUT_DIR);
+        let mut index = 0;
+        while index < args.len() {
+            match args[index].as_str() {
+                "--market-scope" => {
+                    index += 1;
+                    market_scope = Some(
+                        args.get(index)
+                            .with_context(|| "--market-scope requires a value")?
+                            .clone(),
+                    );
+                }
+                "--dataset-id" => {
+                    index += 1;
+                    dataset_id = args
+                        .get(index)
+                        .with_context(|| "--dataset-id requires a value")?
+                        .clone();
+                }
+                "--dataset-version" => {
+                    index += 1;
+                    dataset_version = Some(
+                        args.get(index)
+                            .with_context(|| "--dataset-version requires a value")?
+                            .clone(),
+                    );
+                }
+                "--dataset-key" => {
+                    index += 1;
+                    dataset_key = Some(
+                        args.get(index)
+                            .with_context(|| "--dataset-key requires a value")?
+                            .clone(),
+                    );
+                }
+                "--scenario-id" => {
+                    index += 1;
+                    scenario_id = Some(
+                        args.get(index)
+                            .with_context(|| "--scenario-id requires a value")?
+                            .clone(),
+                    );
+                }
+                "--split-name" => {
+                    index += 1;
+                    split_name = Some(
+                        args.get(index)
+                            .with_context(|| "--split-name requires a value")?
+                            .clone(),
+                    );
+                }
+                "--from" => {
+                    index += 1;
+                    from_date = Some(
+                        NaiveDate::parse_from_str(
+                            args.get(index)
+                                .with_context(|| "--from requires a YYYY-MM-DD value")?,
+                            "%Y-%m-%d",
+                        )
+                        .context("--from must use YYYY-MM-DD")?,
+                    );
+                }
+                "--to" => {
+                    index += 1;
+                    to_date = Some(
+                        NaiveDate::parse_from_str(
+                            args.get(index)
+                                .with_context(|| "--to requires a YYYY-MM-DD value")?,
+                            "%Y-%m-%d",
+                        )
+                        .context("--to must use YYYY-MM-DD")?,
+                    );
+                }
+                "--limit" => {
+                    index += 1;
+                    limit = Some(
+                        args.get(index)
+                            .with_context(|| "--limit requires a number")?
+                            .parse::<usize>()
+                            .context("--limit must be an integer")?,
+                    );
+                }
+                "--output-dir" => {
+                    index += 1;
+                    output_dir = PathBuf::from(
+                        args.get(index)
+                            .with_context(|| "--output-dir requires a directory path")?,
+                    );
+                }
+                other => bail!("unknown formal dataset slice option: {other}"),
+            }
+            index += 1;
+        }
+        let scenario_id = scenario_id.with_context(|| "--scenario-id is required")?;
+        if let (Some(from_date), Some(to_date)) = (from_date, to_date) {
+            if from_date > to_date {
+                bail!("--from must be earlier than or equal to --to");
+            }
+        }
+        Ok(Self {
+            market_scope,
+            dataset_id,
+            dataset_version,
+            dataset_key,
+            scenario_id,
+            split_name,
+            from_date,
+            to_date,
+            limit,
+            output_dir,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct FormalDatasetSplitSummary {
     split_name: String,
@@ -274,6 +414,20 @@ pub(crate) struct FormalDatasetSummaryEnvelope {
     pub(crate) quality_summaries: Vec<FormalDatasetQualitySummary>,
     pub(crate) regime_summaries: Vec<FormalDatasetRegimeSummary>,
     pub(crate) recommendation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct FormalDatasetSliceExport {
+    pub(crate) exported_at: String,
+    pub(crate) dataset_key: String,
+    pub(crate) dataset: FormalDatasetRecord,
+    pub(crate) scenario_id: String,
+    pub(crate) split_name: Option<String>,
+    pub(crate) from_date: Option<NaiveDate>,
+    pub(crate) to_date: Option<NaiveDate>,
+    pub(crate) row_count: usize,
+    pub(crate) feature_names: Vec<String>,
+    pub(crate) rows: Vec<FormalDatasetRowRecord>,
 }
 
 #[derive(Debug, Clone)]
@@ -595,6 +749,65 @@ pub(crate) async fn research_formal_dataset_summarize_main(args: &[String]) -> a
     let summary = crate::build_formal_dataset_summary(&dataset_key, dataset, &rows)?;
     crate::write_formal_dataset_summary_report(&options.output_dir, &summary)?;
     crate::print_formal_dataset_summary(&summary);
+    Ok(())
+}
+
+pub(crate) async fn research_formal_dataset_slice_main(args: &[String]) -> anyhow::Result<()> {
+    let options = FormalDatasetSliceOptions::parse(args)?;
+    let store = crate::open_sqlite_store().await?;
+    store.migrate().await?;
+    let dataset_key = super::pipeline::resolve_formal_dataset_key(
+        &store,
+        options.dataset_key.as_deref(),
+        &options.dataset_id,
+        options.dataset_version.as_deref(),
+        options.market_scope.as_deref(),
+    )
+    .await?;
+    let dataset = store
+        .load_formal_dataset(&dataset_key)
+        .await?
+        .with_context(|| format!("formal dataset {dataset_key} was not found in SQLite"))?;
+    let rows = store
+        .list_formal_dataset_rows(&dataset_key, options.split_name.as_deref(), None)
+        .await?;
+    if rows.is_empty() {
+        bail!("formal dataset {dataset_key} has no persisted rows for the requested split filter");
+    }
+
+    let rows = filter_formal_dataset_rows_for_slice(rows, &options);
+    if rows.is_empty() {
+        bail!(
+            "formal dataset slice is empty (dataset_key={}, scenario_id={}, split_name={}, from={}, to={})",
+            dataset_key,
+            options.scenario_id,
+            options.split_name.as_deref().unwrap_or("-"),
+            options
+                .from_date
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".to_string()),
+            options
+                .to_date
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".to_string())
+        );
+    }
+
+    let feature_names = collect_formal_dataset_slice_feature_names(&rows);
+    let export = FormalDatasetSliceExport {
+        exported_at: Utc::now().to_rfc3339(),
+        dataset_key: dataset_key.clone(),
+        dataset,
+        scenario_id: options.scenario_id.clone(),
+        split_name: options.split_name.clone(),
+        from_date: options.from_date,
+        to_date: options.to_date,
+        row_count: rows.len(),
+        feature_names,
+        rows,
+    };
+    write_formal_dataset_slice_report(&options.output_dir, &export)?;
+    print_formal_dataset_slice_summary(&export);
     Ok(())
 }
 
@@ -1529,6 +1742,146 @@ where
     rows.iter().map(|row| accessor(row)).sum::<f64>() / rows.len() as f64
 }
 
+fn filter_formal_dataset_rows_for_slice(
+    rows: Vec<FormalDatasetRowRecord>,
+    options: &FormalDatasetSliceOptions,
+) -> Vec<FormalDatasetRowRecord> {
+    let mut filtered = rows
+        .into_iter()
+        .filter(|row| row.primary_scenario_id.as_deref() == Some(options.scenario_id.as_str()))
+        .filter(|row| {
+            options
+                .from_date
+                .map(|from_date| row.as_of_date >= from_date)
+                .unwrap_or(true)
+        })
+        .filter(|row| {
+            options
+                .to_date
+                .map(|to_date| row.as_of_date <= to_date)
+                .unwrap_or(true)
+        })
+        .collect::<Vec<_>>();
+    filtered.sort_by(|left, right| {
+        left.as_of_date
+            .cmp(&right.as_of_date)
+            .then_with(|| left.split_name.cmp(&right.split_name))
+    });
+    if let Some(limit) = options.limit {
+        filtered.truncate(limit);
+    }
+    filtered
+}
+
+fn collect_formal_dataset_slice_feature_names(rows: &[FormalDatasetRowRecord]) -> Vec<String> {
+    rows.iter()
+        .flat_map(|row| row.features.keys().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+pub(crate) fn render_formal_dataset_slice_csv(
+    rows: &[FormalDatasetRowRecord],
+    feature_names: &[String],
+) -> String {
+    let mut header = String::from(
+        "dataset_key,split_name,as_of_date,entity_id,market_scope,primary_scenario_id,scenario_family,scenario_training_role,label_5d,label_20d,label_60d,regime_5d,regime_20d,regime_60d,action_label_5d,action_label_20d,action_label_60d,prepare_episode_label,hedge_episode_label,defend_episode_label,primary_action_level,action_episode_id,action_episode_phase,protected_action_window,coverage_score,core_feature_coverage,trigger_feature_coverage,external_feature_coverage,sample_quality_grade,latest_visible_at",
+    );
+    for feature_name in feature_names {
+        header.push(',');
+        header.push_str(feature_name);
+    }
+    header.push('\n');
+
+    let mut csv = header;
+    for row in rows {
+        let columns = [
+            row.dataset_key.clone(),
+            row.split_name.clone(),
+            row.as_of_date.to_string(),
+            row.entity_id.clone(),
+            row.market_scope.clone(),
+            row.primary_scenario_id.clone().unwrap_or_default(),
+            row.scenario_family.clone().unwrap_or_default(),
+            row.scenario_training_role.clone().unwrap_or_default(),
+            row.label_5d.to_string(),
+            row.label_20d.to_string(),
+            row.label_60d.to_string(),
+            row.regime_5d.clone(),
+            row.regime_20d.clone(),
+            row.regime_60d.clone(),
+            row.action_label_5d.to_string(),
+            row.action_label_20d.to_string(),
+            row.action_label_60d.to_string(),
+            row.prepare_episode_label.to_string(),
+            row.hedge_episode_label.to_string(),
+            row.defend_episode_label.to_string(),
+            row.primary_action_level.clone().unwrap_or_default(),
+            row.action_episode_id.clone().unwrap_or_default(),
+            row.action_episode_phase.clone(),
+            (row.protected_action_window as u8).to_string(),
+            format!("{:.4}", row.coverage_score),
+            format!("{:.4}", row.core_feature_coverage),
+            format!("{:.4}", row.trigger_feature_coverage),
+            format!("{:.4}", row.external_feature_coverage),
+            row.sample_quality_grade.clone(),
+            row.latest_visible_at
+                .map(|value| value.to_rfc3339())
+                .unwrap_or_default(),
+        ];
+        csv.push_str(&columns.join(","));
+        for feature_name in feature_names {
+            let value = row.features.get(feature_name).copied().unwrap_or_default();
+            let _ = write!(csv, ",{value:.6}");
+        }
+        csv.push('\n');
+    }
+    csv
+}
+
+pub(crate) fn sanitize_filename_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' => ch,
+            _ => '_',
+        })
+        .collect()
+}
+
+fn write_formal_dataset_slice_report(
+    output_dir: &PathBuf,
+    export: &FormalDatasetSliceExport,
+) -> anyhow::Result<()> {
+    fs::create_dir_all(output_dir)?;
+    let mut stem = format!(
+        "{}-{}-slice",
+        sanitize_filename_component(&export.dataset_key),
+        sanitize_filename_component(&export.scenario_id)
+    );
+    if let Some(split_name) = export.split_name.as_deref() {
+        let _ = write!(stem, "-{}", sanitize_filename_component(split_name));
+    }
+    if let Some(from_date) = export.from_date {
+        let _ = write!(stem, "-from-{from_date}");
+    }
+    if let Some(to_date) = export.to_date {
+        let _ = write!(stem, "-to-{to_date}");
+    }
+    let json_path = output_dir.join(format!("{stem}.json"));
+    let csv_path = output_dir.join(format!("{stem}.csv"));
+    fs::write(&json_path, serde_json::to_string_pretty(export)?)?;
+    fs::write(
+        &csv_path,
+        render_formal_dataset_slice_csv(&export.rows, &export.feature_names),
+    )?;
+    println!("Formal dataset slice exported.");
+    println!("  JSON {}", json_path.display());
+    println!("  CSV  {}", csv_path.display());
+    Ok(())
+}
+
 pub(crate) fn render_formal_dataset_summary_markdown(
     summary: &FormalDatasetSummaryEnvelope,
 ) -> String {
@@ -1707,6 +2060,29 @@ pub(crate) fn print_formal_dataset_summary(summary: &FormalDatasetSummaryEnvelop
         );
     }
     println!("  recommendation {}", summary.recommendation);
+}
+
+fn print_formal_dataset_slice_summary(export: &FormalDatasetSliceExport) {
+    let first_date = export
+        .rows
+        .first()
+        .map(|row| row.as_of_date.to_string())
+        .unwrap_or_else(|| "-".to_string());
+    let last_date = export
+        .rows
+        .last()
+        .map(|row| row.as_of_date.to_string())
+        .unwrap_or_else(|| "-".to_string());
+    println!(
+        "Formal dataset slice dataset_key={} scenario_id={} rows={} range={} -> {} split={} features={}",
+        export.dataset_key,
+        export.scenario_id,
+        export.row_count,
+        first_date,
+        last_date,
+        export.split_name.as_deref().unwrap_or("all"),
+        export.feature_names.len(),
+    );
 }
 
 fn load_formal_dataset_scenario_metadata(

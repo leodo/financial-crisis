@@ -114,6 +114,44 @@ formal-history-backfill:
 formal-dataset-list:
     cargo run -p fc-worker -- research dataset list-main --market-scope financial_system
 
+# 导出某个危机场景的 formal dataset 样本切片，便于逐日看 split / label / features。
+# 用法：`just formal-dataset-slice us_regional_banks_2023 2022-12-01 2023-03-15`
+formal-dataset-slice scenario_id from_date to_date:
+    cargo run -p fc-worker -- research dataset slice-main --market-scope financial_system --scenario-id {{scenario_id}} --from {{from_date}} --to {{to_date}}
+
+# 用某个 release 的 bundle 直接离线打分 formal dataset 场景切片，导出 raw/calibrated/final probability 与 overlay contribution。
+# 适合做“为什么这个候选版在某次危机上提前量丢了”的根因排查，避免等待 API strict_rebuild。
+# 用法：`just formal-probability-slice us_formal_family_hybrid_20260603T144814 us_regional_banks_2023 2022-12-01 2023-03-15`
+formal-probability-slice release_id scenario_id from_date to_date:
+    cargo run -p fc-worker -- research release formal-probability-slice --market-scope financial_system --release-id {{release_id}} --scenario-id {{scenario_id}} --from {{from_date}} --to {{to_date}}
+
+# 离线对比 baseline 与 candidate 在同一 formal dataset 场景窗口里的逐日概率、阈值命中与 base feature contribution 差异。
+# 适合先锁定“哪几天掉得最厉害、哪些特征最该改”，再决定重训方向。
+# 用法：`just formal-probability-compare us_formal_interaction_tail_extmix10_20260602T061401 us_formal_family_hybrid_20260603T144814 us_regional_banks_2023 2022-12-01 2023-03-15`
+formal-probability-compare baseline_release_id candidate_release_id scenario_id from_date to_date:
+    cargo run -p fc-worker -- research release formal-probability-compare --market-scope financial_system --baseline-release-id {{baseline_release_id}} --candidate-release-id {{candidate_release_id}} --scenario-id {{scenario_id}} --from {{from_date}} --to {{to_date}}
+
+# 用固定三段窗口快速审计某个 family-hybrid 候选：
+# 1) `regional_banks` 正窗口是否保住 20d 连续性；
+# 2) `2023-02` 常态误报是否收敛；
+# 3) `2023-07` 常态误报是否收敛。
+# 适合在决定是否值得跑 `release-review-fast` 之前先做离线筛选。
+# 用法：`just formal-candidate-window-audit us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`
+formal-candidate-window-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-window-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
+# 对比两个候选在指定 horizon 的阈值、regime 概率分布和关键特征权重差异。
+# 适合在 window audit 之后快速判断“到底是 threshold 变了，还是 curve / USDJPY / family context 权重变了”。
+# 用法：`just formal-candidate-feature-audit us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`
+formal-candidate-feature-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-feature-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
+# 标准候选筛选入口：先跑三段窗口 compare，再跑 20d 特征/阈值审计。
+# 适合 family-hybrid 主线的新候选第一轮筛查；只有这一步结论足够好，才继续跑 `release-review-fast`。
+# 用法：`just formal-candidate-screen us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`
+formal-candidate-screen baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-screen.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
 # 默认基于 SQLite 中最新的 persisted formal dataset 训练正式 bundle，并写出 bundle / manifest / evaluation 三份文件。
 # 默认输出到忽略目录 artifacts/research/model-*/generated；如需回退旧的 prediction snapshot 过渡链路，可手动追加 `--dataset-source snapshot`。
 formal-train:
@@ -132,6 +170,24 @@ formal-train-interaction-tail:
 # 训练 `interaction_tail_v1`，并把产物显式输出到版本化 generated 目录。
 formal-train-interaction-tail-tracked:
     cargo run -p fc-worker -- research pipeline train-probability --market-scope financial_system --model-shape interaction_tail_v1 --output-dir config/model-bundles/generated --manifest-dir config/model-releases/generated
+
+# 自动解析最新的 formal main + ext_stress + ext_acute dataset key，
+# 训练 `family_conditional_v1` overlay 候选，避免每次手工拼接长参数。
+formal-train-family-overlay:
+    ./scripts/formal-train-family-overlay.ps1
+
+# 和 `formal-train-family-overlay` 相同，但把 bundle / manifest 显式写到版本化 generated 目录。
+formal-train-family-overlay-tracked:
+    ./scripts/formal-train-family-overlay.ps1 -Tracked
+
+# 使用和 family overlay 相同的数据集拼装入口，但把 `60d` 基座退回 `interaction_tail_v1`，
+# 只在 `5d/20d` 与 overlay 侧保留 family conditional 形态。
+formal-train-family-hybrid:
+    ./scripts/formal-train-family-overlay.ps1 -ModelShape family_hybrid_v1
+
+# 和 `formal-train-family-hybrid` 相同，但把 bundle / manifest 显式写到版本化 generated 目录。
+formal-train-family-hybrid-tracked:
+    ./scripts/formal-train-family-overlay.ps1 -Tracked -ModelShape family_hybrid_v1
 
 # 一键训练、发布并激活 formal bundle，然后触发 API reload。
 # 默认走最新 formal dataset；只有显式传 `--dataset-source snapshot` 时才回退旧链路。
@@ -152,6 +208,10 @@ stop:
 fmt:
     cargo fmt --all
 
+# 检查 Rust 格式是否已满足仓库约束，不改文件。
+fmt-check:
+    cargo fmt --all -- --check
+
 # 运行 Rust workspace 的全部测试。
 test:
     cargo test --workspace
@@ -159,6 +219,10 @@ test:
 # 运行 Rust clippy，按 warning 即失败处理。
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
+
+# 本地质量门禁：检查版本化工件目录是否混入未审计副产物。
+verify-artifacts:
+    ./scripts/artifact-status.ps1
 
 # 只启动后端 API，默认地址 http://127.0.0.1:18080。
 api:
@@ -293,8 +357,8 @@ web-dev:
 web-build:
     cd apps/web; npm run build
 
-# 常用检查：格式化、Rust 测试、前端构建。
-check-all: fmt test web-build
+# 常用检查：格式检查、Rust 测试、前端构建。
+check-all: fmt-check test web-build
 
-# 完整检查：格式化、Rust 测试、clippy、前端构建。
-verify: fmt test lint web-build
+# 完整本地门禁：版本化工件审计、Rust 格式检查、测试、clippy、前端构建。
+verify: verify-artifacts fmt-check test lint web-build

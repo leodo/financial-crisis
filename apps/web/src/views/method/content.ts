@@ -12,6 +12,12 @@ export const methodContent = {
   clauseTriggerEmpty: "当前没有额外触发条款。",
   blockerLead: "以下条款阻断了更激进的执行节奏升级：",
   tableNote: "小屏幕下这张表支持横向滚动，先看窗口名称和日期，再看备注。",
+  overlayIntro:
+    "这里把 base raw、base calibrated 和 overlay final 拆开显示。只有 final 明显偏离 calibrated，才说明 family overlay 在当前快照里真的改写了危机概率。",
+  overlayEmpty:
+    "当前 active release 还没有训练完成并挂载到线上 bundle 的 family overlay head；如果这里只看到审计元数据，说明研究侧已经开始统计 family 样本，但 runtime 仍主要由 base head 决定。",
+  overlayTableNote:
+    "先看 scenario 数和 split 行数，再看 gate active 行数，最后看 note，判断这个 family overlay 是否只是概念上的候选，还是已经具备真正训练条件。",
   protectedCatalogTitle: "受保护压力窗口目录",
   runtimeBoundarySummary:
     "这个页面把危机概率、动作概率、风险时距和执行节奏拆开解释。历史回放会优先复用同口径缓存；如果缓存口径不匹配，系统才会回退到已落库快照或按原始观测重建。",

@@ -16,7 +16,8 @@ import type {
   AssessmentSnapshot,
   PostureGuidance
 } from "../../types";
-import type { MetricItem, VersionRowItem } from "../shared/panelHelpers";
+import type { DetailRowItem, MetricItem, VersionRowItem } from "../shared/panelHelpers";
+import { buildProbabilityOverlayViewModel } from "../shared/probabilityOverlay";
 import { methodContent } from "./content";
 
 function humanizeMethodCopy(text: string) {
@@ -152,6 +153,8 @@ export function useMethodViewModel({
 
   const triggerClauses = posture.trigger_codes.map((code) => describePostureClause(code));
   const blockerClauses = posture.blocker_codes.map((code) => describePostureClause(code));
+  const { overlayHeadlineMetrics, overlayHorizonRows, overlayAuditRows } =
+    buildProbabilityOverlayViewModel(assessment);
 
   const limitations = [
     methodContent.runtimeBoundarySummary,
@@ -171,6 +174,9 @@ export function useMethodViewModel({
     runtimeMetrics,
     triggerClauses,
     blockerClauses,
+    overlayHeadlineMetrics,
+    overlayHorizonRows,
+    overlayAuditRows,
     limitations,
     historyPolicyVersion,
     protectedCatalogId,

@@ -1,6 +1,8 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::ProbabilityDiagnostics;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoricalReplayRunRecord {
     pub replay_run_id: String,
@@ -48,6 +50,8 @@ pub struct HistoricalAssessmentPointRecord {
     pub actionability_prepare: f64,
     pub actionability_hedge: f64,
     pub actionability_defend: f64,
+    #[serde(default)]
+    pub probability_diagnostics: ProbabilityDiagnostics,
     #[serde(default)]
     pub posture_trigger_codes: Vec<String>,
     #[serde(default)]

@@ -1,7 +1,10 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{AlertType, DataQualitySummary, QualityGrade, RiskContributor, RiskLevel};
+use crate::{
+    AlertType, DataQualitySummary, ProbabilityFamilyOverlayAudit, ProbabilityOverlayContribution,
+    QualityGrade, RiskContributor, RiskLevel,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -76,6 +79,29 @@ pub struct ActionabilityBlock {
     pub prepare: f64,
     pub hedge: f64,
     pub defend: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbabilityHorizonOverlayDiagnostics {
+    pub horizon_days: u32,
+    pub raw_probability: f64,
+    pub calibrated_probability: f64,
+    pub final_probability: f64,
+    #[serde(default)]
+    pub runtime_final_probability: Option<f64>,
+    #[serde(default)]
+    pub monotonic_lift: f64,
+    pub configured_overlay_count: u32,
+    #[serde(default)]
+    pub contributions: Vec<ProbabilityOverlayContribution>,
+    #[serde(default)]
+    pub overlay_audits: Vec<ProbabilityFamilyOverlayAudit>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProbabilityDiagnostics {
+    #[serde(default)]
+    pub horizon_overlays: Vec<ProbabilityHorizonOverlayDiagnostics>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -284,6 +310,8 @@ pub struct AssessmentSnapshot {
     pub market_scope: String,
     pub probabilities: ProbabilityBlock,
     pub actionability: ActionabilityBlock,
+    #[serde(default)]
+    pub probability_diagnostics: ProbabilityDiagnostics,
     pub time_to_risk_bucket: TimeToRiskBucket,
     pub posture: DecisionPosture,
     pub conviction_score: f64,

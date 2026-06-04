@@ -58,10 +58,12 @@ use fc_domain::{
     FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
     FEATURE_FRESHNESS_STALE_OR_MISSING, FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D,
     FEATURE_HEURISTIC_P_60D, FEATURE_OVERALL_SCORE, FORMAL_PROBABILITY_BUNDLE_FEATURES,
-    PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1, PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1,
+    PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1,
+    PROBABILITY_FEATURE_TRANSFORM_FAMILY_HYBRID_V1, PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1,
     PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1,
-    PROBABILITY_MODEL_FAMILY_FAMILY_CONDITIONAL_V1, PROBABILITY_MODEL_FAMILY_INTERACTION_TAIL_V1,
-    PROBABILITY_MODEL_FAMILY_LINEAR_V1, TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES,
+    PROBABILITY_MODEL_FAMILY_FAMILY_CONDITIONAL_V1, PROBABILITY_MODEL_FAMILY_FAMILY_HYBRID_V1,
+    PROBABILITY_MODEL_FAMILY_INTERACTION_TAIL_V1, PROBABILITY_MODEL_FAMILY_LINEAR_V1,
+    TRANSITIONAL_PROBABILITY_BUNDLE_FEATURES,
 };
 use fc_ingestion::{
     BojConnector, BojDataset, Connector, FetchPlan, FredConnector, FredGraphCsvConnector,
@@ -76,18 +78,21 @@ use fc_storage::{
 pub(crate) use formal::derive_scenario_label_snapshot;
 #[cfg(test)]
 pub(crate) use model::{
-    apply_forward_crisis_sign_gradient, apply_regime_pairwise_gradient, build_feature_stat,
-    forward_crisis_positive_sample_weight, forward_crisis_regime_pairwise_targets,
-    forward_crisis_regime_sample_weight, negative_sample_weight, positive_sample_action_weight,
-    probability_training_target_label, project_forward_crisis_sign_constraints,
+    apply_forward_crisis_coefficient_bound_gradient, apply_forward_crisis_sign_gradient,
+    apply_regime_pairwise_gradient, build_feature_stat, forward_crisis_positive_sample_weight,
+    forward_crisis_regime_pairwise_targets, forward_crisis_regime_sample_weight,
+    negative_sample_weight, positive_sample_action_weight, probability_training_target_label,
+    project_forward_crisis_sign_constraints,
 };
 pub(crate) use model::{
     evaluate_probabilities, fit_logistic_model, fit_platt_calibration,
     score_logistic_model_for_dataset,
 };
 use output_paths::{
-    DEFAULT_FORMAL_DATASET_SUMMARY_OUTPUT_DIR, DEFAULT_PIPELINE_BUNDLE_OUTPUT_DIR,
-    DEFAULT_PIPELINE_MANIFEST_OUTPUT_DIR, DEFAULT_RELEASE_REVIEW_OUTPUT_DIR,
+    DEFAULT_FORMAL_DATASET_SLICE_OUTPUT_DIR, DEFAULT_FORMAL_DATASET_SUMMARY_OUTPUT_DIR,
+    DEFAULT_FORMAL_PROBABILITY_COMPARE_OUTPUT_DIR, DEFAULT_PIPELINE_BUNDLE_OUTPUT_DIR,
+    DEFAULT_PIPELINE_MANIFEST_OUTPUT_DIR, DEFAULT_RELEASE_PROBABILITY_SLICE_OUTPUT_DIR,
+    DEFAULT_RELEASE_REVIEW_OUTPUT_DIR,
 };
 #[cfg(test)]
 pub(crate) use probability::{
@@ -279,6 +284,72 @@ struct ReleaseReviewCountMetric {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct ReleaseReviewBacktestScenarioComparison {
+    scenario_id: String,
+    name: String,
+    signal_source: String,
+    crisis_start: NaiveDate,
+    crisis_end: NaiveDate,
+    baseline_first_l2_date: Option<NaiveDate>,
+    candidate_first_l2_date: Option<NaiveDate>,
+    baseline_first_l3_date: Option<NaiveDate>,
+    candidate_first_l3_date: Option<NaiveDate>,
+    baseline_lead_time_days: Option<i64>,
+    candidate_lead_time_days: Option<i64>,
+    baseline_actionable_lead_time_days: Option<i64>,
+    candidate_actionable_lead_time_days: Option<i64>,
+    baseline_false_positive_count: u32,
+    candidate_false_positive_count: u32,
+    actionable_delta_days: Option<i64>,
+    outcome: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReleaseReviewScenarioPointComparison {
+    as_of_date: NaiveDate,
+    baseline_p20d: Option<f64>,
+    candidate_p20d: Option<f64>,
+    baseline_p60d: Option<f64>,
+    candidate_p60d: Option<f64>,
+    baseline_posture: Option<String>,
+    candidate_posture: Option<String>,
+    baseline_time_bucket: Option<String>,
+    candidate_time_bucket: Option<String>,
+    baseline_actionable: bool,
+    candidate_actionable: bool,
+    baseline_actionable_forward_5d_hits: Option<u32>,
+    candidate_actionable_forward_5d_hits: Option<u32>,
+    baseline_actionable_sustained: Option<bool>,
+    candidate_actionable_sustained: Option<bool>,
+    baseline_trigger_codes: Vec<String>,
+    candidate_trigger_codes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReleaseReviewScenarioFocusDiagnostic {
+    scenario_id: String,
+    name: String,
+    outcome: String,
+    window_start: NaiveDate,
+    window_end: NaiveDate,
+    crisis_start: NaiveDate,
+    crisis_end: NaiveDate,
+    baseline_first_l2_date: Option<NaiveDate>,
+    candidate_first_l2_date: Option<NaiveDate>,
+    baseline_first_l3_date: Option<NaiveDate>,
+    candidate_first_l3_date: Option<NaiveDate>,
+    baseline_first_non_normal_date: Option<NaiveDate>,
+    candidate_first_non_normal_date: Option<NaiveDate>,
+    baseline_actionable_point_count: u32,
+    candidate_actionable_point_count: u32,
+    baseline_max_p20d: Option<f64>,
+    candidate_max_p20d: Option<f64>,
+    baseline_max_p60d: Option<f64>,
+    candidate_max_p60d: Option<f64>,
+    interesting_points: Vec<ReleaseReviewScenarioPointComparison>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct ReleaseReviewComparisonSummary {
     timely_warning_rate: ReleaseReviewScalarMetric,
     actionable_precision: ReleaseReviewScalarMetric,
@@ -286,6 +357,7 @@ struct ReleaseReviewComparisonSummary {
     current_p_5d: ReleaseReviewScalarMetric,
     current_p_20d: ReleaseReviewScalarMetric,
     current_p_60d: ReleaseReviewScalarMetric,
+    backtest_scenarios: Vec<ReleaseReviewBacktestScenarioComparison>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -406,6 +478,8 @@ struct ReleaseReviewEnvelope {
     reviewed_at: String,
     market_scope: String,
     api_reload_url: String,
+    history_mode: String,
+    history_limit: usize,
     original_active_release_id: String,
     restored_release_id: String,
     baseline_release: ModelReleaseRecord,
@@ -416,6 +490,7 @@ struct ReleaseReviewEnvelope {
     candidate_runtime_review: ReleaseRuntimeReviewDiagnostics,
     baseline_actionability_review: ReleaseActionabilityReview,
     candidate_actionability_review: ReleaseActionabilityReview,
+    scenario_focus: Vec<ReleaseReviewScenarioFocusDiagnostic>,
     comparison: ReleaseReviewComparisonSummary,
     probability_guard_regressions: Vec<String>,
     probability_guard_passed: bool,
@@ -1036,7 +1111,7 @@ async fn train_probability_pipeline(
 ) -> anyhow::Result<PipelineArtifacts> {
     let generated_at = Utc::now();
     let training = commands::pipeline::load_probability_training_input(store, options).await?;
-    let model_feature_names = probability_feature_names_for_transform(
+    let bundle_feature_names = probability_feature_names_for_transform(
         &training.feature_names,
         options.model_shape.feature_transform(),
     );
@@ -1044,11 +1119,24 @@ async fn train_probability_pipeline(
     let horizons = [5_u32, 20_u32, 60_u32]
         .into_iter()
         .map(|horizon| {
+            let base_feature_names = probability_feature_names_for_transform(
+                &training.feature_names,
+                options
+                    .model_shape
+                    .base_feature_transform_for_horizon(horizon),
+            );
+            let overlay_feature_names = probability_feature_names_for_transform(
+                &training.feature_names,
+                options
+                    .model_shape
+                    .overlay_feature_transform_for_horizon(horizon),
+            );
             train_horizon_bundle(
                 &training.train_rows,
                 &training.calibration_rows,
                 &training.evaluation_rows,
-                &model_feature_names,
+                &base_feature_names,
+                &overlay_feature_names,
                 horizon,
                 crisis_prior_label_mode,
             )
@@ -1109,7 +1197,7 @@ async fn train_probability_pipeline(
         model_family: options.model_shape.as_str().to_string(),
         feature_transform: options.model_shape.feature_transform().to_string(),
         created_at: generated_at,
-        feature_names: model_feature_names.clone(),
+        feature_names: bundle_feature_names.clone(),
         monotonic_min_gap_5d_to_20d: 0.02,
         monotonic_min_gap_20d_to_60d: 0.03,
         note: bundle_note.clone(),
@@ -1174,7 +1262,7 @@ async fn train_probability_pipeline(
         feature_transform: options.model_shape.feature_transform().to_string(),
         target_label_mode: crisis_prior_label_mode,
         market_scope: release.manifest.market_scope.clone(),
-        feature_names: model_feature_names.clone(),
+        feature_names: bundle_feature_names.clone(),
         training_samples: training.train_rows.len(),
         calibration_samples: training.calibration_rows.len(),
         evaluation_samples: training.evaluation_rows.len(),
@@ -2679,6 +2767,11 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
     let _ = writeln!(markdown);
     let _ = writeln!(markdown, "- Reviewed at: {}", report.reviewed_at);
     let _ = writeln!(markdown, "- Market scope: {}", report.market_scope);
+    let _ = writeln!(
+        markdown,
+        "- History mode: {} (limit {})",
+        report.history_mode, report.history_limit
+    );
     let _ = writeln!(markdown, "- Verdict: {verdict}");
     let _ = writeln!(
         markdown,
@@ -2799,6 +2892,138 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
         format_signed_count_delta(report.comparison.longest_false_positive_episode_days.delta)
     );
     let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "## Scenario-Level Backtests");
+    let _ = writeln!(markdown);
+    let _ = writeln!(
+        markdown,
+        "| Scenario | Source | Baseline L2 | Candidate L2 | Baseline L3 | Candidate L3 | Baseline FP | Candidate FP | Outcome |"
+    );
+    let _ = writeln!(
+        markdown,
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+    );
+    for scenario in &report.comparison.backtest_scenarios {
+        let _ = writeln!(
+            markdown,
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            scenario.name,
+            scenario.signal_source,
+            format_optional_days(scenario.baseline_lead_time_days),
+            format_optional_days(scenario.candidate_lead_time_days),
+            format_optional_days(scenario.baseline_actionable_lead_time_days),
+            format_optional_days(scenario.candidate_actionable_lead_time_days),
+            scenario.baseline_false_positive_count,
+            scenario.candidate_false_positive_count,
+            scenario.outcome
+        );
+    }
+    let _ = writeln!(markdown);
+    if !report.scenario_focus.is_empty() {
+        let _ = writeln!(markdown, "## Focus Scenarios");
+        let _ = writeln!(markdown);
+        for scenario in &report.scenario_focus {
+            let _ = writeln!(markdown, "### {} ({})", scenario.name, scenario.outcome);
+            let _ = writeln!(markdown);
+            let _ = writeln!(
+                markdown,
+                "- Window: {} -> {}",
+                scenario.window_start, scenario.window_end
+            );
+            let _ = writeln!(
+                markdown,
+                "- Crisis window: {} -> {}",
+                scenario.crisis_start, scenario.crisis_end
+            );
+            let _ = writeln!(
+                markdown,
+                "- First L2: baseline={} | candidate={}",
+                format_optional_date_with_lead(
+                    scenario.baseline_first_l2_date,
+                    scenario.crisis_start
+                ),
+                format_optional_date_with_lead(
+                    scenario.candidate_first_l2_date,
+                    scenario.crisis_start
+                )
+            );
+            let _ = writeln!(
+                markdown,
+                "- First L3: baseline={} | candidate={}",
+                format_optional_date_with_lead(
+                    scenario.baseline_first_l3_date,
+                    scenario.crisis_start
+                ),
+                format_optional_date_with_lead(
+                    scenario.candidate_first_l3_date,
+                    scenario.crisis_start
+                )
+            );
+            let _ = writeln!(
+                markdown,
+                "- First non-normal point: baseline={} | candidate={}",
+                format_optional_date(scenario.baseline_first_non_normal_date),
+                format_optional_date(scenario.candidate_first_non_normal_date)
+            );
+            let _ = writeln!(
+                markdown,
+                "- Pre-crisis actionable points: baseline={} | candidate={}",
+                scenario.baseline_actionable_point_count, scenario.candidate_actionable_point_count
+            );
+            let _ = writeln!(
+                markdown,
+                "- Pre-crisis max p_20d: baseline={} | candidate={}",
+                format_optional_pct(scenario.baseline_max_p20d),
+                format_optional_pct(scenario.candidate_max_p20d)
+            );
+            let _ = writeln!(
+                markdown,
+                "- Pre-crisis max p_60d: baseline={} | candidate={}",
+                format_optional_pct(scenario.baseline_max_p60d),
+                format_optional_pct(scenario.candidate_max_p60d)
+            );
+            let _ = writeln!(markdown);
+            if scenario.interesting_points.is_empty() {
+                let _ = writeln!(
+                    markdown,
+                    "- No loaded runtime history points matched this scenario window. Fast review history_limit may be too small for this sample."
+                );
+                let _ = writeln!(markdown);
+                continue;
+            }
+            let _ = writeln!(
+                markdown,
+                "| Date | Base p_20d | Cand p_20d | Base p_60d | Cand p_60d | Base posture | Cand posture | Base bucket | Cand bucket | Base actionable | Cand actionable | Base 5d hits | Cand 5d hits | Base sustained | Cand sustained | Base triggers | Cand triggers |"
+            );
+            let _ = writeln!(
+                markdown,
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+            );
+            for point in &scenario.interesting_points {
+                let _ = writeln!(
+                    markdown,
+                    "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                    point.as_of_date,
+                    format_optional_pct(point.baseline_p20d),
+                    format_optional_pct(point.candidate_p20d),
+                    format_optional_pct(point.baseline_p60d),
+                    format_optional_pct(point.candidate_p60d),
+                    point.baseline_posture.as_deref().unwrap_or("—"),
+                    point.candidate_posture.as_deref().unwrap_or("—"),
+                    point.baseline_time_bucket.as_deref().unwrap_or("—"),
+                    point.candidate_time_bucket.as_deref().unwrap_or("—"),
+                    format_bool_flag(point.baseline_actionable),
+                    format_bool_flag(point.candidate_actionable),
+                    format_optional_count(point.baseline_actionable_forward_5d_hits),
+                    format_optional_count(point.candidate_actionable_forward_5d_hits),
+                    format_optional_bool_flag(point.baseline_actionable_sustained),
+                    format_optional_bool_flag(point.candidate_actionable_sustained),
+                    format_trigger_codes(&point.baseline_trigger_codes),
+                    format_trigger_codes(&point.candidate_trigger_codes)
+                );
+            }
+            let _ = writeln!(markdown);
+        }
+    }
     let _ = writeln!(markdown, "## Actionability Diagnostics");
     let _ = writeln!(markdown);
     render_release_actionability_review_markdown(
@@ -3345,6 +3570,51 @@ fn format_optional_pct(value: Option<f64>) -> String {
     value.map(format_pct).unwrap_or_else(|| "—".to_string())
 }
 
+fn format_optional_date(value: Option<NaiveDate>) -> String {
+    value
+        .map(|date| date.to_string())
+        .unwrap_or_else(|| "—".to_string())
+}
+
+fn format_optional_date_with_lead(value: Option<NaiveDate>, crisis_start: NaiveDate) -> String {
+    value
+        .map(|date| {
+            let lead_days = crisis_start.signed_duration_since(date).num_days();
+            format!("{date} ({lead_days}d)")
+        })
+        .unwrap_or_else(|| "—".to_string())
+}
+
+fn format_bool_flag(value: bool) -> &'static str {
+    if value {
+        "yes"
+    } else {
+        "no"
+    }
+}
+
+fn format_optional_bool_flag(value: Option<bool>) -> &'static str {
+    match value {
+        Some(true) => "yes",
+        Some(false) => "no",
+        None => "—",
+    }
+}
+
+fn format_optional_count(value: Option<u32>) -> String {
+    value
+        .map(|count| count.to_string())
+        .unwrap_or_else(|| "—".to_string())
+}
+
+fn format_trigger_codes(codes: &[String]) -> String {
+    if codes.is_empty() {
+        "—".to_string()
+    } else {
+        codes.join(", ")
+    }
+}
+
 fn format_optional_multiplier(value: Option<f64>) -> String {
     value
         .map(|value| format!("{value:.2}x"))
@@ -3489,17 +3759,24 @@ mod tests {
     use chrono::{NaiveDate, TimeZone, Utc};
     use fc_domain::{
         ActionEpisodeTemplateId, ActionabilityBundle, ActionabilityEvaluationSummary,
-        ActionabilityLevelBundle, AssessmentHistoryPoint, DecisionPosture, FeatureSnapshotRecord,
+        ActionabilityLevelBundle, AssessmentHistoryPoint, AssessmentMethodVersions,
+        BacktestScenarioSummary, BacktestSignalSource, DecisionPosture, FeatureSnapshotRecord,
         FormalDatasetRowRecord, Frequency, HorizonEvaluationSummary, LogisticProbabilityModel,
         ModelReleaseManifest, ModelReleaseRecord, Observation, PlattCalibrationArtifact,
         ProbabilityBundle, ProbabilityBundleEvaluation, RegimeSeparationEvaluationSummary,
-        TimeToRiskBucket, PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1,
+        RiskLevel, TimeToRiskBucket, PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1,
         PROBABILITY_MODEL_FAMILY_LINEAR_V1,
     };
 
     use super::commands::release::{
-        compare_actionability_guardrails, compare_probability_guardrails, ReleasePublishOptions,
-        ReleaseReviewOptions, ReleaseSwitchOptions,
+        build_release_review_backtest_scenario_comparisons,
+        build_release_review_scenario_focus_diagnostics, compare_actionability_guardrails,
+        compare_probability_guardrails, ReleaseFormalProbabilityCompareOptions,
+        ReleaseFormalProbabilitySliceOptions, ReleaseProbabilitySliceOptions,
+        ReleasePublishOptions, ReleaseReviewOptions, ReleaseSwitchOptions,
+    };
+    use super::commands::{
+        render_formal_dataset_slice_csv, sanitize_filename_component, FormalDatasetSliceOptions,
     };
     use super::{
         action_window_label, actionability_bundle_quality_regressions,
@@ -3607,6 +3884,58 @@ mod tests {
         }]
     }
 
+    fn synthetic_backtest_summary(
+        scenario_id: &str,
+        name: &str,
+        lead_time_days: Option<i64>,
+        actionable_lead_time_days: Option<i64>,
+        false_positive_count: u32,
+    ) -> BacktestScenarioSummary {
+        BacktestScenarioSummary {
+            scenario_id: scenario_id.to_string(),
+            name: name.to_string(),
+            region: "us".to_string(),
+            signal_source: BacktestSignalSource::RealHistory,
+            crisis_start: NaiveDate::from_ymd_opt(2023, 3, 10).unwrap(),
+            crisis_end: NaiveDate::from_ymd_opt(2023, 3, 20).unwrap(),
+            first_l2_date: None,
+            first_l3_date: None,
+            max_level: RiskLevel::Crisis,
+            max_score: 72.0,
+            lead_time_days,
+            actionable_lead_time_days,
+            false_positive_count,
+            missed: actionable_lead_time_days.is_none(),
+            history_start: Some(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap()),
+            history_end: Some(NaiveDate::from_ymd_opt(2023, 3, 20).unwrap()),
+            history_point_count: 50,
+            note: "test".to_string(),
+            top_contributors: Vec::new(),
+            method_version: "test".to_string(),
+        }
+    }
+
+    fn synthetic_backtest_summary_with_dates(
+        scenario_id: &str,
+        name: &str,
+        first_l2_date: Option<NaiveDate>,
+        first_l3_date: Option<NaiveDate>,
+        lead_time_days: Option<i64>,
+        actionable_lead_time_days: Option<i64>,
+        false_positive_count: u32,
+    ) -> BacktestScenarioSummary {
+        let mut summary = synthetic_backtest_summary(
+            scenario_id,
+            name,
+            lead_time_days,
+            actionable_lead_time_days,
+            false_positive_count,
+        );
+        summary.first_l2_date = first_l2_date;
+        summary.first_l3_date = first_l3_date;
+        summary
+    }
+
     fn runtime_history_point(
         as_of_date: NaiveDate,
         raw_probability: f64,
@@ -3626,6 +3955,63 @@ mod tests {
             external_shock_score: 20.0,
             posture_trigger_codes: Vec::new(),
             posture_blocker_codes: Vec::new(),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn runtime_history_point_with_state(
+        as_of_date: NaiveDate,
+        overall_score: f64,
+        p_5d: f64,
+        p_20d: f64,
+        p_60d: f64,
+        posture: DecisionPosture,
+        time_to_risk_bucket: TimeToRiskBucket,
+        external_shock_score: f64,
+        posture_trigger_codes: &[&str],
+    ) -> AssessmentHistoryPoint {
+        AssessmentHistoryPoint {
+            as_of_date,
+            overall_score,
+            p_5d,
+            p_20d,
+            p_60d,
+            raw_p_5d: Some(p_5d),
+            raw_p_20d: Some(p_20d),
+            raw_p_60d: Some(p_60d),
+            posture,
+            time_to_risk_bucket,
+            external_shock_score,
+            posture_trigger_codes: posture_trigger_codes
+                .iter()
+                .map(|code| (*code).to_string())
+                .collect(),
+            posture_blocker_codes: Vec::new(),
+        }
+    }
+
+    fn formal_main_audit_method_wire() -> super::AuditMethodResponseWire {
+        super::AuditMethodResponseWire {
+            method: AssessmentMethodVersions {
+                score_method_version: "score_v1".to_string(),
+                prob_model_version: "prob_v1".to_string(),
+                calibration_version: "calib_v1".to_string(),
+                actionability_model_version: None,
+                actionability_calibration_version: None,
+                feature_set_version: "feature_formal_v1_main_20260531".to_string(),
+                label_version: "formal_label_v1_main".to_string(),
+                posture_policy_version: "posture_v1".to_string(),
+                action_playbook_version: "playbook_v1".to_string(),
+                fusion_policy_version: None,
+                actionability_enabled: false,
+                probability_mode: "formal_bundle_v1".to_string(),
+                release_status: "active_formal".to_string(),
+                release_id: Some("test_release".to_string()),
+                point_in_time_mode: "raw_feature_replay".to_string(),
+            },
+            note: "test".to_string(),
+            protected_stress_window_catalog: None,
+            runtime_thresholds: None,
         }
     }
 
@@ -3789,6 +4175,192 @@ mod tests {
             super::ApiReloadHistoryMode::StrictRebuild
         );
         assert_eq!(options.history_limit, 20_000);
+    }
+
+    #[test]
+    fn parses_release_probability_slice_options() {
+        let args = vec![
+            "--release-id".to_string(),
+            "us_formal_family_hybrid_20260603T144814".to_string(),
+            "--from".to_string(),
+            "2022-12-01".to_string(),
+            "--to".to_string(),
+            "2023-03-15".to_string(),
+            "--output-dir".to_string(),
+            "reports/release-probability-slices".to_string(),
+            "--history-mode".to_string(),
+            "default".to_string(),
+            "--history-limit".to_string(),
+            "5000".to_string(),
+        ];
+        let options = ReleaseProbabilitySliceOptions::parse(&args).unwrap();
+        assert_eq!(
+            options.release_id,
+            "us_formal_family_hybrid_20260603T144814"
+        );
+        assert_eq!(
+            options.from_date,
+            NaiveDate::from_ymd_opt(2022, 12, 1).unwrap()
+        );
+        assert_eq!(
+            options.to_date,
+            NaiveDate::from_ymd_opt(2023, 3, 15).unwrap()
+        );
+        assert_eq!(
+            options.output_dir,
+            PathBuf::from("reports/release-probability-slices")
+        );
+        assert_eq!(options.history_mode, super::ApiReloadHistoryMode::Default);
+        assert_eq!(options.history_limit, 5000);
+    }
+
+    #[test]
+    fn release_probability_slice_defaults_to_ignored_artifact_dir() {
+        let args = vec![
+            "--release-id".to_string(),
+            "candidate-123".to_string(),
+            "--from".to_string(),
+            "2023-01-01".to_string(),
+            "--to".to_string(),
+            "2023-01-31".to_string(),
+        ];
+        let options = ReleaseProbabilitySliceOptions::parse(&args).unwrap();
+        assert_eq!(
+            options.output_dir,
+            PathBuf::from("artifacts/research/release-probability-slices")
+        );
+        assert_eq!(
+            options.history_mode,
+            super::ApiReloadHistoryMode::StrictRebuild
+        );
+        assert_eq!(options.history_limit, 20_000);
+    }
+
+    #[test]
+    fn parses_release_formal_probability_slice_options() {
+        let args = vec![
+            "--release-id".to_string(),
+            "us_formal_family_hybrid_20260603T144814".to_string(),
+            "--dataset-id".to_string(),
+            "formal_v1_main_1990_daily".to_string(),
+            "--dataset-version".to_string(),
+            "20260601T172759".to_string(),
+            "--scenario-id".to_string(),
+            "us_regional_banks_2023".to_string(),
+            "--from".to_string(),
+            "2022-12-01".to_string(),
+            "--to".to_string(),
+            "2023-03-15".to_string(),
+            "--output-dir".to_string(),
+            "reports/formal-dataset-slices".to_string(),
+        ];
+        let options = ReleaseFormalProbabilitySliceOptions::parse(&args).unwrap();
+        assert_eq!(
+            options.release_id,
+            "us_formal_family_hybrid_20260603T144814"
+        );
+        assert_eq!(options.dataset_id, "formal_v1_main_1990_daily");
+        assert_eq!(options.dataset_version.as_deref(), Some("20260601T172759"));
+        assert_eq!(
+            options.scenario_id.as_deref(),
+            Some("us_regional_banks_2023")
+        );
+        assert_eq!(
+            options.from_date,
+            NaiveDate::from_ymd_opt(2022, 12, 1).unwrap()
+        );
+        assert_eq!(
+            options.to_date,
+            NaiveDate::from_ymd_opt(2023, 3, 15).unwrap()
+        );
+        assert_eq!(
+            options.output_dir,
+            PathBuf::from("reports/formal-dataset-slices")
+        );
+    }
+
+    #[test]
+    fn release_formal_probability_slice_defaults_to_formal_dataset_artifact_dir() {
+        let args = vec![
+            "--release-id".to_string(),
+            "candidate-123".to_string(),
+            "--from".to_string(),
+            "2023-01-01".to_string(),
+            "--to".to_string(),
+            "2023-01-31".to_string(),
+        ];
+        let options = ReleaseFormalProbabilitySliceOptions::parse(&args).unwrap();
+        assert_eq!(
+            options.output_dir,
+            PathBuf::from("artifacts/research/formal-dataset-slices")
+        );
+        assert_eq!(options.dataset_id, "formal_v1_main_1990_daily");
+        assert_eq!(options.dataset_version, None);
+        assert_eq!(options.dataset_key, None);
+        assert_eq!(options.scenario_id, None);
+    }
+
+    #[test]
+    fn parses_release_formal_probability_compare_options() {
+        let args = vec![
+            "--baseline-release-id".to_string(),
+            "baseline-123".to_string(),
+            "--candidate-release-id".to_string(),
+            "candidate-456".to_string(),
+            "--dataset-id".to_string(),
+            "formal_v1_main_1990_daily".to_string(),
+            "--scenario-id".to_string(),
+            "us_regional_banks_2023".to_string(),
+            "--from".to_string(),
+            "2022-12-01".to_string(),
+            "--to".to_string(),
+            "2023-03-15".to_string(),
+            "--output-dir".to_string(),
+            "reports/formal-probability-compares".to_string(),
+        ];
+        let options = ReleaseFormalProbabilityCompareOptions::parse(&args).unwrap();
+        assert_eq!(options.baseline_release_id, "baseline-123");
+        assert_eq!(options.candidate_release_id, "candidate-456");
+        assert_eq!(options.dataset_id, "formal_v1_main_1990_daily");
+        assert_eq!(
+            options.scenario_id.as_deref(),
+            Some("us_regional_banks_2023")
+        );
+        assert_eq!(
+            options.from_date,
+            NaiveDate::from_ymd_opt(2022, 12, 1).unwrap()
+        );
+        assert_eq!(
+            options.to_date,
+            NaiveDate::from_ymd_opt(2023, 3, 15).unwrap()
+        );
+        assert_eq!(
+            options.output_dir,
+            PathBuf::from("reports/formal-probability-compares")
+        );
+    }
+
+    #[test]
+    fn release_formal_probability_compare_defaults_to_compare_artifact_dir() {
+        let args = vec![
+            "--baseline-release-id".to_string(),
+            "baseline-123".to_string(),
+            "--candidate-release-id".to_string(),
+            "candidate-456".to_string(),
+            "--from".to_string(),
+            "2023-01-01".to_string(),
+            "--to".to_string(),
+            "2023-01-31".to_string(),
+        ];
+        let options = ReleaseFormalProbabilityCompareOptions::parse(&args).unwrap();
+        assert_eq!(
+            options.output_dir,
+            PathBuf::from("artifacts/research/formal-probability-compares")
+        );
+        assert_eq!(options.dataset_id, "formal_v1_main_1990_daily");
+        assert_eq!(options.dataset_version, None);
+        assert_eq!(options.dataset_key, None);
+        assert_eq!(options.scenario_id, None);
     }
 
     #[test]
@@ -3979,6 +4551,67 @@ mod tests {
     }
 
     #[test]
+    fn parses_formal_dataset_slice_options() {
+        let args = vec![
+            "--dataset-key".to_string(),
+            "formal_v1_main_1990_daily:20260531Tpitmain".to_string(),
+            "--scenario-id".to_string(),
+            "us_regional_banks_2023".to_string(),
+            "--from".to_string(),
+            "2022-12-01".to_string(),
+            "--to".to_string(),
+            "2023-03-15".to_string(),
+            "--split-name".to_string(),
+            "evaluation".to_string(),
+            "--limit".to_string(),
+            "120".to_string(),
+            "--output-dir".to_string(),
+            "reports/formal-dataset-slices".to_string(),
+        ];
+        let options = FormalDatasetSliceOptions::parse(&args).unwrap();
+        assert_eq!(
+            options.dataset_key.as_deref(),
+            Some("formal_v1_main_1990_daily:20260531Tpitmain")
+        );
+        assert_eq!(options.scenario_id, "us_regional_banks_2023");
+        assert_eq!(
+            options.from_date,
+            Some(NaiveDate::from_ymd_opt(2022, 12, 1).unwrap())
+        );
+        assert_eq!(
+            options.to_date,
+            Some(NaiveDate::from_ymd_opt(2023, 3, 15).unwrap())
+        );
+        assert_eq!(options.split_name.as_deref(), Some("evaluation"));
+        assert_eq!(options.limit, Some(120));
+        assert_eq!(
+            options.output_dir,
+            PathBuf::from("reports/formal-dataset-slices")
+        );
+    }
+
+    #[test]
+    fn formal_dataset_slice_defaults_to_ignored_artifact_dir() {
+        let args = vec![
+            "--scenario-id".to_string(),
+            "us_regional_banks_2023".to_string(),
+        ];
+        let options = FormalDatasetSliceOptions::parse(&args).unwrap();
+        assert_eq!(
+            options.output_dir,
+            PathBuf::from("artifacts/research/formal-dataset-slices")
+        );
+    }
+
+    #[test]
+    fn sanitize_filename_component_replaces_windows_reserved_characters() {
+        assert_eq!(
+            sanitize_filename_component("formal_v1_main_1990_daily:20260601T172759"),
+            "formal_v1_main_1990_daily_20260601T172759"
+        );
+    }
+
+    #[test]
     fn parses_pipeline_train_defaults_to_formal_dataset() {
         let options = PipelineTrainOptions::parse(&[]).unwrap();
         assert_eq!(options.dataset_source, PipelineDatasetSource::Formal);
@@ -4046,6 +4679,15 @@ mod tests {
             ProbabilityModelShape::FamilyConditionalV1
         );
         assert_eq!(options.release_prefix, "us_formal_family_conditional");
+    }
+
+    #[test]
+    fn parses_pipeline_train_family_hybrid_shape() {
+        let args = vec!["--model-shape".to_string(), "family_hybrid_v1".to_string()];
+        let options = PipelineTrainOptions::parse(&args).unwrap();
+
+        assert_eq!(options.model_shape, ProbabilityModelShape::FamilyHybridV1);
+        assert_eq!(options.release_prefix, "us_formal_family_hybrid");
     }
 
     #[test]
@@ -4635,8 +5277,10 @@ mod tests {
             "us_baa_10y_spread_level".to_string(),
             "us_curve_10y2y_level".to_string(),
             "us_stlfsi_level".to_string(),
+            "tail_neg__us_curve_10y2y_level__0".to_string(),
+            "tail_pos__us_baa_10y_spread_level__2".to_string(),
         ];
-        let weights = vec![-0.8, 0.5, -0.4];
+        let weights = vec![-0.8, 0.5, -0.4, -0.6, -0.3];
         let mut gradients = vec![0.0; weights.len()];
 
         super::apply_forward_crisis_sign_gradient(
@@ -4651,6 +5295,8 @@ mod tests {
         assert!(gradients[0] < 0.0);
         assert!(gradients[1] > 0.0);
         assert!(gradients[2] < 0.0);
+        assert_eq!(gradients[3], 0.0);
+        assert!(gradients[4] < 0.0);
     }
 
     #[test]
@@ -4674,6 +5320,430 @@ mod tests {
         assert_eq!(weights[1], 0.0);
         assert_eq!(weights[2], 0.0);
         assert_eq!(weights[3], -0.7);
+    }
+
+    #[test]
+    fn forward_crisis_sign_projection_clips_wrong_direction_monotonic_interactions() {
+        let feature_names = vec![
+            "interaction__overall_score__us_vix_level".to_string(),
+            "interaction__us_baa_10y_spread_level__us_vix_level".to_string(),
+            "interaction__external_dimension_score__us_usdjpy_level".to_string(),
+        ];
+        let mut weights = vec![-0.2, -0.6, -0.4];
+
+        super::project_forward_crisis_sign_constraints(
+            &mut weights,
+            &feature_names,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert_eq!(weights[0], 0.0);
+        assert_eq!(weights[1], 0.0);
+        assert_eq!(weights[2], 0.0);
+    }
+
+    #[test]
+    fn forward_crisis_tail_sign_projection_applies_on_20d_only() {
+        let feature_names = vec![
+            "tail_neg__us_curve_10y2y_level__0".to_string(),
+            "tail_pos__us_baa_10y_spread_level__2".to_string(),
+        ];
+        let mut weights_20d = vec![-0.4, -0.1];
+        super::project_forward_crisis_sign_constraints(
+            &mut weights_20d,
+            &feature_names,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(weights_20d[0], 0.0);
+        assert_eq!(weights_20d[1], 0.0);
+
+        let mut weights_60d = vec![-0.4, -0.1];
+        super::project_forward_crisis_sign_constraints(
+            &mut weights_60d,
+            &feature_names,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(weights_60d[0], -0.4);
+        assert_eq!(weights_60d[1], -0.1);
+    }
+
+    #[test]
+    fn forward_crisis_curve_tail_bound_gradient_pushes_too_negative_weight_up() {
+        let feature_names = vec!["tail_neg__us_curve_10y2y_level__0".to_string()];
+        let weights = vec![-0.30];
+        let mut gradients = vec![0.0; weights.len()];
+
+        super::apply_forward_crisis_coefficient_bound_gradient(
+            &mut gradients,
+            &weights,
+            &feature_names,
+            100.0,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert!(gradients[0] < 0.0);
+    }
+
+    #[test]
+    fn forward_crisis_rate_shock_family_caps_apply_on_20d_only() {
+        let feature_names = vec![
+            "family_context__rate_shock__external_dimension_score".to_string(),
+            "family_proxy__rate_shock".to_string(),
+        ];
+        let mut weights_20d = vec![0.32, 0.14];
+        super::project_forward_crisis_sign_constraints(
+            &mut weights_20d,
+            &feature_names,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(weights_20d[0], 0.12);
+        assert_eq!(weights_20d[1], 0.06);
+
+        let mut weights_60d = vec![0.32, 0.14];
+        super::project_forward_crisis_sign_constraints(
+            &mut weights_60d,
+            &feature_names,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(weights_60d[0], 0.32);
+        assert_eq!(weights_60d[1], 0.14);
+    }
+
+    #[test]
+    fn forward_crisis_jpy_carry_caps_apply_on_20d_only() {
+        let feature_names = vec![
+            "family_context__jpy_carry__external_dimension_score".to_string(),
+            "family_proxy__jpy_carry".to_string(),
+        ];
+        let mut weights_20d = vec![0.24, 0.11];
+        super::project_forward_crisis_sign_constraints(
+            &mut weights_20d,
+            &feature_names,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(weights_20d[0], 0.10);
+        assert_eq!(weights_20d[1], 0.06);
+
+        let mut weights_60d = vec![0.24, 0.11];
+        super::project_forward_crisis_sign_constraints(
+            &mut weights_60d,
+            &feature_names,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(weights_60d[0], 0.24);
+        assert_eq!(weights_60d[1], 0.11);
+    }
+
+    #[test]
+    fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
+        let family_feature_names = vec![
+            "us_curve_10y2y_level".to_string(),
+            "interaction__us_curve_10y2y_level__us_fed_funds_level".to_string(),
+            "family_proxy__rate_shock".to_string(),
+        ];
+        let mut family_weights_20d = vec![-0.90, 0.60, 0.05];
+        super::project_forward_crisis_sign_constraints(
+            &mut family_weights_20d,
+            &family_feature_names,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(family_weights_20d[0], -0.72);
+        assert_eq!(family_weights_20d[1], 0.46);
+        assert_eq!(family_weights_20d[2], 0.05);
+
+        let mut family_weights_60d = vec![-0.90, 0.60, 0.05];
+        super::project_forward_crisis_sign_constraints(
+            &mut family_weights_60d,
+            &family_feature_names,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(family_weights_60d[0], -0.90);
+        assert_eq!(family_weights_60d[1], 0.60);
+        assert_eq!(family_weights_60d[2], 0.05);
+
+        let plain_feature_names = vec![
+            "us_curve_10y2y_level".to_string(),
+            "interaction__us_curve_10y2y_level__us_fed_funds_level".to_string(),
+        ];
+        let mut plain_weights_20d = vec![-0.90, 0.60];
+        super::project_forward_crisis_sign_constraints(
+            &mut plain_weights_20d,
+            &plain_feature_names,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(plain_weights_20d[0], -0.90);
+        assert_eq!(plain_weights_20d[1], 0.60);
+    }
+
+    #[test]
+    fn forward_crisis_usdjpy_level_family_cap_only_applies_when_family_context_exists() {
+        let family_feature_names = vec![
+            "us_usdjpy_level".to_string(),
+            "family_proxy__rate_shock".to_string(),
+        ];
+        let mut family_weights_20d = vec![0.20, 0.05];
+        super::project_forward_crisis_sign_constraints(
+            &mut family_weights_20d,
+            &family_feature_names,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(family_weights_20d[0], 0.30);
+        assert_eq!(family_weights_20d[1], 0.05);
+
+        let mut family_weights_60d = vec![0.20, 0.05];
+        super::project_forward_crisis_sign_constraints(
+            &mut family_weights_60d,
+            &family_feature_names,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(family_weights_60d[0], 0.20);
+        assert_eq!(family_weights_60d[1], 0.05);
+
+        let plain_feature_names = vec!["us_usdjpy_level".to_string()];
+        let mut plain_weights_20d = vec![0.20];
+        super::project_forward_crisis_sign_constraints(
+            &mut plain_weights_20d,
+            &plain_feature_names,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(plain_weights_20d[0], 0.20);
+    }
+
+    #[test]
+    fn forward_crisis_usdjpy_interaction_family_cap_only_applies_when_family_context_exists() {
+        let family_feature_names = vec![
+            "interaction__external_dimension_score__us_usdjpy_level".to_string(),
+            "family_proxy__jpy_carry".to_string(),
+        ];
+        let mut family_weights_20d = vec![0.72, 0.03];
+        super::project_forward_crisis_sign_constraints(
+            &mut family_weights_20d,
+            &family_feature_names,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(family_weights_20d[0], 0.58);
+        assert_eq!(family_weights_20d[1], 0.03);
+
+        let mut family_weights_60d = vec![0.72, 0.03];
+        super::project_forward_crisis_sign_constraints(
+            &mut family_weights_60d,
+            &family_feature_names,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(family_weights_60d[0], 0.72);
+        assert_eq!(family_weights_60d[1], 0.03);
+
+        let plain_feature_names =
+            vec!["interaction__external_dimension_score__us_usdjpy_level".to_string()];
+        let mut plain_weights_20d = vec![0.72];
+        super::project_forward_crisis_sign_constraints(
+            &mut plain_weights_20d,
+            &plain_feature_names,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+        assert_eq!(plain_weights_20d[0], 0.72);
+    }
+
+    #[test]
+    fn forward_crisis_rate_shock_family_cap_gradient_pushes_excess_weight_down() {
+        let feature_names = vec![
+            "family_context__rate_shock__external_dimension_score".to_string(),
+            "family_proxy__rate_shock".to_string(),
+        ];
+        let weights = vec![0.30, 0.12];
+        let mut gradients = vec![0.0; weights.len()];
+
+        super::apply_forward_crisis_coefficient_bound_gradient(
+            &mut gradients,
+            &weights,
+            &feature_names,
+            100.0,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert!(gradients[0] > 0.0);
+        assert!(gradients[1] > 0.0);
+    }
+
+    #[test]
+    fn forward_crisis_jpy_carry_family_cap_gradient_pushes_excess_weight_down() {
+        let feature_names = vec![
+            "family_context__jpy_carry__external_dimension_score".to_string(),
+            "family_proxy__jpy_carry".to_string(),
+        ];
+        let weights = vec![0.22, 0.09];
+        let mut gradients = vec![0.0; weights.len()];
+
+        super::apply_forward_crisis_coefficient_bound_gradient(
+            &mut gradients,
+            &weights,
+            &feature_names,
+            100.0,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert!(gradients[0] > 0.0);
+        assert!(gradients[1] > 0.0);
+    }
+
+    #[test]
+    fn forward_crisis_monotonic_interaction_sign_gradient_pushes_wrong_direction_up() {
+        let feature_names = vec![
+            "interaction__overall_score__us_vix_level".to_string(),
+            "interaction__us_baa_10y_spread_level__us_vix_level".to_string(),
+        ];
+        let weights = vec![-0.20, -0.60];
+        let mut gradients = vec![0.0; weights.len()];
+
+        super::apply_forward_crisis_sign_gradient(
+            &mut gradients,
+            &weights,
+            &feature_names,
+            100.0,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert!(gradients[0] < 0.0);
+        assert!(gradients[1] < 0.0);
+    }
+
+    #[test]
+    fn forward_crisis_curve_family_cap_gradient_only_activates_for_family_context_sets() {
+        let family_feature_names = vec![
+            "us_curve_10y2y_level".to_string(),
+            "interaction__us_curve_10y2y_level__us_fed_funds_level".to_string(),
+            "family_proxy__rate_shock".to_string(),
+        ];
+        let family_weights = vec![-0.90, 0.60, 0.05];
+        let mut family_gradients = vec![0.0; family_weights.len()];
+
+        super::apply_forward_crisis_coefficient_bound_gradient(
+            &mut family_gradients,
+            &family_weights,
+            &family_feature_names,
+            100.0,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert!(family_gradients[0] < 0.0);
+        assert!(family_gradients[1] > 0.0);
+        assert_eq!(family_gradients[2], 0.0);
+
+        let plain_feature_names = vec![
+            "us_curve_10y2y_level".to_string(),
+            "interaction__us_curve_10y2y_level__us_fed_funds_level".to_string(),
+        ];
+        let plain_weights = vec![-0.90, 0.60];
+        let mut plain_gradients = vec![0.0; plain_weights.len()];
+
+        super::apply_forward_crisis_coefficient_bound_gradient(
+            &mut plain_gradients,
+            &plain_weights,
+            &plain_feature_names,
+            100.0,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert_eq!(plain_gradients[0], 0.0);
+        assert_eq!(plain_gradients[1], 0.0);
+    }
+
+    #[test]
+    fn forward_crisis_usdjpy_level_family_cap_gradient_only_activates_for_family_context_sets() {
+        let family_feature_names = vec![
+            "us_usdjpy_level".to_string(),
+            "family_proxy__rate_shock".to_string(),
+        ];
+        let family_weights = vec![0.48, 0.05];
+        let mut family_gradients = vec![0.0; family_weights.len()];
+
+        super::apply_forward_crisis_coefficient_bound_gradient(
+            &mut family_gradients,
+            &family_weights,
+            &family_feature_names,
+            100.0,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert!(family_gradients[0] > 0.0);
+        assert_eq!(family_gradients[1], 0.0);
+
+        let plain_feature_names = vec!["us_usdjpy_level".to_string()];
+        let plain_weights = vec![0.38];
+        let mut plain_gradients = vec![0.0; plain_weights.len()];
+
+        super::apply_forward_crisis_coefficient_bound_gradient(
+            &mut plain_gradients,
+            &plain_weights,
+            &plain_feature_names,
+            100.0,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert_eq!(plain_gradients[0], 0.0);
+    }
+
+    #[test]
+    fn forward_crisis_usdjpy_interaction_family_cap_gradient_only_activates_for_family_context_sets(
+    ) {
+        let family_feature_names = vec![
+            "interaction__external_dimension_score__us_usdjpy_level".to_string(),
+            "family_proxy__jpy_carry".to_string(),
+        ];
+        let family_weights = vec![0.72, 0.03];
+        let mut family_gradients = vec![0.0; family_weights.len()];
+
+        super::apply_forward_crisis_coefficient_bound_gradient(
+            &mut family_gradients,
+            &family_weights,
+            &family_feature_names,
+            100.0,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert!(family_gradients[0] > 0.0);
+        assert_eq!(family_gradients[1], 0.0);
+
+        let plain_feature_names =
+            vec!["interaction__external_dimension_score__us_usdjpy_level".to_string()];
+        let plain_weights = vec![0.72];
+        let mut plain_gradients = vec![0.0; plain_weights.len()];
+
+        super::apply_forward_crisis_coefficient_bound_gradient(
+            &mut plain_gradients,
+            &plain_weights,
+            &plain_feature_names,
+            100.0,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert_eq!(plain_gradients[0], 0.0);
     }
 
     #[test]
@@ -5095,6 +6165,56 @@ mod tests {
         assert!(header.contains("scenario_family"));
         assert!(header.contains("scenario_training_role"));
         assert!(first_row.contains(",scenario_a,systemic_credit_banking_crisis,mandatory,"));
+    }
+
+    #[test]
+    fn render_formal_dataset_slice_csv_includes_feature_columns() {
+        let mut row = FormalDatasetRowRecord {
+            dataset_key: "dataset".to_string(),
+            split_name: "evaluation".to_string(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            as_of_date: NaiveDate::from_ymd_opt(2023, 2, 20).unwrap(),
+            point_in_time_mode: "best_effort".to_string(),
+            latest_visible_at: None,
+            coverage_score: 0.92,
+            core_feature_coverage: 0.95,
+            trigger_feature_coverage: 0.88,
+            external_feature_coverage: 0.84,
+            sample_quality_grade: "a".to_string(),
+            primary_scenario_id: Some("us_regional_banks_2023".to_string()),
+            scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+            scenario_training_role: Some("mandatory".to_string()),
+            label_5d: 0,
+            label_20d: 1,
+            label_60d: 1,
+            regime_5d: "normal".to_string(),
+            regime_20d: "pre_warning_buffer".to_string(),
+            regime_60d: "positive_window".to_string(),
+            action_label_5d: 0,
+            action_label_20d: 1,
+            action_label_60d: 1,
+            prepare_episode_label: 1,
+            hedge_episode_label: 1,
+            defend_episode_label: 0,
+            primary_action_level: Some("hedge".to_string()),
+            action_episode_id: Some("us_regional_banks_2023:hedge".to_string()),
+            action_episode_phase: "primary".to_string(),
+            protected_action_window: false,
+            features: BTreeMap::new(),
+            created_at: Utc::now(),
+        };
+        row.features.insert("feature_a".to_string(), 0.42);
+
+        let csv = render_formal_dataset_slice_csv(&[row], &[String::from("feature_a")]);
+        let mut lines = csv.lines();
+        let header = lines.next().unwrap_or_default();
+        let first_row = lines.next().unwrap_or_default();
+
+        assert!(header.contains("primary_scenario_id"));
+        assert!(header.contains("feature_a"));
+        assert!(first_row.contains("us_regional_banks_2023"));
+        assert!(first_row.ends_with(",0.420000"));
     }
 
     #[test]
@@ -6081,6 +7201,221 @@ mod tests {
         assert!(regressions
             .iter()
             .any(|item| item.contains("cooldown_bleed")));
+    }
+
+    #[test]
+    fn release_review_backtest_comparison_marks_lost_timely_warning() {
+        let baseline = vec![
+            synthetic_backtest_summary("scenario_a", "Scenario A", Some(20), Some(14), 0),
+            synthetic_backtest_summary("scenario_b", "Scenario B", Some(9), None, 1),
+        ];
+        let candidate = vec![
+            synthetic_backtest_summary("scenario_a", "Scenario A", Some(18), None, 2),
+            synthetic_backtest_summary("scenario_b", "Scenario B", Some(9), Some(5), 1),
+        ];
+
+        let rows = build_release_review_backtest_scenario_comparisons(&baseline, &candidate);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].scenario_id, "scenario_a");
+        assert_eq!(rows[0].outcome, "timely_to_missed");
+        assert_eq!(rows[0].actionable_delta_days, None);
+        assert_eq!(rows[1].scenario_id, "scenario_b");
+        assert_eq!(rows[1].outcome, "missed_to_late_only");
+    }
+
+    #[test]
+    fn release_review_focus_diagnostic_highlights_missing_actionable_window() {
+        let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+        let first_l2 = NaiveDate::from_ymd_opt(2022, 12, 17).unwrap();
+        let first_l3 = NaiveDate::from_ymd_opt(2022, 12, 30).unwrap();
+        let follow_up_1 = NaiveDate::from_ymd_opt(2023, 1, 6).unwrap();
+        let follow_up_2 = NaiveDate::from_ymd_opt(2023, 1, 13).unwrap();
+        let follow_up_3 = NaiveDate::from_ymd_opt(2023, 1, 20).unwrap();
+        let baseline = vec![synthetic_backtest_summary_with_dates(
+            "scenario_a",
+            "Scenario A",
+            Some(first_l2),
+            Some(first_l3),
+            Some(83),
+            Some(70),
+            2,
+        )];
+        let candidate = vec![synthetic_backtest_summary_with_dates(
+            "scenario_a",
+            "Scenario A",
+            Some(first_l2),
+            None,
+            Some(83),
+            None,
+            2,
+        )];
+        let baseline_history = vec![
+            runtime_history_point_with_state(
+                first_l2,
+                56.0,
+                0.02,
+                0.14,
+                0.42,
+                DecisionPosture::Prepare,
+                TimeToRiskBucket::Months,
+                43.0,
+                &["prepare_p60d_structural"],
+            ),
+            runtime_history_point_with_state(
+                first_l3,
+                62.0,
+                0.02,
+                0.21,
+                0.48,
+                DecisionPosture::Prepare,
+                TimeToRiskBucket::Months,
+                48.0,
+                &["prepare_p60d_structural"],
+            ),
+            runtime_history_point_with_state(
+                follow_up_1,
+                63.0,
+                0.03,
+                0.22,
+                0.49,
+                DecisionPosture::Prepare,
+                TimeToRiskBucket::Months,
+                48.0,
+                &["prepare_p60d_structural"],
+            ),
+            runtime_history_point_with_state(
+                follow_up_2,
+                64.0,
+                0.04,
+                0.23,
+                0.50,
+                DecisionPosture::Prepare,
+                TimeToRiskBucket::Months,
+                49.0,
+                &["prepare_p60d_structural"],
+            ),
+            runtime_history_point_with_state(
+                follow_up_3,
+                60.0,
+                0.03,
+                0.19,
+                0.47,
+                DecisionPosture::Prepare,
+                TimeToRiskBucket::Months,
+                47.0,
+                &["prepare_p60d_structural"],
+            ),
+            runtime_history_point_with_state(
+                crisis_start,
+                66.0,
+                0.08,
+                0.31,
+                0.52,
+                DecisionPosture::Hedge,
+                TimeToRiskBucket::Weeks,
+                50.0,
+                &["hedge_p20d_context"],
+            ),
+        ];
+        let candidate_history = vec![
+            runtime_history_point_with_state(
+                first_l2,
+                55.0,
+                0.02,
+                0.13,
+                0.40,
+                DecisionPosture::Prepare,
+                TimeToRiskBucket::Months,
+                42.0,
+                &["prepare_p60d_structural"],
+            ),
+            runtime_history_point_with_state(
+                first_l3,
+                57.0,
+                0.02,
+                0.16,
+                0.44,
+                DecisionPosture::Prepare,
+                TimeToRiskBucket::Months,
+                45.0,
+                &["prepare_p60d_structural"],
+            ),
+            runtime_history_point_with_state(
+                follow_up_1,
+                56.0,
+                0.02,
+                0.17,
+                0.44,
+                DecisionPosture::Prepare,
+                TimeToRiskBucket::Months,
+                45.0,
+                &["prepare_p60d_structural"],
+            ),
+            runtime_history_point_with_state(
+                follow_up_2,
+                55.0,
+                0.02,
+                0.16,
+                0.43,
+                DecisionPosture::Prepare,
+                TimeToRiskBucket::Months,
+                44.0,
+                &["prepare_p60d_structural"],
+            ),
+            runtime_history_point_with_state(
+                follow_up_3,
+                63.0,
+                0.04,
+                0.22,
+                0.48,
+                DecisionPosture::Prepare,
+                TimeToRiskBucket::Months,
+                48.0,
+                &["prepare_p60d_structural"],
+            ),
+            runtime_history_point_with_state(
+                crisis_start,
+                65.0,
+                0.08,
+                0.31,
+                0.50,
+                DecisionPosture::Hedge,
+                TimeToRiskBucket::Weeks,
+                49.0,
+                &["hedge_p20d_context"],
+            ),
+        ];
+        let method = formal_main_audit_method_wire();
+
+        let rows = build_release_review_scenario_focus_diagnostics(
+            &baseline,
+            &candidate,
+            &baseline_history,
+            &candidate_history,
+            &method,
+            &method,
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].scenario_id, "scenario_a");
+        assert_eq!(rows[0].outcome, "timely_to_missed");
+        assert_eq!(rows[0].baseline_first_l3_date, Some(first_l3));
+        assert_eq!(rows[0].candidate_first_l3_date, None);
+        assert_eq!(rows[0].baseline_actionable_point_count, 4);
+        assert_eq!(rows[0].candidate_actionable_point_count, 1);
+
+        let first_l3_point = rows[0]
+            .interesting_points
+            .iter()
+            .find(|point| point.as_of_date == first_l3)
+            .expect("first_l3 point should be present");
+        assert!(first_l3_point.baseline_actionable);
+        assert!(!first_l3_point.candidate_actionable);
+        assert_eq!(first_l3_point.baseline_actionable_forward_5d_hits, Some(4));
+        assert_eq!(first_l3_point.candidate_actionable_forward_5d_hits, Some(1));
+        assert_eq!(first_l3_point.baseline_actionable_sustained, Some(true));
+        assert_eq!(first_l3_point.candidate_actionable_sustained, Some(false));
     }
 
     #[test]

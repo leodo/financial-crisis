@@ -233,6 +233,10 @@ impl SqliteStore {
                 &point.entity_id,
                 point.as_of_date,
             );
+            let probability_diagnostics_json =
+                serde_json::to_string(&point.probability_diagnostics).map_err(|error| {
+                    StorageError::Database(sqlx::Error::Decode(Box::new(error)))
+                })?;
             let posture_trigger_codes_json = serde_json::to_string(&point.posture_trigger_codes)
                 .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
             let posture_blocker_codes_json = serde_json::to_string(&point.posture_blocker_codes)
@@ -265,6 +269,7 @@ impl SqliteStore {
                     actionability_prepare,
                     actionability_hedge,
                     actionability_defend,
+                    probability_diagnostics_json,
                     posture_trigger_codes_json,
                     posture_blocker_codes_json,
                     coverage_score,
@@ -273,7 +278,8 @@ impl SqliteStore {
                 )
                 VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                    ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30
+                    ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
+                    ?31
                 )
                 "#,
             )
@@ -302,6 +308,7 @@ impl SqliteStore {
             .bind(point.actionability_prepare)
             .bind(point.actionability_hedge)
             .bind(point.actionability_defend)
+            .bind(&probability_diagnostics_json)
             .bind(&posture_trigger_codes_json)
             .bind(&posture_blocker_codes_json)
             .bind(point.coverage_score)
@@ -351,6 +358,7 @@ impl SqliteStore {
                 actionability_prepare,
                 actionability_hedge,
                 actionability_defend,
+                probability_diagnostics_json,
                 posture_trigger_codes_json,
                 posture_blocker_codes_json,
                 coverage_score,

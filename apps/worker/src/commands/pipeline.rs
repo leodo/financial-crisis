@@ -34,6 +34,7 @@ pub(crate) enum ProbabilityModelShape {
     LinearV1,
     InteractionTailV1,
     FamilyConditionalV1,
+    FamilyHybridV1,
 }
 
 impl ProbabilityModelShape {
@@ -42,6 +43,7 @@ impl ProbabilityModelShape {
             "linear_v1" => Ok(Self::LinearV1),
             "interaction_tail_v1" => Ok(Self::InteractionTailV1),
             "family_conditional_v1" => Ok(Self::FamilyConditionalV1),
+            "family_hybrid_v1" => Ok(Self::FamilyHybridV1),
             other => bail!("unsupported --model-shape value: {other}"),
         }
     }
@@ -51,6 +53,7 @@ impl ProbabilityModelShape {
             Self::LinearV1 => crate::PROBABILITY_MODEL_FAMILY_LINEAR_V1,
             Self::InteractionTailV1 => crate::PROBABILITY_MODEL_FAMILY_INTERACTION_TAIL_V1,
             Self::FamilyConditionalV1 => crate::PROBABILITY_MODEL_FAMILY_FAMILY_CONDITIONAL_V1,
+            Self::FamilyHybridV1 => crate::PROBABILITY_MODEL_FAMILY_FAMILY_HYBRID_V1,
         }
     }
 
@@ -59,6 +62,27 @@ impl ProbabilityModelShape {
             Self::LinearV1 => crate::PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1,
             Self::InteractionTailV1 => crate::PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1,
             Self::FamilyConditionalV1 => crate::PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1,
+            Self::FamilyHybridV1 => crate::PROBABILITY_FEATURE_TRANSFORM_FAMILY_HYBRID_V1,
+        }
+    }
+
+    pub(crate) fn base_feature_transform_for_horizon(self, horizon_days: u32) -> &'static str {
+        match self {
+            Self::FamilyHybridV1 if horizon_days == 60 => {
+                crate::PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1
+            }
+            Self::FamilyHybridV1 => crate::PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1,
+            _ => self.feature_transform(),
+        }
+    }
+
+    pub(crate) fn overlay_feature_transform_for_horizon(self, horizon_days: u32) -> &'static str {
+        match self {
+            Self::FamilyHybridV1 if horizon_days == 60 => {
+                crate::PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1
+            }
+            Self::FamilyHybridV1 => crate::PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1,
+            _ => self.feature_transform(),
         }
     }
 }
@@ -175,6 +199,9 @@ impl PipelineTrainOptions {
                 (PipelineDatasetSource::Formal, ProbabilityModelShape::FamilyConditionalV1) => {
                     "us_formal_family_conditional".to_string()
                 }
+                (PipelineDatasetSource::Formal, ProbabilityModelShape::FamilyHybridV1) => {
+                    "us_formal_family_hybrid".to_string()
+                }
                 (PipelineDatasetSource::Snapshot, ProbabilityModelShape::LinearV1) => {
                     "us_formal_transitional".to_string()
                 }
@@ -183,6 +210,9 @@ impl PipelineTrainOptions {
                 }
                 (PipelineDatasetSource::Snapshot, ProbabilityModelShape::FamilyConditionalV1) => {
                     "us_formal_transitional_family_conditional".to_string()
+                }
+                (PipelineDatasetSource::Snapshot, ProbabilityModelShape::FamilyHybridV1) => {
+                    "us_formal_transitional_family_hybrid".to_string()
                 }
             });
 
@@ -334,6 +364,37 @@ pub(crate) async fn research_pipeline_train_probability(args: &[String]) -> anyh
                     early_evidence.avg_objective_weight,
                 );
             }
+        }
+        let configured_overlay_ids = horizon
+            .family_overlays
+            .iter()
+            .map(|overlay| overlay.family_id.as_str())
+            .collect::<Vec<_>>();
+        println!(
+            "  overlay_diag     {:>2}d configured={} audits={} families={}",
+            horizon.horizon_days,
+            horizon.family_overlays.len(),
+            horizon.family_overlay_audits.len(),
+            if configured_overlay_ids.is_empty() {
+                "none".to_string()
+            } else {
+                configured_overlay_ids.join(",")
+            }
+        );
+        for audit in &horizon.family_overlay_audits {
+            println!(
+                "                   audit {} scenarios={} positives={} rows={}/{}/{} gate_active={}/{}/{} note={}",
+                audit.family_id,
+                audit.scenario_count,
+                audit.positive_label_count,
+                audit.train_row_count,
+                audit.calibration_row_count,
+                audit.evaluation_row_count,
+                audit.train_gate_active_row_count,
+                audit.calibration_gate_active_row_count,
+                audit.evaluation_gate_active_row_count,
+                audit.note,
+            );
         }
     }
     if let Some(actionability) = artifacts.bundle.actionability.as_ref() {

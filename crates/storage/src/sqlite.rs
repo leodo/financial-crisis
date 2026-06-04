@@ -110,6 +110,8 @@ impl SqliteStore {
         self.ensure_formal_dataset_regime_columns().await?;
         self.ensure_formal_dataset_action_label_columns().await?;
         self.ensure_formal_dataset_action_episode_columns().await?;
+        self.ensure_historical_replay_probability_diagnostics_column()
+            .await?;
         Ok(())
     }
 
@@ -137,6 +139,26 @@ impl SqliteStore {
             }
         }
 
+        Ok(())
+    }
+
+    async fn ensure_historical_replay_probability_diagnostics_column(
+        &self,
+    ) -> Result<(), StorageError> {
+        let columns = sqlx::query("PRAGMA table_info(analytics_historical_assessment_points)")
+            .fetch_all(&self.pool)
+            .await?;
+        let column_names = columns
+            .into_iter()
+            .map(|row| row.try_get::<String, _>("name"))
+            .collect::<Result<HashSet<_>, _>>()?;
+        if !column_names.contains("probability_diagnostics_json") {
+            sqlx::query(
+                "ALTER TABLE analytics_historical_assessment_points ADD COLUMN probability_diagnostics_json TEXT NOT NULL DEFAULT '{\"horizon_overlays\":[]}'",
+            )
+            .execute(&self.pool)
+            .await?;
+        }
         Ok(())
     }
 
@@ -1008,6 +1030,11 @@ fn map_historical_assessment_point_row(
             .as_str(),
     )
     .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
+    let probability_diagnostics = serde_json::from_str(
+        row.try_get::<String, _>("probability_diagnostics_json")?
+            .as_str(),
+    )
+    .map_err(|error| StorageError::Database(sqlx::Error::Decode(Box::new(error))))?;
     Ok(HistoricalAssessmentPointRecord {
         replay_run_id: row.try_get("replay_run_id")?,
         entity_id: row.try_get("entity_id")?,
@@ -1033,6 +1060,7 @@ fn map_historical_assessment_point_row(
         actionability_prepare: row.try_get("actionability_prepare")?,
         actionability_hedge: row.try_get("actionability_hedge")?,
         actionability_defend: row.try_get("actionability_defend")?,
+        probability_diagnostics,
         posture_trigger_codes,
         posture_blocker_codes,
         coverage_score: row.try_get("coverage_score")?,
@@ -1160,7 +1188,8 @@ mod tests {
         AlertEvent, AlertStatus, AlertType, FeatureSnapshotRecord, FormalDatasetManifest,
         FormalDatasetRecord, FormalDatasetRowRecord, HistoricalAssessmentPointRecord,
         HistoricalReplayRunRecord, ModelReleaseManifest, ModelReleaseRecord,
-        PredictionSnapshotRecord, RiskContributor, RiskDimension, RiskLevel,
+        PredictionSnapshotRecord, ProbabilityDiagnostics, ProbabilityHorizonOverlayDiagnostics,
+        ProbabilityOverlayContribution, RiskContributor, RiskDimension, RiskLevel,
     };
     use uuid::Uuid;
 
@@ -1631,6 +1660,27 @@ mod tests {
             actionability_prepare: 0.61,
             actionability_hedge: 0.28,
             actionability_defend: 0.09,
+            probability_diagnostics: ProbabilityDiagnostics {
+                horizon_overlays: vec![ProbabilityHorizonOverlayDiagnostics {
+                    horizon_days: 20,
+                    raw_probability: 0.19,
+                    calibrated_probability: 0.17,
+                    final_probability: 0.21,
+                    runtime_final_probability: Some(0.23),
+                    monotonic_lift: 0.02,
+                    configured_overlay_count: 1,
+                    contributions: vec![ProbabilityOverlayContribution {
+                        family_id: "jpy_carry".to_string(),
+                        gate_feature: "us_usdjpy_level".to_string(),
+                        gate_value: 138.4,
+                        gate: 0.74,
+                        blend: 0.25,
+                        overlay_probability: 0.33,
+                        contribution: 0.04,
+                    }],
+                    overlay_audits: Vec::new(),
+                }],
+            },
             posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
             posture_blocker_codes: vec!["quality_blocked_hedge".to_string()],
             coverage_score: 0.92,
@@ -1689,6 +1739,14 @@ mod tests {
         assert_eq!(
             points[0].posture_trigger_codes,
             vec!["prepare_p60d_structural".to_string()]
+        );
+        assert_eq!(
+            points[0].probability_diagnostics.horizon_overlays[0].final_probability,
+            0.21
+        );
+        assert_eq!(
+            points[0].probability_diagnostics.horizon_overlays[0].contributions[0].family_id,
+            "jpy_carry"
         );
     }
 }

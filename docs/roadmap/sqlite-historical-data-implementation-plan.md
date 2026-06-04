@@ -4,6 +4,11 @@
 
 最后更新：2026-05-30
 
+说明：本文档保留为 SQLite 专项实施背景与阶段拆分说明。若这里新增了“当前仍在推进”的任务，必须同步镜像回：
+
+- [危机概率评估设计 TODO](crisis-probability-design-todo.md)，或
+- [工程维护性 TODO](engineering-maintainability-todo.md)
+
 ## 1. 审查结论
 
 现有设计文档已经能回答“免费历史数据和 SQLite 是否可落地”，但还不足以直接进入编码。缺少的实现级信息包括：

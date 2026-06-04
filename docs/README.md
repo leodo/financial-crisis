@@ -27,10 +27,16 @@ docs/
 - [本地 SQLite 历史数据总体设计](architecture/local-sqlite-historical-data-design.md)
 - [代码结构与可维护性评审](architecture/codebase-maintainability-review.md)
 - [工程治理方案](architecture/engineering-governance-plan.md)
+- [开发质量门禁](architecture/development-quality-gates.md)
 - [设计 TODO 总索引](roadmap/design-todo.md)
 - [危机概率评估设计 TODO](roadmap/crisis-probability-design-todo.md)
 - [工程维护性 TODO](roadmap/engineering-maintainability-todo.md)
 - [SQLite 历史数据实现路线](roadmap/sqlite-historical-data-implementation-plan.md)
+
+当前活跃真相源只有两份：
+
+- 模型/数据/回测主线：`roadmap/crisis-probability-design-todo.md`
+- 工程结构/质量治理主线：`roadmap/engineering-maintainability-todo.md`
 
 ### 数据层
 
@@ -71,6 +77,7 @@ docs/
 - [正式模型准入与 Go/No-Go](analytics/model-go-no-go.md)
 - [历史相似阶段设计](analytics/historical-analog-design.md)
 - [Posture 阈值调优设计](analytics/posture-threshold-tuning.md)
+- [2023 区域银行危机 L3 修复设计](analytics/regional-banks-2023-l3-repair-design.md)
 
 ### 产品层
 

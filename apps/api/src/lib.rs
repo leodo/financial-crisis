@@ -257,6 +257,7 @@ mod tests {
         assert!(json["actionability"]["prepare"].is_number());
         assert!(json["actionability"]["hedge"].is_number());
         assert!(json["actionability"]["defend"].is_number());
+        assert!(json["probability_diagnostics"]["horizon_overlays"].is_array());
         assert!(json["method"]["actionability_enabled"].is_boolean());
         assert!(json["backtest_summary"]["timely_warning_rate"].is_number());
         assert!(json["backtest_summary"]["rolling_audit"]["actionable_precision"].is_number());

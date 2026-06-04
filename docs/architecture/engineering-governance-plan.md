@@ -15,6 +15,22 @@
 3. 训练侧与运行侧重复逻辑先建立收敛清单。
 4. 后续新增功能不能继续直接塞进几个超大文件。
 
+本文档与以下文档配套使用：
+
+- [开发质量门禁](development-quality-gates.md)
+- [工程维护性 TODO](../roadmap/engineering-maintainability-todo.md)
+- [危机概率评估设计 TODO](../roadmap/crisis-probability-design-todo.md)
+
+## 1.1 活跃真相源
+
+从治理角度，当前只允许两份活跃 TODO 持续承载新增任务：
+
+1. 模型/数据/回测主线：`docs/roadmap/crisis-probability-design-todo.md`
+2. 工程结构/质量治理主线：`docs/roadmap/engineering-maintainability-todo.md`
+
+`design-todo.md`、`second-round-design-backlog.md`、`sqlite-historical-data-implementation-plan.md`
+保留为索引或专项背景，不再单独承载新的活跃主线任务。
+
 ## 2. 生成工件分级
 
 ### 2.1 A 类：临时实验工件
@@ -98,6 +114,22 @@ config/model-releases/generated
 
 - 默认命令：面向本地实验，不污染 Git
 - `*-tracked` 命令：面向长期证据保留
+
+同时，本地提交前统一质量门禁收口到：
+
+```text
+just verify
+```
+
+它应始终覆盖：
+
+- artifact 审计；
+- Rust 格式检查；
+- Rust 测试；
+- clippy；
+- Web 构建。
+
+这套约束的细则由 [开发质量门禁](development-quality-gates.md) 统一维护。
 
 ## 4. Worker 拆分边界
 

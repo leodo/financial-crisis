@@ -174,6 +174,51 @@ export interface ActionabilityBlock {
   defend: number;
 }
 
+export interface ProbabilityOverlayContribution {
+  family_id: string;
+  gate_feature: string;
+  gate_value: number;
+  gate: number;
+  blend: number;
+  overlay_probability: number;
+  contribution: number;
+}
+
+export interface ProbabilityFamilyOverlayAudit {
+  family_id: string;
+  gate_feature: string;
+  gate_active_threshold: number;
+  scenario_count: number;
+  train_row_count: number;
+  calibration_row_count: number;
+  evaluation_row_count: number;
+  train_gate_active_row_count: number;
+  calibration_gate_active_row_count: number;
+  evaluation_gate_active_row_count: number;
+  positive_label_count: number;
+  early_warning_row_count: number;
+  protected_action_window_count: number;
+  avg_gate_value: number;
+  max_gate_value: number;
+  note: string;
+}
+
+export interface ProbabilityHorizonOverlayDiagnostics {
+  horizon_days: number;
+  raw_probability: number;
+  calibrated_probability: number;
+  final_probability: number;
+  runtime_final_probability?: number;
+  monotonic_lift?: number;
+  configured_overlay_count: number;
+  contributions: ProbabilityOverlayContribution[];
+  overlay_audits: ProbabilityFamilyOverlayAudit[];
+}
+
+export interface ProbabilityDiagnostics {
+  horizon_overlays: ProbabilityHorizonOverlayDiagnostics[];
+}
+
 export interface AssessmentScores {
   overall_score: number;
   structural_score: number;
@@ -354,6 +399,7 @@ export interface AssessmentSnapshot {
   market_scope: string;
   probabilities: ProbabilityBlock;
   actionability: ActionabilityBlock;
+  probability_diagnostics: ProbabilityDiagnostics;
   time_to_risk_bucket: TimeToRiskBucket;
   posture: DecisionPosture;
   conviction_score: number;

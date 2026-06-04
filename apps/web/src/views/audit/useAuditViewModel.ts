@@ -21,6 +21,7 @@ import type {
   TimeToRiskBucket
 } from "../../types";
 import type { MetricItem } from "../shared/panelHelpers";
+import { buildProbabilityOverlayViewModel } from "../shared/probabilityOverlay";
 import { auditContent } from "./content";
 
 function humanizeAuditNote(note: string) {
@@ -84,6 +85,17 @@ export function useAuditViewModel({
   ];
 
   const methodSummary = `当前运行的是 ${probabilityModeLabel(assessment.method.probability_mode)}，服务状态 ${releaseServingStatusLabel(assessment.method.release_status)}，对应版本 ${releaseIdLabel(assessment.method.release_id).value}。`;
+  const {
+    overlayHeadlineMetrics,
+    overlayHorizonRows,
+    overlayAuditRows,
+    configuredOverlayCount,
+    activeContributionCount
+  } = buildProbabilityOverlayViewModel(assessment);
+  const overlaySummary =
+    configuredOverlayCount > 0
+      ? `当前 active release 已挂载 ${configuredOverlayCount} 个 overlay，其中本次快照实际参与 ${activeContributionCount} 个。`
+      : "当前 active release 还没有挂载真正参与 runtime 的 overlay head。";
 
   const releaseRows = audit.releases.map((release) => {
     const compact = releaseIdLabel(release.release_id);
@@ -130,6 +142,10 @@ export function useAuditViewModel({
     runtimeMetrics,
     summaryMetrics,
     methodSummary,
+    overlayHeadlineMetrics,
+    overlayHorizonRows,
+    overlayAuditRows,
+    overlaySummary,
     releaseRows,
     snapshotRows
   };

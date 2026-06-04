@@ -7,6 +7,7 @@ import type {
 } from "../../types";
 import {
   BulletList,
+  DetailRows,
   GuideList,
   MetricGrid,
   MetricPairsGrid,
@@ -36,6 +37,9 @@ export default function MethodView({
     runtimeMetrics,
     triggerClauses,
     blockerClauses,
+    overlayHeadlineMetrics,
+    overlayHorizonRows,
+    overlayAuditRows,
     limitations,
     historyPolicyVersion,
     protectedCatalogId,
@@ -102,6 +106,35 @@ export default function MethodView({
       <section className="surface">
         <SurfaceHeader title="当前结论的限制" icon={BadgeInfo} />
         <BulletList items={limitations} />
+      </section>
+
+      <section className="surface">
+        <SurfaceHeader title="Family Overlay 诊断" icon={BadgeInfo} />
+        <RuleBox label="怎么看">{methodContent.overlayIntro}</RuleBox>
+        <MetricGrid items={overlayHeadlineMetrics} />
+        {overlayHorizonRows.length > 0 ? (
+          <DetailRows items={overlayHorizonRows} />
+        ) : (
+          <RuleBox label="当前状态">{methodContent.overlayEmpty}</RuleBox>
+        )}
+        {overlayAuditRows.length > 0 ? (
+          <ResponsiveTable
+            className="wide-table"
+            columns={["窗口", "Family", "场景 / 正例", "Train / Cal / Eval", "Gate active", "说明"]}
+            note={methodContent.overlayTableNote}
+          >
+            {overlayAuditRows.map((row) => (
+              <tr key={row.id}>
+                <td>{row.horizonLabel}</td>
+                <td>{row.familyLabel}</td>
+                <td>{row.scenarioSummary}</td>
+                <td>{row.splitSummary}</td>
+                <td>{row.gateSummary}</td>
+                <td>{row.note}</td>
+              </tr>
+            ))}
+          </ResponsiveTable>
+        ) : null}
       </section>
 
       <section className="surface">

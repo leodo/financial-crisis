@@ -2,11 +2,18 @@
 
 状态：`Draft`
 
-最后更新：2026-06-01
+最后更新：2026-06-04
 
 ## 1. 目的
 
 本清单用于跟踪“从风险强度看板升级为危机概率评估系统”这一轮设计工作。
+
+自 2026-06-04 起，本文件是“模型/数据/回测主线”的唯一活跃 TODO 真相源。
+
+- 工程结构、模块边界、代码质量与门禁治理，统一由
+  [工程维护性 TODO](engineering-maintainability-todo.md) 管理；
+- 第一阶段设计索引与旧 backlog 只保留历史导航角色，不再承载当前活跃任务；
+- 如果某个专项实施文档产生了当前任务，必须镜像回本清单或工程治理清单之一。
 
 ## 2. 当前已完成的设计
 
@@ -301,6 +308,128 @@
      - [x] 用 `main + ext_stress + ext_acute` 训练第一版 family-conditional 候选 `us_formal_family_conditional_20260603T084333` 并跑 fast review。
      - [x] fast review 已 No-Go：`timely_warning_rate=10.0% -> 0.0%`，`actionable_precision=55.9% -> 54.5%`，`longest_false_positive_episode_days=5 -> 5`，runtime `60d` 从 `usable_early_warning_separation` 退化为 `late_only_no_early_warning`。
      - [ ] 升级到真正多头 / 分层校准 bundle schema 设计，不再继续堆同类 family proxy derived features。
+       - [x] 补写 `docs/analytics/family-overlay-bundle-schema-design.md`。
+       - [x] 在 domain bundle schema 增加 `family_overlays` 兼容字段和 scoring helper。
+       - [x] worker 训练侧输出 overlay metadata / row count 审计。
+       - [x] 实现第一版 overlay training。
+       - [x] API runtime 输出 overlay contribution diagnostics。
+       - [x] 基于真实 formal dataset 重训 overlay 候选并跑 release review / runtime regime audit。
+         - 已用 `formal main + ext_stress + ext_acute` 训练并发布 `us_formal_family_conditional_20260603T114855`。
+         - runtime 已能输出真实 `20d acute_liquidity` overlay contribution，不再只是空 schema。
+         - `release review` 结论仍是 No-Go：`timely_warning_rate=10.0% -> 0.0%`，`60d` runtime 退化为 `weak_regime_separation`。
+         - `just formal-train-family-overlay` 已固化最新 main/ext 数据集自动解析入口；脚本验证产物 `us_formal_family_conditional_20260603T121703` 复现了“仅 20d acute_liquidity 真正成头”的结构。
+         - [x] 在 worker 增加 `balanced` family overlay fallback split，并用 `us_formal_family_conditional_20260603T135847` 验证“样本死区”已明显缓解：`5d=3 overlays`、`20d=3 overlays`、`60d=2 overlays`。
+         - [x] 增加 `family_hybrid_v1`：`5d/20d` 保留 family conditional + overlay，`60d` base head 退回 `interaction_tail_v1`，并新增 `just formal-train-family-hybrid` / `-tracked`。
+       - [x] 前端进一步把 overlay 贡献和 family audit 接入研究审计 / 发布审计视图，而不只放在方法说明页。
+         - 发布审计页已新增 `Overlay 运行审计`，可直接查看 active release 的 runtime contribution、family split 行数和 gate-active 审计。
+       - [ ] 下一轮 family overlay 不再以“先训出任意一个 overlay”为目标，而要恢复 `60d` 提前量并通过 release review。
+         - [x] 优先推进 `systemic_credit / mixed_systemic / rate_shock` 的 family-level split，而不是继续沿用当前宽表 split。
+         - [ ] 审计为什么 `us_formal_family_conditional_20260603T135847` 已经训出多个 overlay，但 runtime replay 里 `60d positive_window raw P (2.3%) < 60d normal raw P (3.7%)`，导致 `timely_warning_rate` 仍是 `0.0%`。
+         - [x] 设计并实现 `60d` hybrid / fallback 方案，避免 family 条件头把 baseline `interaction_tail_v1` 的长窗提前量打坏。
+         - [x] hybrid 候选 `us_formal_family_hybrid_20260603T142649` 已完成正式 review：`60d` 不再是正例反向，而是 `cooldown_bleed`；但 `timely_warning_rate` 仍是 `0.0%`，`actionable_precision=55.9% -> 44.4%`，所以还不能上线。
+         - [x] 已验证“关闭 60d overlay”并不能消除 `cooldown_bleed`：候选 `us_formal_family_hybrid_20260603T144814` 的正式 review 仍是 `timely_warning_rate=0.0% / actionable_precision=44.4%`。
+         - [x] 已验证“继续加大 60d positive/cooldown 权重与 pairwise 惩罚”会更差：候选 `us_formal_family_hybrid_20260603T151447` 的正式 review 退化到 `timely_warning_rate=0.0% / actionable_precision=37.5% / longest_false_positive_episode_days=7`，该组更激进权重未保留在当前实现中。
+         - [x] 已验证“只在 API runtime 软下调 `prepare_p60d`”同样无效：candidate `us_formal_family_hybrid_20260603T144814` 把 `prepare_p60d` 从 `66.1%` 压到 `61.0%` 后，`prepare` 次数增多，但 `timely_warning_rate` 仍是 `0.0%`，`actionable_precision` 进一步降到 `39.1%`，所以这条阈值软收敛策略已回退。
+         - [x] `release review` 已补齐 `Scenario-Level Backtests` 场景表，能够直接列出每个危机样本的 `L2/L3/false_positive/outcome` 对比，不再只看聚合指标。
+         - [x] 最新 fast review 已定位当前唯一真正丢失的 timely 样本是 `2023 美国区域银行危机`：baseline 仍有 `L2=83d / L3=70d`，candidate 只剩 `L2=83d`，动作级 `L3` 消失。
+         - [x] `release review` 已新增 `Focus Scenarios` 逐日复盘表，并确认 `2023 美国区域银行危机` 的 `L3` 丢失不是“完全没打到动作级条件”，而是 candidate 在危机前只有 `2` 个零星 actionable points，没达到 backtest `5 天窗口至少 3 次命中` 的 sustained 口径；baseline 同窗口有 `13` 个 pre-crisis actionable points。
+         - [x] `release review` 已继续补齐 `3/5 sustained-hit` 证据列：逐日表现在直接输出 `forward 5d actionable hits` 与 `sustained yes/no`，并已用 `us_formal_family_hybrid_20260603T144814` 的 fast review 验证 `2023-02-20` 可明确显示 baseline=`5 hits / yes`、candidate=`1 hit / no`。
+         - [x] 已进一步确认当前主故障更像是 `20d / hedge posture context` 的持续性塌缩：`2022-12-28` candidate 还能短暂满足 `prepare` 动作级条件，但从 `2022-12-31` 起 `p_20d` 快速回落，`2023-02-20 ~ 2023-02-27` baseline 已连续 `hedge`，candidate 只有 `2023-02-22` 单日进入 `hedge`，其余日期大多退回 `normal`。
+        - [ ] 既然 `60d overlay` 不是主因，而盲目加大 60d 权重/惩罚又会恶化结果，下一步直接审计 `60d interaction_tail + episode-native target + runtime threshold policy` 本身，重点看为什么 `cooldown` 仍高于 `positive_window`、以及为什么 `prepare_p60d` 会重新抬高。
+          - [x] 已新增 `research release formal-probability-slice` / `just formal-probability-slice`，可脱离 API strict rebuild，直接对 persisted formal dataset 场景窗口做 bundle 离线打分。
+          - [x] 已新增 `research release formal-probability-compare` / `just formal-probability-compare`，可直接输出 baseline vs candidate 的逐日概率差、阈值命中差与 top feature contribution delta。
+          - [x] 已对 baseline `us_formal_interaction_tail_extmix10_20260602T061401` 与 candidate `us_formal_family_hybrid_20260603T144814` 跑出 `2022-12-01 ~ 2023-03-15` 的 `us_regional_banks_2023` 概率拆解切片。
+          - [x] 已确认 `60d overlay` 不是主因：candidate `60d` overlay 已关闭，baseline 也没有 overlay，但两版 `60d` 在该窗口都没有越过各自 decision threshold，只表现为持续偏高背景值。
+          - [ ] 下一步把 `60d` 的高背景值继续下钻到 base feature / calibration / threshold selection，确认 cooldown bleed 的真正来源。
+         - [x] 已补写 [regional-banks-2023-l3-repair-design.md](../analytics/regional-banks-2023-l3-repair-design.md)，把 `2023 regional banks` 的根因修复从“复盘结论”升级成可执行实验设计，明确诊断产物、允许改动边界、`3/5 sustained hits` 证据表与下一轮 Go/No-Go 条件。
+         - [x] 以 `2023 美国区域银行危机` 为第一优先场景，逐日复盘 baseline vs family-hybrid 的 `p_60d / p_20d / posture trigger clause / actionable bridge`，并确认 `L3=70d` 丢失的直接原因是 candidate 没有形成 `actionable 3/5 sustained hits`，而不是单独缺少第一次 `60d` prepare 命中。
+        - [ ] 把这次 `2023 regional banks` 复盘进一步下钻到训练样本与 family feature 层，确认究竟是哪组 family-hybrid 特征/权重把 `20d` 连续性压回 `normal`。
+          - [x] 已新增 `research dataset slice-main` / `just formal-dataset-slice`，可直接导出单场景 formal dataset 样本切片（JSON + CSV）。
+          - [x] 已对 `us_regional_banks_2023` 跑出首份样本切片：`2022-12-01 ~ 2023-03-15` 实际落到 `2023-01-07 ~ 2023-03-15` 的 `68` 条 `evaluation` 样本、`15` 个特征，`regime_60d` 基本恒为 `positive_window`，而 `regime_20d` 在 `normal / pre_warning_buffer / positive_window` 间切换。
+          - [x] 已新增 `formal-probability-slice` 对照切片，并确认 candidate 的主故障不是 overlay 过宽，而是 `20d` base head 在 `2023-02-20 / 2023-02-27` 这些 `hedge_episode_label=1` 日期仍只给出 `0.202 / 0.187` 级别概率。
+          - [x] 已继续把 `20d` base-head contribution 导出到离线切片，确认 candidate 的主要压分项集中在 `tail_neg__us_curve_10y2y_level__0`、`interaction__us_curve_10y2y_level__us_fed_funds_level`、`us_usdjpy_change_20d`，且 `us_usdjpy_level` 在 candidate 中被学成负贡献。
+          - [x] compare 已进一步确认 `20d` 损失最严重的日期集中在 `2023-02-21 ~ 2023-02-27`，其中 `2023-02-24 ~ 2023-02-26` 的 `candidate - baseline p20d` 都接近 `-0.40`。
+          - [x] 已确认这条故障基本不在 calibration 层：`2023 regional banks` 关键窗口里两版 `20d/60d` 基本都是 `raw = calibrated`，candidate `20d` 只有极小 overlay 改动。
+          - [x] compare 聚合摘要已确认 candidate 的 `20d` 缺陷是窗口级系统性压低，而不是少数边缘样本：overall 平均差 `-0.215`，`positive_window` 平均差 `-0.306`，`hedge` 标签平均差 `-0.344`，且 `positive_window` 里 baseline 命中率 `40%`、candidate `0%`。
+          - [x] 已验证“derived tail 单调约束只保留在 `20d`”这条修复方向是有效的：候选 `us_formal_family_hybrid_20260603T192249` 相比 baseline `us_formal_interaction_tail_extmix10_20260602T061401`，在 `us_regional_banks_2023` 上把 `20d hits` 从 `13 -> 29`、`positive_window hit rate` 从 `40% -> 80%`，同时 `60d hits` 仍保持 `0 -> 0`。
+          - [x] 已确认“derived tail 单调约束不能粗暴扩到 `60d`”：中间候选 `us_formal_family_hybrid_20260603T191209` 虽然同样把 `20d hits` 提到 `29`，但 `60d hits` 失真膨胀到 `62`；把该约束收窄回 `20d only` 后，`us_formal_family_hybrid_20260603T192249` 在保持同等 `20d` 改善的同时把 `60d hits` 恢复到 `0`。
+          - [x] 已完成新一轮正式复核：在重启本地 API 并重新执行 `just release-review`（`strict_rebuild`）后，候选 `us_formal_family_hybrid_20260603T192249` 的正式指标变为 `timely_warning_rate 10.0% -> 10.0%`、`actionable_precision 54.8% -> 64.0%`、`longest_false_positive_episode_days 5 -> 5`，`guard_passed=true`；当前结论是“可进入下一轮人工复核，暂不自动晋升 active release，但误报时长已不再恶化”。
+          - [x] 已确认此前看到的 `false_positive_episode_days 5 -> 7` 主要来自两类混淆：一是本地 API 未重启时，review 仍在打旧二进制；二是 `release-review-fast` 与正式 `release-review` 过去会把同名产物互相覆盖。重启后再跑 `strict_rebuild`，`2023-08-21 ~ 2023-08-24` 这段由 runtime monotonic gap 抬起的 `60d` 已不再被算成 candidate 的 actionability false positive。
+          - [x] 已把 `release-review` / `probability-slice` 的导出文件名加上 `history_mode` 后缀，避免 `default` 与 `strict_rebuild` 证据互相覆盖，后续复盘时可以直接区分“快速 triage”与“正式 go/no-go”。
+          - [x] 已继续把 candidate 剩余短误报拆开做 formal compare：
+            - `2023-02-01 ~ 2023-02-15`：candidate 在非正例窗口额外打出 `4` 个 `20d` hits，`avg delta p20d = +0.128`；主导差分集中在 `tail_neg__us_curve_10y2y_level__0`、`tail_pos__us_baa_10y_spread_level__2`、`us_curve_10y2y_level`，并伴随 `family_context__rate_shock__external_dimension_score` 与 `family_proxy__rate_shock` 的正向抬升。
+            - `2023-07-01 ~ 2023-07-20`：candidate 在非正例窗口额外打出 `17` 个 `20d` hits，`avg delta p20d = +0.288`；最主要的放大项是 `tail_neg__us_curve_10y2y_level__0`、`family_context__rate_shock__external_dimension_score`、`us_curve_10y2y_level` 与 `family_proxy__rate_shock`，而 `60d` 反而整体较 baseline 更低。
+          - [x] 已验证“只压 `curve/fed-funds` cap”还不够：候选 `us_formal_family_hybrid_20260604T031738` 与 `us_formal_family_hybrid_20260604T022954` 一样，formal fast review 仍停在 `actionable_precision=60.9% / longest_false_positive_episode_days=5`，没有超过 `192249`。
+          - [x] 已继续验证“对明确同向放大风险的 interaction 加 sign constraint”是有效方向：
+            - 新候选 `us_formal_family_hybrid_20260604T034053` 在 `2023-02-01 ~ 2023-02-15` 把 `avg delta p20d` 从 `+0.111` 压到 `+0.085`；
+            - 在 `2023-07-01 ~ 2023-07-20` 把额外 `20d hits` 从 `17` 压到 `13`；
+            - `us_regional_banks_2023` 仍保持 `20d hits 13 -> 28`、`positive_window hit rate 40% -> 80%`；
+            - 正式 `strict_rebuild` review 已确认该版当前是 family-hybrid 主线的最好结果：`timely_warning_rate 10.0% -> 10.0%`、`actionable_precision 54.8% -> 67.3%`、`longest_false_positive_episode_days 5 -> 5`、`guard_passed=true`。
+          - [x] 已继续验证“把 `USDJPY / jpy_carry / rate_shock` 进一步压成辅助上下文”这条线的收益边界：
+            - 候选 `us_formal_family_hybrid_20260604T043437`（新增 `us_usdjpy_level` / `jpy_carry` caps）把局部窗口继续收窄到 `2023-02 avg delta p20d=+0.055`、`2023-07 avg delta p20d=+0.222`，但 fast review 只达到 `actionable_precision=66.7%`；
+            - 候选 `us_formal_family_hybrid_20260604T045257`（进一步收紧 `rate_shock` cap 到 `0.12 / 0.06`）把 `2023-07` 额外 `20d hits` 从 `13` 压到 `12`、`avg delta p20d` 压到 `+0.209`，但 fast review 进一步回落到 `actionable_precision=66.0%`；
+            - 结论：单纯继续堆 `USDJPY / jpy_carry / rate_shock` 系数 cap，已经没有超过 `034053` 的把握，应停止在这条线上继续微调。
+          - [x] 已验证“soft 20d threshold + confirmation-driven jpy_carry proxy”这一更贴近主问题的改法：
+            - 候选 `us_formal_family_hybrid_20260604T055652` 把 `20d threshold` 收在 `0.451`，同时保持 `us_regional_banks_2023` 的 `20d hits 13 -> 28 / positive_window hit rate 40% -> 80%`；
+            - 但 `2023-02-01 ~ 2023-02-15` 仍有 `4` 个额外 `20d hits`，`2023-07-01 ~ 2023-07-20` 仍有 `12` 个额外 `20d hits`；
+            - fast review 最终只有 `actionable_precision 54.8% -> 65.5%`，仍没有超过 `034053` 的 `67.3%`；
+            - 结论：`soft threshold` 可保留，但“单独重构 `jpy_carry proxy`”还不足以成为下一版正式主线。
+          - [x] 已验证“直接把 `USDJPY raw interaction` 迁成 tail interaction”这条实现不可取：
+            - 候选 `us_formal_family_hybrid_20260604T061852` 把 `20d threshold` 重新拉到 `0.294`；
+            - `predicted_positive_count` 膨胀到 `1196`，`normal hit rate` 升到 `14.2%`；
+            - 这说明当前不能用“简单替换 `interaction__external_dimension_score__us_usdjpy_level`”的方式来完成 `USDJPY level -> tail/context` 迁移。
+          - [x] 已继续验证“再往下压 `curve/USDJPY` 常态误报”这条线的收益上限：
+            - 候选 `us_formal_family_hybrid_20260604T064930` 相比 `034053`，在 `2023-02-01 ~ 2023-02-15` 把 `20d hits` 从 `4` 压到 `1`、`avg delta p20d` 再降 `-0.100`；
+            - 在 `2023-07-01 ~ 2023-07-20` 把 `20d hits` 从 `12` 压到 `2`、`avg delta p20d` 再降 `-0.157`；
+            - 但 `regional_banks` 的 `20d` 连续性也同步回落：相对 `034053`，`20d hits 27 -> 19`、`positive_window hit rate 75% -> 60%`；
+            - runtime fast review 最终是 `timely_warning_rate 10.0% -> 10.0%`、`actionable_precision 54.8% -> 65.1%`、`longest_false_positive_episode_days 5 -> 5`，虽然 `guard_passed=true`，但仍低于 `034053` 的 `67.3%`；
+            - 结论：继续沿 `tail_neg__us_curve_10y2y_level__0 + USDJPY level` 这条线硬压误报，已经开始直接侵蚀 `regional_banks` 的 `20d` 连续性，当前不应把它作为新的正式主线。
+          - [x] 已继续确认这条线的更激进版本同样应直接 No-Go：
+            - 候选 `us_formal_family_hybrid_20260604T064040` 在 `2023-02-01 ~ 2023-02-15` 把 `20d hits` 从 `4` 进一步压到 `0`，在 `2023-07-01 ~ 2023-07-20` 把 `20d hits` 从 `12` 压到 `0`；
+            - 但 `regional_banks` 的 `20d` 连续性也同步塌到 `20d hits 27 -> 7`、`positive_window hit rate 75% -> 25%`；
+            - 离线 compare 已足够说明问题：`tail_neg__us_curve_10y2y_level__0` 从 `034053` 的 `0.00` 继续压到 `-0.12` 后，危机窗口前半段与尾段都被系统性拉到阈值下方，不值得再跑 runtime review；
+            - 结论：这类“继续加深 `tail_neg__curve` 负权、再压 `USDJPY level` 基础权重”的候选，后续可以直接离线 No-Go。
+          - [x] 已把这条 family-hybrid 主线的候选筛选流程收口成标准命令：
+            - `just formal-candidate-window-audit <baseline> <candidate>`：固定输出 `regional_banks`、`2023-02`、`2023-07` 三段窗口 compare；
+            - `just formal-candidate-feature-audit <baseline> <candidate>`：固定输出 `20d threshold`、regime 概率分布和关键特征权重差异；
+            - `just formal-candidate-screen <baseline> <candidate>`：先跑窗口审计，再汇总为离线筛选结论；
+            - 当前已验证该筛选门会把 `064930` 归为 `worth_fast_review`，把 `064040` 归为 `no_go_offline`，与人工结论一致。
+          - [x] 已完成 `034053 / 064930 / 064040` 的 20d 联合审计，并把结论固化到设计文档：
+            1. `20d threshold` 不是 `064930 / 064040` 丢失 `regional_banks` 连续性的主因，真正先坏掉的是 `positive_window` 原始概率被压低；
+            2. `tail_neg__us_curve_10y2y_level__0` 不应继续往负方向加深；`034053=0.00 -> 064930=-0.05 -> 064040=-0.12` 已足够说明这条线会直接侵蚀 `regional_banks`；
+            3. `us_usdjpy_level` 不应继续走“下压 base weight + 加强 interaction”的 blunt suppression 组合，下一轮应迁往更保守的 `jpy carry proxy/context` 语义；
+            4. `tail_pos__us_baa_10y_spread_level__2` 当前没有证据支持把它变成新的负向 suppressor；
+            5. 对应约束已写入 `family-overlay-bundle-schema-design.md` 与 `regional-banks-2023-l3-repair-design.md`。
+          - [x] 已把最关键的联合审计结论下沉到训练配置 / 离线筛选，而不再只是人工口头约束：
+            1. `tail_neg__us_curve_10y2y_level__0` 在 `20d` 训练约束里已收紧为 `>= 0`；
+            2. `USDJPY` 已不再允许“base level 下压 + interaction 放大”自由组合：`us_usdjpy_level` family cap 已改到 `0.30 ~ 0.40`，`interaction__external_dimension_score__us_usdjpy_level` 新增上界 `0.58`；
+            3. `just formal-candidate-screen` 已新增 `positive_window_avg_probability` 与 `curve tail + USDJPY mix` 的离线 `No-Go` 规则。
+          - [ ] 下一步继续把剩余结论下沉到训练 / 评审策略：
+            1. `20d threshold` 只保留 soft penalty / policy guard，不再当作主修复手段；
+            2. `USDJPY` 的最终目标仍是迁往“高位 + 变化率/波动率 + 外部确认”的 proxy/context 结构，而不是长期停在 base level cap；
+            3. 需要验证新约束下重训出的下一版候选，是否真的不再自然走回 `064930 / 064040` 分支。
+          - [x] 已验证新约束下的下一版候选 `us_formal_family_hybrid_20260604T081030` 没有再走回 `064930 / 064040` 分支：
+            1. 相对 `034053`，`regional_banks` 的 `20d hits 27 -> 24`、`positive_window hit rate 75% -> 75%`、`positive_window_avg_probability 0.237 -> 0.239`；
+            2. 同时 `2023-02` 的 `20d hits 4 -> 1`、`2023-07` 的 `20d hits 12 -> 6`；
+            3. `release-review-fast` 与 `strict_rebuild release-review` 都确认 runtime `actionable_precision 54.8% -> 71.4%`、`timely_warning_rate 10.0% -> 10.0%`、`longest_false_positive_episode_days 5 -> 5`；
+            4. 结论：`081030` 已成为当前 family-hybrid 主线最好候选，但核心瓶颈已转为“如何恢复 timely warning”。
+          - [ ] 下一步优先做一轮“`curve/bond-spread pair + USDJPY semantics + 20d threshold role`”落地审计：
+            1. 把 `curve inversion / fed funds / USDJPY level / USDJPY 20d change / jpy carry proxy / rate_shock family context`
+               逐列对齐到训练样本、feature engineering、threshold selection 与单调约束配置；
+            2. 输出哪些约束已经在训练层落实，哪些还停留在文档结论；
+            3. 对仍未落实的项给出最小代码改动入口。
+          - [ ] 下一步最高优先级改成“恢复 timely warning / actionable lead time”：
+            1. 以 `081030` 为新的 family-hybrid 主线基线，不再继续围绕 `034053` 做主线决策；
+            2. 直接审计为什么 `60d` 仍是 `separated_but_below_runtime_floor`；
+            3. 直接审计为什么 `2000-2001 / 1990-1993` 只有 `L2` 提前量，却始终无法进入 `L3 actionable`；
+            4. 训练、threshold policy、runtime posture 后续都以“提前一周以上可执行预警”作为首要目标，而不是继续优先压短误报。
+          - [ ] 下一步以 `034053` 为保护基线继续收口剩余短误报，但约束顺序必须固定：
+            1. 先守住 `regional_banks` 的 `20d hits / positive_window hit rate / positive_window_avg_probability`；
+            2. 再处理 `2023-02-03 ~ 2023-02-05`、`2023-02-14`、`2023-07-13` 等剩余 `20d` 误报点；
+            3. 只有在不牺牲上述连续性的前提下，才允许小幅回调 `20d threshold`。
+         - [ ] 对 `mixed_systemic` 先重做 proxy 定义；当前 `gate_active_total=0`，继续训练 overlay 没有有效样本基础。
+         - [ ] 把 `jpy_carry` 继续维持为 proxy-only family，先补 protected / proxy rows，再决定是否进入正式 overlay 训练。
+         - [x] 复核当前 active release 是否仍停在 review fail 的 family candidate；review 结束后已恢复 `us_formal_interaction_tail_extmix10_20260602T061401`。
 3. Raw PIT history replay 闭环
    - [x] 新增 historical replay run / point 存储结构
    - [x] release review 默认走 `strict_rebuild`
@@ -314,7 +443,7 @@
    - [ ] 重训 candidate release（下一轮重点不再是压误报，而是恢复可执行提前量）
    - [ ] 重跑 release review / rolling audit / runtime regime audit
 
-### 6.5 2026-06-02 扩展数据集实测结果
+### 6.4 2026-06-02 扩展数据集实测结果
 
 - [x] `formal_v1_ext_acute_pre1990:20260601T163102`
   - 已纳入 `1987 / 1998`
@@ -335,7 +464,7 @@
 4. 重跑 release review / rolling audit / runtime regime audit；
 5. 继续把 raw PIT history 与 persisted snapshot 彻底解耦。
 
-### 6.4 2026-06-01 Episode-native 第一阶段代码已落地
+### 6.5 2026-06-01 Episode-native 第一阶段代码已落地
 
 本轮已经把第一阶段里最容易继续分叉的底层结构先收口：
 

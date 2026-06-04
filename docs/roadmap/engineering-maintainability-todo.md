@@ -23,6 +23,10 @@
 
 ## 2. P0：立即补齐的治理项
 
+- [x] 收口活跃 TODO 真相源：
+  - 模型主线统一进 `crisis-probability-design-todo.md`
+  - 工程治理主线统一进 `engineering-maintainability-todo.md`
+  - 旧 `design/backlog/sqlite-plan` 文档只保留索引或专项背景角色
 - [x] 明确生成工件分级：
   - 正式发布与基线对照工件可以入库；
   - 临时实验工件必须有独立归档或清理策略；
@@ -42,8 +46,19 @@
   - `backtest`
 - [x] 盘点 API 与 worker 的重复逻辑，列出必须收敛到共享模块的函数清单。
 - [x] 为维护性治理补一条实施原则：模型主线优先，但新增功能不再允许直接塞进现有超大文件。
+- [x] 增加统一质量门禁文档，明确：
+  - 哪类改动必须先补设计；
+  - 哪类改动必须跑 `just verify`；
+  - 哪类候选必须补 `release-review-fast` / `release-review`。
+- [x] 把本地与 CI 的基础检查收口到同一套门禁：
+  - 本地统一入口 `just verify`
+  - CI 自动执行 Rust fmt/test/clippy 与 Web build
+- [x] 固化提交流程 checklist：
+  - PR 模板要求填写活跃 TODO 归属
+  - 要求说明 `just verify`、release review 与 artifact 归属证据
 
 以上 P0 事项已由 [工程治理方案](../architecture/engineering-governance-plan.md) 落地，并已同步收紧 worker 的默认实验输出目录。
+质量门禁细则见 [开发质量门禁](../architecture/development-quality-gates.md)。
 
 ## 3. P1：优先重构项
 
@@ -213,6 +228,8 @@
   - 还是临时研究副产物。
 - [ ] 任何影响训练口径和运行口径的修改，都要检查共享函数是否已统一。
 - [ ] 任何新的仓位建议或动作规则，都不能绕开现有 `playbook`、`Go/No-Go` 和 “非自动交易指令”边界。
+- [x] 本地提交前统一运行 `just verify`，不要继续靠人工记忆零散执行 `fmt/test/lint/web-build`。
+- [x] CI 自动执行与本地一致的核心检查，不再只靠本地手工自觉。
 
 ## 6. 完成定义
 
@@ -224,6 +241,8 @@
 - [x] `crates/storage/src/sqlite.rs` 已按聚合拆开。
 - [x] `apps/web/src/App.tsx` 已拆成稳定组件层次。
 - [x] 生成工件治理规则已落文档并落实到提交流程。
+- [x] 活跃 TODO 真相源已收口，不再多份 roadmap 并行承载当前任务。
+- [x] 本地质量门禁与 CI 自动检查已落地。
 
 ## 7. 执行顺序
 

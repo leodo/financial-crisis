@@ -291,10 +291,17 @@ pub fn build_assessment_snapshot(
     let actionability_fusion = probability_trace
         .actionability_enabled
         .then_some(&actionability);
+    let prepare_reference_p60d = probability_trace
+        .probability_diagnostics
+        .horizon_overlays
+        .iter()
+        .find(|horizon| horizon.horizon_days == 60)
+        .map(|horizon| horizon.final_probability);
     let active_release = serving_model.map(|context| &context.release);
     let action_thresholds = probability_action_thresholds(serving_model);
     let time_to_risk_bucket = build_time_to_risk_bucket(
         &probabilities,
+        prepare_reference_p60d,
         actionability_fusion,
         snapshot.structural_score,
         snapshot.trigger_score,
@@ -317,6 +324,7 @@ pub fn build_assessment_snapshot(
     let posture_guidance = build_posture_guidance(
         snapshot,
         &probabilities,
+        prepare_reference_p60d,
         actionability_fusion,
         conviction_score,
         &data_trust,
@@ -390,6 +398,7 @@ pub fn build_assessment_snapshot(
             market_scope: snapshot.market_scope.clone(),
             probabilities,
             actionability,
+            probability_diagnostics: probability_trace.probability_diagnostics.clone(),
             time_to_risk_bucket,
             posture: posture_guidance.posture,
             conviction_score,
@@ -668,6 +677,7 @@ mod tests {
                 p_60d: 0.14,
             },
             None,
+            None,
             59.0,
             40.0,
             44.0,
@@ -692,6 +702,7 @@ mod tests {
                 p_60d: 0.14,
             },
             None,
+            None,
             59.0,
             47.0,
             52.0,
@@ -705,6 +716,31 @@ mod tests {
         );
 
         assert_eq!(bucket, TimeToRiskBucket::Months);
+    }
+
+    #[test]
+    fn time_to_risk_bucket_ignores_monotonic_only_prepare_crossing() {
+        let bucket = build_time_to_risk_bucket(
+            &ProbabilityBlock {
+                p_5d: 0.004,
+                p_20d: 0.09,
+                p_60d: 0.14,
+            },
+            Some(0.09),
+            None,
+            60.0,
+            46.0,
+            44.0,
+            36.0,
+            &quiet_jpy_carry(20.0),
+            ProbabilityActionThresholds {
+                prepare_p60d: 0.12,
+                hedge_p20d: 0.06,
+                defend_p5d: 0.05,
+            },
+        );
+
+        assert_eq!(bucket, TimeToRiskBucket::Normal);
     }
 
     #[test]
@@ -740,6 +776,7 @@ mod tests {
             &snapshot,
             &probabilities,
             None,
+            None,
             0.60,
             &test_data_trust(QualityGrade::A),
             56.0,
@@ -758,6 +795,59 @@ mod tests {
         assert_eq!(posture.posture, fc_domain::DecisionPosture::Normal);
         assert!(posture.trigger_codes.is_empty());
         assert!(posture.blocker_codes.is_empty());
+    }
+
+    #[test]
+    fn posture_guidance_ignores_monotonic_only_prepare_crossing() {
+        let snapshot = RiskSnapshot {
+            as_of_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            overall_score: 50.0,
+            overall_level: RiskLevel::Watch,
+            structural_score: 60.0,
+            trigger_score: 46.0,
+            level_reason: "test".to_string(),
+            dimensions: Vec::new(),
+            top_contributors: Vec::new(),
+            data_quality_summary: DataQualitySummary {
+                overall_score: 91.0,
+                grade: QualityGrade::A,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count: 0,
+            },
+            generated_at: Utc::now(),
+            method_version: "test".to_string(),
+        };
+        let probabilities = ProbabilityBlock {
+            p_5d: 0.004,
+            p_20d: 0.09,
+            p_60d: 0.14,
+        };
+        let posture = build_posture_guidance(
+            &snapshot,
+            &probabilities,
+            Some(0.09),
+            None,
+            0.60,
+            &test_data_trust(QualityGrade::A),
+            44.0,
+            36.0,
+            &[],
+            &quiet_jpy_carry(20.0),
+            &quiet_event_assessment(20.0),
+            &neutral_preferences(),
+            ProbabilityActionThresholds {
+                prepare_p60d: 0.12,
+                hedge_p20d: 0.06,
+                defend_p5d: 0.05,
+            },
+        );
+
+        assert_eq!(posture.posture, fc_domain::DecisionPosture::Normal);
+        assert!(posture.trigger_codes.is_empty());
     }
 
     #[test]
@@ -792,6 +882,7 @@ mod tests {
         let posture = build_posture_guidance(
             &snapshot,
             &probabilities,
+            None,
             None,
             0.60,
             &test_data_trust(QualityGrade::A),
@@ -849,6 +940,7 @@ mod tests {
             &snapshot,
             &probabilities,
             None,
+            None,
             0.58,
             &test_data_trust(QualityGrade::F),
             52.0,
@@ -905,6 +997,7 @@ mod tests {
             &snapshot,
             &probabilities,
             None,
+            None,
             0.58,
             &test_data_trust(QualityGrade::A),
             42.0,
@@ -956,6 +1049,7 @@ mod tests {
         let posture = build_posture_guidance(
             &snapshot,
             &probabilities,
+            None,
             None,
             0.60,
             &test_data_trust(QualityGrade::A),
@@ -1012,6 +1106,7 @@ mod tests {
             &snapshot,
             &probabilities,
             None,
+            None,
             0.60,
             &test_data_trust(QualityGrade::A),
             37.0,
@@ -1063,6 +1158,7 @@ mod tests {
         let posture = build_posture_guidance(
             &snapshot,
             &probabilities,
+            None,
             None,
             0.60,
             &test_data_trust(QualityGrade::A),

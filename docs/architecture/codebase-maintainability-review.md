@@ -207,7 +207,11 @@ config/
 - API / worker / web 各自允许承载哪些职责；
 - 什么时候必须补测试而不是继续加分支。
 
-本文档和新增的工程 TODO 用来补这个缺口。
+这个缺口现在由以下文档共同补齐：
+
+- [工程治理方案](engineering-governance-plan.md)
+- [开发质量门禁](development-quality-gates.md)
+- [工程维护性 TODO](../roadmap/engineering-maintainability-todo.md)
 
 ## 7. 已有边界约束是否足够
 
@@ -232,6 +236,13 @@ config/
 - 生成工件目录的生命周期；
 - demo 路径与正式 runtime 路径的分离程度；
 - storage / worker / api 各自的抽象上限。
+
+当前补强方式已经明确：
+
+- 活跃任务真相源收口到两份 TODO；
+- 本地统一门禁收口到 `just verify`；
+- CI 自动执行 Rust fmt/test/clippy 与 Web build；
+- 研究证据与 release review 必须回写文档，而不是只留在临时沟通里。
 
 ## 8. 建议的重构顺序
 

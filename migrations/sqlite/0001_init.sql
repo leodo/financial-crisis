@@ -374,6 +374,7 @@ CREATE TABLE IF NOT EXISTS analytics_historical_assessment_points (
     actionability_prepare REAL NOT NULL,
     actionability_hedge REAL NOT NULL,
     actionability_defend REAL NOT NULL,
+    probability_diagnostics_json TEXT NOT NULL DEFAULT '{"horizon_overlays":[]}',
     posture_trigger_codes_json TEXT NOT NULL DEFAULT '[]',
     posture_blocker_codes_json TEXT NOT NULL DEFAULT '[]',
     coverage_score REAL NOT NULL,
