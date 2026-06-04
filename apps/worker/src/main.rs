@@ -344,6 +344,14 @@ struct ReleaseReviewRuntimeBlockCount {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct ReleaseReviewRuntimeDominantCategories {
+    baseline_categories: Vec<String>,
+    baseline_count: u32,
+    candidate_categories: Vec<String>,
+    candidate_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct ReleaseReviewScenarioFocusDiagnostic {
     scenario_id: String,
     name: String,
@@ -370,6 +378,8 @@ struct ReleaseReviewScenarioFocusDiagnostic {
     candidate_first_runtime_floor_hit_without_l3_date: Option<NaiveDate>,
     baseline_first_runtime_floor_hit_without_l3_reason: Option<String>,
     candidate_first_runtime_floor_hit_without_l3_reason: Option<String>,
+    dominant_runtime_blocks: ReleaseReviewRuntimeDominantCategories,
+    dominant_runtime_continuity_facets: ReleaseReviewRuntimeDominantCategories,
     runtime_block_counts: Vec<ReleaseReviewRuntimeBlockCount>,
     runtime_continuity_facet_counts: Vec<ReleaseReviewRuntimeBlockCount>,
     interesting_points: Vec<ReleaseReviewScenarioPointComparison>,
@@ -3118,6 +3128,32 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
                         .as_deref()
                 )
             );
+            let _ = writeln!(
+                markdown,
+                "- Dominant runtime block: baseline={} ({}) | candidate={} ({})",
+                format_runtime_category_list(&scenario.dominant_runtime_blocks.baseline_categories),
+                scenario.dominant_runtime_blocks.baseline_count,
+                format_runtime_category_list(
+                    &scenario.dominant_runtime_blocks.candidate_categories
+                ),
+                scenario.dominant_runtime_blocks.candidate_count
+            );
+            let _ = writeln!(
+                markdown,
+                "- Dominant continuity facet: baseline={} ({}) | candidate={} ({})",
+                format_runtime_category_list(
+                    &scenario
+                        .dominant_runtime_continuity_facets
+                        .baseline_categories
+                ),
+                scenario.dominant_runtime_continuity_facets.baseline_count,
+                format_runtime_category_list(
+                    &scenario
+                        .dominant_runtime_continuity_facets
+                        .candidate_categories
+                ),
+                scenario.dominant_runtime_continuity_facets.candidate_count
+            );
             if !scenario.runtime_block_counts.is_empty() {
                 let _ = writeln!(markdown, "- Runtime block mix:");
                 for block in &scenario.runtime_block_counts {
@@ -3334,6 +3370,14 @@ pub(crate) fn release_review_runtime_separation_takeaways(
         }
     }
     takeaways
+}
+
+fn format_runtime_category_list(categories: &[String]) -> String {
+    if categories.is_empty() {
+        "—".to_string()
+    } else {
+        categories.join(", ")
+    }
 }
 
 fn render_release_actionability_review_markdown(
@@ -7671,6 +7715,29 @@ mod tests {
         assert_eq!(rows[0].runtime_block_counts[0].category, "review_gate_gap");
         assert_eq!(rows[0].runtime_block_counts[0].baseline_count, 1);
         assert_eq!(rows[0].runtime_block_counts[0].candidate_count, 4);
+        assert_eq!(
+            rows[0].dominant_runtime_blocks.baseline_categories,
+            vec!["review_gate_gap".to_string()]
+        );
+        assert_eq!(rows[0].dominant_runtime_blocks.baseline_count, 1);
+        assert_eq!(
+            rows[0].dominant_runtime_blocks.candidate_categories,
+            vec!["review_gate_gap".to_string()]
+        );
+        assert_eq!(rows[0].dominant_runtime_blocks.candidate_count, 4);
+        assert!(rows[0]
+            .dominant_runtime_continuity_facets
+            .baseline_categories
+            .contains(&"posture:prepare".to_string()));
+        assert_eq!(rows[0].dominant_runtime_continuity_facets.baseline_count, 1);
+        assert!(rows[0]
+            .dominant_runtime_continuity_facets
+            .candidate_categories
+            .contains(&"posture:prepare".to_string()));
+        assert_eq!(
+            rows[0].dominant_runtime_continuity_facets.candidate_count,
+            4
+        );
         assert!(rows[0]
             .runtime_continuity_facet_counts
             .iter()
@@ -7831,6 +7898,21 @@ mod tests {
         assert_eq!(rows[0].runtime_block_counts[0].category, "review_gate_gap");
         assert_eq!(rows[0].runtime_block_counts[0].baseline_count, 2);
         assert_eq!(rows[0].runtime_block_counts[0].candidate_count, 2);
+        assert_eq!(
+            rows[0].dominant_runtime_blocks.baseline_categories,
+            vec!["review_gate_gap".to_string()]
+        );
+        assert_eq!(rows[0].dominant_runtime_blocks.baseline_count, 2);
+        assert_eq!(
+            rows[0].dominant_runtime_blocks.candidate_categories,
+            vec!["review_gate_gap".to_string()]
+        );
+        assert_eq!(rows[0].dominant_runtime_blocks.candidate_count, 2);
+        assert!(rows[0]
+            .dominant_runtime_continuity_facets
+            .baseline_categories
+            .contains(&"posture:normal".to_string()));
+        assert_eq!(rows[0].dominant_runtime_continuity_facets.baseline_count, 2);
         assert!(rows[0]
             .runtime_continuity_facet_counts
             .iter()
@@ -7926,6 +8008,21 @@ mod tests {
         );
         assert_eq!(rows[0].runtime_block_counts[0].baseline_count, 2);
         assert_eq!(rows[0].runtime_block_counts[0].candidate_count, 2);
+        assert_eq!(
+            rows[0].dominant_runtime_blocks.baseline_categories,
+            vec!["posture_bucket_normal".to_string()]
+        );
+        assert_eq!(rows[0].dominant_runtime_blocks.baseline_count, 2);
+        assert_eq!(
+            rows[0].dominant_runtime_blocks.candidate_categories,
+            vec!["posture_bucket_normal".to_string()]
+        );
+        assert_eq!(rows[0].dominant_runtime_blocks.candidate_count, 2);
+        assert!(rows[0]
+            .dominant_runtime_continuity_facets
+            .baseline_categories
+            .contains(&"posture:normal".to_string()));
+        assert_eq!(rows[0].dominant_runtime_continuity_facets.baseline_count, 2);
         assert!(rows[0]
             .runtime_continuity_facet_counts
             .iter()

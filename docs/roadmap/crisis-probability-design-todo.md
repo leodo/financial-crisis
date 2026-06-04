@@ -451,6 +451,8 @@
                - `1990-1993` 主要是 `posture_bucket_normal`，说明真正失败的是 posture continuity；
             4. 已补 `runtime continuity facets`，把 runtime 命中但未形成 strict L3 的点继续拆成：
                `posture:* / bucket:* / trigger:* / gate_gap:* / confirmation:*`；
+            4.1 [x] `Focus Scenarios` 已直接输出 `Dominant runtime block` /
+                `Dominant continuity facet`，不用再先读完整个 block mix 长表；
             5. 下一步不再把两类 missed 场景混成一个问题：
                - 对 `2000-2001` 先专项复核 strict gate 与 runtime floor 的映射；
                - 对 `1990-1993` 先专项复核为什么高 `p20d/p60d` 长期无法推动 `prepare/months` 连续成立。

@@ -193,6 +193,15 @@ vs
   - `trigger:*`
   - `gate_gap:*`
   - `confirmation:*`
+- `Focus Scenarios` 还会直接给出两组主导项 summary：
+  - `Dominant runtime block`
+  - `Dominant continuity facet`
+
+这样正式报告不需要先读完整个 block mix 长列表，先看主导项就能快速判断：
+
+- 这一段主要是 `review_gate_gap` 在挡；
+- 还是 `posture_bucket_normal` 在挡；
+- 还是 `months_score_low / trigger:none` 这类 continuity 问题在挡。
 
 这意味着后续不需要再只靠肉眼扫长表，已经可以直接回答：
 

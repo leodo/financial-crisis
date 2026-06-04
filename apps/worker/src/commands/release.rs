@@ -3687,7 +3687,30 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                 })
                 .collect::<Vec<_>>();
 
+            let runtime_block_counts = release_review_runtime_block_counts(
+                &baseline_pre_crisis_points,
+                baseline_use_transitional_bridge,
+                baseline_runtime_thresholds,
+                &candidate_pre_crisis_points,
+                candidate_use_transitional_bridge,
+                candidate_runtime_thresholds,
+            );
+            let runtime_continuity_facet_counts = release_review_runtime_continuity_facet_counts(
+                &baseline_pre_crisis_points,
+                baseline_use_transitional_bridge,
+                baseline_runtime_thresholds,
+                &candidate_pre_crisis_points,
+                candidate_use_transitional_bridge,
+                candidate_runtime_thresholds,
+            );
+
             Some(crate::ReleaseReviewScenarioFocusDiagnostic {
+                dominant_runtime_blocks: release_review_runtime_dominant_categories(
+                    &runtime_block_counts,
+                ),
+                dominant_runtime_continuity_facets: release_review_runtime_dominant_categories(
+                    &runtime_continuity_facet_counts,
+                ),
                 scenario_id: baseline.scenario_id.clone(),
                 name: baseline.name.clone(),
                 outcome: format!(
@@ -3759,22 +3782,8 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                     candidate_first_runtime_floor_hit_without_l3
                         .as_ref()
                         .map(|(_, reason)| reason.clone()),
-                runtime_block_counts: release_review_runtime_block_counts(
-                    &baseline_pre_crisis_points,
-                    baseline_use_transitional_bridge,
-                    baseline_runtime_thresholds,
-                    &candidate_pre_crisis_points,
-                    candidate_use_transitional_bridge,
-                    candidate_runtime_thresholds,
-                ),
-                runtime_continuity_facet_counts: release_review_runtime_continuity_facet_counts(
-                    &baseline_pre_crisis_points,
-                    baseline_use_transitional_bridge,
-                    baseline_runtime_thresholds,
-                    &candidate_pre_crisis_points,
-                    candidate_use_transitional_bridge,
-                    candidate_runtime_thresholds,
-                ),
+                runtime_block_counts,
+                runtime_continuity_facet_counts,
                 interesting_points,
             })
         })
@@ -4136,6 +4145,44 @@ fn release_review_runtime_block_counts(
             }
         })
         .collect()
+}
+
+fn release_review_runtime_dominant_categories(
+    counts: &[crate::ReleaseReviewRuntimeBlockCount],
+) -> crate::ReleaseReviewRuntimeDominantCategories {
+    let baseline_count = counts
+        .iter()
+        .map(|row| row.baseline_count)
+        .max()
+        .unwrap_or(0);
+    let candidate_count = counts
+        .iter()
+        .map(|row| row.candidate_count)
+        .max()
+        .unwrap_or(0);
+
+    crate::ReleaseReviewRuntimeDominantCategories {
+        baseline_categories: if baseline_count == 0 {
+            Vec::new()
+        } else {
+            counts
+                .iter()
+                .filter(|row| row.baseline_count == baseline_count)
+                .map(|row| row.category.clone())
+                .collect()
+        },
+        baseline_count,
+        candidate_categories: if candidate_count == 0 {
+            Vec::new()
+        } else {
+            counts
+                .iter()
+                .filter(|row| row.candidate_count == candidate_count)
+                .map(|row| row.category.clone())
+                .collect()
+        },
+        candidate_count,
+    }
 }
 
 fn release_review_runtime_continuity_facet_counts(
