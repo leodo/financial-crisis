@@ -166,6 +166,7 @@ apps/worker/src/
     release.rs
     release/
       probability.rs
+      review.rs
     research.rs
     snapshot.rs
 ```
@@ -178,7 +179,10 @@ apps/worker/src/
 - `support.rs` 负责 `ApiReloadHistoryMode`、demo run、API fetch/reload、SQLite/raw payload IO、格式化 helper 和通用 rounding/hash/path helper。
 - `tests.rs` 作为第一层测试聚合壳层；主题测试先拆到 `tests/*.rs`，共享 helper 仍可暂留在聚合层，等边界稳定后再继续抽成更细的夹具模块。
 - `actionability.rs`、`probability.rs`、`model.rs`、`training.rs`、`formal.rs` 负责训练、特征、数据集构建与共享数学/标签逻辑；其中 `training.rs` 还承接 formal bundle 训练管线和 `forward_crisis` 标签 / regime helper。
-- `commands/*` 只负责 CLI 层 glue code。
+- `commands/release.rs` 负责 release 生命周期总入口、共享 activate/runtime guard 与 market scope resolve。
+- `commands/release/review.rs` 负责 release review 的 CLI 选项解析、runtime snapshot、对比诊断、建议与总结。
+- `commands/release/probability.rs` 负责 probability slice / compare 的 CLI 解析、bundle 评分、导出与摘要打印。
+- `commands/*` 其余模块只负责 CLI 层 glue code。
 
 ## 5. API 拆分边界
 
