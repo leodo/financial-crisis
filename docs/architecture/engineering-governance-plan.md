@@ -137,30 +137,35 @@ just verify
 
 ```text
 apps/worker/src/
-  main.rs                  # 只保留顶层分发
-  commands/
-    db.rs
-    backfill.rs
-    audit.rs
-    release.rs
-    research.rs
-  pipeline/
-    feature_build.rs
-    formal_dataset.rs
-    probability_train.rs
-    actionability_train.rs
-  reporting/
-    release_review.rs
-    formal_dataset_summary.rs
-    audit_export.rs
+  main.rs                  # 顶层入口 + 少量共享导出
+  actionability.rs
+  formal.rs
+  model.rs
   output_paths.rs
+  probability.rs
+  release_review.rs
+  reporting.rs
+  training.rs
+  commands/
+    audit.rs
+    backfill.rs
+    dataset.rs
+    db.rs
+    feature.rs
+    pipeline.rs
+    refresh.rs
+    release.rs
+    release/
+      probability.rs
+    research.rs
+    snapshot.rs
 ```
 
 边界要求：
 
-- `main.rs` 只做参数分发，不再直接承载完整流程。
-- `reporting/*` 只负责结构化报告渲染与导出。
-- `pipeline/*` 只负责训练、特征、数据集构建。
+- `main.rs` 继续朝“只保留顶层分发”收缩，但在完全拆干净之前，可以暂时承载少量共享类型、导出与底层 helper；不要为了形式上只留一个入口，先制造空目录或额外跳转层。
+- `reporting.rs` 负责结构化报告渲染与导出，`release_review.rs` 负责 release review 专属诊断与解释 helper。
+- `actionability.rs`、`probability.rs`、`model.rs`、`training.rs`、`formal.rs` 负责训练、特征、数据集构建与共享数学/标签逻辑。
 - `commands/*` 只负责 CLI 层 glue code。
 
 ## 5. API 拆分边界

@@ -91,9 +91,11 @@
 - `release review` 的 runtime snapshot 抓取与 orchestration 也已迁到 `commands/release.rs`。
 - `release review` 专属的 probability/actionability/runtime sanity guardrail、recommendation、summary helper 也已开始跟随迁移。
 - 已新增 `apps/worker/src/commands/release/probability.rs`，把 `probability-slice`、`formal-probability-slice`、`formal-probability-compare` 的 CLI 选项解析、bundle 评分、CSV/JSON 导出与摘要打印从 `commands/release.rs` 中拆出，release 主模块重新收缩到 publish / activate / rollback / review 主流程。
+- 已新增 `apps/worker/src/release_review.rs`，把 release review 专属的 historical audit takeaways、failure mode / attribution / action / workstream 汇总、runtime regime probability / separation diagnostics，以及 review Markdown 渲染入口从 `main.rs` 中拆出，统一 release review helper 的归属边界。
 - 已新增 `apps/worker/src/commands/db.rs`，把 `db init/seed/check` 从超大入口文件中拆出。
 - 已新增 `apps/worker/src/commands/refresh.rs` 与 `commands/backfill.rs`，开始把免费数据刷新与回填入口从 `main.rs` 中剥离。
-- 当前 `main.rs` 已主要保留底层 research/helper/训练实现；下一步继续按实现体拆出 formal dataset / pipeline 内部 helper，并继续观察 `commands/release.rs` 中剩余 release review 编排与 guardrail helper 是否需要再做二次切分。
+- 这一轮之后，`apps/worker/src/main.rs` 已从约 `7,573` 行继续收缩到约 `6,523` 行，主要移除了 release review 专属解释与 runtime diagnostic 实现体。
+- 当前 `main.rs` 已主要保留底层 research/helper/训练实现、共享类型与顶层导出；下一步继续按实现体拆出 formal dataset / pipeline 内部 helper，并观察共享类型是否需要再落到独立模块。
 
 ### 3.2 API
 
