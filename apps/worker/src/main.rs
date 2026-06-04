@@ -411,6 +411,17 @@ struct ReleaseReviewHistoricalAuditPriority {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct ReleaseReviewHistoricalAuditWorkstreamSummary {
+    workstream: String,
+    scenario_count: u32,
+    protected_count: u32,
+    scenarios: Vec<String>,
+    scenario_families: Vec<String>,
+    training_roles: Vec<String>,
+    suggested_review: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct ReleaseReviewComparisonSummary {
     timely_warning_rate: ReleaseReviewScalarMetric,
     strict_actionable_point_count: ReleaseReviewCountMetric,
@@ -578,6 +589,7 @@ struct ReleaseReviewEnvelope {
     baseline_actionability_review: ReleaseActionabilityReview,
     candidate_actionability_review: ReleaseActionabilityReview,
     scenario_focus: Vec<ReleaseReviewScenarioFocusDiagnostic>,
+    historical_audit_workstreams: Vec<ReleaseReviewHistoricalAuditWorkstreamSummary>,
     historical_audit_priorities: Vec<ReleaseReviewHistoricalAuditPriority>,
     comparison: ReleaseReviewComparisonSummary,
     probability_guard_regressions: Vec<String>,
@@ -3092,6 +3104,29 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
         let _ = writeln!(markdown);
     }
     if !report.historical_audit_priorities.is_empty() {
+        if !report.historical_audit_workstreams.is_empty() {
+            let _ = writeln!(markdown, "## Historical Audit Workstream Summary");
+            let _ = writeln!(markdown);
+            let _ = writeln!(
+                markdown,
+                "| Workstream | Scenarios | Protected | Families | Roles | Suggested review |"
+            );
+            let _ = writeln!(markdown, "| --- | --- | --- | --- | --- | --- |");
+            for row in &report.historical_audit_workstreams {
+                let _ = writeln!(
+                    markdown,
+                    "| {} | {} ({}) | {} | {} | {} | {} |",
+                    row.workstream,
+                    row.scenario_count,
+                    format_runtime_category_list(&row.scenarios),
+                    row.protected_count,
+                    format_runtime_category_list(&row.scenario_families),
+                    format_runtime_category_list(&row.training_roles),
+                    row.suggested_review,
+                );
+            }
+            let _ = writeln!(markdown);
+        }
         let _ = writeln!(markdown, "## Historical Audit Priorities");
         let _ = writeln!(markdown);
         let _ = writeln!(
@@ -3562,6 +3597,83 @@ pub(crate) fn summarize_release_review_historical_audit_priorities(
                 &right.primary_workstream,
             ))
             .then_with(|| left.scenario_id.cmp(&right.scenario_id))
+    });
+    rows
+}
+
+pub(crate) fn summarize_release_review_historical_audit_workstreams(
+    priorities: &[ReleaseReviewHistoricalAuditPriority],
+) -> Vec<ReleaseReviewHistoricalAuditWorkstreamSummary> {
+    let mut workstreams = BTreeMap::<
+        String,
+        (
+            BTreeSet<String>,
+            u32,
+            BTreeSet<String>,
+            BTreeSet<String>,
+            BTreeSet<String>,
+            BTreeSet<String>,
+        ),
+    >::new();
+    for priority in priorities {
+        let entry = workstreams
+            .entry(priority.primary_workstream.clone())
+            .or_insert_with(|| {
+                (
+                    BTreeSet::new(),
+                    0,
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                )
+            });
+        entry.0.insert(priority.scenario_name.clone());
+        if priority.protected_window {
+            entry.1 += 1;
+        }
+        entry.2.insert(priority.scenario_family.clone());
+        entry.3.insert(priority.training_role.clone());
+        entry.4.insert(priority.suggested_review.clone());
+        entry.5.insert(priority.scenario_id.clone());
+    }
+
+    let mut rows = workstreams
+        .into_iter()
+        .map(
+            |(
+                workstream,
+                (
+                    scenarios,
+                    protected_count,
+                    scenario_families,
+                    training_roles,
+                    suggested_reviews,
+                    scenario_ids,
+                ),
+            )| {
+                ReleaseReviewHistoricalAuditWorkstreamSummary {
+                    workstream,
+                    scenario_count: scenario_ids.len() as u32,
+                    protected_count,
+                    scenarios: scenarios.into_iter().collect(),
+                    scenario_families: scenario_families.into_iter().collect(),
+                    training_roles: training_roles.into_iter().collect(),
+                    suggested_review: suggested_reviews
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                        .join(" / "),
+                }
+            },
+        )
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| {
+        release_review_historical_workstream_priority(&left.workstream)
+            .cmp(&release_review_historical_workstream_priority(
+                &right.workstream,
+            ))
+            .then_with(|| right.scenario_count.cmp(&left.scenario_count))
+            .then_with(|| left.workstream.cmp(&right.workstream))
     });
     rows
 }
@@ -4348,6 +4460,7 @@ mod tests {
         select_actionability_decision_threshold, select_probability_calibration_strategy,
         select_probability_decision_threshold, summarize_release_review_failure_modes,
         summarize_release_review_historical_audit_priorities,
+        summarize_release_review_historical_audit_workstreams,
         summarize_release_runtime_regime_probabilities,
         summarize_release_runtime_regime_separation, ActionabilityLevel, AuditExportOptions,
         CrisisScenario, FeatureSnapshotBuildOptions, FormalDatasetBuildOptions,
@@ -4357,9 +4470,10 @@ mod tests {
         ProbabilityThresholdDiagnosticsInput, ProbabilityThresholdSelection,
         ProbabilityTrainingRegime, ProbabilityTrainingRow, RefreshLatestOptions,
         ReleaseActionabilityLevelReview, ReleaseActionabilityReview,
-        ReleaseReviewRuntimeDominantCategories, ReleaseReviewRuntimeSeparationComparison,
-        ReleaseReviewScenarioFocusDiagnostic, ReleaseRuntimeReviewDiagnostics,
-        ReleaseRuntimeSeparationSummary, RuntimeThresholdDiagnosticsWire, ScenarioRowRange,
+        ReleaseReviewHistoricalAuditPriority, ReleaseReviewRuntimeDominantCategories,
+        ReleaseReviewRuntimeSeparationComparison, ReleaseReviewScenarioFocusDiagnostic,
+        ReleaseRuntimeReviewDiagnostics, ReleaseRuntimeSeparationSummary,
+        RuntimeThresholdDiagnosticsWire, ScenarioRowRange,
     };
 
     fn observation(
@@ -8627,6 +8741,69 @@ mod tests {
         assert!(summary[1]
             .suggested_review
             .contains("prepare/months 连续性"));
+    }
+
+    #[test]
+    fn release_review_historical_audit_workstreams_group_priorities() {
+        let rows = summarize_release_review_historical_audit_workstreams(&[
+            ReleaseReviewHistoricalAuditPriority {
+                scenario_id: "us_dotcom_unwind_2000".to_string(),
+                scenario_name: "2000-2001 科网泡沫出清".to_string(),
+                scenario_family: "mixed_systemic_stress".to_string(),
+                training_role: "candidate_optional".to_string(),
+                protected_window: true,
+                baseline_failure_mode: "strict_gate_mismatch".to_string(),
+                candidate_failure_mode: "strict_gate_mismatch".to_string(),
+                primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
+                suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
+            },
+            ReleaseReviewHistoricalAuditPriority {
+                scenario_id: "us_early_90s_banking_stress".to_string(),
+                scenario_name: "1990-1993 美国银行与衰退压力".to_string(),
+                scenario_family: "mixed_systemic_stress".to_string(),
+                training_role: "extension_only".to_string(),
+                protected_window: true,
+                baseline_failure_mode: "posture_continuity_failure".to_string(),
+                candidate_failure_mode: "posture_continuity_failure".to_string(),
+                primary_workstream: "posture_continuity".to_string(),
+                suggested_review: "复核 prepare/months 连续性".to_string(),
+            },
+            ReleaseReviewHistoricalAuditPriority {
+                scenario_id: "us_funding_stress_2011".to_string(),
+                scenario_name: "2011 美欧融资压力".to_string(),
+                scenario_family: "mixed_systemic_stress".to_string(),
+                training_role: "extension_only".to_string(),
+                protected_window: true,
+                baseline_failure_mode: "posture_continuity_failure".to_string(),
+                candidate_failure_mode: "score_confirmation_failure".to_string(),
+                primary_workstream: "posture_continuity".to_string(),
+                suggested_review: "复核 prepare/months 连续性".to_string(),
+            },
+        ]);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].workstream, "strict_review_vs_runtime_mapping");
+        assert_eq!(rows[0].scenario_count, 1);
+        assert_eq!(rows[0].protected_count, 1);
+        assert_eq!(
+            rows[0].scenarios,
+            vec!["2000-2001 科网泡沫出清".to_string()]
+        );
+        let posture = rows
+            .iter()
+            .find(|row| row.workstream == "posture_continuity")
+            .expect("posture workstream row");
+        assert_eq!(posture.scenario_count, 2);
+        assert_eq!(posture.protected_count, 2);
+        assert_eq!(
+            posture.scenario_families,
+            vec!["mixed_systemic_stress".to_string()]
+        );
+        assert_eq!(posture.training_roles, vec!["extension_only".to_string()]);
+        assert!(posture
+            .scenarios
+            .contains(&"1990-1993 美国银行与衰退压力".to_string()));
+        assert!(posture.scenarios.contains(&"2011 美欧融资压力".to_string()));
     }
 
     #[test]

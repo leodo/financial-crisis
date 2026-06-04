@@ -236,6 +236,19 @@ vs
 - 同时还会保留该场景的 `family / training_role / protected_window`，
   避免把 `candidate_optional / extension_only / protected stress` 样本和正式主正例混在一起讨论。
 
+现在又把这层 priority 再往上提成 `Historical Audit Workstream Summary`：
+
+- 先直接汇总当前有多少历史场景落在 `strict_review_vs_runtime_mapping`；
+- 再汇总有多少场景落在 `posture_continuity`；
+- 同时给出每条 workstream 当前覆盖的 `scenario list / family / training role / protected count`。
+
+这样正式报告会先回答：
+
+- 下一步先修哪条线；
+- 这条线现在覆盖哪些历史样本；
+- 这些样本是 `candidate_optional`、`extension_only`，还是正式主正例之外的
+  `protected stress`。
+
 这意味着后续不需要再只靠肉眼扫长表，已经可以直接回答：
 
 - 是 `review gate` 挡住更多；
@@ -287,5 +300,6 @@ vs
 - `1990-1993` 应优先复核为什么长期高 `p20d/p60d` 仍无法把 posture/bucket 从 `normal` 推到 `prepare/months`；
 - 只有把这两类失败拆开，后续训练和 policy 修改才不会继续混成一个问题处理。
 
-而 `Historical Audit Priorities` 的意义，就是把这两条下一步直接固化到正式
+而 `Historical Audit Priorities` + `Historical Audit Workstream Summary` 的意义，就是把
+“哪些历史样本需要继续复核”以及“下一步先修哪条工作流”都直接固化到正式
 `release review` 产物里，避免后续每一轮 review 都重新手工解释一遍。

@@ -1494,6 +1494,8 @@ async fn run_release_review(
     );
     let historical_audit_priorities =
         crate::summarize_release_review_historical_audit_priorities(&scenario_focus);
+    let historical_audit_workstreams =
+        crate::summarize_release_review_historical_audit_workstreams(&historical_audit_priorities);
 
     let report = crate::ReleaseReviewEnvelope {
         reviewed_at: Utc::now().to_rfc3339(),
@@ -1528,6 +1530,7 @@ async fn run_release_review(
         baseline_actionability_review,
         candidate_actionability_review,
         scenario_focus,
+        historical_audit_workstreams,
         historical_audit_priorities,
         probability_guard_passed: probability_regressions.is_empty(),
         operational_guard_passed: operational_regressions.is_empty(),
@@ -4575,6 +4578,21 @@ fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope) {
                 } else {
                     row.candidate_scenarios.join(", ")
                 }
+            );
+        }
+    }
+    if !report.historical_audit_workstreams.is_empty() {
+        println!("Historical audit workstream summary:");
+        for row in &report.historical_audit_workstreams {
+            println!(
+                "  - {} scenarios={} ({}) protected={} families={} roles={} review={}",
+                row.workstream,
+                row.scenario_count,
+                row.scenarios.join(", "),
+                row.protected_count,
+                row.scenario_families.join(", "),
+                row.training_roles.join(", "),
+                row.suggested_review
             );
         }
     }
