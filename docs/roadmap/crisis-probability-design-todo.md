@@ -438,8 +438,14 @@
             1. 逐日对齐 `p20d / p60d / posture / time_bucket / actionable bridge`；
             2. 已补 `runtime_actionable_block_category` 与场景级 `runtime block mix`，
                可以结构化统计为什么高概率日期仍长期停在 `normal` 或被其他条件挡住；
-            3. 下一步继续把这些类别统计落到 `1990-1993 / 2000-2001` 的正式 strict review 证据里，
-               明确为什么只能出现零星 `prepare` 脉冲，始终不能形成 sustained `3/5` hits。
+            3. 已确认两类 missed 场景的主导阻塞并不相同：
+               - `2000-2001` 主要是 `review_gate_gap`，说明 strict review gate 比 runtime floor 更严；
+               - `1990-1993` 主要是 `posture_bucket_normal`，说明真正失败的是 posture continuity；
+            4. 已补 `runtime continuity facets`，把 runtime 命中但未形成 strict L3 的点继续拆成：
+               `posture:* / bucket:* / trigger:* / gate_gap:* / confirmation:*`；
+            5. 下一步不再把两类 missed 场景混成一个问题：
+               - 对 `2000-2001` 先专项复核 strict gate 与 runtime floor 的映射；
+               - 对 `1990-1993` 先专项复核为什么高 `p20d/p60d` 长期无法推动 `prepare/months` 连续成立。
           - [ ] 下一步以 `034053` 为保护基线继续收口剩余短误报，但约束顺序必须固定：
             1. 先守住 `regional_banks` 的 `20d hits / positive_window hit rate / positive_window_avg_probability`；
             2. 再处理 `2023-02-03 ~ 2023-02-05`、`2023-02-14`、`2023-07-13` 等剩余 `20d` 误报点；

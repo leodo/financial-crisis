@@ -3631,6 +3631,14 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                     candidate_use_transitional_bridge,
                     candidate_runtime_thresholds,
                 ),
+                runtime_continuity_facet_counts: release_review_runtime_continuity_facet_counts(
+                    &baseline_pre_crisis_points,
+                    baseline_use_transitional_bridge,
+                    baseline_runtime_thresholds,
+                    &candidate_pre_crisis_points,
+                    candidate_use_transitional_bridge,
+                    candidate_runtime_thresholds,
+                ),
                 interesting_points,
             })
         })
@@ -3830,6 +3838,113 @@ fn release_review_runtime_actionable_block_reason(
         .map(|_| release_review_actionable_diagnostic(point, use_transitional_bridge, thresholds))
 }
 
+fn release_review_runtime_gate_gap_facet(point: &AssessmentHistoryPoint) -> &'static str {
+    match (point.p_20d < 0.18, point.p_60d < 0.45) {
+        (true, true) => "p20d_and_p60d",
+        (true, false) => "p20d_only",
+        (false, true) => "p60d_only",
+        (false, false) => "none",
+    }
+}
+
+fn release_review_trigger_family(point: &AssessmentHistoryPoint) -> &'static str {
+    if point.posture_trigger_codes.is_empty() {
+        return "none";
+    }
+
+    let mut has_prepare = false;
+    let mut has_hedge = false;
+    let mut has_defend = false;
+    let mut has_other = false;
+    for code in &point.posture_trigger_codes {
+        if code.starts_with("prepare_") {
+            has_prepare = true;
+        } else if code.starts_with("hedge_") {
+            has_hedge = true;
+        } else if code.starts_with("defend_") {
+            has_defend = true;
+        } else {
+            has_other = true;
+        }
+    }
+
+    let family_count = [has_prepare, has_hedge, has_defend, has_other]
+        .into_iter()
+        .filter(|present| *present)
+        .count();
+    if family_count > 1 {
+        return "mixed";
+    }
+    if has_prepare {
+        "prepare"
+    } else if has_hedge {
+        "hedge"
+    } else if has_defend {
+        "defend"
+    } else {
+        "other"
+    }
+}
+
+fn release_review_runtime_confirmation_facet(
+    point: &AssessmentHistoryPoint,
+    use_transitional_bridge: bool,
+) -> &'static str {
+    if matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && point.overall_score < 62.0
+        && point.external_shock_score < 48.0
+    {
+        return "months_score_low";
+    }
+
+    if matches!(point.posture, DecisionPosture::Prepare)
+        && point.overall_score < 60.0
+        && point.external_shock_score < 46.0
+        && !release_review_has_strong_prepare_trigger_code(point)
+    {
+        return "prepare_score_low";
+    }
+
+    if use_transitional_bridge
+        && matches!(point.posture, DecisionPosture::Prepare)
+        && point.overall_score < 58.0
+    {
+        return "prepare_bridge_low";
+    }
+
+    if use_transitional_bridge
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && point.overall_score < 58.0
+    {
+        return "months_bridge_low";
+    }
+
+    "ok_or_not_needed"
+}
+
+fn release_review_runtime_continuity_facets(
+    point: &AssessmentHistoryPoint,
+    use_transitional_bridge: bool,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> Vec<String> {
+    if release_review_runtime_actionable_block_category(point, use_transitional_bridge, thresholds)
+        .is_none()
+    {
+        return Vec::new();
+    }
+
+    vec![
+        format!("posture:{}", release_review_posture_name(point)),
+        format!("bucket:{}", release_review_time_bucket_name(point)),
+        format!("trigger:{}", release_review_trigger_family(point)),
+        format!("gate_gap:{}", release_review_runtime_gate_gap_facet(point)),
+        format!(
+            "confirmation:{}",
+            release_review_runtime_confirmation_facet(point, use_transitional_bridge)
+        ),
+    ]
+}
+
 fn release_review_runtime_block_counts(
     baseline_points: &[&AssessmentHistoryPoint],
     baseline_use_transitional_bridge: bool,
@@ -3851,6 +3966,63 @@ fn release_review_runtime_block_counts(
                         thresholds,
                     ) {
                         *acc.entry(category.to_string()).or_default() += 1;
+                    }
+                    acc
+                })
+        };
+
+    let baseline_counts = collect_counts(
+        baseline_points,
+        baseline_use_transitional_bridge,
+        baseline_thresholds,
+    );
+    let candidate_counts = collect_counts(
+        candidate_points,
+        candidate_use_transitional_bridge,
+        candidate_thresholds,
+    );
+    let categories = baseline_counts
+        .keys()
+        .chain(candidate_counts.keys())
+        .cloned()
+        .collect::<BTreeSet<_>>();
+
+    categories
+        .into_iter()
+        .map(|category| {
+            let baseline_count = baseline_counts.get(&category).copied().unwrap_or_default();
+            let candidate_count = candidate_counts.get(&category).copied().unwrap_or_default();
+            crate::ReleaseReviewRuntimeBlockCount {
+                category,
+                baseline_count,
+                candidate_count,
+                delta: i64::from(candidate_count) - i64::from(baseline_count),
+            }
+        })
+        .collect()
+}
+
+fn release_review_runtime_continuity_facet_counts(
+    baseline_points: &[&AssessmentHistoryPoint],
+    baseline_use_transitional_bridge: bool,
+    baseline_thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+    candidate_points: &[&AssessmentHistoryPoint],
+    candidate_use_transitional_bridge: bool,
+    candidate_thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> Vec<crate::ReleaseReviewRuntimeBlockCount> {
+    let collect_counts =
+        |points: &[&AssessmentHistoryPoint],
+         use_transitional_bridge: bool,
+         thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>| {
+            points
+                .iter()
+                .fold(BTreeMap::<String, u32>::new(), |mut acc, point| {
+                    for facet in release_review_runtime_continuity_facets(
+                        point,
+                        use_transitional_bridge,
+                        thresholds,
+                    ) {
+                        *acc.entry(facet).or_default() += 1;
                     }
                     acc
                 })

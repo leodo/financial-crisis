@@ -25,6 +25,10 @@ vs
 
 - baseline 首次 `runtime floor hit without L3`：`1999-12-11`
 - candidate 首次 `runtime floor hit without L3`：`1999-12-20`
+- `Runtime block mix` 显示：
+  - `review_gate_gap: baseline=14 | candidate=1`
+  - `posture_bucket_normal: baseline=2 | candidate=0`
+  - `review_l3_gate_not_satisfied: baseline=3 | candidate=0`
 
 说明：
 
@@ -43,17 +47,33 @@ vs
 1. `runtime floor` 与 `strict review gate` 不一致；
 2. posture 连续性不足。
 
+但如果按主导矛盾排序，`2000-2001` 当前更像是：
+
+1. 先被 `review_gate_gap` 大量挡住；
+2. 只有少量 runtime 命中点已经进入“概率够高，但 posture/bucket 仍正常”的阶段。
+
+因此它更接近“严格评审门槛比 runtime policy 明显更严”，而不是典型的“已经持续进入非 normal posture，仍被别的 clause 卡住”。
+
 ### 2.2 `1990-1993 美国银行与衰退压力`
 
 - baseline / candidate 首次 `runtime floor hit without L3` 都是：`1990-07-03`
 - 两版都有 pre-crisis actionable points：`3`
 - 但都没有形成 sustained `3/5` 命中，因此 `L3` 仍为 `—`
+- `Runtime block mix` 显示：
+  - `posture_bucket_normal: baseline=78 | candidate=85`
+  - `review_gate_gap: baseline=9 | candidate=2`
 
 这个场景说明：
 
 - 不只是 candidate 有问题；
 - baseline 自己也存在“概率已经很高，但 posture 大部分日期仍停在 normal，只出现零星 prepare/months 脉冲”的问题；
 - 所以 `timely_warning_rate=10%` 的主瓶颈，不是单纯 candidate 退化，而是整个 formal main/posture policy 在长窗结构性危机上都不够稳定。
+
+如果按主导矛盾排序，`1990-1993` 和 `2000-2001` 恰好不同：
+
+1. `1990-1993` 不是先卡在 strict review gate；
+2. 而是大多数 runtime 命中点从一开始就长期停在 `posture = normal / bucket = normal`；
+3. 这说明真正失败的是 posture continuity，而不是简单阈值不足。
 
 ## 3. 根因拆分
 
@@ -159,12 +179,25 @@ vs
   `runtime_actionable_block_category`；
 - 每个焦点场景还会汇总 `runtime block mix`，直接按类别统计 baseline /
   candidate 在危机前各被哪类条件挡住了多少次。
+- 现在又进一步增加了 `runtime continuity facets`，会对所有
+  “hit runtime floor but not strict L3” 的点继续拆成：
+  - `posture:*`
+  - `bucket:*`
+  - `trigger:*`
+  - `gate_gap:*`
+  - `confirmation:*`
 
 这意味着后续不需要再只靠肉眼扫长表，已经可以直接回答：
 
 - 是 `review gate` 挡住更多；
 - 还是大部分日期都卡在 `posture/bucket stayed normal`；
 - 还是 `months / prepare score confirmation` 过严。
+
+并且还能继续回答更细的问题：
+
+- 卡在 `review_gate_gap` 时，主要缺的是 `p20d`、`p60d` 还是两者都缺；
+- 卡在 `posture_bucket_normal` 时，是否长期没有任何 `prepare / hedge / defend` trigger；
+- `prepare / months` 场景里，阻塞主要来自 score confirmation 还是 transitional bridge。
 
 ## 6. 非目标
 
@@ -189,3 +222,9 @@ vs
 1. `release review` 的双口径诊断；
 2. `1990-1993 / 2000-2001` 的 posture continuity；
 3. 之后再决定是否调整阈值、目标函数或训练形态。
+
+更具体地说：
+
+- `2000-2001` 应优先复核 strict review gate 与 runtime floor 的映射是否过严；
+- `1990-1993` 应优先复核为什么长期高 `p20d/p60d` 仍无法把 posture/bucket 从 `normal` 推到 `prepare/months`；
+- 只有把这两类失败拆开，后续训练和 policy 修改才不会继续混成一个问题处理。

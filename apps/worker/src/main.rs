@@ -371,6 +371,7 @@ struct ReleaseReviewScenarioFocusDiagnostic {
     baseline_first_runtime_floor_hit_without_l3_reason: Option<String>,
     candidate_first_runtime_floor_hit_without_l3_reason: Option<String>,
     runtime_block_counts: Vec<ReleaseReviewRuntimeBlockCount>,
+    runtime_continuity_facet_counts: Vec<ReleaseReviewRuntimeBlockCount>,
     interesting_points: Vec<ReleaseReviewScenarioPointComparison>,
 }
 
@@ -3047,6 +3048,19 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
             if !scenario.runtime_block_counts.is_empty() {
                 let _ = writeln!(markdown, "- Runtime block mix:");
                 for block in &scenario.runtime_block_counts {
+                    let _ = writeln!(
+                        markdown,
+                        "  - {}: baseline={} | candidate={} | delta={}",
+                        block.category,
+                        block.baseline_count,
+                        block.candidate_count,
+                        format_signed_count_delta(block.delta)
+                    );
+                }
+            }
+            if !scenario.runtime_continuity_facet_counts.is_empty() {
+                let _ = writeln!(markdown, "- Runtime continuity facets:");
+                for block in &scenario.runtime_continuity_facet_counts {
                     let _ = writeln!(
                         markdown,
                         "  - {}: baseline={} | candidate={} | delta={}",
@@ -7533,6 +7547,36 @@ mod tests {
         assert_eq!(rows[0].runtime_block_counts[0].category, "review_gate_gap");
         assert_eq!(rows[0].runtime_block_counts[0].baseline_count, 1);
         assert_eq!(rows[0].runtime_block_counts[0].candidate_count, 4);
+        assert!(rows[0]
+            .runtime_continuity_facet_counts
+            .iter()
+            .any(|facet| facet.category == "posture:prepare"
+                && facet.baseline_count == 1
+                && facet.candidate_count == 4));
+        assert!(rows[0]
+            .runtime_continuity_facet_counts
+            .iter()
+            .any(|facet| facet.category == "bucket:months"
+                && facet.baseline_count == 1
+                && facet.candidate_count == 4));
+        assert!(rows[0]
+            .runtime_continuity_facet_counts
+            .iter()
+            .any(|facet| facet.category == "trigger:prepare"
+                && facet.baseline_count == 1
+                && facet.candidate_count == 4));
+        assert!(rows[0]
+            .runtime_continuity_facet_counts
+            .iter()
+            .any(|facet| facet.category == "gate_gap:p20d_and_p60d"
+                && facet.baseline_count == 1
+                && facet.candidate_count == 4));
+        assert!(rows[0]
+            .runtime_continuity_facet_counts
+            .iter()
+            .any(|facet| facet.category == "confirmation:months_score_low"
+                && facet.baseline_count == 1
+                && facet.candidate_count == 4));
         assert_eq!(
             rows[0].candidate_first_runtime_floor_hit_without_l3_date,
             Some(first_l2)
@@ -7663,6 +7707,24 @@ mod tests {
         assert_eq!(rows[0].runtime_block_counts[0].category, "review_gate_gap");
         assert_eq!(rows[0].runtime_block_counts[0].baseline_count, 2);
         assert_eq!(rows[0].runtime_block_counts[0].candidate_count, 2);
+        assert!(rows[0]
+            .runtime_continuity_facet_counts
+            .iter()
+            .any(|facet| facet.category == "posture:normal"
+                && facet.baseline_count == 2
+                && facet.candidate_count == 2));
+        assert!(rows[0]
+            .runtime_continuity_facet_counts
+            .iter()
+            .any(|facet| facet.category == "bucket:normal"
+                && facet.baseline_count == 2
+                && facet.candidate_count == 2));
+        assert!(rows[0]
+            .runtime_continuity_facet_counts
+            .iter()
+            .any(|facet| facet.category == "trigger:none"
+                && facet.baseline_count == 2
+                && facet.candidate_count == 2));
         assert_eq!(
             rows[0].baseline_first_runtime_floor_hit_without_l3_date,
             Some(runtime_floor_date)
@@ -7675,6 +7737,101 @@ mod tests {
             .interesting_points
             .iter()
             .any(|point| point.as_of_date == runtime_floor_date));
+    }
+
+    #[test]
+    fn release_review_focus_diagnostic_counts_posture_continuity_facets() {
+        let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+        let first_l2 = NaiveDate::from_ymd_opt(2023, 2, 10).unwrap();
+        let baseline = vec![synthetic_backtest_summary_with_dates(
+            "scenario_posture",
+            "Posture Continuity",
+            Some(first_l2),
+            None,
+            Some(28),
+            None,
+            0,
+        )];
+        let candidate = baseline.clone();
+        let history = vec![
+            runtime_history_point_with_state(
+                first_l2,
+                66.0,
+                0.03,
+                0.26,
+                0.58,
+                DecisionPosture::Normal,
+                TimeToRiskBucket::Normal,
+                52.0,
+                &[],
+            ),
+            runtime_history_point_with_state(
+                NaiveDate::from_ymd_opt(2023, 2, 17).unwrap(),
+                67.0,
+                0.03,
+                0.28,
+                0.61,
+                DecisionPosture::Normal,
+                TimeToRiskBucket::Normal,
+                54.0,
+                &[],
+            ),
+            runtime_history_point_with_state(
+                crisis_start,
+                70.0,
+                0.05,
+                0.31,
+                0.64,
+                DecisionPosture::Hedge,
+                TimeToRiskBucket::Weeks,
+                56.0,
+                &["hedge_p20d_context"],
+            ),
+        ];
+        let method = formal_main_audit_method_wire();
+
+        let rows = build_release_review_scenario_focus_diagnostics(
+            &baseline, &candidate, &history, &history, &method, &method,
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].runtime_block_counts.len(), 1);
+        assert_eq!(
+            rows[0].runtime_block_counts[0].category,
+            "posture_bucket_normal"
+        );
+        assert_eq!(rows[0].runtime_block_counts[0].baseline_count, 2);
+        assert_eq!(rows[0].runtime_block_counts[0].candidate_count, 2);
+        assert!(rows[0]
+            .runtime_continuity_facet_counts
+            .iter()
+            .any(|facet| facet.category == "posture:normal"
+                && facet.baseline_count == 2
+                && facet.candidate_count == 2));
+        assert!(rows[0]
+            .runtime_continuity_facet_counts
+            .iter()
+            .any(|facet| facet.category == "bucket:normal"
+                && facet.baseline_count == 2
+                && facet.candidate_count == 2));
+        assert!(rows[0]
+            .runtime_continuity_facet_counts
+            .iter()
+            .any(|facet| facet.category == "trigger:none"
+                && facet.baseline_count == 2
+                && facet.candidate_count == 2));
+        assert!(rows[0]
+            .runtime_continuity_facet_counts
+            .iter()
+            .any(|facet| facet.category == "gate_gap:none"
+                && facet.baseline_count == 2
+                && facet.candidate_count == 2));
+        assert!(rows[0]
+            .runtime_continuity_facet_counts
+            .iter()
+            .any(|facet| facet.category == "confirmation:ok_or_not_needed"
+                && facet.baseline_count == 2
+                && facet.candidate_count == 2));
     }
 
     #[test]
