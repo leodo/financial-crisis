@@ -33,32 +33,32 @@ pub(crate) use commands::{
     has_main_dataset_core_features, load_formal_dataset_scenario_sets,
     load_label_set_crisis_scenarios, print_formal_dataset_summary,
     render_formal_dataset_summary_markdown, row_has_action_episode_label,
-    scenario_count_for_split_range, FormalDatasetSplitProfile, FormalDatasetSummaryEnvelope,
+    scenario_count_for_split_range, AuditExportEnvelope, AuditMethodResponseWire,
+    FormalDatasetSplitProfile, FormalDatasetSummaryEnvelope, RuntimeThresholdDiagnosticsWire,
     ScenarioRowRange,
 };
 #[cfg(test)]
 pub(crate) use commands::{
     formal_dataset_min_date, formal_dataset_snapshot_is_usable, formal_dataset_split_requirements,
     observation_is_visible_for_date, scenario_aware_formal_split_bounds,
-    scenario_count_for_index_range, FormalSplitLabelSupport,
+    scenario_count_for_index_range, AuditExportOptions, FormalSplitLabelSupport,
 };
 #[cfg(test)]
 use commands::{FeatureSnapshotBuildOptions, PointInTimeMode};
 use commands::{PipelineDatasetSource, PipelineTrainOptions};
 use fc_domain::{
-    embedded_protected_stress_window_catalog, load_crisis_scenario_catalog,
-    probability_feature_names_for_transform, resolve_probability_feature_value,
-    ActionEpisodeTemplateId, ActionabilityBundle, ActionabilityLevel, AssessmentHistoryPoint,
-    AssessmentMethodVersions, AssessmentSnapshot, BacktestScenarioSummary,
+    load_crisis_scenario_catalog, probability_feature_names_for_transform,
+    resolve_probability_feature_value, ActionEpisodeTemplateId, ActionabilityBundle,
+    ActionabilityLevel, AssessmentHistoryPoint, AssessmentSnapshot,
     CrisisScenarioActionEpisodeOverrides, CrisisScenarioDefinition, CrisisScenarioFamily,
     CrisisScenarioTrainingRole, Frequency, HorizonEvaluationSummary, LogisticProbabilityModel,
     ModelReleaseManifest, ModelReleaseRecord, PlattCalibrationArtifact, ProbabilityBundle,
     ProbabilityBundleEvaluation, ProbabilityCoefficient, ProbabilityFeatureStat,
-    ProbabilityHorizonBundle, ProtectedStressWindowCatalog, FEATURE_BUCKET_MONTHS_OR_HIGHER,
-    FEATURE_BUCKET_NOW, FEATURE_BUCKET_WEEKS_OR_HIGHER, FEATURE_COVERAGE_SCORE,
-    FEATURE_EXTERNAL_SHOCK_SCORE, FEATURE_FRESHNESS_DELAYED_OR_WORSE,
-    FEATURE_FRESHNESS_STALE_OR_MISSING, FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D,
-    FEATURE_HEURISTIC_P_60D, FEATURE_OVERALL_SCORE, FORMAL_PROBABILITY_BUNDLE_FEATURES,
+    ProbabilityHorizonBundle, FEATURE_BUCKET_MONTHS_OR_HIGHER, FEATURE_BUCKET_NOW,
+    FEATURE_BUCKET_WEEKS_OR_HIGHER, FEATURE_COVERAGE_SCORE, FEATURE_EXTERNAL_SHOCK_SCORE,
+    FEATURE_FRESHNESS_DELAYED_OR_WORSE, FEATURE_FRESHNESS_STALE_OR_MISSING,
+    FEATURE_HEURISTIC_P_20D, FEATURE_HEURISTIC_P_5D, FEATURE_HEURISTIC_P_60D,
+    FEATURE_OVERALL_SCORE, FORMAL_PROBABILITY_BUNDLE_FEATURES,
     PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1,
     PROBABILITY_FEATURE_TRANSFORM_FAMILY_HYBRID_V1, PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1,
     PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1,
@@ -108,7 +108,7 @@ pub(crate) use probability::{
     regime_positive_window_gap_floor, summarize_bundle_evaluation, train_horizon_bundle,
 };
 use reporting::write_formal_dataset_summary_report;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 pub(crate) use training::{
     chronological_split, chronological_split_bounds, training_rows_support_label_mode,
     validate_split_bounds, ProbabilityTargetLabelMode, ProbabilityTrainingInput,
@@ -141,12 +141,6 @@ async fn main() -> anyhow::Result<()> {
 
     let args = env::args().skip(1).collect::<Vec<_>>();
     commands::run_from_args(args).await
-}
-
-#[derive(Debug, Clone)]
-struct AuditExportOptions {
-    api_base_url: String,
-    output_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,81 +187,6 @@ struct CrisisScenario {
     protected_action_levels: Vec<ActionabilityLevel>,
     episode_template_id: ActionEpisodeTemplateId,
     action_episode_overrides: Option<CrisisScenarioActionEpisodeOverrides>,
-}
-
-impl AuditExportOptions {
-    fn parse(args: &[String]) -> anyhow::Result<Self> {
-        let mut api_base_url = env::var("FC_AUDIT_API_BASE_URL")
-            .unwrap_or_else(|_| DEFAULT_AUDIT_API_BASE_URL.to_string());
-        let mut output_dir = PathBuf::from(DEFAULT_AUDIT_OUTPUT_DIR);
-        let mut index = 0;
-
-        while index < args.len() {
-            match args[index].as_str() {
-                "--api-base-url" => {
-                    index += 1;
-                    api_base_url = args
-                        .get(index)
-                        .with_context(|| "--api-base-url requires a URL")?
-                        .clone();
-                }
-                "--output-dir" => {
-                    index += 1;
-                    output_dir = PathBuf::from(
-                        args.get(index)
-                            .with_context(|| "--output-dir requires a path")?,
-                    );
-                }
-                other => bail!("unknown audit export option: {other}"),
-            }
-            index += 1;
-        }
-
-        Ok(Self {
-            api_base_url: api_base_url.trim_end_matches('/').to_string(),
-            output_dir,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-struct RuntimeThresholdDiagnosticsWire {
-    prepare_p60d: f64,
-    hedge_p20d: f64,
-    defend_p5d: f64,
-    severe_now_p20d: f64,
-    elevated_weeks_p60d: f64,
-    external_prepare_p20d: f64,
-    carry_prepare_p60d: f64,
-    downgrade_prepare_p60d: f64,
-    downgrade_hedge_p20d: f64,
-    downgrade_defend_p5d: f64,
-    history_runtime_policy_version: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-struct AuditMethodResponse {
-    method: AssessmentMethodVersions,
-    note: String,
-    protected_stress_window_catalog: ProtectedStressWindowCatalog,
-    runtime_thresholds: Option<RuntimeThresholdDiagnosticsWire>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct AuditMethodResponseWire {
-    method: AssessmentMethodVersions,
-    note: String,
-    protected_stress_window_catalog: Option<ProtectedStressWindowCatalog>,
-    runtime_thresholds: Option<RuntimeThresholdDiagnosticsWire>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct AuditExportEnvelope {
-    exported_at: String,
-    api_base_url: String,
-    assessment: AssessmentSnapshot,
-    backtests: Vec<BacktestScenarioSummary>,
-    method: AuditMethodResponse,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -628,58 +547,6 @@ struct ReleaseReviewEnvelope {
     overall_guard_regressions: Vec<String>,
     overall_guard_passed: bool,
     recommendation: String,
-}
-
-async fn export_current_audit(args: &[String]) -> anyhow::Result<()> {
-    let options = AuditExportOptions::parse(args)?;
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()?;
-    let assessment: AssessmentSnapshot =
-        fetch_api_json(&client, &options.api_base_url, "/api/assessment/current").await?;
-    let backtests: Vec<BacktestScenarioSummary> =
-        fetch_api_json(&client, &options.api_base_url, "/api/backtests").await?;
-    let method_wire: AuditMethodResponseWire =
-        fetch_api_json(&client, &options.api_base_url, "/api/assessment/method").await?;
-    let method = AuditMethodResponse {
-        method: method_wire.method,
-        note: method_wire.note,
-        protected_stress_window_catalog: method_wire.protected_stress_window_catalog.unwrap_or_else(
-            || {
-                let mut catalog = embedded_protected_stress_window_catalog();
-                catalog.warning = Some(
-                    "运行中的 API 仍返回旧版 method 响应，导出命令已退回本地内置压力窗口目录；重启 API 后可获得完全一致的导出结果。"
-                        .to_string(),
-                );
-                catalog
-            },
-        ),
-        runtime_thresholds: method_wire.runtime_thresholds,
-    };
-
-    let report = AuditExportEnvelope {
-        exported_at: Utc::now().to_rfc3339(),
-        api_base_url: options.api_base_url.clone(),
-        assessment,
-        backtests,
-        method,
-    };
-
-    fs::create_dir_all(&options.output_dir)?;
-    let stem = format!("{}-rolling-audit", report.assessment.as_of_date);
-    let json_path = options.output_dir.join(format!("{stem}.json"));
-    let markdown_path = options.output_dir.join(format!("{stem}.md"));
-    fs::write(&json_path, serde_json::to_string_pretty(&report)?)?;
-    fs::write(&markdown_path, render_audit_report_markdown(&report))?;
-
-    println!("Rolling audit report exported.");
-    println!("  JSON     {}", json_path.display());
-    println!("  Markdown {}", markdown_path.display());
-    println!(
-        "  Summary  {}",
-        report.assessment.backtest_summary.rolling_audit.summary
-    );
-    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4337,214 +4204,6 @@ fn truncate_text(value: &str, max_len: usize) -> String {
     let mut truncated = value.chars().take(prefix_len).collect::<String>();
     truncated.push('…');
     truncated
-}
-
-fn render_audit_report_markdown(report: &AuditExportEnvelope) -> String {
-    let rolling_audit = &report.assessment.backtest_summary.rolling_audit;
-    let mut markdown = String::new();
-    let _ = writeln!(markdown, "# Rolling Audit Report");
-    let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "- Exported at: {}", report.exported_at);
-    let _ = writeln!(markdown, "- API base: {}", report.api_base_url);
-    let _ = writeln!(markdown, "- As of: {}", report.assessment.as_of_date);
-    let _ = writeln!(
-        markdown,
-        "- Data mode: {}",
-        data_mode_text(report.assessment.runtime.data_mode)
-    );
-    let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "## Current Assessment");
-    let _ = writeln!(markdown);
-    let _ = writeln!(
-        markdown,
-        "- Overall score: {:.1}",
-        report.assessment.scores.overall_score
-    );
-    let _ = writeln!(
-        markdown,
-        "- Posture: {}",
-        posture_text(report.assessment.posture)
-    );
-    let _ = writeln!(
-        markdown,
-        "- Time bucket: {}",
-        time_bucket_text(report.assessment.time_to_risk_bucket)
-    );
-    let _ = writeln!(
-        markdown,
-        "- Probability 5d / 20d / 60d: {} / {} / {}",
-        format_pct(report.assessment.probabilities.p_5d),
-        format_pct(report.assessment.probabilities.p_20d),
-        format_pct(report.assessment.probabilities.p_60d)
-    );
-    let _ = writeln!(markdown, "- Summary: {}", report.assessment.summary);
-    let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "## Serving Method");
-    let _ = writeln!(markdown);
-    let _ = writeln!(
-        markdown,
-        "- Release ID: {}",
-        report
-            .method
-            .method
-            .release_id
-            .as_deref()
-            .unwrap_or("inline")
-    );
-    let _ = writeln!(
-        markdown,
-        "- Probability mode: {}",
-        report.method.method.probability_mode
-    );
-    let _ = writeln!(
-        markdown,
-        "- Release status: {}",
-        report.method.method.release_status
-    );
-    let _ = writeln!(
-        markdown,
-        "- Point-in-time mode: {}",
-        report.method.method.point_in_time_mode
-    );
-    let _ = writeln!(
-        markdown,
-        "- Versions: score={} prob={} calib={} feature={} label={} playbook={}",
-        report.method.method.score_method_version,
-        report.method.method.prob_model_version,
-        report.method.method.calibration_version,
-        report.method.method.feature_set_version,
-        report.method.method.label_version,
-        report.method.method.action_playbook_version
-    );
-    let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "## Rolling Audit");
-    let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "{}", rolling_audit.summary);
-    let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "| Metric | Value |");
-    let _ = writeln!(markdown, "| --- | --- |");
-    let _ = writeln!(
-        markdown,
-        "| Actionable precision | {} |",
-        format_pct(rolling_audit.actionable_precision)
-    );
-    let _ = writeln!(
-        markdown,
-        "| Actionable signal count | {} |",
-        rolling_audit.actionable_signal_count
-    );
-    let _ = writeln!(
-        markdown,
-        "| Pre-crisis hit count | {} |",
-        rolling_audit.pre_crisis_signal_count
-    );
-    let _ = writeln!(
-        markdown,
-        "| In-crisis signal count | {} |",
-        rolling_audit.in_crisis_signal_count
-    );
-    let _ = writeln!(
-        markdown,
-        "| Protected stress count | {} |",
-        rolling_audit.stress_window_signal_count
-    );
-    let _ = writeln!(
-        markdown,
-        "| Pure false-positive count | {} |",
-        rolling_audit.false_positive_signal_count
-    );
-    let _ = writeln!(
-        markdown,
-        "| Pure false-positive episodes | {} |",
-        rolling_audit.false_positive_episode_count
-    );
-    let _ = writeln!(
-        markdown,
-        "| Longest pure false-positive episode | {}d |",
-        rolling_audit.longest_false_positive_episode_days
-    );
-    let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "## Largest Non-crisis Action Episodes");
-    let _ = writeln!(markdown);
-    let _ = writeln!(
-        markdown,
-        "| Classification | Window | Duration | Signals | Note |"
-    );
-    let _ = writeln!(markdown, "| --- | --- | --- | --- | --- |");
-    for episode in &rolling_audit.classified_episodes {
-        let _ = writeln!(
-            markdown,
-            "| {} | {} .. {} | {}d | {} | {} |",
-            episode.classification,
-            episode.start_date,
-            episode.end_date,
-            episode.duration_days,
-            episode.signal_count,
-            episode.note.replace('|', "/")
-        );
-    }
-    let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "## Scenario Backtests");
-    let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "| Scenario | Source | Crisis Window | Structural Lead | Actionable Lead | Max Score | Foldbacks | Note |");
-    let _ = writeln!(
-        markdown,
-        "| --- | --- | --- | --- | --- | --- | --- | --- |"
-    );
-    for scenario in &report.backtests {
-        let _ = writeln!(
-            markdown,
-            "| {} | {} | {} .. {} | {} | {} | {:.1} | {} | {} |",
-            scenario.name,
-            backtest_signal_source_text(scenario.signal_source),
-            scenario.crisis_start,
-            scenario.crisis_end,
-            format_optional_days(scenario.lead_time_days),
-            format_optional_days(scenario.actionable_lead_time_days),
-            scenario.max_score,
-            scenario.false_positive_count,
-            scenario.note.replace('|', "/")
-        );
-    }
-    let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "## Protected Stress Window Catalog");
-    let _ = writeln!(markdown);
-    let _ = writeln!(
-        markdown,
-        "- Catalog: {}",
-        report.method.protected_stress_window_catalog.catalog_id
-    );
-    let _ = writeln!(
-        markdown,
-        "- Source: {}",
-        report.method.protected_stress_window_catalog.source
-    );
-    let _ = writeln!(
-        markdown,
-        "- Note: {}",
-        report.method.protected_stress_window_catalog.note
-    );
-    if let Some(warning) = &report.method.protected_stress_window_catalog.warning {
-        let _ = writeln!(markdown, "- Warning: {warning}");
-    }
-    let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "| Window | Range | Note |");
-    let _ = writeln!(markdown, "| --- | --- | --- |");
-    for window in &report.method.protected_stress_window_catalog.windows {
-        let _ = writeln!(
-            markdown,
-            "| {} | {} .. {} | {} |",
-            window.label,
-            window.start_date,
-            window.end_date,
-            window.note.replace('|', "/")
-        );
-    }
-    let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "## Method Note");
-    let _ = writeln!(markdown);
-    let _ = writeln!(markdown, "{}", report.method.note);
-    markdown
 }
 
 fn data_mode_text(mode: fc_domain::DataMode) -> &'static str {

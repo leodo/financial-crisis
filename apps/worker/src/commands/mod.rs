@@ -11,6 +11,11 @@ pub(crate) mod snapshot;
 
 use anyhow::{bail, Result};
 
+#[cfg(test)]
+pub(crate) use audit::AuditExportOptions;
+pub(crate) use audit::{
+    AuditExportEnvelope, AuditMethodResponseWire, RuntimeThresholdDiagnosticsWire,
+};
 pub(crate) use dataset::{
     build_formal_dataset_summary, collect_formal_dataset_scenario_ranges,
     formal_dataset_split_profile, load_formal_dataset_scenario_sets,
