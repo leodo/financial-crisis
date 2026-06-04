@@ -110,6 +110,14 @@ config/
 1. “演示数据”与“真实历史重建”混在一处，理解成本很高。
 2. history replay 继续演进时，很容易把 demo 兼容逻辑一起拖着走。
 
+最新进展：
+
+- `FC_DATA_MODE` 解析与 SQLite/Postgres 装载已拆到 `apps/api/src/data_source.rs`；
+- historical replay / prediction snapshot bridge 已拆到 `apps/api/src/history_replay.rs`；
+- backtest timeline、rolling audit、scenario fallback 和动作级历史判定规则已拆到 `apps/api/src/backtest.rs`。
+
+因此，`demo.rs` 的风险已明显下降，但它仍保留 demo seed、history 装配和 replay 相关编排，后续还可以继续沿“demo seed / history assembly / replay orchestration”三个边界收口。
+
 ### 4.3 训练侧与运行侧已有重复实现，后续容易漂移
 
 目前 API 与 worker 中已经出现重复的底层函数，例如：

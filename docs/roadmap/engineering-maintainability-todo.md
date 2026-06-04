@@ -104,7 +104,8 @@
 
 - 已新增 `apps/api/src/data_source.rs`，把 `FC_DATA_MODE` 解析、SQLite/Postgres 装载、active release bundle 装配与 API reload 入口依赖的 `AppDataSource` / `AssessmentHistoryBuildMode` 从 `demo.rs` 中拆出。
 - 已新增 `apps/api/src/history_replay.rs`，把 historical replay run 持久化、prediction snapshot cache、history cache key/method version、history point 转换和 release-aware cache refresh 判定从 `demo.rs` 中拆出。
-- `demo.rs` 当前主要收缩为 demo seed、assessment history/backtest 生成、historical replay 缓存与审计辅助逻辑，后续可以继续沿 replay/cache 边界拆分。
+- 已新增 `apps/api/src/backtest.rs`，把 scenario fallback、backtest timeline、rolling audit 和动作级历史判定规则从 `demo.rs` 中拆出，避免 demo seed 文件继续承载历史回测规则。
+- `demo.rs` 当前主要收缩为 demo seed、assessment history 装配、historical replay 缓存与少量筛选 helper，后续可以继续沿 replay/cache 边界拆分。
 - 已新增 `apps/api/src/assessment/posture.rs`，把 `time_to_risk_bucket`、posture clause、position guidance、用户偏好升降级和 summary 这条姿态决策链从 `assessment.rs` 中拆出，主装配逻辑只保留调用点。
 - 已新增 `apps/api/src/assessment/probability.rs`，把 heuristic probability、bundle scoring、formal feature map、actionability 融合与相关测试依赖的 helper 从 `assessment.rs` 中拆出，避免模型评分逻辑继续和 assessment orchestration 混在一起。
 - 已新增 `apps/api/src/assessment/context.rs`，把 runtime freshness、关键指标状态、事件确认、历史类比和 backtest summary 从 `assessment.rs` 中拆出，让解释层上下文与概率/姿态决策链解耦。

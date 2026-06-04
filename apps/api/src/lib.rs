@@ -1,4 +1,5 @@
 mod assessment;
+mod backtest;
 mod config;
 mod data_source;
 mod demo;
