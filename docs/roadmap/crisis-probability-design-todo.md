@@ -434,10 +434,12 @@
             2. 在聚合 summary 中增加 `strict_actionable_point_count` 与
                `runtime_floor_hit_count`；
             3. 让 `Focus Scenarios` 和正式 guard 说明都能同时表达“runtime 已有信号，但 strict L3 仍未成立”。
-          - [ ] 下一步专项审计 `1990-1993 / 2000-2001` 的 posture continuity：
+          - [~] 已开始专项审计 `1990-1993 / 2000-2001` 的 posture continuity：
             1. 逐日对齐 `p20d / p60d / posture / time_bucket / actionable bridge`；
-            2. 确认为什么高概率日期仍长期停在 `normal`；
-            3. 确认为什么只能出现零星 `prepare` 脉冲，始终不能形成 sustained `3/5` hits。
+            2. 已补 `runtime_actionable_block_category` 与场景级 `runtime block mix`，
+               可以结构化统计为什么高概率日期仍长期停在 `normal` 或被其他条件挡住；
+            3. 下一步继续把这些类别统计落到 `1990-1993 / 2000-2001` 的正式 strict review 证据里，
+               明确为什么只能出现零星 `prepare` 脉冲，始终不能形成 sustained `3/5` hits。
           - [ ] 下一步以 `034053` 为保护基线继续收口剩余短误报，但约束顺序必须固定：
             1. 先守住 `regional_banks` 的 `20d hits / positive_window hit rate / positive_window_avg_probability`；
             2. 再处理 `2023-02-03 ~ 2023-02-05`、`2023-02-14`、`2023-07-13` 等剩余 `20d` 误报点；

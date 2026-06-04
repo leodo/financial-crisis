@@ -327,10 +327,20 @@ struct ReleaseReviewScenarioPointComparison {
     candidate_actionable_sustained: Option<bool>,
     baseline_trigger_codes: Vec<String>,
     candidate_trigger_codes: Vec<String>,
+    baseline_runtime_actionable_block_category: Option<String>,
+    candidate_runtime_actionable_block_category: Option<String>,
     baseline_runtime_actionable_block_reason: Option<String>,
     candidate_runtime_actionable_block_reason: Option<String>,
     baseline_actionable_diagnostic: Option<String>,
     candidate_actionable_diagnostic: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReleaseReviewRuntimeBlockCount {
+    category: String,
+    baseline_count: u32,
+    candidate_count: u32,
+    delta: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -360,6 +370,7 @@ struct ReleaseReviewScenarioFocusDiagnostic {
     candidate_first_runtime_floor_hit_without_l3_date: Option<NaiveDate>,
     baseline_first_runtime_floor_hit_without_l3_reason: Option<String>,
     candidate_first_runtime_floor_hit_without_l3_reason: Option<String>,
+    runtime_block_counts: Vec<ReleaseReviewRuntimeBlockCount>,
     interesting_points: Vec<ReleaseReviewScenarioPointComparison>,
 }
 
@@ -3033,6 +3044,19 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
                         .as_deref()
                 )
             );
+            if !scenario.runtime_block_counts.is_empty() {
+                let _ = writeln!(markdown, "- Runtime block mix:");
+                for block in &scenario.runtime_block_counts {
+                    let _ = writeln!(
+                        markdown,
+                        "  - {}: baseline={} | candidate={} | delta={}",
+                        block.category,
+                        block.baseline_count,
+                        block.candidate_count,
+                        format_signed_count_delta(block.delta)
+                    );
+                }
+            }
             let _ = writeln!(markdown);
             if scenario.interesting_points.is_empty() {
                 let _ = writeln!(
@@ -3044,16 +3068,16 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
             }
             let _ = writeln!(
                 markdown,
-                "| Date | Base p_20d | Cand p_20d | Base p_60d | Cand p_60d | Base posture | Cand posture | Base bucket | Cand bucket | Base strict L3 | Cand strict L3 | Base runtime floor | Cand runtime floor | Base 5d hits | Cand 5d hits | Base sustained | Cand sustained | Base triggers | Cand triggers | Base runtime block | Cand runtime block | Base diag | Cand diag |"
+                "| Date | Base p_20d | Cand p_20d | Base p_60d | Cand p_60d | Base posture | Cand posture | Base bucket | Cand bucket | Base strict L3 | Cand strict L3 | Base runtime floor | Cand runtime floor | Base 5d hits | Cand 5d hits | Base sustained | Cand sustained | Base triggers | Cand triggers | Base block cat | Cand block cat | Base runtime block | Cand runtime block | Base diag | Cand diag |"
             );
             let _ = writeln!(
                 markdown,
-                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
             );
             for point in &scenario.interesting_points {
                 let _ = writeln!(
                     markdown,
-                    "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                    "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
                     point.as_of_date,
                     format_optional_pct(point.baseline_p20d),
                     format_optional_pct(point.candidate_p20d),
@@ -3073,6 +3097,14 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
                     format_optional_bool_flag(point.candidate_actionable_sustained),
                     format_trigger_codes(&point.baseline_trigger_codes),
                     format_trigger_codes(&point.candidate_trigger_codes),
+                    point
+                        .baseline_runtime_actionable_block_category
+                        .as_deref()
+                        .unwrap_or("—"),
+                    point
+                        .candidate_runtime_actionable_block_category
+                        .as_deref()
+                        .unwrap_or("—"),
                     point
                         .baseline_runtime_actionable_block_reason
                         .as_deref()
@@ -7497,6 +7529,10 @@ mod tests {
         assert_eq!(rows[0].candidate_actionable_point_count, 1);
         assert_eq!(rows[0].baseline_runtime_floor_hit_point_count, 5);
         assert_eq!(rows[0].candidate_runtime_floor_hit_point_count, 5);
+        assert_eq!(rows[0].runtime_block_counts.len(), 1);
+        assert_eq!(rows[0].runtime_block_counts[0].category, "review_gate_gap");
+        assert_eq!(rows[0].runtime_block_counts[0].baseline_count, 1);
+        assert_eq!(rows[0].runtime_block_counts[0].candidate_count, 4);
         assert_eq!(
             rows[0].candidate_first_runtime_floor_hit_without_l3_date,
             Some(first_l2)
@@ -7517,6 +7553,16 @@ mod tests {
         assert!(!first_l3_point.candidate_strict_review_actionable);
         assert!(first_l3_point.baseline_runtime_floor_hit);
         assert!(first_l3_point.candidate_runtime_floor_hit);
+        assert_eq!(
+            first_l3_point.baseline_runtime_actionable_block_category,
+            None
+        );
+        assert_eq!(
+            first_l3_point
+                .candidate_runtime_actionable_block_category
+                .as_deref(),
+            Some("review_gate_gap")
+        );
         assert_eq!(first_l3_point.baseline_actionable_forward_5d_hits, Some(4));
         assert_eq!(first_l3_point.candidate_actionable_forward_5d_hits, Some(1));
         assert_eq!(first_l3_point.baseline_actionable_sustained, Some(true));
@@ -7613,6 +7659,10 @@ mod tests {
         assert_eq!(rows[0].outcome, "missed_to_missed");
         assert_eq!(rows[0].baseline_runtime_floor_hit_point_count, 2);
         assert_eq!(rows[0].candidate_runtime_floor_hit_point_count, 2);
+        assert_eq!(rows[0].runtime_block_counts.len(), 1);
+        assert_eq!(rows[0].runtime_block_counts[0].category, "review_gate_gap");
+        assert_eq!(rows[0].runtime_block_counts[0].baseline_count, 2);
+        assert_eq!(rows[0].runtime_block_counts[0].candidate_count, 2);
         assert_eq!(
             rows[0].baseline_first_runtime_floor_hit_without_l3_date,
             Some(runtime_floor_date)

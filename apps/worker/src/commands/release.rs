@@ -3495,6 +3495,26 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                         candidate_trigger_codes: candidate_point
                             .map(|point| point.posture_trigger_codes.clone())
                             .unwrap_or_default(),
+                        baseline_runtime_actionable_block_category: baseline_point.and_then(
+                            |point| {
+                                release_review_runtime_actionable_block_category(
+                                    point,
+                                    baseline_use_transitional_bridge,
+                                    baseline_runtime_thresholds,
+                                )
+                                .map(str::to_string)
+                            },
+                        ),
+                        candidate_runtime_actionable_block_category: candidate_point.and_then(
+                            |point| {
+                                release_review_runtime_actionable_block_category(
+                                    point,
+                                    candidate_use_transitional_bridge,
+                                    candidate_runtime_thresholds,
+                                )
+                                .map(str::to_string)
+                            },
+                        ),
                         baseline_runtime_actionable_block_reason: baseline_point.and_then(
                             |point| {
                                 release_review_runtime_actionable_block_reason(
@@ -3603,6 +3623,14 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                     candidate_first_runtime_floor_hit_without_l3
                         .as_ref()
                         .map(|(_, reason)| reason.clone()),
+                runtime_block_counts: release_review_runtime_block_counts(
+                    &baseline_pre_crisis_points,
+                    baseline_use_transitional_bridge,
+                    baseline_runtime_thresholds,
+                    &candidate_pre_crisis_points,
+                    candidate_use_transitional_bridge,
+                    candidate_runtime_thresholds,
+                ),
                 interesting_points,
             })
         })
@@ -3740,22 +3768,123 @@ fn release_review_actionable_diagnostic(
     "review L3 gate not satisfied".to_string()
 }
 
+fn release_review_runtime_actionable_block_category(
+    point: &AssessmentHistoryPoint,
+    use_transitional_bridge: bool,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> Option<&'static str> {
+    if release_review_is_actionable_warning_point(point, use_transitional_bridge)
+        || !release_review_hits_runtime_floor(point, thresholds)
+    {
+        return None;
+    }
+
+    if point.p_20d < 0.18 || point.p_60d < 0.45 {
+        return Some("review_gate_gap");
+    }
+
+    if matches!(point.posture, DecisionPosture::Normal)
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
+    {
+        return Some("posture_bucket_normal");
+    }
+
+    if matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && point.overall_score < 62.0
+        && point.external_shock_score < 48.0
+    {
+        return Some("months_score_confirmation");
+    }
+
+    if matches!(point.posture, DecisionPosture::Prepare)
+        && point.overall_score < 60.0
+        && point.external_shock_score < 46.0
+        && !release_review_has_strong_prepare_trigger_code(point)
+    {
+        return Some("prepare_score_confirmation");
+    }
+
+    if use_transitional_bridge
+        && matches!(point.posture, DecisionPosture::Prepare)
+        && point.overall_score < 58.0
+    {
+        return Some("prepare_bridge_not_armed");
+    }
+
+    if use_transitional_bridge
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && point.overall_score < 58.0
+    {
+        return Some("months_bridge_not_armed");
+    }
+
+    Some("review_l3_gate_not_satisfied")
+}
+
 fn release_review_runtime_actionable_block_reason(
     point: &AssessmentHistoryPoint,
     use_transitional_bridge: bool,
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> Option<String> {
-    if release_review_is_actionable_warning_point(point, use_transitional_bridge)
-        || !release_review_hits_runtime_floor(point, thresholds)
-    {
-        None
-    } else {
-        Some(release_review_actionable_diagnostic(
-            point,
-            use_transitional_bridge,
-            thresholds,
-        ))
-    }
+    release_review_runtime_actionable_block_category(point, use_transitional_bridge, thresholds)
+        .map(|_| release_review_actionable_diagnostic(point, use_transitional_bridge, thresholds))
+}
+
+fn release_review_runtime_block_counts(
+    baseline_points: &[&AssessmentHistoryPoint],
+    baseline_use_transitional_bridge: bool,
+    baseline_thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+    candidate_points: &[&AssessmentHistoryPoint],
+    candidate_use_transitional_bridge: bool,
+    candidate_thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> Vec<crate::ReleaseReviewRuntimeBlockCount> {
+    let collect_counts =
+        |points: &[&AssessmentHistoryPoint],
+         use_transitional_bridge: bool,
+         thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>| {
+            points
+                .iter()
+                .fold(BTreeMap::<String, u32>::new(), |mut acc, point| {
+                    if let Some(category) = release_review_runtime_actionable_block_category(
+                        point,
+                        use_transitional_bridge,
+                        thresholds,
+                    ) {
+                        *acc.entry(category.to_string()).or_default() += 1;
+                    }
+                    acc
+                })
+        };
+
+    let baseline_counts = collect_counts(
+        baseline_points,
+        baseline_use_transitional_bridge,
+        baseline_thresholds,
+    );
+    let candidate_counts = collect_counts(
+        candidate_points,
+        candidate_use_transitional_bridge,
+        candidate_thresholds,
+    );
+    let categories = baseline_counts
+        .keys()
+        .chain(candidate_counts.keys())
+        .cloned()
+        .collect::<BTreeSet<_>>();
+
+    categories
+        .into_iter()
+        .map(|category| {
+            let baseline_count = baseline_counts.get(&category).copied().unwrap_or_default();
+            let candidate_count = candidate_counts.get(&category).copied().unwrap_or_default();
+            crate::ReleaseReviewRuntimeBlockCount {
+                category,
+                baseline_count,
+                candidate_count,
+                delta: i64::from(candidate_count) - i64::from(baseline_count),
+            }
+        })
+        .collect()
 }
 
 fn release_review_actionable_forward_hits_by_date(

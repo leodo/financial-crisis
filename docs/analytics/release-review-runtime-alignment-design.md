@@ -153,6 +153,19 @@ vs
 3. 为什么 `3/5 sustained` 无法建立；
 4. 哪些 clause / blocker / score confirmation 在长期结构性危机场景上过严。
 
+最新一轮代码已经把这条审计往前推进了一步：
+
+- `Focus Scenarios` 现在不只输出自由文本 reason，还会输出
+  `runtime_actionable_block_category`；
+- 每个焦点场景还会汇总 `runtime block mix`，直接按类别统计 baseline /
+  candidate 在危机前各被哪类条件挡住了多少次。
+
+这意味着后续不需要再只靠肉眼扫长表，已经可以直接回答：
+
+- 是 `review gate` 挡住更多；
+- 还是大部分日期都卡在 `posture/bucket stayed normal`；
+- 还是 `months / prepare score confirmation` 过严。
+
 ## 6. 非目标
 
 这份设计当前不做：
