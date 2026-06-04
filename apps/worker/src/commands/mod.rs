@@ -43,6 +43,8 @@ pub(crate) use feature::{
 pub(crate) use pipeline::ProbabilityModelShape;
 pub(crate) use pipeline::{PipelineDatasetSource, PipelineTrainOptions};
 #[cfg(test)]
+pub(crate) use refresh::RefreshLatestOptions;
+#[cfg(test)]
 pub(crate) use snapshot::PredictionSnapshotQueryOptions;
 
 pub(crate) async fn run_from_args(args: Vec<String>) -> Result<()> {

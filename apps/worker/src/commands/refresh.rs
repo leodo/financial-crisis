@@ -1,6 +1,85 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use fc_ingestion::BojDataset;
+
+use super::backfill::{
+    backfill_boj_with_options, backfill_fred_with_options, backfill_gdelt_with_options,
+    backfill_sec_edgar_with_options, backfill_treasury_yield_with_options,
+    backfill_world_bank_with_options, BackfillOptions, BojBackfillOptions, FredBackfillMode,
+    FredBackfillOptions,
+};
+
+#[derive(Debug, Clone)]
+pub(crate) struct RefreshLatestOptions {
+    pub(crate) fast_lookback_days: i64,
+    pub(crate) slow_lookback_years: i64,
+    pub(crate) fred_chunk_days: i64,
+    pub(crate) skip_world_bank: bool,
+    pub(crate) include_gdelt: bool,
+    pub(crate) reload_api: bool,
+    pub(crate) api_reload_url: String,
+}
+
+impl RefreshLatestOptions {
+    pub(crate) fn parse(args: &[String]) -> anyhow::Result<Self> {
+        let mut fast_lookback_days = 45_i64;
+        let mut slow_lookback_years = 15_i64;
+        let mut fred_chunk_days = 45_i64;
+        let mut skip_world_bank = false;
+        let mut include_gdelt = false;
+        let mut reload_api = true;
+        let mut api_reload_url = crate::DEFAULT_API_RELOAD_URL.to_string();
+        let mut index = 0;
+
+        while index < args.len() {
+            match args[index].as_str() {
+                "--fast-lookback-days" => {
+                    index += 1;
+                    fast_lookback_days =
+                        crate::parse_positive_i64(args.get(index), "--fast-lookback-days")?;
+                }
+                "--slow-lookback-years" => {
+                    index += 1;
+                    slow_lookback_years =
+                        crate::parse_positive_i64(args.get(index), "--slow-lookback-years")?;
+                }
+                "--fred-chunk-days" => {
+                    index += 1;
+                    fred_chunk_days =
+                        crate::parse_positive_i64(args.get(index), "--fred-chunk-days")?;
+                }
+                "--skip-world-bank" => {
+                    skip_world_bank = true;
+                }
+                "--include-gdelt" => {
+                    include_gdelt = true;
+                }
+                "--no-reload-api" => {
+                    reload_api = false;
+                }
+                "--api-reload-url" => {
+                    index += 1;
+                    api_reload_url = args
+                        .get(index)
+                        .with_context(|| "--api-reload-url requires a URL")?
+                        .clone();
+                }
+                other => bail!("unknown refresh option: {other}"),
+            }
+            index += 1;
+        }
+
+        Ok(Self {
+            fast_lookback_days,
+            slow_lookback_years,
+            fred_chunk_days,
+            skip_world_bank,
+            include_gdelt,
+            reload_api,
+            api_reload_url,
+        })
+    }
+}
 
 pub(crate) async fn handle_refresh_command(action: &str, rest: &[String]) -> Result<()> {
     match action {
@@ -13,7 +92,7 @@ pub(crate) async fn handle_refresh_command(action: &str, rest: &[String]) -> Res
 }
 
 async fn refresh_latest_free(args: &[String]) -> Result<()> {
-    let options = crate::RefreshLatestOptions::parse(args)?;
+    let options = RefreshLatestOptions::parse(args)?;
     let today = Utc::now().date_naive();
     let fast_start = today - chrono::Duration::days(options.fast_lookback_days);
     let slow_start = today - chrono::Duration::days(options.slow_lookback_years * 366);
@@ -30,8 +109,8 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     super::db_init().await?;
     super::db_seed().await?;
 
-    crate::backfill_fred_with_options(crate::FredBackfillOptions {
-        options: crate::BackfillOptions {
+    backfill_fred_with_options(FredBackfillOptions {
+        options: BackfillOptions {
             start: fast_start,
             end: today,
             chunk_days: Some(options.fred_chunk_days),
@@ -39,11 +118,11 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
             external_code_filter: None,
             watermark_overlap_days: None,
         },
-        fred_mode: crate::FredBackfillMode::GraphCsv,
+        fred_mode: FredBackfillMode::GraphCsv,
     })
     .await?;
 
-    crate::backfill_treasury_yield_with_options(crate::BackfillOptions {
+    backfill_treasury_yield_with_options(BackfillOptions {
         start: fast_start,
         end: today,
         chunk_days: Some(options.fast_lookback_days.min(180)),
@@ -53,9 +132,9 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     })
     .await?;
 
-    crate::backfill_boj_with_options(crate::BojBackfillOptions {
+    backfill_boj_with_options(BojBackfillOptions {
         dataset: BojDataset::FxDaily,
-        options: crate::BackfillOptions {
+        options: BackfillOptions {
             start: fast_start,
             end: today,
             chunk_days: Some(options.fast_lookback_days.min(180)),
@@ -66,9 +145,9 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     })
     .await?;
 
-    crate::backfill_boj_with_options(crate::BojBackfillOptions {
+    backfill_boj_with_options(BojBackfillOptions {
         dataset: BojDataset::MoneyMarketRates,
-        options: crate::BackfillOptions {
+        options: BackfillOptions {
             start: fast_start,
             end: today,
             chunk_days: Some(options.fast_lookback_days.min(180)),
@@ -79,7 +158,7 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     })
     .await?;
 
-    crate::backfill_sec_edgar_with_options(crate::BackfillOptions {
+    backfill_sec_edgar_with_options(BackfillOptions {
         start: fast_start,
         end: today,
         chunk_days: None,
@@ -90,7 +169,7 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     .await?;
 
     if !options.skip_world_bank {
-        crate::backfill_world_bank_with_options(crate::BackfillOptions {
+        backfill_world_bank_with_options(BackfillOptions {
             start: slow_start,
             end: today,
             chunk_days: None,
@@ -102,7 +181,7 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     }
 
     if options.include_gdelt {
-        crate::backfill_gdelt_with_options(crate::BackfillOptions {
+        backfill_gdelt_with_options(BackfillOptions {
             start: fast_start,
             end: today,
             chunk_days: None,
