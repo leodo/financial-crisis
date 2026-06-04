@@ -24,6 +24,64 @@ import type { MetricItem } from "../shared/panelHelpers";
 import { buildProbabilityOverlayViewModel } from "../shared/probabilityOverlay";
 import { auditContent } from "./content";
 
+function releaseReviewHistoryModeLabel(mode: string) {
+  switch (mode) {
+    case "strict_rebuild":
+      return "严格重放";
+    case "default":
+      return "默认历史缓存";
+    default:
+      return mode || "—";
+  }
+}
+
+function releaseReviewWorkstreamLabel(workstream: string) {
+  switch (workstream) {
+    case "strict_review_vs_runtime_mapping":
+      return "strict gate vs runtime floor";
+    case "posture_continuity":
+      return "posture continuity";
+    case "score_confirmation":
+      return "score confirmation";
+    case "transitional_bridge":
+      return "transitional bridge";
+    default:
+      return workstream;
+  }
+}
+
+function releaseReviewAttributionLabel(attribution: string) {
+  switch (attribution) {
+    case "candidate_regression":
+      return "候选版新增退化";
+    case "both_baseline_and_candidate":
+      return "主线已有短板，候选未修复";
+    case "baseline_shared_weakness":
+      return "主线既有短板";
+    default:
+      return attribution;
+  }
+}
+
+function releaseReviewActionTypeLabel(actionType: string) {
+  switch (actionType) {
+    case "candidate_reject_or_retrain":
+      return "判退 / 重训";
+    case "shared_blocker_fix_before_promotion":
+      return "晋升前先修";
+    case "baseline_research_fix":
+      return "主线研究修复";
+    case "manual_review":
+      return "继续人工复核";
+    default:
+      return actionType;
+  }
+}
+
+function releaseReviewVerdictLabel(passed: boolean) {
+  return passed ? "通过当前 guard" : "存在 guard blocker";
+}
+
 function humanizeAuditNote(note: string) {
   return note
     .replaceAll("release registry", "版本登记册")
@@ -76,6 +134,11 @@ export function useAuditViewModel({
       label: "已归档 / 回退",
       value: `${audit.releases.filter((release) => inactiveStatuses.has(release.status)).length}`,
       hint: "这些版本已退出当前候选集合。"
+    },
+    {
+      label: "回放批次",
+      value: `${audit.replay_runs.length}`,
+      hint: audit.latest_replay_run_id ? `最新 run: ${audit.latest_replay_run_id}` : "当前没有可展示的 replay run"
     },
     {
       label: "快照覆盖",
@@ -137,6 +200,93 @@ export function useAuditViewModel({
     };
   });
 
+  const latestReleaseReview = audit.latest_release_review;
+  const latestReleaseReviewMetrics: MetricItem[] = latestReleaseReview
+    ? [
+        {
+          label: "评审时间",
+          value: formatDateTime(latestReleaseReview.reviewed_at)
+        },
+        {
+          label: "Guard 结论",
+          value: releaseReviewVerdictLabel(latestReleaseReview.overall_guard_passed),
+          hint: "这里只代表离线 release review 的 guard 结论，不等于可以自动上线。",
+          valueClassName: "metric-value-token"
+        },
+        {
+          label: "Baseline",
+          value: releaseIdLabel(latestReleaseReview.baseline_release_id).value,
+          hint: releaseIdLabel(latestReleaseReview.baseline_release_id).hint,
+          valueClassName: "metric-value-token"
+        },
+        {
+          label: "Candidate",
+          value: releaseIdLabel(latestReleaseReview.candidate_release_id).value,
+          hint: releaseIdLabel(latestReleaseReview.candidate_release_id).hint,
+          valueClassName: "metric-value-token"
+        },
+        {
+          label: "历史模式",
+          value: releaseReviewHistoryModeLabel(latestReleaseReview.history_mode)
+        },
+        {
+          label: "动作条目",
+          value: `${latestReleaseReview.historical_audit_actions.length}`,
+          hint: `${latestReleaseReview.historical_audit_attribution.length} 个工作流归因已落库`
+        }
+      ]
+    : [];
+
+  const latestReleaseReviewContextRows = latestReleaseReview
+    ? [
+        {
+          id: "active-release",
+          title: "当前线上 active release",
+          detail: activeRelease.value,
+          note: activeRelease.hint
+        },
+        {
+          id: "review-release-link",
+          title: "这次 review 对比",
+          detail: `${releaseIdLabel(latestReleaseReview.baseline_release_id).value} vs ${releaseIdLabel(latestReleaseReview.candidate_release_id).value}`,
+          note:
+            latestReleaseReview.original_active_release_id === latestReleaseReview.baseline_release_id
+              ? "原始 active release 与 baseline 一致。"
+              : `原始 active release 为 ${releaseIdLabel(latestReleaseReview.original_active_release_id).value}`
+        },
+        {
+          id: "review-restore-link",
+          title: "运行态恢复版本",
+          detail: releaseIdLabel(latestReleaseReview.restored_release_id).value,
+          note: "若 review 过程切换过运行态，这里显示最终恢复到的 release。"
+        }
+      ]
+    : [];
+
+  const latestReleaseReviewActionRows =
+    latestReleaseReview?.historical_audit_actions.map((row, index) => ({
+      id: `${row.workstream}-${row.action_type}-${index}`,
+      workstream: releaseReviewWorkstreamLabel(row.workstream),
+      attribution: releaseReviewAttributionLabel(row.attribution),
+      actionType: releaseReviewActionTypeLabel(row.action_type),
+      scenarioSummary: `${row.scenario_count} 个场景 / ${row.protected_count} 个 protected window`,
+      recommendation: row.recommendation
+    })) ?? [];
+
+  const latestReleaseReviewAttributionRows =
+    latestReleaseReview?.historical_audit_attribution.map((row, index) => ({
+      id: `${row.workstream}-${row.attribution}-${index}`,
+      workstream: releaseReviewWorkstreamLabel(row.workstream),
+      attribution: releaseReviewAttributionLabel(row.attribution),
+      matchSummary: `baseline ${row.baseline_count} / candidate ${row.candidate_count}`,
+      scenarioSummary: `${row.scenario_count} 个场景 / ${row.protected_count} 个 protected window`,
+      explanation: row.explanation,
+      scenarioDetail: [
+        row.baseline_scenarios.length > 0 ? `Baseline: ${row.baseline_scenarios.join(" / ")}` : null,
+        row.candidate_scenarios.length > 0 ? `Candidate: ${row.candidate_scenarios.join(" / ")}` : null
+      ]
+    })) ?? [];
+
   return {
     auditNote: audit.note ? humanizeAuditNote(audit.note) : auditContent.noteSummary,
     runtimeMetrics,
@@ -146,6 +296,11 @@ export function useAuditViewModel({
     overlayHorizonRows,
     overlayAuditRows,
     overlaySummary,
+    latestReleaseReview,
+    latestReleaseReviewMetrics,
+    latestReleaseReviewContextRows,
+    latestReleaseReviewActionRows,
+    latestReleaseReviewAttributionRows,
     releaseRows,
     snapshotRows
   };

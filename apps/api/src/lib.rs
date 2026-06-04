@@ -305,6 +305,13 @@ mod tests {
         assert!(json["runtime_probability_mode"].is_string());
         assert!(json["runtime_release_status"].is_string());
         assert!(json["latest_replay_run_id"].is_null() || json["latest_replay_run_id"].is_string());
+        assert!(
+            json["latest_release_review"].is_null()
+                || (json["latest_release_review"]["reviewed_at"].is_string()
+                    && json["latest_release_review"]["overall_guard_passed"].is_boolean()
+                    && json["latest_release_review"]["historical_audit_actions"].is_array()
+                    && json["latest_release_review"]["historical_audit_attribution"].is_array())
+        );
         assert!(json["releases"].is_array());
         assert!(json["replay_runs"].is_array());
         assert!(json["snapshots"].is_array());

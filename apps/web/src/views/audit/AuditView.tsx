@@ -1,4 +1,4 @@
-import { Activity, Database, History, ShieldCheck } from "lucide-react";
+import { Activity, ClipboardCheck, Database, History, ShieldCheck } from "lucide-react";
 import type { AssessmentSnapshot, ResearchAuditResponse } from "../../types";
 import {
   DetailRows,
@@ -28,6 +28,11 @@ export default function AuditView({
     overlayHorizonRows,
     overlayAuditRows,
     overlaySummary,
+    latestReleaseReview,
+    latestReleaseReviewMetrics,
+    latestReleaseReviewContextRows,
+    latestReleaseReviewActionRows,
+    latestReleaseReviewAttributionRows,
     releaseRows,
     snapshotRows
   } = useAuditViewModel({
@@ -65,6 +70,71 @@ export default function AuditView({
             <SurfaceHeader title="审计摘要" icon={Database} />
             <MetricGrid items={summaryMetrics} />
             <p className="legend-note">{auditContent.summaryNote}</p>
+          </section>
+
+          <section className="surface">
+            <SurfaceHeader title="最近一次 Release Review" icon={ClipboardCheck} />
+            <p className="legend-note">{auditContent.releaseReviewSummary}</p>
+            {latestReleaseReview ? (
+              <>
+                <div className="audit-review-layout">
+                  <div className="audit-review-stack">
+                    <MetricGrid items={latestReleaseReviewMetrics} className="audit-review-metrics" />
+                    <RuleBox label="评审建议">{latestReleaseReview.recommendation}</RuleBox>
+                  </div>
+                  <div className="audit-review-stack">
+                    <RuleBox label="评审上下文">
+                      <DetailRows items={latestReleaseReviewContextRows} compact />
+                    </RuleBox>
+                  </div>
+                </div>
+
+                {latestReleaseReviewActionRows.length > 0 ? (
+                  <ResponsiveTable
+                    className="wide-table xwide-table"
+                    columns={["Action", "Workstream", "归因", "场景覆盖", "下一步"]}
+                    note={auditContent.releaseReviewActionTableNote}
+                  >
+                    {latestReleaseReviewActionRows.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.actionType}</td>
+                        <td>{row.workstream}</td>
+                        <td>{row.attribution}</td>
+                        <td>{row.scenarioSummary}</td>
+                        <td>{row.recommendation}</td>
+                      </tr>
+                    ))}
+                  </ResponsiveTable>
+                ) : null}
+
+                {latestReleaseReviewAttributionRows.length > 0 ? (
+                  <ResponsiveTable
+                    className="wide-table xwide-table"
+                    columns={["Workstream", "归因", "Baseline/Candidate", "场景覆盖", "解释"]}
+                    note={auditContent.releaseReviewAttributionTableNote}
+                  >
+                    {latestReleaseReviewAttributionRows.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.workstream}</td>
+                        <td>{row.attribution}</td>
+                        <td>{row.matchSummary}</td>
+                        <td>
+                          <strong>{row.scenarioSummary}</strong>
+                          {row.scenarioDetail
+                            .filter((item) => item !== null)
+                            .map((item, index) => (
+                              <span key={`${row.id}-scenario-${index}`}>{item}</span>
+                            ))}
+                        </td>
+                        <td>{row.explanation}</td>
+                      </tr>
+                    ))}
+                  </ResponsiveTable>
+                ) : null}
+              </>
+            ) : (
+              <RuleBox label="当前状态">{auditContent.releaseReviewEmpty}</RuleBox>
+            )}
           </section>
 
           <section className="surface">

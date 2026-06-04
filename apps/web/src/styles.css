@@ -792,6 +792,24 @@ td span,
   margin-top: 0;
 }
 
+.audit-review-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.audit-review-stack {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  align-content: start;
+}
+
+.audit-review-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .clause-section {
   display: grid;
   gap: 10px;
@@ -1209,7 +1227,8 @@ tbody strong {
 
   .band-grid,
   .dimension-detail-grid,
-  .sources-top-grid {
+  .sources-top-grid,
+  .audit-review-layout {
     grid-template-columns: 1fr;
   }
 
@@ -1278,7 +1297,8 @@ tbody strong {
   .runtime-card-grid,
   .probability-grid,
   .mini-metrics,
-  .sources-top-grid {
+  .sources-top-grid,
+  .audit-review-metrics {
     grid-template-columns: 1fr;
   }
 

@@ -518,6 +518,26 @@ export interface ModelReleaseRecord {
   note: string;
 }
 
+export interface HistoricalReplayRunRecord {
+  replay_run_id: string;
+  release_id: string | null;
+  market_scope: string;
+  from_date: string;
+  to_date: string;
+  history_cache_key: string;
+  feature_set_version: string;
+  label_version: string;
+  point_in_time_mode: string;
+  runtime_policy_version: string;
+  action_playbook_version: string;
+  protected_window_catalog_id: string;
+  source_watermark: string;
+  status: string;
+  point_count: number;
+  failure_reason: string | null;
+  created_at: string;
+}
+
 export interface PredictionSnapshotRecord {
   as_of_date: string;
   entity_id: string;
@@ -567,6 +587,41 @@ export interface AssessmentMethodResponse {
   runtime_thresholds: RuntimeThresholdDiagnostics;
 }
 
+export interface ReleaseReviewAuditAttributionSummary {
+  workstream: string;
+  attribution: string;
+  scenario_count: number;
+  protected_count: number;
+  baseline_count: number;
+  candidate_count: number;
+  baseline_scenarios: string[];
+  candidate_scenarios: string[];
+  explanation: string;
+}
+
+export interface ReleaseReviewAuditActionSummary {
+  workstream: string;
+  attribution: string;
+  action_type: string;
+  scenario_count: number;
+  protected_count: number;
+  recommendation: string;
+}
+
+export interface ReleaseReviewArtifactSummary {
+  reviewed_at: string;
+  market_scope: string;
+  history_mode: string;
+  original_active_release_id: string;
+  restored_release_id: string;
+  baseline_release_id: string;
+  candidate_release_id: string;
+  overall_guard_passed: boolean;
+  recommendation: string;
+  historical_audit_attribution: ReleaseReviewAuditAttributionSummary[];
+  historical_audit_actions: ReleaseReviewAuditActionSummary[];
+}
+
 export interface ResearchAuditResponse {
   supported: boolean;
   storage_mode: string;
@@ -575,7 +630,10 @@ export interface ResearchAuditResponse {
   runtime_probability_mode: string;
   runtime_release_status: string;
   latest_snapshot_date: string | null;
+  latest_replay_run_id: string | null;
+  latest_release_review: ReleaseReviewArtifactSummary | null;
   note: string;
   releases: ModelReleaseRecord[];
+  replay_runs: HistoricalReplayRunRecord[];
   snapshots: PredictionSnapshotRecord[];
 }
