@@ -164,8 +164,8 @@ apps/worker/src/
 边界要求：
 
 - `main.rs` 继续朝“只保留顶层分发”收缩，但在完全拆干净之前，可以暂时承载少量共享类型、导出与底层 helper；不要为了形式上只留一个入口，先制造空目录或额外跳转层。
-- `reporting.rs` 负责结构化报告渲染与导出，`release_review.rs` 负责 release review 专属诊断与解释 helper。
-- `actionability.rs`、`probability.rs`、`model.rs`、`training.rs`、`formal.rs` 负责训练、特征、数据集构建与共享数学/标签逻辑。
+- `reporting.rs` 负责结构化报告渲染与导出，`release_review.rs` 负责 release review 专属报告结构、诊断与解释 helper。
+- `actionability.rs`、`probability.rs`、`model.rs`、`training.rs`、`formal.rs` 负责训练、特征、数据集构建与共享数学/标签逻辑；其中 `training.rs` 还承接 formal bundle 训练管线和 `forward_crisis` 标签 / regime helper。
 - `commands/*` 只负责 CLI 层 glue code。
 
 ## 5. API 拆分边界

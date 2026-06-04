@@ -83,7 +83,7 @@
 - formal dataset summary 的 envelope 结构、split/scenario/regime 汇总、Markdown 渲染与 CLI 打印，也已迁入 `commands/dataset.rs`，`main.rs` 只保留场景切分与共享训练 helper。
 - formal dataset 的主样本装配、场景集加载/切分要求、scenario metadata 编码 helper 也已继续迁入 `commands/dataset.rs`，`main.rs` 进一步缩回到 actionability / 概率训练共享逻辑。
 - 已新增 `apps/worker/src/formal.rs`，把 snapshot/formal dataset 共用的场景标签推导收敛成单一 helper，避免两条训练输入链路各自维护一套 crisis/actionability 标注逻辑。
-- 已新增 `apps/worker/src/training.rs`，把 `ProbabilityTrainingRow/Input`、chronological split 与 label-mode 支持检查从 `main.rs` 中抽离，固定训练数据 contract 的归属边界。
+- 已新增 `apps/worker/src/training.rs`，把 `ProbabilityTrainingRow/Input`、chronological split、label-mode 支持检查、formal bundle 训练管线以及 `forward_crisis` 标签 / regime helper 从 `main.rs` 中抽离，固定训练数据 contract 与训练编排的归属边界。
 - 已新增 `apps/worker/src/actionability.rs`，把 actionability bundle 训练、阈值选择、校准策略、guardrail 与 actionability evaluation summary 从 `main.rs` 中拆出，供训练与 release review 共用。
 - 已新增 `apps/worker/src/probability.rs`，把 probability bundle 训练、Platt 校准择优、threshold 选择、regime separation 诊断与 evaluation summary 从 `main.rs` 中拆出，收拢概率训练主链路的模块边界。
 - 已新增 `apps/worker/src/model.rs`，把 logistic 拟合、样本加权、sign / regime pairwise 约束、Platt 校准、runtime 打分与基础概率评估从 `main.rs` 中拆出，避免训练数学细节继续和命令编排混在一起。
@@ -91,11 +91,11 @@
 - `release review` 的 runtime snapshot 抓取与 orchestration 也已迁到 `commands/release.rs`。
 - `release review` 专属的 probability/actionability/runtime sanity guardrail、recommendation、summary helper 也已开始跟随迁移。
 - 已新增 `apps/worker/src/commands/release/probability.rs`，把 `probability-slice`、`formal-probability-slice`、`formal-probability-compare` 的 CLI 选项解析、bundle 评分、CSV/JSON 导出与摘要打印从 `commands/release.rs` 中拆出，release 主模块重新收缩到 publish / activate / rollback / review 主流程。
-- 已新增 `apps/worker/src/release_review.rs`，把 release review 专属的 historical audit takeaways、failure mode / attribution / action / workstream 汇总、runtime regime probability / separation diagnostics，以及 review Markdown 渲染入口从 `main.rs` 中拆出，统一 release review helper 的归属边界。
+- 已新增 `apps/worker/src/release_review.rs`，把 release review 专属的 report wire structs、historical audit takeaways、failure mode / attribution / action / workstream 汇总、runtime regime probability / separation diagnostics，以及 review Markdown 渲染入口从 `main.rs` 中拆出，统一 release review helper 与报告数据结构的归属边界。
 - 已新增 `apps/worker/src/commands/db.rs`，把 `db init/seed/check` 从超大入口文件中拆出。
 - 已新增 `apps/worker/src/commands/refresh.rs` 与 `commands/backfill.rs`，开始把免费数据刷新与回填入口从 `main.rs` 中剥离。
-- 这一轮之后，`apps/worker/src/main.rs` 已从约 `7,573` 行继续收缩到约 `6,523` 行，主要移除了 release review 专属解释与 runtime diagnostic 实现体。
-- 当前 `main.rs` 已主要保留底层 research/helper/训练实现、共享类型与顶层导出；下一步继续按实现体拆出 formal dataset / pipeline 内部 helper，并观察共享类型是否需要再落到独立模块。
+- 这一轮之后，`apps/worker/src/main.rs` 已从约 `7,573` 行继续收缩到约 `5,870` 行，进一步移除了训练管线实现、forward-crisis 标签/regime helper，以及 release review 专属报告结构。
+- 当前 `main.rs` 已主要保留动作 episode / scenario helper、通用格式化、少量 IO helper、测试和顶层导出；下一步继续观察 action episode / scenario 元数据是否需要再落到独立模块。
 
 ### 3.2 API
 
