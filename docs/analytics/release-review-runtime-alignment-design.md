@@ -274,6 +274,20 @@ vs
 - 如果是 `candidate_regression`，后续重点应放在 candidate 这轮训练、阈值或 policy 改动；
 - 如果是 `both_baseline_and_candidate`，说明 candidate 既没有修掉主线短板，也还不能拿来替换当前 active。
 
+再往前一步，还需要把这层归因继续压成 `Historical Audit Actions`：
+
+- 不再让读报告的人自己把 attribution 翻译成下一步动作；
+- 直接给出这条 workstream 当前更应该进入哪一种处理路径：
+  - `candidate_reject_or_retrain`
+  - `shared_blocker_fix_before_promotion`
+  - `baseline_research_fix`
+
+这样 `release review` 最终 recommendation 就不再只是泛化地说“需要继续复核”，而是能更明确地区分：
+
+- 当前 candidate 是否应该直接判退；
+- 当前 candidate 是否只是被 baseline 主线共性短板挡住；
+- 某条问题到底是 release go/no-go blocker，还是 formal main 的长期研究修复项。
+
 这意味着后续不需要再只靠肉眼扫长表，已经可以直接回答：
 
 - 是 `review gate` 挡住更多；
@@ -334,3 +348,9 @@ vs
 - 这是当前 formal main 的共性问题，还是 candidate 本轮新增退化；
 - 哪些 workstream 属于“主线先天不足”，哪些属于“候选版本自己弄坏了”；
 - 后续优先级应先放在主线结构修复，还是直接淘汰当前 candidate。
+
+而补上 `Historical Audit Actions` 之后，正式产物会继续把这些结论落成动作：
+
+- `candidate_regression` 直接进入 candidate 判退 / 重训 / 回滚改动路径；
+- `both_baseline_and_candidate` 直接进入晋升前置 blocker 路径；
+- `baseline_shared_weakness` 直接进入 formal main 主线研究修复路径。

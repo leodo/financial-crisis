@@ -478,6 +478,14 @@
                 `baseline_shared_weakness`，
                 还是 `candidate_regression`，
                 避免把 formal main 既有短板和 candidate 本轮退化混成同一个问题；
+            4.8 [x] `release review` 已新增 `Historical Audit Actions`，
+                会把 attribution 进一步落成
+                `candidate_reject_or_retrain` /
+                `shared_blocker_fix_before_promotion` /
+                `baseline_research_fix` 三类动作，
+                让最终 recommendation 能直接回答
+                “该判退 candidate、先修共享 blocker，
+                还是纳入 formal main 主线修复”；
             5. 下一步不再把两类 missed 场景混成一个问题：
                - 对 `2000-2001` 先专项复核 strict gate 与 runtime floor 的映射；
                - 对 `1990-1993` 先专项复核为什么高 `p20d/p60d` 长期无法推动 `prepare/months` 连续成立。

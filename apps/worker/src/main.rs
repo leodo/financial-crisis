@@ -435,6 +435,16 @@ struct ReleaseReviewHistoricalAuditAttributionSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct ReleaseReviewHistoricalAuditActionSummary {
+    workstream: String,
+    attribution: String,
+    action_type: String,
+    scenario_count: u32,
+    protected_count: u32,
+    recommendation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct ReleaseReviewComparisonSummary {
     timely_warning_rate: ReleaseReviewScalarMetric,
     strict_actionable_point_count: ReleaseReviewCountMetric,
@@ -605,6 +615,7 @@ struct ReleaseReviewEnvelope {
     historical_audit_workstreams: Vec<ReleaseReviewHistoricalAuditWorkstreamSummary>,
     historical_audit_priorities: Vec<ReleaseReviewHistoricalAuditPriority>,
     historical_audit_attribution: Vec<ReleaseReviewHistoricalAuditAttributionSummary>,
+    historical_audit_actions: Vec<ReleaseReviewHistoricalAuditActionSummary>,
     comparison: ReleaseReviewComparisonSummary,
     probability_guard_regressions: Vec<String>,
     probability_guard_passed: bool,
@@ -3176,6 +3187,28 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
             }
             let _ = writeln!(markdown);
         }
+        if !report.historical_audit_actions.is_empty() {
+            let _ = writeln!(markdown, "## Historical Audit Actions");
+            let _ = writeln!(markdown);
+            let _ = writeln!(
+                markdown,
+                "| Workstream | Attribution | Action | Scenarios | Protected | Recommendation |"
+            );
+            let _ = writeln!(markdown, "| --- | --- | --- | --- | --- | --- |");
+            for row in &report.historical_audit_actions {
+                let _ = writeln!(
+                    markdown,
+                    "| {} | {} | {} | {} | {} | {} |",
+                    row.workstream,
+                    row.attribution,
+                    row.action_type,
+                    row.scenario_count,
+                    row.protected_count,
+                    row.recommendation,
+                );
+            }
+            let _ = writeln!(markdown);
+        }
         let _ = writeln!(markdown, "## Historical Audit Priorities");
         let _ = writeln!(markdown);
         let _ = writeln!(
@@ -3743,6 +3776,40 @@ pub(crate) fn summarize_release_review_historical_audit_attribution(
     rows
 }
 
+pub(crate) fn summarize_release_review_historical_audit_actions(
+    rows: &[ReleaseReviewHistoricalAuditAttributionSummary],
+) -> Vec<ReleaseReviewHistoricalAuditActionSummary> {
+    let mut actions = rows
+        .iter()
+        .map(|row| ReleaseReviewHistoricalAuditActionSummary {
+            workstream: row.workstream.clone(),
+            attribution: row.attribution.clone(),
+            action_type: release_review_historical_audit_action_type(&row.attribution).to_string(),
+            scenario_count: row.scenario_count,
+            protected_count: row.protected_count,
+            recommendation: release_review_historical_audit_action_recommendation(
+                &row.workstream,
+                &row.attribution,
+                row.scenario_count,
+            ),
+        })
+        .collect::<Vec<_>>();
+    actions.sort_by(|left, right| {
+        release_review_historical_workstream_priority(&left.workstream)
+            .cmp(&release_review_historical_workstream_priority(
+                &right.workstream,
+            ))
+            .then_with(|| {
+                release_review_historical_action_priority(&left.action_type).cmp(
+                    &release_review_historical_action_priority(&right.action_type),
+                )
+            })
+            .then_with(|| right.scenario_count.cmp(&left.scenario_count))
+            .then_with(|| left.workstream.cmp(&right.workstream))
+    });
+    actions
+}
+
 pub(crate) fn summarize_release_review_historical_audit_workstreams(
     priorities: &[ReleaseReviewHistoricalAuditPriority],
 ) -> Vec<ReleaseReviewHistoricalAuditWorkstreamSummary> {
@@ -3878,11 +3945,29 @@ fn release_review_historical_audit_attribution_label(
     }
 }
 
+fn release_review_historical_audit_action_type(attribution: &str) -> &'static str {
+    match attribution {
+        "candidate_regression" => "candidate_reject_or_retrain",
+        "both_baseline_and_candidate" => "shared_blocker_fix_before_promotion",
+        "baseline_shared_weakness" => "baseline_research_fix",
+        _ => "manual_review",
+    }
+}
+
 fn release_review_historical_attribution_priority(attribution: &str) -> u8 {
     match attribution {
         "both_baseline_and_candidate" => 0,
         "candidate_regression" => 1,
         "baseline_shared_weakness" => 2,
+        _ => 3,
+    }
+}
+
+fn release_review_historical_action_priority(action_type: &str) -> u8 {
+    match action_type {
+        "candidate_reject_or_retrain" => 0,
+        "shared_blocker_fix_before_promotion" => 1,
+        "baseline_research_fix" => 2,
         _ => 3,
     }
 }
@@ -3913,6 +3998,34 @@ fn release_review_historical_audit_attribution_explanation(
         ),
         _ => format!(
             "{scenario_count} 个样本目前仍需要继续人工复核 {workstream_label}，涉及 {scenario_text}。"
+        ),
+    }
+}
+
+fn release_review_historical_audit_action_recommendation(
+    workstream: &str,
+    attribution: &str,
+    scenario_count: u32,
+) -> String {
+    let workstream_label = match workstream {
+        "strict_review_vs_runtime_mapping" => "strict gate vs runtime floor",
+        "posture_continuity" => "posture continuity",
+        "score_confirmation" => "score confirmation",
+        "transitional_bridge" => "transitional bridge",
+        _ => "residual release-review audit",
+    };
+    match attribution {
+        "candidate_regression" => format!(
+            "{scenario_count} 个样本显示 candidate 在 {workstream_label} 上新增退化。当前更合适的动作是先判定该候选不具备晋升条件，回到训练 / 阈值 / policy 改动复核。"
+        ),
+        "both_baseline_and_candidate" => format!(
+            "{scenario_count} 个样本显示 {workstream_label} 同时是 baseline 共性短板和 candidate 未修复阻塞。当前应先把这条线视为晋升前置 blocker。"
+        ),
+        "baseline_shared_weakness" => format!(
+            "{scenario_count} 个样本显示 {workstream_label} 主要是 baseline 主线既有短板。当前更合适的动作是纳入 formal main 研究修复，而不是把责任归到 candidate 本轮。"
+        ),
+        _ => format!(
+            "{scenario_count} 个样本在 {workstream_label} 上仍需继续人工复核，暂不适合自动给出晋升或判退结论。"
         ),
     }
 }
@@ -4707,7 +4820,7 @@ mod tests {
         round3, scenario_aware_formal_split_bounds, scenario_count_for_index_range,
         select_actionability_calibration_strategy, select_actionability_decision_threshold,
         select_probability_calibration_strategy, select_probability_decision_threshold,
-        summarize_release_review_failure_modes,
+        summarize_release_review_failure_modes, summarize_release_review_historical_audit_actions,
         summarize_release_review_historical_audit_attribution,
         summarize_release_review_historical_audit_priorities,
         summarize_release_review_historical_audit_workstreams,
@@ -4720,10 +4833,10 @@ mod tests {
         ProbabilityThresholdDiagnosticsInput, ProbabilityThresholdSelection,
         ProbabilityTrainingRegime, ProbabilityTrainingRow, RefreshLatestOptions,
         ReleaseActionabilityLevelReview, ReleaseActionabilityReview,
-        ReleaseReviewHistoricalAuditPriority, ReleaseReviewRuntimeDominantCategories,
-        ReleaseReviewRuntimeSeparationComparison, ReleaseReviewScenarioFocusDiagnostic,
-        ReleaseRuntimeReviewDiagnostics, ReleaseRuntimeSeparationSummary,
-        RuntimeThresholdDiagnosticsWire, ScenarioRowRange,
+        ReleaseReviewHistoricalAuditAttributionSummary, ReleaseReviewHistoricalAuditPriority,
+        ReleaseReviewRuntimeDominantCategories, ReleaseReviewRuntimeSeparationComparison,
+        ReleaseReviewScenarioFocusDiagnostic, ReleaseRuntimeReviewDiagnostics,
+        ReleaseRuntimeSeparationSummary, RuntimeThresholdDiagnosticsWire, ScenarioRowRange,
     };
 
     fn observation(
@@ -9122,6 +9235,73 @@ mod tests {
         assert_eq!(regression.baseline_count, 0);
         assert_eq!(regression.candidate_count, 1);
         assert!(regression.explanation.contains("自己退化出来"));
+    }
+
+    #[test]
+    fn release_review_historical_audit_actions_translate_attribution_to_next_step() {
+        let actions = summarize_release_review_historical_audit_actions(&[
+            ReleaseReviewHistoricalAuditAttributionSummary {
+                workstream: "score_confirmation".to_string(),
+                attribution: "candidate_regression".to_string(),
+                scenario_count: 1,
+                protected_count: 1,
+                baseline_count: 0,
+                candidate_count: 1,
+                baseline_scenarios: Vec::new(),
+                candidate_scenarios: vec!["2023 美国区域银行危机".to_string()],
+                explanation: "candidate regression".to_string(),
+            },
+            ReleaseReviewHistoricalAuditAttributionSummary {
+                workstream: "strict_review_vs_runtime_mapping".to_string(),
+                attribution: "both_baseline_and_candidate".to_string(),
+                scenario_count: 2,
+                protected_count: 2,
+                baseline_count: 2,
+                candidate_count: 2,
+                baseline_scenarios: vec![
+                    "2000-2001 科网泡沫出清".to_string(),
+                    "2011 美欧融资压力".to_string(),
+                ],
+                candidate_scenarios: vec![
+                    "2000-2001 科网泡沫出清".to_string(),
+                    "2011 美欧融资压力".to_string(),
+                ],
+                explanation: "shared blocker".to_string(),
+            },
+            ReleaseReviewHistoricalAuditAttributionSummary {
+                workstream: "posture_continuity".to_string(),
+                attribution: "baseline_shared_weakness".to_string(),
+                scenario_count: 1,
+                protected_count: 1,
+                baseline_count: 1,
+                candidate_count: 0,
+                baseline_scenarios: vec!["1990-1993 美国银行与衰退压力".to_string()],
+                candidate_scenarios: Vec::new(),
+                explanation: "baseline weakness".to_string(),
+            },
+        ]);
+
+        assert_eq!(actions.len(), 3);
+        let candidate = actions
+            .iter()
+            .find(|row| row.action_type == "candidate_reject_or_retrain")
+            .expect("candidate regression action");
+        assert_eq!(candidate.workstream, "score_confirmation");
+        assert!(candidate.recommendation.contains("不具备晋升条件"));
+
+        let shared = actions
+            .iter()
+            .find(|row| row.action_type == "shared_blocker_fix_before_promotion")
+            .expect("shared blocker action");
+        assert_eq!(shared.workstream, "strict_review_vs_runtime_mapping");
+        assert!(shared.recommendation.contains("晋升前置 blocker"));
+
+        let baseline = actions
+            .iter()
+            .find(|row| row.action_type == "baseline_research_fix")
+            .expect("baseline research action");
+        assert_eq!(baseline.workstream, "posture_continuity");
+        assert!(baseline.recommendation.contains("formal main 研究修复"));
     }
 
     #[test]
