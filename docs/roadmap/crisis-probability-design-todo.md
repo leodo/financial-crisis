@@ -423,6 +423,21 @@
             2. 直接审计为什么 `60d` 仍是 `separated_but_below_runtime_floor`；
             3. 直接审计为什么 `2000-2001 / 1990-1993` 只有 `L2` 提前量，却始终无法进入 `L3 actionable`；
             4. 训练、threshold policy、runtime posture 后续都以“提前一周以上可执行预警”作为首要目标，而不是继续优先压短误报。
+          - [x] 已确认 `081030` 之后的主瓶颈不是“继续压 20d 误报”，而是
+            `strict review gate` 与 runtime floor 的口径失配，加上
+            `1990-1993 / 2000-2001` 的 posture continuity failure；
+            对应设计已沉淀到
+            [release-review-runtime-alignment-design.md](../analytics/release-review-runtime-alignment-design.md)。
+          - [ ] 下一步先补 `release review` 双口径输出，而不是继续做同类 20d 误报压缩：
+            1. 在 point 级输出显式区分 `strict_review_actionable`、`runtime_floor_hit`、
+               `runtime_actionable_block_reason`；
+            2. 在聚合 summary 中增加 `strict_actionable_point_count` 与
+               `runtime_floor_hit_count`；
+            3. 让 `Focus Scenarios` 和正式 guard 说明都能同时表达“runtime 已有信号，但 strict L3 仍未成立”。
+          - [ ] 下一步专项审计 `1990-1993 / 2000-2001` 的 posture continuity：
+            1. 逐日对齐 `p20d / p60d / posture / time_bucket / actionable bridge`；
+            2. 确认为什么高概率日期仍长期停在 `normal`；
+            3. 确认为什么只能出现零星 `prepare` 脉冲，始终不能形成 sustained `3/5` hits。
           - [ ] 下一步以 `034053` 为保护基线继续收口剩余短误报，但约束顺序必须固定：
             1. 先守住 `regional_banks` 的 `20d hits / positive_window hit rate / positive_window_avg_probability`；
             2. 再处理 `2023-02-03 ~ 2023-02-05`、`2023-02-14`、`2023-07-13` 等剩余 `20d` 误报点；
@@ -459,10 +474,12 @@
 当前剩余主线不再是“扩展历史样本有没有数据”，而是：
 
 1. 用最新 episode-native / regime-aware 口径重建 `formal main`；
-2. 重训 candidate release；
-3. 在已经出现 `usable early-warning separation` 的前提下，把 runtime false-positive episode 收紧到可接受区间；
-4. 重跑 release review / rolling audit / runtime regime audit；
-5. 继续把 raw PIT history 与 persisted snapshot 彻底解耦。
+2. 先补 `release review` 双口径审计，避免继续把 runtime 与 strict review 混成一个指标；
+3. 再专项修 `1990-1993 / 2000-2001` 的 posture continuity；
+4. 在此基础上重训 candidate release；
+5. 再处理剩余 runtime false-positive episode 收口；
+6. 重跑 release review / rolling audit / runtime regime audit；
+7. 继续把 raw PIT history 与 persisted snapshot 彻底解耦。
 
 ### 6.5 2026-06-01 Episode-native 第一阶段代码已落地
 

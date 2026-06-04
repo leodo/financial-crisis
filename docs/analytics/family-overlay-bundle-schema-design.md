@@ -667,3 +667,23 @@ family_overlays == []
 1. 直接解释为什么 `60d` 仍然“有分离、但过不了 runtime floor”；
 2. 解释为什么 `2000-2001 / 1990-1993` 只能给出结构性 `L2`，却给不出动作级 `L3`；
 3. 把训练目标、threshold policy 与 runtime posture 的优化重点迁到“恢复可执行提前量”。
+
+### 15.4 2026-06-04 补充：当前主瓶颈已明确为 review/runtime 失配加 posture continuity
+
+结合这轮新增的 `Focus Scenarios` 诊断，可以把 `081030` 当前卡住的位置说得更具体：
+
+1. 不少真实危机场景并不是“模型没看见”，而是已经先命中了 runtime floor；
+2. 但 `release review` 里的 strict `L3 actionable` 仍要求更硬的 `p20d / p60d` 门槛；
+3. 即便概率已经够高，`1990-1993 / 2000-2001` 这类长窗结构性样本里，`posture/time_bucket`
+   仍频繁停在 `normal`，导致始终凑不出 sustained `3/5` actionable hits。
+
+这意味着 family-hybrid 主线的下一轮最高优先级应再收紧为：
+
+1. 先补双口径 `release review` 诊断，显式区分 `strict-review-actionable` 和
+   `runtime-actionable-potential`；
+2. 再专项修 `1990-1993 / 2000-2001` 的 posture continuity，而不是继续把主要精力放在
+   `20d` 短误报压缩；
+3. 只有在这两条证据链补齐后，才继续决定是否需要新的 threshold / calibration / training 形态。
+
+相关设计与后续字段约束已单独沉淀在
+[release-review-runtime-alignment-design.md](release-review-runtime-alignment-design.md)。

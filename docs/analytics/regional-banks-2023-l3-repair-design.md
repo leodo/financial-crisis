@@ -560,3 +560,22 @@
 2. 但它不再是唯一目标函数；
 3. 下一轮需要和 `2000-2001 / 1990-1993` 的 `L3 actionable` 缺口联合看，
    不能再只围绕 `20d` 连续性单点优化。
+
+进一步说，这份文档现在应该承担的是“保护 `regional_banks` 不再被修坏”的边界约束，
+而不是单独定义整个主线优先级。
+
+新的主线判断已经比较清楚：
+
+1. `regional_banks` 仍是必须守住的唯一真实 timely 样本；
+2. 但 `timely_warning_rate=10%` 的主瓶颈，已经不再只是它的 `20d` 连续性；
+3. 更大的问题是 `release review` strict gate 与 runtime floor 不一致，以及
+   `1990-1993 / 2000-2001` 长窗结构性样本的 posture continuity 失效。
+
+因此后续围绕这份文档继续做实验时，默认前提应是：
+
+1. 不允许为修 `regional_banks` 再回到大范围 `20d threshold` 微调；
+2. 要把 `regional_banks` 诊断结果和
+   [release-review-runtime-alignment-design.md](release-review-runtime-alignment-design.md)
+   的双口径审计一起看；
+3. 只有在不牺牲 `regional_banks` 的前提下，才允许继续向 `1990-1993 / 2000-2001`
+   追回动作级提前量。

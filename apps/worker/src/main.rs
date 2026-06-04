@@ -323,6 +323,8 @@ struct ReleaseReviewScenarioPointComparison {
     candidate_actionable_sustained: Option<bool>,
     baseline_trigger_codes: Vec<String>,
     candidate_trigger_codes: Vec<String>,
+    baseline_actionable_diagnostic: Option<String>,
+    candidate_actionable_diagnostic: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -346,6 +348,10 @@ struct ReleaseReviewScenarioFocusDiagnostic {
     candidate_max_p20d: Option<f64>,
     baseline_max_p60d: Option<f64>,
     candidate_max_p60d: Option<f64>,
+    baseline_first_runtime_floor_hit_without_l3_date: Option<NaiveDate>,
+    candidate_first_runtime_floor_hit_without_l3_date: Option<NaiveDate>,
+    baseline_first_runtime_floor_hit_without_l3_reason: Option<String>,
+    candidate_first_runtime_floor_hit_without_l3_reason: Option<String>,
     interesting_points: Vec<ReleaseReviewScenarioPointComparison>,
 }
 
@@ -2981,6 +2987,22 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
                 format_optional_pct(scenario.baseline_max_p60d),
                 format_optional_pct(scenario.candidate_max_p60d)
             );
+            let _ = writeln!(
+                markdown,
+                "- First runtime-floor hit without L3: baseline={} | candidate={}",
+                format_optional_date_with_reason(
+                    scenario.baseline_first_runtime_floor_hit_without_l3_date,
+                    scenario
+                        .baseline_first_runtime_floor_hit_without_l3_reason
+                        .as_deref()
+                ),
+                format_optional_date_with_reason(
+                    scenario.candidate_first_runtime_floor_hit_without_l3_date,
+                    scenario
+                        .candidate_first_runtime_floor_hit_without_l3_reason
+                        .as_deref()
+                )
+            );
             let _ = writeln!(markdown);
             if scenario.interesting_points.is_empty() {
                 let _ = writeln!(
@@ -2992,16 +3014,16 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
             }
             let _ = writeln!(
                 markdown,
-                "| Date | Base p_20d | Cand p_20d | Base p_60d | Cand p_60d | Base posture | Cand posture | Base bucket | Cand bucket | Base actionable | Cand actionable | Base 5d hits | Cand 5d hits | Base sustained | Cand sustained | Base triggers | Cand triggers |"
+                "| Date | Base p_20d | Cand p_20d | Base p_60d | Cand p_60d | Base posture | Cand posture | Base bucket | Cand bucket | Base actionable | Cand actionable | Base 5d hits | Cand 5d hits | Base sustained | Cand sustained | Base triggers | Cand triggers | Base diag | Cand diag |"
             );
             let _ = writeln!(
                 markdown,
-                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
             );
             for point in &scenario.interesting_points {
                 let _ = writeln!(
                     markdown,
-                    "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                    "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
                     point.as_of_date,
                     format_optional_pct(point.baseline_p20d),
                     format_optional_pct(point.candidate_p20d),
@@ -3018,7 +3040,15 @@ fn render_release_review_markdown(report: &ReleaseReviewEnvelope) -> String {
                     format_optional_bool_flag(point.baseline_actionable_sustained),
                     format_optional_bool_flag(point.candidate_actionable_sustained),
                     format_trigger_codes(&point.baseline_trigger_codes),
-                    format_trigger_codes(&point.candidate_trigger_codes)
+                    format_trigger_codes(&point.candidate_trigger_codes),
+                    point
+                        .baseline_actionable_diagnostic
+                        .as_deref()
+                        .unwrap_or("—"),
+                    point
+                        .candidate_actionable_diagnostic
+                        .as_deref()
+                        .unwrap_or("—")
                 );
             }
             let _ = writeln!(markdown);
@@ -3576,6 +3606,14 @@ fn format_optional_date(value: Option<NaiveDate>) -> String {
         .unwrap_or_else(|| "—".to_string())
 }
 
+fn format_optional_date_with_reason(value: Option<NaiveDate>, reason: Option<&str>) -> String {
+    match (value, reason) {
+        (Some(date), Some(reason)) if !reason.is_empty() => format!("{date} ({reason})"),
+        (Some(date), _) => date.to_string(),
+        _ => "—".to_string(),
+    }
+}
+
 fn format_optional_date_with_lead(value: Option<NaiveDate>, crisis_start: NaiveDate) -> String {
     value
         .map(|date| {
@@ -4011,7 +4049,19 @@ mod tests {
             },
             note: "test".to_string(),
             protected_stress_window_catalog: None,
-            runtime_thresholds: None,
+            runtime_thresholds: Some(super::RuntimeThresholdDiagnosticsWire {
+                prepare_p60d: 0.10,
+                hedge_p20d: 0.07,
+                defend_p5d: 0.03,
+                severe_now_p20d: 0.27,
+                elevated_weeks_p60d: 0.20,
+                external_prepare_p20d: 0.05,
+                carry_prepare_p60d: 0.08,
+                downgrade_prepare_p60d: 0.075,
+                downgrade_hedge_p20d: 0.053,
+                downgrade_defend_p5d: 0.02,
+                history_runtime_policy_version: "runtime_history_test".to_string(),
+            }),
         }
     }
 
@@ -7404,6 +7454,14 @@ mod tests {
         assert_eq!(rows[0].candidate_first_l3_date, None);
         assert_eq!(rows[0].baseline_actionable_point_count, 4);
         assert_eq!(rows[0].candidate_actionable_point_count, 1);
+        assert_eq!(
+            rows[0].candidate_first_runtime_floor_hit_without_l3_date,
+            Some(first_l2)
+        );
+        assert!(rows[0]
+            .candidate_first_runtime_floor_hit_without_l3_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("hit runtime floor")));
 
         let first_l3_point = rows[0]
             .interesting_points
@@ -7416,6 +7474,100 @@ mod tests {
         assert_eq!(first_l3_point.candidate_actionable_forward_5d_hits, Some(1));
         assert_eq!(first_l3_point.baseline_actionable_sustained, Some(true));
         assert_eq!(first_l3_point.candidate_actionable_sustained, Some(false));
+        assert_eq!(
+            first_l3_point.baseline_actionable_diagnostic.as_deref(),
+            Some("actionable")
+        );
+        assert!(first_l3_point
+            .candidate_actionable_diagnostic
+            .as_deref()
+            .is_some_and(|reason| reason.contains("hit runtime floor")));
+    }
+
+    #[test]
+    fn release_review_focus_diagnostic_includes_structural_only_missed_scenarios() {
+        let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+        let runtime_floor_date = NaiveDate::from_ymd_opt(2023, 2, 10).unwrap();
+        let first_l2 = NaiveDate::from_ymd_opt(2023, 2, 20).unwrap();
+        let baseline = vec![synthetic_backtest_summary_with_dates(
+            "scenario_structural",
+            "Structural Only",
+            Some(first_l2),
+            None,
+            Some(18),
+            None,
+            0,
+        )];
+        let candidate = vec![synthetic_backtest_summary_with_dates(
+            "scenario_structural",
+            "Structural Only",
+            Some(first_l2),
+            None,
+            Some(18),
+            None,
+            0,
+        )];
+        let shared_history = vec![
+            runtime_history_point_with_state(
+                runtime_floor_date,
+                52.0,
+                0.02,
+                0.08,
+                0.14,
+                DecisionPosture::Normal,
+                TimeToRiskBucket::Normal,
+                41.0,
+                &[],
+            ),
+            runtime_history_point_with_state(
+                first_l2,
+                54.0,
+                0.02,
+                0.09,
+                0.16,
+                DecisionPosture::Normal,
+                TimeToRiskBucket::Normal,
+                42.0,
+                &[],
+            ),
+            runtime_history_point_with_state(
+                crisis_start,
+                60.0,
+                0.05,
+                0.21,
+                0.32,
+                DecisionPosture::Normal,
+                TimeToRiskBucket::Normal,
+                44.0,
+                &[],
+            ),
+        ];
+        let method = formal_main_audit_method_wire();
+
+        let rows = build_release_review_scenario_focus_diagnostics(
+            &baseline,
+            &candidate,
+            &shared_history,
+            &shared_history,
+            &method,
+            &method,
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].scenario_id, "scenario_structural");
+        assert_eq!(rows[0].outcome, "missed_to_missed");
+        assert_eq!(
+            rows[0].baseline_first_runtime_floor_hit_without_l3_date,
+            Some(runtime_floor_date)
+        );
+        assert!(rows[0]
+            .baseline_first_runtime_floor_hit_without_l3_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("hit runtime floor")));
+        assert!(rows[0]
+            .interesting_points
+            .iter()
+            .any(|point| point.as_of_date == runtime_floor_date));
     }
 
     #[test]

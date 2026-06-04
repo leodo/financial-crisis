@@ -3238,6 +3238,8 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
         release_review_uses_transitional_actionable_bridge(baseline_method);
     let candidate_use_transitional_bridge =
         release_review_uses_transitional_actionable_bridge(candidate_method);
+    let baseline_runtime_thresholds = baseline_method.runtime_thresholds.as_ref();
+    let candidate_runtime_thresholds = candidate_method.runtime_thresholds.as_ref();
 
     let mut rows = baseline_backtests
         .iter()
@@ -3283,6 +3285,18 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                 &candidate_pre_crisis_points,
                 candidate_use_transitional_bridge,
             );
+            let baseline_first_runtime_floor_hit_without_l3 =
+                release_review_first_runtime_floor_hit_without_l3(
+                    &baseline_pre_crisis_points,
+                    baseline_use_transitional_bridge,
+                    baseline_runtime_thresholds,
+                );
+            let candidate_first_runtime_floor_hit_without_l3 =
+                release_review_first_runtime_floor_hit_without_l3(
+                    &candidate_pre_crisis_points,
+                    candidate_use_transitional_bridge,
+                    candidate_runtime_thresholds,
+                );
 
             let mut interesting_dates = BTreeSet::new();
             for date in [
@@ -3294,6 +3308,12 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                 candidate.and_then(|scenario| scenario.first_l3_date),
                 baseline_first_non_normal_date,
                 candidate_first_non_normal_date,
+                baseline_first_runtime_floor_hit_without_l3
+                    .as_ref()
+                    .map(|(date, _)| *date),
+                candidate_first_runtime_floor_hit_without_l3
+                    .as_ref()
+                    .map(|(date, _)| *date),
             ]
             .into_iter()
             .flatten()
@@ -3376,6 +3396,20 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                         candidate_trigger_codes: candidate_point
                             .map(|point| point.posture_trigger_codes.clone())
                             .unwrap_or_default(),
+                        baseline_actionable_diagnostic: baseline_point.map(|point| {
+                            release_review_actionable_diagnostic(
+                                point,
+                                baseline_use_transitional_bridge,
+                                baseline_runtime_thresholds,
+                            )
+                        }),
+                        candidate_actionable_diagnostic: candidate_point.map(|point| {
+                            release_review_actionable_diagnostic(
+                                point,
+                                candidate_use_transitional_bridge,
+                                candidate_runtime_thresholds,
+                            )
+                        }),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -3434,6 +3468,22 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                     &candidate_pre_crisis_points,
                     |point| point.p_60d,
                 ),
+                baseline_first_runtime_floor_hit_without_l3_date:
+                    baseline_first_runtime_floor_hit_without_l3
+                        .as_ref()
+                        .map(|(date, _)| *date),
+                candidate_first_runtime_floor_hit_without_l3_date:
+                    candidate_first_runtime_floor_hit_without_l3
+                        .as_ref()
+                        .map(|(date, _)| *date),
+                baseline_first_runtime_floor_hit_without_l3_reason:
+                    baseline_first_runtime_floor_hit_without_l3
+                        .as_ref()
+                        .map(|(_, reason)| reason.clone()),
+                candidate_first_runtime_floor_hit_without_l3_reason:
+                    candidate_first_runtime_floor_hit_without_l3
+                        .as_ref()
+                        .map(|(_, reason)| reason.clone()),
                 interesting_points,
             })
         })
@@ -3455,6 +3505,12 @@ fn scenario_requires_focus_review(
             != candidate
                 .map(|scenario| scenario.false_positive_count)
                 .unwrap_or_default()
+        || scenario_has_structural_warning_without_actionable(baseline)
+        || candidate.is_some_and(scenario_has_structural_warning_without_actionable)
+}
+
+fn scenario_has_structural_warning_without_actionable(scenario: &BacktestScenarioSummary) -> bool {
+    scenario.lead_time_days.is_some() && scenario.actionable_lead_time_days.is_none()
 }
 
 fn release_review_first_non_normal_date(points: &[&AssessmentHistoryPoint]) -> Option<NaiveDate> {
@@ -3472,6 +3528,104 @@ fn release_review_max_metric(
         .iter()
         .map(|point| accessor(point))
         .max_by(|left, right| left.total_cmp(right))
+}
+
+fn release_review_first_runtime_floor_hit_without_l3(
+    points: &[&AssessmentHistoryPoint],
+    use_transitional_bridge: bool,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> Option<(NaiveDate, String)> {
+    points.iter().find_map(|point| {
+        if release_review_is_actionable_warning_point(point, use_transitional_bridge)
+            || !release_review_hits_runtime_floor(point, thresholds)
+        {
+            return None;
+        }
+        Some((
+            point.as_of_date,
+            release_review_actionable_diagnostic(point, use_transitional_bridge, thresholds),
+        ))
+    })
+}
+
+fn release_review_hits_runtime_floor(
+    point: &AssessmentHistoryPoint,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> bool {
+    let Some(thresholds) = thresholds else {
+        return false;
+    };
+    point.p_60d >= thresholds.prepare_p60d
+        || point.p_20d >= thresholds.hedge_p20d
+        || point.p_5d >= thresholds.defend_p5d
+}
+
+fn release_review_actionable_diagnostic(
+    point: &AssessmentHistoryPoint,
+    use_transitional_bridge: bool,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> String {
+    if release_review_is_actionable_warning_point(point, use_transitional_bridge) {
+        return "actionable".to_string();
+    }
+
+    let runtime_floor_hit = release_review_hits_runtime_floor(point, thresholds);
+    let mut review_gate_gaps = Vec::new();
+    if point.p_20d < 0.18 {
+        review_gate_gaps.push(format!("p20d {} < 18%", crate::format_pct(point.p_20d)));
+    }
+    if point.p_60d < 0.45 {
+        review_gate_gaps.push(format!("p60d {} < 45%", crate::format_pct(point.p_60d)));
+    }
+    if !review_gate_gaps.is_empty() {
+        let joined = review_gate_gaps.join(", ");
+        return if runtime_floor_hit {
+            format!("hit runtime floor, but review gate still needs {joined}")
+        } else {
+            joined
+        };
+    }
+
+    if matches!(point.posture, DecisionPosture::Normal)
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
+    {
+        return if runtime_floor_hit {
+            "hit runtime floor, but posture/bucket stayed normal".to_string()
+        } else {
+            "posture/bucket stayed normal".to_string()
+        };
+    }
+
+    if matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && point.overall_score < 62.0
+        && point.external_shock_score < 48.0
+    {
+        return "months setup lacked score confirmation".to_string();
+    }
+
+    if matches!(point.posture, DecisionPosture::Prepare)
+        && point.overall_score < 60.0
+        && point.external_shock_score < 46.0
+        && !release_review_has_strong_prepare_trigger_code(point)
+    {
+        return "prepare setup lacked confirmation".to_string();
+    }
+
+    if use_transitional_bridge
+        && matches!(point.posture, DecisionPosture::Prepare)
+        && point.overall_score < 58.0
+    {
+        return "prepare bridge not armed".to_string();
+    }
+
+    if use_transitional_bridge
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && point.overall_score < 58.0
+    {
+        return "months bridge not armed".to_string();
+    }
+
+    "review L3 gate not satisfied".to_string()
 }
 
 fn release_review_actionable_forward_hits_by_date(

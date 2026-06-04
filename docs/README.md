@@ -78,6 +78,7 @@ docs/
 - [历史相似阶段设计](analytics/historical-analog-design.md)
 - [Posture 阈值调优设计](analytics/posture-threshold-tuning.md)
 - [2023 区域银行危机 L3 修复设计](analytics/regional-banks-2023-l3-repair-design.md)
+- [Release Review Runtime 对齐设计](analytics/release-review-runtime-alignment-design.md)
 
 ### 产品层
 
