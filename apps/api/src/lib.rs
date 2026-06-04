@@ -3,6 +3,7 @@ mod backtest;
 mod config;
 mod data_source;
 mod demo;
+mod demo_seed;
 mod handlers;
 mod history_replay;
 mod state;
