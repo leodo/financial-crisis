@@ -1,0 +1,136 @@
+use fc_domain::{AssessmentHistoryPoint, DecisionPosture, TimeToRiskBucket};
+
+use super::super::signals::{
+    release_review_has_strong_prepare_trigger_code, release_review_hits_runtime_floor,
+    release_review_is_actionable_warning_point,
+};
+
+pub(in super::super) fn release_review_actionable_diagnostic(
+    point: &AssessmentHistoryPoint,
+    use_transitional_bridge: bool,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> String {
+    if release_review_is_actionable_warning_point(point, use_transitional_bridge) {
+        return "actionable".to_string();
+    }
+
+    let runtime_floor_hit = release_review_hits_runtime_floor(point, thresholds);
+    let mut review_gate_gaps = Vec::new();
+    if point.p_20d < 0.18 {
+        review_gate_gaps.push(format!("p20d {} < 18%", crate::format_pct(point.p_20d)));
+    }
+    if point.p_60d < 0.45 {
+        review_gate_gaps.push(format!("p60d {} < 45%", crate::format_pct(point.p_60d)));
+    }
+    if !review_gate_gaps.is_empty() {
+        let joined = review_gate_gaps.join(", ");
+        return if runtime_floor_hit {
+            format!("hit runtime floor, but review gate still needs {joined}")
+        } else {
+            joined
+        };
+    }
+
+    if matches!(point.posture, DecisionPosture::Normal)
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
+    {
+        return if runtime_floor_hit {
+            "hit runtime floor, but posture/bucket stayed normal".to_string()
+        } else {
+            "posture/bucket stayed normal".to_string()
+        };
+    }
+
+    if matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && point.overall_score < 62.0
+        && point.external_shock_score < 48.0
+    {
+        return "months setup lacked score confirmation".to_string();
+    }
+
+    if matches!(point.posture, DecisionPosture::Prepare)
+        && point.overall_score < 60.0
+        && point.external_shock_score < 46.0
+        && !release_review_has_strong_prepare_trigger_code(point)
+    {
+        return "prepare setup lacked confirmation".to_string();
+    }
+
+    if use_transitional_bridge
+        && matches!(point.posture, DecisionPosture::Prepare)
+        && point.overall_score < 58.0
+    {
+        return "prepare bridge not armed".to_string();
+    }
+
+    if use_transitional_bridge
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && point.overall_score < 58.0
+    {
+        return "months bridge not armed".to_string();
+    }
+
+    "review L3 gate not satisfied".to_string()
+}
+
+pub(in super::super) fn release_review_runtime_actionable_block_category(
+    point: &AssessmentHistoryPoint,
+    use_transitional_bridge: bool,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> Option<&'static str> {
+    if release_review_is_actionable_warning_point(point, use_transitional_bridge)
+        || !release_review_hits_runtime_floor(point, thresholds)
+    {
+        return None;
+    }
+
+    if point.p_20d < 0.18 || point.p_60d < 0.45 {
+        return Some("review_gate_gap");
+    }
+
+    if matches!(point.posture, DecisionPosture::Normal)
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
+    {
+        return Some("posture_bucket_normal");
+    }
+
+    if matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && point.overall_score < 62.0
+        && point.external_shock_score < 48.0
+    {
+        return Some("months_score_confirmation");
+    }
+
+    if matches!(point.posture, DecisionPosture::Prepare)
+        && point.overall_score < 60.0
+        && point.external_shock_score < 46.0
+        && !release_review_has_strong_prepare_trigger_code(point)
+    {
+        return Some("prepare_score_confirmation");
+    }
+
+    if use_transitional_bridge
+        && matches!(point.posture, DecisionPosture::Prepare)
+        && point.overall_score < 58.0
+    {
+        return Some("prepare_bridge_not_armed");
+    }
+
+    if use_transitional_bridge
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && point.overall_score < 58.0
+    {
+        return Some("months_bridge_not_armed");
+    }
+
+    Some("review_l3_gate_not_satisfied")
+}
+
+pub(in super::super) fn release_review_runtime_actionable_block_reason(
+    point: &AssessmentHistoryPoint,
+    use_transitional_bridge: bool,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> Option<String> {
+    release_review_runtime_actionable_block_category(point, use_transitional_bridge, thresholds)
+        .map(|_| release_review_actionable_diagnostic(point, use_transitional_bridge, thresholds))
+}
