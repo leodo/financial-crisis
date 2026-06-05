@@ -173,6 +173,8 @@ apps/worker/src/
     release/
       probability.rs
       review.rs
+      review/
+        focus.rs
     research.rs
     snapshot.rs
 ```
@@ -188,7 +190,7 @@ apps/worker/src/
 - `probability.rs` 负责概率主头训练、regime evaluation 与 bundle summary；`probability/threshold.rs` 负责 calibration sample selection、threshold selection、regime-support threshold repair 与 threshold diagnostics / evidence；`probability/overlay.rs` 负责 family overlay 的审计、样本筛选、split 策略与 overlay 子模型训练。
 - `commands/dataset.rs` 负责 formal dataset build、split/scenario 约束与研究命令编排；`commands/dataset/report.rs` 负责 formal dataset summary、slice export、Markdown/CSV/JSON 渲染与 CLI 摘要打印。
 - `commands/release.rs` 负责 release 生命周期总入口、共享 activate/runtime guard 与 market scope resolve。
-- `commands/release/review.rs` 负责 release review 的 CLI 选项解析、runtime snapshot、对比诊断、建议与总结。
+- `commands/release/review.rs` 负责 release review 的 CLI 选项解析、runtime snapshot、runtime separation compare、建议与总结；`commands/release/review/focus.rs` 负责 structured signal counts、backtest scenario compare、scenario focus diagnostics、runtime actionable block/facet 统计与 primary failure mode 判定。
 - `commands/release/probability.rs` 负责 probability slice / compare 的 CLI 解析、bundle 评分、导出与摘要打印。
 - `commands/*` 其余模块只负责 CLI 层 glue code。
 

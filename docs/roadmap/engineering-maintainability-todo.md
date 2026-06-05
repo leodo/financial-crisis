@@ -95,6 +95,7 @@
 - `release review` 专属的 probability/actionability/runtime sanity guardrail、recommendation、summary helper 现已随主流程收口到 `commands/release/review.rs`。
 - 已新增 `apps/worker/src/commands/release/probability.rs`，把 `probability-slice`、`formal-probability-slice`、`formal-probability-compare` 的 CLI 选项解析、bundle 评分、CSV/JSON 导出与摘要打印从 `commands/release.rs` 中拆出，release 主模块重新收缩到 publish / activate / rollback / review 主流程。
 - 已新增 `apps/worker/src/commands/release/review.rs`，把 `research release review` 的 CLI 编排、runtime snapshot 抓取、阶段切换/恢复、比较诊断、recommendation 与 summary 从 `commands/release.rs` 中拆出，减少 release 主模块的职责混杂。
+- `apps/worker/src/commands/release/review/focus.rs` 本轮继续收走 structured signal counts、backtest scenario compare、scenario focus diagnostics、runtime actionable block/facet 统计与 primary failure mode 判定，`commands/release/review.rs` 已重新收缩到“review 编排 + runtime separation compare + recommendation / summary”主链路。
 - 已新增 `apps/worker/src/release_review.rs`，把 release review 专属的 report wire structs、historical audit takeaways、failure mode / attribution / action / workstream 汇总、runtime regime probability / separation diagnostics，以及 review Markdown 渲染入口从 `main.rs` 中拆出，统一 release review helper 与报告数据结构的归属边界。
 - 已新增 `apps/worker/src/commands/db.rs`，把 `db init/seed/check` 从超大入口文件中拆出。
 - 已新增 `apps/worker/src/commands/refresh.rs` 与 `commands/backfill.rs`，开始把免费数据刷新与回填入口从 `main.rs` 中剥离。
