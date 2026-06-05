@@ -136,6 +136,7 @@
 - 已新增 `apps/api/src/demo_seed.rs`，把静态 demo 指标样本、观测样本、源状态样本和 demo alert 构造从 `demo.rs` 中拆出，避免示例数据继续和历史装配/缓存逻辑耦合。
 - 已新增 `apps/api/src/history_builder.rs`，把 assessment history 装配、SQLite prediction snapshot 重建与时间窗口筛选从 `demo.rs` 中拆出，`handlers.rs` / `data_source.rs` 已直接依赖新模块。
 - `demo.rs` 当前已进一步收缩为 demo 当前截面装配、runtime assessment snapshot 组装与用户偏好加载；本轮又把 demo/runtime bridge 相关测试整体外移到 `apps/api/src/demo/tests.rs`，运行时代码与测试已不再混在一个文件里；后续可以优先继续观察 `load_user_preferences` 是否值得下沉到 shared/runtime config 层。
+- `apps/api/src/lib.rs` 本轮也已把底部内联端点测试整体外移到 `apps/api/src/tests.rs`，入口文件已重新收口为 router、cache middleware、refresh loop 与 tracing/shutdown 壳层；共享 demo app 构造器也收敛到测试层，避免入口运行时代码再次承接测试细节。
 - 已新增 `apps/api/src/assessment/posture.rs`，把 `time_to_risk_bucket`、posture clause、position guidance、用户偏好升降级和 summary 这条姿态决策链从 `assessment.rs` 中拆出，主装配逻辑只保留调用点。
 - `apps/api/src/assessment/posture.rs` 本轮也继续拆成 `posture.rs` + `posture/guidance.rs` + `posture/position.rs`，主文件已从约 `901` 行收缩到约 `5` 行；风险时距、posture clause、用户偏好升降级与姿态摘要已拆到 `guidance.rs`，仓位预算、动作手册、执行护栏和治理条款已拆到 `position.rs`；本轮又继续把 `guidance.rs` 细分为 `guidance.rs` + `guidance/{clauses,counters,preferences}.rs`，把 posture clause 诊断、确认计数和偏好升降级进一步收回独立边界。
 - 已新增 `apps/api/src/assessment/probability.rs`，把 heuristic probability、bundle scoring、formal feature map、actionability 融合与相关测试依赖的 helper 从 `assessment.rs` 中拆出，避免模型评分逻辑继续和 assessment orchestration 混在一起。
@@ -192,7 +193,7 @@
 - `sqlite/formal_datasets.rs` 本轮也已继续拆成 `formal_datasets.rs` + `formal_datasets/{datasets,rows}.rs`；dataset manifest 的 upsert/load/list 与 dataset rows 的 replace/list 已各自落回独立边界。
 - `sqlite/historical_replay.rs` 本轮也已继续拆成 `historical_replay.rs` + `historical_replay/{runs,points}.rs`；replay run 的 upsert/load/list 与 replay assessment point 的 replace/list 已各自落回独立边界。
 - `sqlite/tests.rs` 本轮也已继续拆成 `tests/mod.rs` + `tests/{observations,operational,releases,prediction_snapshots,formal_datasets,historical_replay}.rs`；共享 `in_memory_store()` 构造器与各主题 round-trip 测试已完成分层。
-- 当前存储层治理优先热点已切换为未来若继续增长时需再细分的 `tests/historical_replay.rs`、`tests/formal_datasets.rs`；共享训练模块 `apps/worker/src/training.rs` 的子模块化拆分已完成，formal dataset / historical replay 运行时代码的子模块化拆分也已完成。
+- 当前工程治理优先热点已切换为未来若继续增长时需再细分的 `tests/historical_replay.rs`、`tests/formal_datasets.rs`，以及仍偏大的少量 worker 运行时代码热点；共享训练模块 `apps/worker/src/training.rs` 的子模块化拆分已完成，formal dataset / historical replay 运行时代码的子模块化拆分也已完成，API 入口测试也已完成外移。
 
 - Web 首屏加载策略本轮也做了治理：`apps/web/src/App.tsx` 不再等待所有标签页的数据查询全部完成后再渲染当前视图，而是只 gate 当前活动视图所需的数据，避免单个附属接口拖住首页“正在加载评估数据…”的首屏体验。
 
