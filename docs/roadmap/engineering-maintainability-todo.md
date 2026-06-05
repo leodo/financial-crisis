@@ -189,8 +189,10 @@
 - `sqlite/metadata/catalog.rs` 本轮又继续拆成 `catalog.rs` + `catalog/seeds.rs` + `catalog/upsert.rs`；编排壳层已收缩到约 `80` 行，metadata seed 定义与 upsert SQL 已各自落回独立边界。
 - `sqlite/seeds.rs` 本轮也已继续拆成 `seeds.rs` + `seeds/indicator_catalog.rs` + `seeds/mappings.rs`；父文件已收缩到约 `7` 行模块壳层，indicator seed 定义与 mapping upsert helper 已各自落回独立边界。
 - `sqlite/seeds/indicator_catalog.rs` 本轮又继续拆成 `indicator_catalog.rs` + `indicator_catalog/{fred,boj,world_bank,sec_events,gdelt}.rs`；父文件已收缩到约 `166` 行共享 seed type / `indicator()` helper / wrapper 壳层，各免费源的 seed 列表已各自落回独立文件。
+- `sqlite/formal_datasets.rs` 本轮也已继续拆成 `formal_datasets.rs` + `formal_datasets/{datasets,rows}.rs`；dataset manifest 的 upsert/load/list 与 dataset rows 的 replace/list 已各自落回独立边界。
+- `sqlite/historical_replay.rs` 本轮也已继续拆成 `historical_replay.rs` + `historical_replay/{runs,points}.rs`；replay run 的 upsert/load/list 与 replay assessment point 的 replace/list 已各自落回独立边界。
 - `sqlite/tests.rs` 本轮也已继续拆成 `tests/mod.rs` + `tests/{observations,operational,releases,prediction_snapshots,formal_datasets,historical_replay}.rs`；共享 `in_memory_store()` 构造器与各主题 round-trip 测试已完成分层。
-- 当前存储层治理优先热点已切换为未来若继续增长时需再细分的 `tests/historical_replay.rs`、`tests/formal_datasets.rs`；共享训练模块 `apps/worker/src/training.rs` 的子模块化拆分已完成。
+- 当前存储层治理优先热点已切换为未来若继续增长时需再细分的 `tests/historical_replay.rs`、`tests/formal_datasets.rs`；共享训练模块 `apps/worker/src/training.rs` 的子模块化拆分已完成，formal dataset / historical replay 运行时代码的子模块化拆分也已完成。
 
 - Web 首屏加载策略本轮也做了治理：`apps/web/src/App.tsx` 不再等待所有标签页的数据查询全部完成后再渲染当前视图，而是只 gate 当前活动视图所需的数据，避免单个附属接口拖住首页“正在加载评估数据…”的首屏体验。
 
