@@ -185,7 +185,7 @@ apps/worker/src/
 
 - `main.rs` 继续朝“只保留顶层分发”收缩，但在完全拆干净之前，可以暂时承载少量共享导出与底层 helper；不要为了形式上只留一个入口，先制造空目录或额外跳转层。
 - `reporting.rs` 负责结构化报告渲染与导出；当前主文件应保持在“写盘入口 + 模块导出”边界，release review Markdown 细节下沉到 `reporting/release_review.rs`，rolling audit Markdown 细节下沉到 `reporting/audit.rs`。`release_review.rs` 负责 release review 专属报告结构、诊断与解释 helper。
-- `model.rs` 负责训练数学、样本标签/权重、校准拟合与 runtime scoring 的主链路；前向危机符号/边界约束应下沉到 `model/constraints.rs`，regime pairwise 目标与梯度应下沉到 `model/regime.rs`，主文件尽量回到“拟合主循环 + 权重/标签 + 评估”边界。
+- `model.rs` 负责训练数学、样本标签/权重、校准拟合与 runtime scoring 的主链路；前向危机符号/边界约束应下沉到 `model/constraints.rs`，regime pairwise 目标与梯度应下沉到 `model/regime.rs`，样本标签/权重策略应下沉到 `model/weighting.rs`，`Platt` 校准、runtime scoring 与概率评估 helper 应下沉到 `model/calibration.rs`，主文件尽量回到“拟合主循环 + 少量共享数学 helper”边界。
 - `scenario.rs` 负责 `CrisisScenario`、action episode window、protected context、primary/forward scenario 选择和 action window label 这组场景时间窗逻辑。
 - `support.rs` 负责 `ApiReloadHistoryMode`、demo run、API fetch/reload、SQLite/raw payload IO、格式化 helper 和通用 rounding/hash/path helper。
 - `tests.rs` 作为第一层测试聚合壳层；共享测试构造器下沉到 `tests/fixtures.rs`，主题测试以真实子模块形式落在 `tests/*.rs`，避免继续依赖 `include!` 共享词法作用域。
