@@ -335,6 +335,7 @@ apps/api/src/
 
 - `crates/domain/src/scenario_catalog.rs` 现已回到纯子模块导出壳层；`scenario_catalog/types.rs` 负责场景目录枚举、结构体与 label/window set 查询 helper，`scenario_catalog/load.rs` 负责环境变量读取、文件/内置目录加载、默认 action episode 模板注入与 fallback warning，`scenario_catalog/validate.rs` 负责场景日期窗口、动作 override 与 label/window set 引用校验，`scenario_catalog/tests.rs` 负责嵌入目录 smoke test。这样静态场景目录仍留在 shared domain 层，但加载、校验和测试不会继续堆在单文件里。
 - `crates/ingestion/src/connectors/sec_edgar.rs` 现也已回到纯子模块导出壳层；`sec_edgar/connector.rs` 负责 SEC submissions/archive 抓取、去重排序与区间回填编排，`sec_edgar/types.rs` 负责机构白名单、payload/result、submission envelope 与 filing/aggregate 结构，`sec_edgar/parse.rs` 负责 filing array 解析、archive overlap 判定与日期时间解析 helper，`sec_edgar/aggregate.rs` 负责日度聚合、观测值与告警构造，`sec_edgar/rules.rs` 负责关键词/item/form 规则与严重度评分，`sec_edgar/tests.rs` 负责连接器测试。这样免费 SEC 事件源仍留在 ingestion 层，但抓取、解析、评分和聚合不会继续堆在单文件里。
+- `crates/domain/src/probability_bundle.rs` 现也已回到纯子模块导出壳层；`probability_bundle/features.rs` 负责 shared feature 常量、transform family 标识、派生特征扩展与 resolver，`probability_bundle/scoring.rs` 负责 logistic scoring、diagnostics、Platt 校准与 horizon overlay blend，`probability_bundle/types.rs` 负责 probability/actionability bundle schema 与默认值，`probability_bundle/tests.rs` 负责 shared domain 单测。这样 shared 概率模型仍留在 domain 层，但特征解析、运行时打分、schema 与测试不会继续堆在单文件里。
 
 ## 7. 实施原则
 
