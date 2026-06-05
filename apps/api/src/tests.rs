@@ -269,6 +269,43 @@ async fn system_reload_endpoint_rejects_unknown_runtime_purpose() {
 }
 
 #[tokio::test]
+async fn app_state_preserves_review_reload_options_across_refresh() {
+    let state = AppState::new(
+        demo::build_demo_data(260),
+        data_source::AppDataSource::Demo,
+        260,
+        260,
+    );
+
+    state
+        .reload_with_runtime_options(
+            data_source::AssessmentHistoryBuildMode::StrictRebuild,
+            25,
+            data_source::ServingRuntimePurpose::Review,
+        )
+        .await
+        .unwrap();
+
+    let (history_mode, history_limit, runtime_purpose) = state.current_reload_config().await;
+    assert_eq!(
+        history_mode,
+        data_source::AssessmentHistoryBuildMode::StrictRebuild
+    );
+    assert_eq!(history_limit, 25);
+    assert_eq!(runtime_purpose, data_source::ServingRuntimePurpose::Review);
+
+    state.reload().await.unwrap();
+
+    let (history_mode, history_limit, runtime_purpose) = state.current_reload_config().await;
+    assert_eq!(
+        history_mode,
+        data_source::AssessmentHistoryBuildMode::StrictRebuild
+    );
+    assert_eq!(history_limit, 25);
+    assert_eq!(runtime_purpose, data_source::ServingRuntimePurpose::Review);
+}
+
+#[tokio::test]
 async fn assessment_posture_endpoint_returns_upgrade_and_downgrade_rules() {
     let json = get_json("/api/assessment/posture").await;
     assert!(json["posture"].is_string());

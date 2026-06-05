@@ -157,7 +157,9 @@ created_at
 补充边界（2026-06-06）：
 
 - 对 `bundle-backed formal release`，API 在 default / strict rebuild 历史重建时只会写 `historical replay run / point`，不再把整段历史 assessment 反向回填到 `analytics_prediction_snapshots`；
-- `analytics_prediction_snapshots` 现在只保留“当前一次运行快照”与 heuristic / 兼容路径的桥接历史，不再承担 formal bundle 历史真源职责。
+- `analytics_prediction_snapshots` 现在只保留“当前一次运行快照”与 heuristic / 兼容路径的桥接历史，不再承担 formal bundle 历史真源职责；
+- API 在 `bundle-backed formal release` 的 production runtime 刷新前，会先清掉该 release 已落库的旧历史 `prediction snapshots`，最终只保留最新 `as_of_date` 的当前运行审计快照；
+- release review / probability slice 触发的 `runtime_purpose=review` reload，当前会把 `runtime_purpose/history_mode/history_limit` 作为运行态配置保存在内存里，避免后台自动刷新把 review runtime 悄悄刷回 production 默认口径。
 
 明确禁止：
 

@@ -31,8 +31,16 @@ pub struct AppData {
 pub struct AppState {
     data: RwLock<AppData>,
     source: AppDataSource,
+    reload_options: RwLock<AppReloadOptions>,
     default_history_points: usize,
     max_history_points: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AppReloadOptions {
+    history_build_mode: AssessmentHistoryBuildMode,
+    max_history_points: usize,
+    runtime_purpose: ServingRuntimePurpose,
 }
 
 impl AppState {
@@ -45,6 +53,11 @@ impl AppState {
         Self {
             data: RwLock::new(data),
             source,
+            reload_options: RwLock::new(AppReloadOptions {
+                history_build_mode: AssessmentHistoryBuildMode::Default,
+                max_history_points,
+                runtime_purpose: ServingRuntimePurpose::Production,
+            }),
             default_history_points,
             max_history_points,
         }
@@ -67,10 +80,11 @@ impl AppState {
     }
 
     pub async fn reload(&self) -> anyhow::Result<AppData> {
+        let options = *self.reload_options.read().await;
         self.reload_with_runtime_options(
-            AssessmentHistoryBuildMode::Default,
-            self.max_history_points,
-            ServingRuntimePurpose::Production,
+            options.history_build_mode,
+            options.max_history_points,
+            options.runtime_purpose,
         )
         .await
     }
@@ -79,10 +93,11 @@ impl AppState {
         &self,
         history_build_mode: AssessmentHistoryBuildMode,
     ) -> anyhow::Result<AppData> {
+        let options = *self.reload_options.read().await;
         self.reload_with_runtime_options(
             history_build_mode,
-            self.max_history_points,
-            ServingRuntimePurpose::Production,
+            options.max_history_points,
+            options.runtime_purpose,
         )
         .await
     }
@@ -92,10 +107,11 @@ impl AppState {
         history_build_mode: AssessmentHistoryBuildMode,
         max_history_points: usize,
     ) -> anyhow::Result<AppData> {
+        let options = *self.reload_options.read().await;
         self.reload_with_runtime_options(
             history_build_mode,
             max_history_points,
-            ServingRuntimePurpose::Production,
+            options.runtime_purpose,
         )
         .await
     }
@@ -114,6 +130,23 @@ impl AppState {
         )
         .await?;
         *self.data.write().await = data.clone();
+        *self.reload_options.write().await = AppReloadOptions {
+            history_build_mode,
+            max_history_points,
+            runtime_purpose,
+        };
         Ok(data)
+    }
+
+    #[cfg(test)]
+    pub async fn current_reload_config(
+        &self,
+    ) -> (AssessmentHistoryBuildMode, usize, ServingRuntimePurpose) {
+        let options = *self.reload_options.read().await;
+        (
+            options.history_build_mode,
+            options.max_history_points,
+            options.runtime_purpose,
+        )
     }
 }

@@ -311,4 +311,32 @@ impl SqliteStore {
 
         rows.into_iter().map(map_prediction_snapshot_row).collect()
     }
+
+    pub async fn delete_prediction_snapshot_history_for_release(
+        &self,
+        market_scope: &str,
+        release_id: &str,
+        keep_as_of_date: NaiveDate,
+    ) -> Result<u64, StorageError> {
+        let result = sqlx::query(
+            r#"
+
+            DELETE FROM analytics_prediction_snapshots
+
+            WHERE market_scope = ?1
+
+              AND release_id = ?2
+
+              AND as_of_date <> ?3
+
+            "#,
+        )
+        .bind(market_scope)
+        .bind(release_id)
+        .bind(keep_as_of_date.to_string())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected())
+    }
 }

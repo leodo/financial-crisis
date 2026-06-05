@@ -178,6 +178,13 @@ async fn load_sqlite_app_data(
         history_build_mode,
     )
     .await?;
+    let bundle_backed_runtime_release = serving_model.as_ref().and_then(|serving_model| {
+        serving_model.probability_bundle.as_ref()?;
+        Some((
+            serving_model.release.manifest.market_scope.clone(),
+            serving_model.release.manifest.release_id.clone(),
+        ))
+    });
     let built: BuiltAppData = build_app_data_from_inputs(
         DataMode::Sqlite,
         indicators,
@@ -188,6 +195,19 @@ async fn load_sqlite_app_data(
         assessment_history,
         user_preferences,
     );
+    if let Some((market_scope, release_id)) = bundle_backed_runtime_release {
+        if let Err(error) = store
+            .delete_prediction_snapshot_history_for_release(&market_scope, &release_id, as_of_date)
+            .await
+        {
+            tracing::warn!(
+                sqlite_path = sqlite_path,
+                release_id,
+                error = %format!("{error:#}"),
+                "failed to prune historical prediction snapshots for bundle-backed release"
+            );
+        }
+    }
     if let Err(error) = store
         .upsert_prediction_snapshots(&built.prediction_snapshots)
         .await
@@ -295,18 +315,31 @@ fn load_probability_bundle(bundle_uri: &str) -> anyhow::Result<ProbabilityBundle
 mod tests {
     use std::{env, path::PathBuf};
 
-    use chrono::Utc;
+    use chrono::{Duration, Utc};
     use fc_domain::{
         HorizonEvaluationSummary, LogisticProbabilityModel, ModelReleaseManifest,
-        ModelReleaseRecord, ProbabilityBundle, ProbabilityCoefficient, ProbabilityFeatureStat,
-        ProbabilityHorizonBundle,
+        ModelReleaseRecord, PredictionSnapshotRecord, ProbabilityBundle, ProbabilityCoefficient,
+        ProbabilityFeatureStat, ProbabilityHorizonBundle,
     };
+    use fc_storage::SqliteStore;
     use uuid::Uuid;
 
-    use super::{build_serving_model_context, ServingRuntimePurpose};
+    use crate::{
+        demo_seed::{indicators as demo_indicators, observations as demo_observations},
+        history_replay::expected_prediction_snapshot_method_version,
+    };
+
+    use super::{
+        build_serving_model_context, load_app_data_with_runtime_options, AppDataSource,
+        AssessmentHistoryBuildMode, ServingRuntimePurpose,
+    };
 
     fn temp_bundle_path() -> PathBuf {
         env::temp_dir().join(format!("fc-api-serving-bundle-{}.json", Uuid::new_v4()))
+    }
+
+    fn temp_sqlite_path() -> PathBuf {
+        env::temp_dir().join(format!("fc-api-runtime-{}.sqlite", Uuid::new_v4()))
     }
 
     fn test_probability_bundle() -> ProbabilityBundle {
@@ -383,6 +416,40 @@ mod tests {
             created_at: Utc::now(),
             activated_at: None,
             retired_at: None,
+        }
+    }
+
+    fn persisted_snapshot(
+        as_of_date: chrono::NaiveDate,
+        release_id: &str,
+        method_version: &str,
+    ) -> PredictionSnapshotRecord {
+        PredictionSnapshotRecord {
+            as_of_date,
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            release_id: Some(release_id.to_string()),
+            probability_mode: "formal_bundle_v1".to_string(),
+            release_status: "healthy".to_string(),
+            point_in_time_mode: "best_effort".to_string(),
+            overall_score: 99.0,
+            external_shock_score: 99.0,
+            raw_p_5d: 0.99,
+            raw_p_20d: 0.99,
+            raw_p_60d: 0.99,
+            calibrated_p_5d: 0.99,
+            calibrated_p_20d: 0.99,
+            calibrated_p_60d: 0.99,
+            posture: "defend".to_string(),
+            time_to_risk_bucket: "now".to_string(),
+            feature_set_version: "feature_formal_v1_main_20260531".to_string(),
+            label_version: "formal_label_v1_main".to_string(),
+            coverage_score: 1.0,
+            freshness_status: "fresh".to_string(),
+            method_version: method_version.to_string(),
+            posture_trigger_codes: vec!["legacy_snapshot_only".to_string()],
+            posture_blocker_codes: Vec::new(),
+            recorded_at: Utc::now(),
         }
     }
 
@@ -490,6 +557,77 @@ mod tests {
         assert_eq!(context.runtime_release_status, "healthy");
         assert!(context.probability_bundle.is_some());
 
+        let _ = std::fs::remove_file(bundle_path);
+    }
+
+    #[tokio::test]
+    async fn production_formal_runtime_keeps_only_current_prediction_snapshot() {
+        let sqlite_path = temp_sqlite_path();
+        let bundle_path = temp_bundle_path();
+        std::fs::write(
+            &bundle_path,
+            serde_json::to_string(&test_probability_bundle()).unwrap(),
+        )
+        .unwrap();
+
+        let store = SqliteStore::connect(&sqlite_path).await.unwrap();
+        store.migrate().await.unwrap();
+        store.seed_fred_metadata().await.unwrap();
+
+        let indicators = demo_indicators();
+        for indicator in &indicators {
+            store.upsert_indicator(indicator).await.unwrap();
+        }
+        let as_of_date = Utc::now().date_naive();
+        let observations = demo_observations(as_of_date);
+        store.insert_observations(&observations).await.unwrap();
+
+        let release = test_release(&bundle_path.to_string_lossy(), "approved", "healthy");
+        let release_id = release.manifest.release_id.clone();
+        store.upsert_model_release(&release).await.unwrap();
+        store
+            .activate_model_release("financial_system", &release_id, "test")
+            .await
+            .unwrap();
+
+        let serving_model =
+            build_serving_model_context(release.clone(), ServingRuntimePurpose::Production);
+        let method_version = expected_prediction_snapshot_method_version(Some(&serving_model));
+        let old_snapshot =
+            persisted_snapshot(as_of_date - Duration::days(1), &release_id, &method_version);
+        let current_snapshot = persisted_snapshot(as_of_date, &release_id, &method_version);
+        store
+            .upsert_prediction_snapshots(&[old_snapshot, current_snapshot])
+            .await
+            .unwrap();
+
+        let _ = load_app_data_with_runtime_options(
+            &AppDataSource::Sqlite {
+                path: sqlite_path.to_string_lossy().to_string(),
+            },
+            260,
+            AssessmentHistoryBuildMode::Default,
+            ServingRuntimePurpose::Production,
+        )
+        .await
+        .unwrap();
+
+        let snapshots = store
+            .list_prediction_snapshots(
+                Some("financial_system"),
+                Some(&release_id),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(snapshots.len(), 1);
+        assert_eq!(snapshots[0].as_of_date, as_of_date);
+        assert_ne!(snapshots[0].overall_score, 99.0);
+
+        let _ = std::fs::remove_file(sqlite_path);
         let _ = std::fs::remove_file(bundle_path);
     }
 }
