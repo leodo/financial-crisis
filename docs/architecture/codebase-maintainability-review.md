@@ -140,10 +140,10 @@ config/
 - `FC_DATA_MODE` 解析与 SQLite/Postgres 装载已拆到 `apps/api/src/data_source.rs`；
 - historical replay / prediction snapshot bridge 已拆到 `apps/api/src/history_replay.rs`；
 - backtest timeline、rolling audit、scenario fallback 和动作级历史判定规则已拆到 `apps/api/src/backtest.rs`。
-- 静态 demo 指标样本、观测样本、源状态样本和 demo alert 构造已拆到 `apps/api/src/demo_seed.rs`；
+- 静态 demo 指标样本、观测样本、源状态样本和 demo alert 构造已拆到 `apps/api/src/demo_seed.rs`；本轮又继续拆成 `demo_seed.rs` + `demo_seed/{indicators,observations,sources,alerts}.rs`，父文件回到纯导出壳层；
 - assessment history 装配、SQLite prediction snapshot 重建和窗口筛选已拆到 `apps/api/src/history_builder.rs`。
 
-因此，`demo.rs` 的风险已明显下降，当前已主要收缩为 demo 当前截面装配、runtime assessment snapshot 组装与用户偏好加载；API 侧后续重点已从 `demo.rs` 主拆分，转向观察这些 runtime helper 是否值得继续下沉到 shared/runtime config 层。
+因此，`demo.rs` 的风险已明显下降，当前已主要收缩为 demo 当前截面装配、runtime assessment snapshot 组装与用户偏好加载；`demo_seed.rs` 也不再继续把 demo 指标、观测、数据源健康和告警样本堆在单文件里。API 侧后续重点已从 `demo.rs` 主拆分，转向 `history_replay.rs`、`backtest.rs` 这类仍偏大的运行时模块。
 
 ### 4.3 训练侧与运行侧已有重复实现，后续容易漂移
 
