@@ -116,7 +116,7 @@ config/
 - `apps/worker/src/support.rs` 已继续收走 `ApiReloadHistoryMode`、demo run、API fetch/reload、SQLite/raw payload IO、格式化 helper 和通用 rounding/hash/path helper；
 - 原先内联在 `main.rs` 的超大测试块已整体迁到 `apps/worker/src/tests.rs`，共享测试构造器已继续下沉到 `apps/worker/src/tests/fixtures.rs`；其中原本约 `1344` 行的 `apps/worker/src/tests/training.rs` 本轮又继续拆成 `apps/worker/src/tests/training/{visibility,scenario_regimes,sign_constraints,family_constraints}.rs` 与聚合 `mod.rs`，同时把 `training/weighting.rs` 进一步细分为 `training/weighting/mod.rs` 与 `training/weighting/{negative_weights,pairwise,target_labels,positive_weights}.rs`，把样本权重/目标测试再按职责拆细；原本约 `624` 行的 `apps/worker/src/tests/options.rs` 也继续拆成 `apps/worker/src/tests/options/mod.rs` 与 `options/{refresh,release,snapshots,dataset,pipeline}.rs`，把 CLI 参数、dataset gate 与 pipeline 形状测试按职责收回独立边界；原本约 `1254` 行的 `apps/worker/src/tests/review.rs` 也继续拆成 `apps/worker/src/tests/review/{historical_audit,runtime}.rs`、`review/focus/mod.rs` 与 `review/focus/{comparison,diagnostics,continuity,failure_modes}.rs`，把 scenario focus 测试进一步按主题拆细；原本约 `983` 行的 `apps/worker/src/tests/quality.rs` 也继续拆成 `apps/worker/src/tests/quality/{render,actionability,probability_thresholds,regime_guardrails}.rs` 与聚合 `mod.rs`，option parsing / training / quality / review / split requirement 也已切成真实测试子模块而不再依赖 `include!` 聚合；
 - `main.rs` 体量已从约 `7.6k` 行进一步降到约 `165` 行；
-- 因此，worker 当前的主要维护风险已从“所有 release 能力都堆在一个文件里”，下降为“运行时代码已基本按边界收口，测试层也开始具备稳定模块边界；后续仍可继续把 cross-topic fixture 与少量共享导入继续收窄”。随着 `overlay`、`overlay/split`、`threshold`、`focus`、`focus/runtime`、`review`、`release_review/runtime`、`release_review/historical`、`reporting/release_review`、`dataset/report`、`pipeline`、`release`、`feature`、`release/probability`、`dataset`、`backfill`、`release/probability/compare`、`assessment/posture`、`assessment/probability`、`web/format`、`assessment/tests`、`demo_seed`、`history_replay`、`backtest` 主文件进一步收口，下一阶段的优先热点转向仍然偏大的存储聚合入口 `crates/storage/src/sqlite.rs`，以及少数剩余的大型共享/接入模块。
+- 因此，worker 当前的主要维护风险已从“所有 release 能力都堆在一个文件里”，下降为“运行时代码已基本按边界收口，测试层也开始具备稳定模块边界；后续仍可继续把 cross-topic fixture 与少量共享导入继续收窄”。随着 `overlay`、`overlay/split`、`threshold`、`focus`、`focus/runtime`、`review`、`release_review/runtime`、`release_review/historical`、`reporting/release_review`、`dataset/report`、`pipeline`、`release`、`feature`、`release/probability`、`dataset`、`backfill`、`release/probability/compare`、`assessment/posture`、`assessment/probability`、`web/format`、`assessment/tests`、`demo_seed`、`history_replay`、`backtest` 主文件进一步收口，下一阶段的优先热点已转向仍然偏大的存储子模块 `crates/storage/src/sqlite/metadata.rs`、`crates/storage/src/sqlite/seeds.rs`、`crates/storage/src/sqlite/tests.rs`，以及少数剩余的大型共享/接入模块。
 
 ### 4.2 API runtime、demo、history replay 曾有明显耦合
 
@@ -165,18 +165,19 @@ config/
 
 ### 4.4 SQLite store 过大，存储职责还可以继续按聚合拆分
 
-`crates/storage/src/sqlite.rs` 目前不仅处理：
+这一轮已经把原本 1600+ 行的 `crates/storage/src/sqlite.rs` 拆成：
 
-- 观测值；
-- 数据源与映射；
-- alerts；
-- release registry；
-- prediction snapshots；
-- feature snapshots；
-- formal datasets；
-- historical replay。
+- 壳层入口 `sqlite.rs`；
+- 聚合子模块 `metadata.rs`、`observations.rs`、`operational.rs`、`releases.rs`、`prediction_snapshots.rs`、`feature_snapshots.rs`、`formal_datasets.rs`、`historical_replay.rs`；
+- 共享底层子模块 `helpers.rs`、`rows.rs`、`migrations.rs`、`seeds.rs`、`tests.rs`。
 
-这说明存储层虽然已经抽到 crate，但仍然是“大仓库对象”风格，不利于后续按子域演进。
+这让 `sqlite.rs` 本身已经回到“连接壳层 + 常量/record type + trait 转接”的轻量边界，但存储层仍有二级维护风险：
+
+- `sqlite/metadata.rs` 继续同时承载 metadata source/dataset seed、mapping seed 和多源初始化编排；
+- `sqlite/seeds.rs` 仍集中维护多套 seed 定义与 seed 写入 helper；
+- `sqlite/tests.rs` 仍是较大的 round-trip 集成测试聚合点。
+
+因此，存储层风险已经从“单个超大入口文件”转为“少数剩余的大子模块仍需继续按主题收窄”。
 
 ### 4.5 Web `App.tsx` 已开始变成页面总控 + 领域解释器
 
@@ -307,7 +308,7 @@ config/
 ### 第三阶段：再拆前端和 SQLite store
 
 1. 拆 `App.tsx` 为按页面职责组织的 view/container/component。
-2. 拆 `sqlite.rs` 为按聚合分组的 repository / store 模块。
+2. 继续细分 SQLite store 剩余大子模块，优先 `sqlite/metadata.rs`、`sqlite/seeds.rs`、`sqlite/tests.rs`。
 
 ## 9. 不建议现在做的事
 
