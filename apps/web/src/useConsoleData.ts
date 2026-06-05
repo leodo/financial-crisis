@@ -23,6 +23,20 @@ export interface ConsoleReadyData {
   backtestTimeline: Awaited<ReturnType<typeof api.backtestTimeline>>;
 }
 
+export interface ConsoleDataSnapshot {
+  assessment?: ConsoleReadyData["assessment"];
+  assessmentHistory?: ConsoleReadyData["assessmentHistory"];
+  posture?: ConsoleReadyData["posture"];
+  method?: ConsoleReadyData["method"];
+  audit?: ConsoleReadyData["audit"];
+  overview?: ConsoleReadyData["overview"];
+  indicators?: ConsoleReadyData["indicators"];
+  events?: ConsoleReadyData["events"];
+  sources?: ConsoleReadyData["sources"];
+  backtests?: ConsoleReadyData["backtests"];
+  backtestTimeline?: ConsoleReadyData["backtestTimeline"];
+}
+
 export function useConsoleData() {
   const queryClient = useQueryClient();
 
@@ -80,61 +94,21 @@ export function useConsoleData() {
     }
   });
 
-  const isLoading =
-    assessment.isLoading ||
-    assessmentHistory.isLoading ||
-    posture.isLoading ||
-    method.isLoading ||
-    audit.isLoading ||
-    overview.isLoading ||
-    indicators.isLoading ||
-    events.isLoading ||
-    sources.isLoading ||
-    backtests.isLoading ||
-    backtestTimeline.isLoading;
-  const error =
-    assessment.error ??
-    assessmentHistory.error ??
-    posture.error ??
-    method.error ??
-    audit.error ??
-    overview.error ??
-    indicators.error ??
-    events.error ??
-    sources.error ??
-    backtests.error ??
-    backtestTimeline.error;
+  const data: ConsoleDataSnapshot = {
+    assessment: assessment.data,
+    assessmentHistory: assessmentHistory.data,
+    posture: posture.data,
+    method: method.data,
+    audit: audit.data,
+    overview: overview.data,
+    indicators: indicators.data,
+    events: events.data,
+    sources: sources.data,
+    backtests: backtests.data,
+    backtestTimeline: backtestTimeline.data
+  };
 
-  const readyData: ConsoleReadyData | null =
-    !isLoading &&
-    !error &&
-    assessment.data &&
-    assessmentHistory.data &&
-    posture.data &&
-    method.data &&
-    audit.data &&
-    overview.data &&
-    indicators.data &&
-    events.data &&
-    sources.data &&
-    backtests.data &&
-    backtestTimeline.data
-      ? {
-          assessment: assessment.data,
-          assessmentHistory: assessmentHistory.data,
-          posture: posture.data,
-          method: method.data,
-          audit: audit.data,
-          overview: overview.data,
-          indicators: indicators.data,
-          events: events.data,
-          sources: sources.data,
-          backtests: backtests.data,
-          backtestTimeline: backtestTimeline.data
-        }
-      : null;
-
-  return {
+  const queries = {
     assessment,
     assessmentHistory,
     posture,
@@ -145,10 +119,13 @@ export function useConsoleData() {
     events,
     sources,
     backtests,
-    backtestTimeline,
+    backtestTimeline
+  };
+
+  return {
+    ...queries,
+    data,
+    queries,
     reload,
-    isLoading,
-    error,
-    readyData
   };
 }
