@@ -355,3 +355,4 @@ apps/api/src/
 - 先拆 `worker`
 - 再收敛共享概率/特征逻辑
 - 再拆 `api history/demo/runtime`
+   - `crates/storage/src/sqlite/seeds/indicator_catalog/{fred,boj,world_bank,sec_events,gdelt}.rs`
