@@ -10,6 +10,7 @@
 - release review 已默认通过 `strict_rebuild` 触发 raw-history rebuild，再抓 baseline / candidate runtime snapshot；
 - `historical replay run / point` 已落到 SQLite / domain store，strict/full rebuild 会把历史点级结果写入 replay store；
 - API 在命中同 `history_cache_key + date range + release_id` 的成功 replay run 时，已经会优先读取 replay points，而不是先退回旧 `prediction snapshots`；
+- API 默认历史路径对 `bundle-backed release` 也已改为 `replay-first`：若无可复用 replay cache，会直接基于原始观测全量重建并写回 replay store，而不是静默复用旧 `prediction snapshots`；
 - 但 `analytics_prediction_snapshots` 仍保留较大桥接职责，尚未完全退回到“运行审计 + 兼容视图”的次要角色。
 
 ## 1. 目标

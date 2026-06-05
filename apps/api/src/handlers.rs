@@ -153,7 +153,7 @@ pub async fn assessment_method(State(state): State<Arc<AppState>>) -> Json<serde
         data.assessment.runtime.data_mode,
         fc_domain::DataMode::Sqlite
     ) {
-        "assessment/history 在 SQLite 模式下会优先复用同口径的 historical replay points；若无命中 replay cache，则退回已落库 prediction snapshots；若 active release 带有 bundle-backed 概率模型且缓存版本失配，会改为基于原始观测全量重建该 release 的历史。"
+        "assessment/history 在 SQLite 模式下会优先复用同口径的 historical replay points；若 active release 带有 bundle-backed 概率模型且未命中可复用 replay cache，会直接基于原始观测全量重建并写回 replay store，不再静默退回旧 prediction snapshots；只有 heuristic / 兼容路径仍会复用已落库 prediction snapshots。"
     } else {
         "assessment/history 当前仍由运行时即时构造。"
     };

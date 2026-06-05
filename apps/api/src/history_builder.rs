@@ -136,6 +136,37 @@ fn build_assessment_history_for_dates(
 }
 
 #[allow(clippy::too_many_arguments)]
+async fn rebuild_full_release_history_from_raw(
+    store: &SqliteStore,
+    indicators: &[Indicator],
+    observations: &[Observation],
+    alerts: &[AlertEvent],
+    serving_model: Option<&ServingModelContext>,
+    user_preferences: &UserRiskPreferences,
+    rebuild_dates: &[NaiveDate],
+) -> anyhow::Result<HistoricalAssessmentOutput> {
+    let rebuilt = build_assessment_history_for_dates(
+        DataMode::Sqlite,
+        &ScoringEngine::default(),
+        indicators,
+        observations,
+        Some(alerts),
+        serving_model,
+        user_preferences,
+        rebuild_dates,
+    );
+    store
+        .upsert_prediction_snapshots(&rebuilt.prediction_snapshots)
+        .await?;
+    persist_historical_replay_output(store, observations, serving_model, &rebuilt).await?;
+    Ok(rebuilt)
+}
+
+fn uses_bundle_backed_history(serving_model: Option<&ServingModelContext>) -> bool {
+    serving_model.is_some_and(|context| context.probability_bundle.is_some())
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn load_sqlite_assessment_history(
     store: &SqliteStore,
     indicators: &[Indicator],
@@ -144,7 +175,7 @@ pub(crate) async fn load_sqlite_assessment_history(
     serving_model: Option<&ServingModelContext>,
     user_preferences: &UserRiskPreferences,
     as_of_date: NaiveDate,
-    max_history_points: usize,
+    _max_history_points: usize,
     history_build_mode: AssessmentHistoryBuildMode,
 ) -> anyhow::Result<Vec<fc_domain::AssessmentHistoryPoint>> {
     let release_filter = serving_model.map(|context| context.release.manifest.release_id.as_str());
@@ -165,6 +196,7 @@ pub(crate) async fn load_sqlite_assessment_history(
         .difference(&existing_dates)
         .copied()
         .collect::<Vec<_>>();
+    let bundle_backed_history = uses_bundle_backed_history(serving_model);
     let full_history_refresh = should_refresh_full_release_history(
         serving_model,
         &persisted_rows,
@@ -192,44 +224,16 @@ pub(crate) async fn load_sqlite_assessment_history(
             rebuild_dates = rebuild_dates.len(),
             "strictly rebuilding full release history from raw observations for current reload"
         );
-        let rebuilt = build_assessment_history_for_dates(
-            DataMode::Sqlite,
-            &ScoringEngine::default(),
+        let rebuilt = rebuild_full_release_history_from_raw(
+            store,
             indicators,
             observations,
-            Some(alerts),
+            alerts,
             serving_model,
             user_preferences,
             &rebuild_dates,
-        );
-        store
-            .upsert_prediction_snapshots(&rebuilt.prediction_snapshots)
-            .await?;
-        persist_historical_replay_output(store, observations, serving_model, &rebuilt).await?;
-        return Ok(rebuilt.history_points);
-    }
-
-    if full_history_refresh {
-        let rebuild_dates = target_dates.into_iter().collect::<Vec<_>>();
-        tracing::info!(
-            release_id = release_filter.unwrap_or("heuristic"),
-            rebuild_dates = rebuild_dates.len(),
-            "rebuilding full release history from raw observations because cached prediction snapshots are stale or incomplete"
-        );
-        let rebuilt = build_assessment_history_for_dates(
-            DataMode::Sqlite,
-            &ScoringEngine::default(),
-            indicators,
-            observations,
-            Some(alerts),
-            serving_model,
-            user_preferences,
-            &rebuild_dates,
-        );
-        store
-            .upsert_prediction_snapshots(&rebuilt.prediction_snapshots)
-            .await?;
-        persist_historical_replay_output(store, observations, serving_model, &rebuilt).await?;
+        )
+        .await?;
         return Ok(rebuilt.history_points);
     }
 
@@ -238,6 +242,32 @@ pub(crate) async fn load_sqlite_assessment_history(
             .await?
     {
         return Ok(cached_replay.history_points);
+    }
+
+    if bundle_backed_history {
+        let rebuild_dates = target_dates.iter().copied().collect::<Vec<_>>();
+        let reason = if full_history_refresh {
+            "cached prediction snapshots are stale or incomplete"
+        } else {
+            "no reusable historical replay cache was found"
+        };
+        tracing::info!(
+            release_id = release_filter.unwrap_or("heuristic"),
+            rebuild_dates = rebuild_dates.len(),
+            reason,
+            "rebuilding full release history from raw observations for bundle-backed release"
+        );
+        let rebuilt = rebuild_full_release_history_from_raw(
+            store,
+            indicators,
+            observations,
+            alerts,
+            serving_model,
+            user_preferences,
+            &rebuild_dates,
+        )
+        .await?;
+        return Ok(rebuilt.history_points);
     }
 
     let mut historical =
@@ -262,41 +292,6 @@ pub(crate) async fn load_sqlite_assessment_history(
         historical = merge_historical_outputs(
             historical_output_from_prediction_snapshots(combined_snapshots, release_filter),
             computed,
-        );
-    }
-
-    let should_refresh_recent_formal_history = serving_model
-        .and_then(|context| context.probability_bundle.as_ref())
-        .is_some()
-        && max_history_points > 0;
-    if should_refresh_recent_formal_history {
-        let recent_dates = target_dates
-            .iter()
-            .copied()
-            .rev()
-            .take(max_history_points)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>();
-        let recomputed = build_assessment_history_for_dates(
-            DataMode::Sqlite,
-            &ScoringEngine::default(),
-            indicators,
-            observations,
-            Some(alerts),
-            serving_model,
-            user_preferences,
-            &recent_dates,
-        );
-        store
-            .upsert_prediction_snapshots(&recomputed.prediction_snapshots)
-            .await?;
-        let mut combined_snapshots = historical.prediction_snapshots.clone();
-        combined_snapshots.extend(recomputed.prediction_snapshots.clone());
-        historical = merge_historical_outputs(
-            historical_output_from_prediction_snapshots(combined_snapshots, release_filter),
-            recomputed,
         );
     }
 
@@ -335,3 +330,6 @@ fn select_points_by_window<T: Clone>(
     }
     filtered
 }
+
+#[cfg(test)]
+mod tests;

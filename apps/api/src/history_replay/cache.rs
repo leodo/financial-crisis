@@ -165,7 +165,7 @@ pub(crate) async fn load_cached_historical_replay_output(
             replay_run_id = run.replay_run_id,
             expected_dates = target_dates.len(),
             available_dates = available_dates.len(),
-            "cached historical replay run does not fully cover target dates; falling back to legacy snapshot history"
+            "cached historical replay run does not fully cover target dates; skipping replay cache reuse"
         );
         return Ok(None);
     }

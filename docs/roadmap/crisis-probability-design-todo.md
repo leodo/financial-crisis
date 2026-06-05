@@ -500,6 +500,8 @@
    - [x] 新增 historical replay run / point 存储结构
    - [x] release review 默认走 `strict_rebuild`
    - [ ] 让 `analytics_prediction_snapshots` 退回到运行审计与桥接视图角色
+     - 已完成一部分：API 默认历史路径对 `bundle-backed release` 已切到 `replay-first`，若无可复用 replay cache 会直接 raw rebuild 并落 replay run，不再静默复用旧 `prediction snapshots`
+     - 当前剩余缺口：heuristic / 兼容路径仍允许复用 `prediction snapshots`，formal dataset / 长历史审计链也还没有完全摆脱 bridge 视图
 4. 美国扩展历史样本落地
    - [x] 把 `1994 / 1998 / 2000-2001 / 2011` 逐个纳入 extension/protected stress 数据集与 summary
    - [x] 保持 `1987` 作为 acute extension + historical analog，不强行并入主宽表
