@@ -108,7 +108,7 @@
 - `tests.rs` 已进一步收口为第一层测试聚合壳层，并按 `options / training / quality / review / split_requirements` 拆到 `apps/worker/src/tests/*.rs`；共享测试构造器已继续收敛到 `apps/worker/src/tests/fixtures.rs`，专题测试也已改成真实子模块，避免继续依赖 `include!` 共享词法作用域。
 - 这一轮之后，`apps/worker/src/main.rs` 已从约 `7,573` 行继续收缩到约 `165` 行，当前已基本收口为“顶层模块声明 + 共享导出 + 常量 + 入口壳层”。
 - 当前 `main.rs` 已不再直接承载训练管线、release review 报告结构、动作 episode / scenario 时间窗逻辑、通用 API/IO helper，也不再直接承载超大测试块；下一步可优先继续评估是否还需要把跨专题的少量测试导入/夹具进一步下沉，避免测试聚合壳层重新长胖。
-- `apps/worker/src/commands/dataset.rs` 本轮也已继续瘦身：formal dataset 的报表结构、切片导出和 CLI 摘要打印已经拆到 `apps/worker/src/commands/dataset/report.rs`，后续可以继续评估是否还要把 split/scenario policy 再拆成独立子模块。
+- `apps/worker/src/commands/dataset.rs` 本轮继续瘦身：formal dataset 的报表结构、切片导出和 CLI 摘要打印已经拆到 `apps/worker/src/commands/dataset/report.rs`；split profile、scenario-aware split bounds、label support 与 scenario range helper 现已继续拆到 `apps/worker/src/commands/dataset/split.rs`，scenario catalog 装配与 metadata 编码 helper 已拆到 `apps/worker/src/commands/dataset/scenarios.rs`。当前 `dataset.rs` 已从约 `1218` 行收缩到约 `676` 行，后续可优先把注意力转向下一个超大热点模块。
 
 ### 3.2 API
 
