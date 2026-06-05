@@ -119,7 +119,7 @@ pub(super) async fn load_formal_training_dataset(
 
     if combined_rows.len() < 90 {
         bail!(
-            "formal dataset {} is too small after filters: {} rows found across {} dataset(s), at least 90 are required; backfill more free historical observations and rebuild the formal dataset, or use --dataset-source snapshot as a temporary fallback",
+            "formal dataset {} is too small after filters: {} rows found across {} dataset(s), at least 90 are required; backfill more free historical observations and rebuild the formal dataset, or use --dataset-source snapshot only for transitional research runs (never for bootstrap-formal-release)",
             primary_dataset_key,
             combined_rows.len(),
             dataset_keys.len()

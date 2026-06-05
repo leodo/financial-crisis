@@ -140,6 +140,12 @@ pub(crate) async fn activate_release_with_runtime_guard(
     skip_operational_guard: bool,
     updated_by: &str,
 ) -> anyhow::Result<ModelReleaseRecord> {
+    let target_release = store
+        .load_model_release(release_id)
+        .await?
+        .with_context(|| format!("release {release_id} not found"))?;
+    ensure_release_activation_eligible(&target_release)?;
+
     let previous_active = store.load_active_model_release(market_scope).await?;
     let previous_release_id = previous_active
         .as_ref()
@@ -232,6 +238,16 @@ pub(crate) async fn activate_release_with_runtime_guard(
     Ok(activated)
 }
 
+fn ensure_release_activation_eligible(release: &ModelReleaseRecord) -> anyhow::Result<()> {
+    if release.manifest.serving_status == "shadow" {
+        bail!(
+            "release {} is marked shadow and cannot be activated directly; rebuild it from formal datasets or use review-only tooling instead",
+            release.manifest.release_id
+        );
+    }
+    Ok(())
+}
+
 async fn resolve_release_market_scope(
     store: &fc_storage::SqliteStore,
     release_id: &str,
@@ -245,4 +261,59 @@ async fn resolve_release_market_scope(
         .await?
         .with_context(|| format!("release {release_id} not found"))?;
     Ok(release.manifest.market_scope)
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use fc_domain::{ModelReleaseManifest, ModelReleaseRecord};
+
+    use super::ensure_release_activation_eligible;
+
+    fn release(serving_status: &str) -> ModelReleaseRecord {
+        ModelReleaseRecord {
+            manifest: ModelReleaseManifest {
+                release_id: format!("release-{serving_status}"),
+                market_scope: "financial_system".to_string(),
+                status: "candidate".to_string(),
+                probability_mode: "formal_bundle_v1".to_string(),
+                serving_status: serving_status.to_string(),
+                bundle_uri: "bundle.json".to_string(),
+                feature_set_version: "feature_formal_v1_main_20260531".to_string(),
+                label_version: "formal_label_v1_main".to_string(),
+                prob_model_version: "prob".to_string(),
+                calibration_version: "calib".to_string(),
+                posture_policy_version: "posture".to_string(),
+                action_playbook_version: "playbook".to_string(),
+                point_in_time_mode: "best_effort".to_string(),
+                training_range_start: None,
+                training_range_end: None,
+                calibration_range_start: None,
+                calibration_range_end: None,
+                evaluation_range_start: None,
+                evaluation_range_end: None,
+                brier_score: None,
+                log_loss: None,
+                ece: None,
+                note: String::new(),
+            },
+            created_at: Utc::now(),
+            activated_at: None,
+            retired_at: None,
+        }
+    }
+
+    #[test]
+    fn shadow_release_is_not_activation_eligible() {
+        let error = ensure_release_activation_eligible(&release("shadow")).unwrap_err();
+        assert!(
+            error.to_string().contains("cannot be activated directly"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[test]
+    fn healthy_release_is_activation_eligible() {
+        ensure_release_activation_eligible(&release("healthy")).unwrap();
+    }
 }

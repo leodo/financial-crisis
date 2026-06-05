@@ -245,8 +245,15 @@ impl PipelineBootstrapOptions {
             index += 1;
         }
 
+        let train = PipelineTrainOptions::parse(&train_args)?;
+        if !matches!(train.dataset_source, PipelineDatasetSource::Formal) {
+            bail!(
+                "bootstrap-formal-release only supports --dataset-source formal; snapshot is transitional research only and cannot be published as a formal release"
+            );
+        }
+
         Ok(Self {
-            train: PipelineTrainOptions::parse(&train_args)?,
+            train,
             activate,
             reload_api,
             api_reload_url,
@@ -285,5 +292,42 @@ fn default_release_prefix(
         (PipelineDatasetSource::Snapshot, ProbabilityModelShape::FamilyHybridV1) => {
             "us_formal_transitional_family_hybrid".to_string()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PipelineBootstrapOptions, PipelineDatasetSource};
+
+    #[test]
+    fn bootstrap_formal_release_rejects_snapshot_dataset_source() {
+        let error = PipelineBootstrapOptions::parse(&[
+            "--dataset-source".to_string(),
+            "snapshot".to_string(),
+        ])
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("bootstrap-formal-release only supports --dataset-source formal"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[test]
+    fn bootstrap_formal_release_accepts_formal_dataset_source() {
+        let options = PipelineBootstrapOptions::parse(&[
+            "--dataset-source".to_string(),
+            "formal".to_string(),
+            "--updated-by".to_string(),
+            "tester".to_string(),
+        ])
+        .unwrap();
+
+        assert_eq!(options.train.dataset_source, PipelineDatasetSource::Formal);
+        assert_eq!(options.updated_by, "tester");
+        assert!(options.activate);
+        assert!(options.reload_api);
     }
 }
