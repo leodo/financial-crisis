@@ -318,7 +318,7 @@ apps/api/src/
 
 | 归属 | 可以放什么 | 不能放什么 | 当前代表文件 |
 | --- | --- | --- | --- |
-| `crates/domain` | 纯领域模型、bundle schema、纯概率打分、Platt 应用、特征 transform resolver、观测窗口排序/差值、静态场景目录 | IO、环境变量、HTTP、数据库、缓存、当前时间、用户 profile、source-specific PIT 发布规则 | `probability_bundle.rs`、`observation_window.rs`、`stress_window.rs` |
+| `crates/domain` | 纯领域模型、bundle schema、纯概率打分、Platt 应用、特征 transform resolver、观测窗口排序/差值、静态场景目录 | IO、环境变量、HTTP、数据库、缓存、当前时间、用户 profile、source-specific PIT 发布规则 | `probability_bundle.rs`、`observation_window.rs`、`stress_window.rs`、`scenario_catalog.rs` |
 | `apps/worker` | 数据刷新/回填命令、训练样本构建、PIT feature snapshot、模型拟合、阈值选择、release review、候选实验 guardrail | API response shape、前端展示文案、请求级用户偏好、运行时重新训练 | `commands/feature.rs`、`model.rs`、`probability.rs`、`commands/release.rs` |
 | `apps/api` | 当前评估装配、active release 加载、runtime cache、用户偏好升降级、posture/position guidance、历史回放与回测 API DTO | 训练样本切分、候选模型搜索、离线实验输出、UI 文案硬编码 | `assessment/*.rs`、`data_source.rs`、`history_replay.rs`、`backtest.rs` |
 | `apps/web` | 人话标签、格式化、页面 view model、图表和交互状态 | 概率计算、阈值选择、仓位规则事实来源、数据抓取 | `format.ts`、`format/**`、`views/**` |
@@ -330,6 +330,10 @@ apps/api/src/
 3. 依赖 active release、runtime cache、用户 profile、HTTP response 的逻辑留在 `apps/api`。
 4. PIT 可见性分两层处理：通用观测窗口可以进 domain，source publication timing 与 cutoff timezone 暂留 worker/data 规范，避免把数据源时效假设伪装成纯领域逻辑。
 5. Web 只能翻译和呈现，不承接新的风险判断事实来源；任何新增仓位动作必须先进入 API playbook/Go-No-Go 边界。
+
+补充落地：
+
+- `crates/domain/src/scenario_catalog.rs` 现已回到纯子模块导出壳层；`scenario_catalog/types.rs` 负责场景目录枚举、结构体与 label/window set 查询 helper，`scenario_catalog/load.rs` 负责环境变量读取、文件/内置目录加载、默认 action episode 模板注入与 fallback warning，`scenario_catalog/validate.rs` 负责场景日期窗口、动作 override 与 label/window set 引用校验，`scenario_catalog/tests.rs` 负责嵌入目录 smoke test。这样静态场景目录仍留在 shared domain 层，但加载、校验和测试不会继续堆在单文件里。
 
 ## 7. 实施原则
 
