@@ -97,6 +97,7 @@ config/
 
 - 顶层 CLI 分发、research 子命令、release 主流程、db/refresh/backfill 入口已先后从 `main.rs` 中拆出；
 - `apps/worker/src/commands/release.rs` 又进一步把概率切片研究工具拆到 `apps/worker/src/commands/release/probability.rs`，并把 release review 的 CLI 选项、runtime snapshot、比较诊断、建议与总结继续拆到 `apps/worker/src/commands/release/review.rs`；当前 `release.rs` 主要保留 publish/list/show/activate/rollback 与共享 runtime guard helper；
+- `apps/worker/src/commands/release/probability/compare.rs` 已继续收走 formal probability compare 的阈值摘要、feature delta 聚合、窗口汇总、CSV/JSON 导出与 CLI 摘要打印，`commands/release/probability.rs` 已回到“slice CLI + bundle 评分 + formal compare 编排”边界；
 - `apps/worker/src/commands/release/review/focus.rs` 已继续收走 structured signal counts、backtest scenario compare、scenario focus diagnostics、runtime actionable block/facet 汇总与 primary failure mode 判定，`commands/release/review.rs` 已回到“review 编排 + runtime separation compare + recommendation / summary”边界；
 - `apps/worker/src/training.rs` 已进一步收走 formal bundle 训练管线、`forward_crisis` 标签 / regime helper；`apps/worker/src/release_review.rs` 也已继续收走 release review 专属 report wire structs、historical audit helper、runtime regime diagnostics 与 Markdown 渲染入口；
 - `apps/worker/src/commands/dataset/report.rs` 已继续收走 formal dataset summary/slice 的 envelope、split/scenario/regime 汇总、Markdown/CSV/JSON 渲染与 CLI 摘要打印，`commands/dataset.rs` 开始回到“数据构建 + 研究命令编排”边界；
