@@ -112,6 +112,11 @@ pub(crate) async fn research_release_rollback(args: &[String]) -> anyhow::Result
     let options = ReleaseSwitchOptions::parse(args)?;
     let store = crate::open_sqlite_store().await?;
     store.migrate().await?;
+    let target_release = store
+        .load_model_release(&options.release_id)
+        .await?
+        .with_context(|| format!("release {} not found", options.release_id))?;
+    ensure_release_activation_eligible(&target_release)?;
     let market_scope =
         resolve_release_market_scope(&store, &options.release_id, options.market_scope.as_deref())
             .await?;

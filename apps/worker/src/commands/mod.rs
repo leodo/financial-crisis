@@ -101,10 +101,10 @@ fn print_help() {
       Print a stored model release as JSON.
 
   cargo run -p fc-worker -- research release activate --release-id ID [--market-scope SCOPE] [--reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
-      Mark a release active for the selected market scope and optionally reload the API runtime. With --reload-api, worker compares runtime backtest guardrails and auto-rolls back on clear regression unless --skip-operational-guard is set.
+      Mark a release active for the selected market scope and optionally reload the API runtime. Candidate/review-only releases are rejected here; only formally publishable release states can become active. With --reload-api, worker compares runtime backtest guardrails and auto-rolls back on clear regression unless --skip-operational-guard is set.
 
   cargo run -p fc-worker -- research release rollback --to-release-id ID [--market-scope SCOPE] [--reload-api] [--api-reload-url URL] [--updated-by NAME]
-      Roll back the selected market scope to an earlier release and optionally reload the API runtime.
+      Roll back the selected market scope to an earlier formally eligible release and optionally reload the API runtime. Candidate/review-only releases are rejected here as rollback targets too.
 
   cargo run -p fc-worker -- research release review --candidate-release-id ID [--baseline-release-id ID] [--market-scope SCOPE] [--api-reload-url URL] [--history-mode default|strict_rebuild] [--history-limit N] [--output-dir DIR] [--updated-by NAME]
       Temporarily switch the running API between baseline and candidate releases. Review reloads default to strict_rebuild raw history replay and history-limit=20000 before exporting JSON + Markdown, then restore the original active release. Use --history-mode default with a smaller --history-limit only for quick triage when strict rebuild is too slow.
