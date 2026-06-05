@@ -144,6 +144,7 @@ async fn rebuild_full_release_history_from_raw(
     serving_model: Option<&ServingModelContext>,
     user_preferences: &UserRiskPreferences,
     rebuild_dates: &[NaiveDate],
+    persist_prediction_snapshots: bool,
 ) -> anyhow::Result<HistoricalAssessmentOutput> {
     let rebuilt = build_assessment_history_for_dates(
         DataMode::Sqlite,
@@ -155,9 +156,11 @@ async fn rebuild_full_release_history_from_raw(
         user_preferences,
         rebuild_dates,
     );
-    store
-        .upsert_prediction_snapshots(&rebuilt.prediction_snapshots)
-        .await?;
+    if persist_prediction_snapshots {
+        store
+            .upsert_prediction_snapshots(&rebuilt.prediction_snapshots)
+            .await?;
+    }
     persist_historical_replay_output(store, observations, serving_model, &rebuilt).await?;
     Ok(rebuilt)
 }
@@ -197,6 +200,7 @@ pub(crate) async fn load_sqlite_assessment_history(
         .copied()
         .collect::<Vec<_>>();
     let bundle_backed_history = uses_bundle_backed_history(serving_model);
+    let persist_prediction_snapshots = !bundle_backed_history;
     let full_history_refresh = should_refresh_full_release_history(
         serving_model,
         &persisted_rows,
@@ -232,6 +236,7 @@ pub(crate) async fn load_sqlite_assessment_history(
             serving_model,
             user_preferences,
             &rebuild_dates,
+            persist_prediction_snapshots,
         )
         .await?;
         return Ok(rebuilt.history_points);
@@ -265,6 +270,7 @@ pub(crate) async fn load_sqlite_assessment_history(
             serving_model,
             user_preferences,
             &rebuild_dates,
+            persist_prediction_snapshots,
         )
         .await?;
         return Ok(rebuilt.history_points);

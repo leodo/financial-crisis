@@ -154,6 +154,11 @@ created_at
 2. 前端“最近一段时间”查看当前线上行为；
 3. 当 raw replay 还未覆盖全部日期时，作为临时桥接视图。
 
+补充边界（2026-06-06）：
+
+- 对 `bundle-backed formal release`，API 在 default / strict rebuild 历史重建时只会写 `historical replay run / point`，不再把整段历史 assessment 反向回填到 `analytics_prediction_snapshots`；
+- `analytics_prediction_snapshots` 现在只保留“当前一次运行快照”与 heuristic / 兼容路径的桥接历史，不再承担 formal bundle 历史真源职责。
+
 明确禁止：
 
 - 不再把它作为 formal dataset builder 的正式输入；
