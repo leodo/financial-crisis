@@ -8,6 +8,7 @@
 
 - API `/api/system/reload` 已支持 `history_mode=strict_rebuild`；
 - release review 已默认通过 `strict_rebuild` 触发 raw-history rebuild，再抓 baseline / candidate runtime snapshot；
+- API `/api/system/reload` 已支持 `runtime_purpose=production|review`：默认 production reload 只允许正式 `active/healthy` release 装载 bundle-backed runtime；候选 `candidate/*` 或 `*/shadow` release 在 production reload 下会降级回 heuristic runtime，只有 release review / probability slice 显式带 `runtime_purpose=review` 时才允许临时装载 review-only bundle；
 - `historical replay run / point` 已落到 SQLite / domain store，strict/full rebuild 会把历史点级结果写入 replay store；
 - API 在命中同 `history_cache_key + date range + release_id` 的成功 replay run 时，已经会优先读取 replay points，而不是先退回旧 `prediction snapshots`；
 - API 默认历史路径对 `bundle-backed release` 也已改为 `replay-first`：若无可复用 replay cache，会直接基于原始观测全量重建并写回 replay store，而不是静默复用旧 `prediction snapshots`；

@@ -182,6 +182,7 @@ async fn system_reload_endpoint_returns_refresh_metadata() {
     assert_eq!(json["status"], "ok");
     assert_eq!(json["history_mode"], "default");
     assert_eq!(json["history_limit"], 260);
+    assert_eq!(json["runtime_purpose"], "production");
     assert!(json["generated_at"].is_string());
 }
 
@@ -228,6 +229,43 @@ async fn system_reload_endpoint_accepts_history_limit() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status"], "ok");
     assert_eq!(json["history_limit"], 25);
+}
+
+#[tokio::test]
+async fn system_reload_endpoint_accepts_review_runtime_purpose() {
+    let response = demo_app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/system/reload?runtime_purpose=review")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["runtime_purpose"], "review");
+}
+
+#[tokio::test]
+async fn system_reload_endpoint_rejects_unknown_runtime_purpose() {
+    let response = demo_app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/system/reload?runtime_purpose=unknown")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

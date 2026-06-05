@@ -19,6 +19,21 @@ pub(crate) enum ApiReloadHistoryMode {
     StrictRebuild,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ApiReloadRuntimePurpose {
+    Production,
+    Review,
+}
+
+impl ApiReloadRuntimePurpose {
+    pub(crate) fn as_query_value(self) -> &'static str {
+        match self {
+            Self::Production => "production",
+            Self::Review => "review",
+        }
+    }
+}
+
 impl ApiReloadHistoryMode {
     pub(crate) fn parse(value: &str) -> anyhow::Result<Self> {
         match value {
@@ -367,13 +382,29 @@ pub(crate) async fn reload_api_runtime_with_history_mode(
     url: &str,
     history_mode: ApiReloadHistoryMode,
 ) -> anyhow::Result<()> {
-    reload_api_runtime_with_history_options(url, history_mode, None).await
+    reload_api_runtime_with_options(url, history_mode, None, ApiReloadRuntimePurpose::Production)
+        .await
 }
 
 pub(crate) async fn reload_api_runtime_with_history_options(
     url: &str,
     history_mode: ApiReloadHistoryMode,
     history_limit: Option<usize>,
+) -> anyhow::Result<()> {
+    reload_api_runtime_with_options(
+        url,
+        history_mode,
+        history_limit,
+        ApiReloadRuntimePurpose::Review,
+    )
+    .await
+}
+
+pub(crate) async fn reload_api_runtime_with_options(
+    url: &str,
+    history_mode: ApiReloadHistoryMode,
+    history_limit: Option<usize>,
+    runtime_purpose: ApiReloadRuntimePurpose,
 ) -> anyhow::Result<()> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(1_200))
@@ -385,6 +416,12 @@ pub(crate) async fn reload_api_runtime_with_history_options(
     }
     if let Some(history_limit) = history_limit {
         query.push(("history_limit", history_limit.to_string()));
+    }
+    if runtime_purpose != ApiReloadRuntimePurpose::Production {
+        query.push((
+            "runtime_purpose",
+            runtime_purpose.as_query_value().to_string(),
+        ));
     }
     let request = if query.is_empty() {
         request

@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     assessment::RuntimeThresholdDiagnostics,
-    data_source::{self, AppDataSource, AssessmentHistoryBuildMode},
+    data_source::{self, AppDataSource, AssessmentHistoryBuildMode, ServingRuntimePurpose},
 };
 
 #[derive(Debug, Clone)]
@@ -67,16 +67,24 @@ impl AppState {
     }
 
     pub async fn reload(&self) -> anyhow::Result<AppData> {
-        self.reload_with_history_mode(AssessmentHistoryBuildMode::Default)
-            .await
+        self.reload_with_runtime_options(
+            AssessmentHistoryBuildMode::Default,
+            self.max_history_points,
+            ServingRuntimePurpose::Production,
+        )
+        .await
     }
 
     pub async fn reload_with_history_mode(
         &self,
         history_build_mode: AssessmentHistoryBuildMode,
     ) -> anyhow::Result<AppData> {
-        self.reload_with_history_mode_and_limit(history_build_mode, self.max_history_points)
-            .await
+        self.reload_with_runtime_options(
+            history_build_mode,
+            self.max_history_points,
+            ServingRuntimePurpose::Production,
+        )
+        .await
     }
 
     pub async fn reload_with_history_mode_and_limit(
@@ -84,10 +92,25 @@ impl AppState {
         history_build_mode: AssessmentHistoryBuildMode,
         max_history_points: usize,
     ) -> anyhow::Result<AppData> {
-        let data = data_source::load_app_data_with_history_mode(
+        self.reload_with_runtime_options(
+            history_build_mode,
+            max_history_points,
+            ServingRuntimePurpose::Production,
+        )
+        .await
+    }
+
+    pub async fn reload_with_runtime_options(
+        &self,
+        history_build_mode: AssessmentHistoryBuildMode,
+        max_history_points: usize,
+        runtime_purpose: ServingRuntimePurpose,
+    ) -> anyhow::Result<AppData> {
+        let data = data_source::load_app_data_with_runtime_options(
             &self.source,
             max_history_points,
             history_build_mode,
+            runtime_purpose,
         )
         .await?;
         *self.data.write().await = data.clone();

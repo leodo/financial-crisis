@@ -14,7 +14,7 @@ mod research_audit;
 pub(crate) use research_audit::research_audit;
 
 use crate::{
-    data_source::AssessmentHistoryBuildMode,
+    data_source::{AssessmentHistoryBuildMode, ServingRuntimePurpose},
     history_builder::{select_assessment_history, select_backtest_timeline, HistoryQueryWindow},
     AppState,
 };
@@ -30,6 +30,7 @@ pub struct HistoryQuery {
 pub struct ReloadQuery {
     history_mode: Option<String>,
     history_limit: Option<usize>,
+    runtime_purpose: Option<String>,
 }
 
 impl HistoryQuery {
@@ -184,12 +185,17 @@ pub async fn system_reload(
         Some("strict_rebuild") => AssessmentHistoryBuildMode::StrictRebuild,
         _ => AssessmentHistoryBuildMode::Default,
     };
+    let runtime_purpose = match query.runtime_purpose.as_deref() {
+        Some("review") => ServingRuntimePurpose::Review,
+        Some("production") | None => ServingRuntimePurpose::Production,
+        Some(_) => return Err(StatusCode::BAD_REQUEST),
+    };
     let history_limit = query.history_limit.unwrap_or(state.max_history_points());
     if history_limit == 0 {
         return Err(StatusCode::BAD_REQUEST);
     }
     let data = state
-        .reload_with_history_mode_and_limit(history_build_mode, history_limit)
+        .reload_with_runtime_options(history_build_mode, history_limit, runtime_purpose)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({
@@ -202,5 +208,6 @@ pub async fn system_reload(
             AssessmentHistoryBuildMode::StrictRebuild => "strict_rebuild",
         },
         "history_limit": history_limit,
+        "runtime_purpose": runtime_purpose.as_label(),
     })))
 }
