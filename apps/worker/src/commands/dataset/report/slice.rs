@@ -4,13 +4,15 @@ use anyhow::bail;
 use chrono::Utc;
 use fc_domain::{FormalDatasetRecord, FormalDatasetRowRecord};
 
+use crate::commands::dataset::options::FormalDatasetSliceOptions;
+
 use super::FormalDatasetSliceExport;
 
 pub(crate) fn build_formal_dataset_slice_export(
     dataset_key: String,
     dataset: FormalDatasetRecord,
     rows: Vec<FormalDatasetRowRecord>,
-    options: &super::super::FormalDatasetSliceOptions,
+    options: &FormalDatasetSliceOptions,
 ) -> anyhow::Result<FormalDatasetSliceExport> {
     let rows = filter_formal_dataset_rows_for_slice(rows, options);
     if rows.is_empty() {
@@ -89,7 +91,7 @@ pub(crate) fn write_formal_dataset_slice_report(
 
 fn filter_formal_dataset_rows_for_slice(
     rows: Vec<FormalDatasetRowRecord>,
-    options: &super::super::FormalDatasetSliceOptions,
+    options: &FormalDatasetSliceOptions,
 ) -> Vec<FormalDatasetRowRecord> {
     let mut filtered = rows
         .into_iter()
