@@ -201,6 +201,7 @@ apps/worker/src/
 - `commands/release/probability/common.rs` 负责文件名清洗与 CSV 转义等共享小工具。
 - `assessment.rs` 负责 assessment 总装配、method version 与 snapshot envelope；`assessment/runtime_policy.rs` 负责 runtime threshold / serving policy / history runtime policy version；`assessment/common.rs` 负责 rounding、formatting、pressure 这类跨 assessment 子模块共享 helper；`assessment/tests.rs` 承接 assessment 相关模块测试，避免主文件继续内联大测试块。
 - `apps/worker/src/tests/training/mod.rs` 负责训练测试聚合；`training/visibility.rs`、`scenario_regimes.rs`、`weighting.rs`、`sign_constraints.rs`、`family_constraints.rs` 分别承接 PIT 可见性、危机标签/训练 regime、样本权重/训练目标、符号约束和 family cap 约束测试，避免训练测试再次回到单文件堆叠。
+- `apps/worker/src/tests/review/mod.rs` 负责 release review 测试聚合；`review/focus.rs`、`historical_audit.rs`、`runtime.rs` 分别承接 scenario focus、historical audit、runtime separation 相关测试，避免 release review 测试再次回到单文件堆叠。
 - `commands/*` 其余模块只负责 CLI 层 glue code。
 
 ## 5. API 拆分边界

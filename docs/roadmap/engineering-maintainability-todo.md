@@ -131,6 +131,7 @@
 - `apps/api/src/assessment/runtime_policy.rs` 本轮继续收走 runtime threshold、serving model policy、history runtime policy version 与 diagnostics；`apps/api/src/assessment/common.rs` 收走 rounding/format/pressure 这类共享 helper；随后又把 assessment 测试块整体外移到 `apps/api/src/assessment/tests.rs`，`assessment.rs` 已从约 `1174` 行收缩到约 `241` 行。
 - `assessment.rs` 当前剩余逻辑已基本回到 assessment 总装配层；下一步可继续观察 `assessment/tests.rs` 是否还要按 posture/probability/runtime policy 再拆子测试模块，并评估 `common.rs` 中哪些 helper 值得继续下沉到 shared crate。
 - 已把原本约 `1344` 行的 `apps/worker/src/tests/training.rs` 拆成 `apps/worker/src/tests/training/mod.rs` + `visibility.rs`、`scenario_regimes.rs`、`weighting.rs`、`sign_constraints.rs`、`family_constraints.rs` 五个主题子模块，降低训练测试随主线演进继续堆成长文件的风险。
+- 已把原本约 `1254` 行的 `apps/worker/src/tests/review.rs` 拆成 `apps/worker/src/tests/review/mod.rs` + `focus.rs`、`historical_audit.rs`、`runtime.rs` 三个主题子模块，降低 release review 测试随诊断逻辑扩展继续堆成长文件的风险。
 
 ### 3.3 Shared Logic
 
