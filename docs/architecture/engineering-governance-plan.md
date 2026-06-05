@@ -328,7 +328,7 @@ apps/api/src/
    - `apps/api/src/demo.rs`
    - `apps/api/src/assessment.rs`
    - `apps/web/src/App.tsx`
-   - `crates/storage/src/sqlite/{metadata.rs,seeds.rs,tests.rs}`
+   - `crates/storage/src/sqlite/{metadata/catalog.rs,seeds.rs,tests.rs}`
 2. 如果改动会同时影响训练口径和运行口径，先检查是否应抽共享函数。
 3. 如果生成物只是本地实验副产物，默认留在 `artifacts/research/**`。
 4. 进入版本化目录的工件，必须能被某个文档、TODO、release 结论直接引用。
