@@ -1,48 +1,21 @@
+mod clauses;
+mod counters;
+mod preferences;
+
 use fc_domain::{
-    ActionabilityBlock, DataTrust, DecisionPosture, EventAssessment, EventConfirmationState,
-    HistoricalAnalog, JpyCarrySnapshot, PostureGuidance, ProbabilityBlock, QualityGrade,
-    RiskSnapshot, TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
+    ActionabilityBlock, DataTrust, DecisionPosture, EventAssessment, HistoricalAnalog,
+    JpyCarrySnapshot, PostureGuidance, ProbabilityBlock, QualityGrade, RiskSnapshot,
+    TimeToRiskBucket, UserRiskPreferences,
 };
 
 use super::super::{format_probability_threshold, ProbabilityActionThresholds};
-
-#[derive(Debug, Clone, Default)]
-struct PostureClauseDiagnostics {
-    defend_trigger_codes: Vec<&'static str>,
-    hedge_trigger_codes: Vec<&'static str>,
-    prepare_trigger_codes: Vec<&'static str>,
-    blocker_codes: Vec<&'static str>,
-}
-
-impl PostureClauseDiagnostics {
-    fn selected_trigger_codes(&self, posture: DecisionPosture) -> Vec<String> {
-        match posture {
-            DecisionPosture::Defend => self
-                .defend_trigger_codes
-                .iter()
-                .map(|code| (*code).to_string())
-                .collect(),
-            DecisionPosture::Hedge => self
-                .hedge_trigger_codes
-                .iter()
-                .map(|code| (*code).to_string())
-                .collect(),
-            DecisionPosture::Prepare => self
-                .prepare_trigger_codes
-                .iter()
-                .map(|code| (*code).to_string())
-                .collect(),
-            DecisionPosture::Normal => Vec::new(),
-        }
-    }
-
-    fn blocker_code_strings(&self) -> Vec<String> {
-        self.blocker_codes
-            .iter()
-            .map(|code| (*code).to_string())
-            .collect()
-    }
-}
+use clauses::build_posture_clause_diagnostics;
+use counters::{
+    prepare_context_confirmation_count_without_events,
+    prepare_non_carry_confirmation_count_without_events,
+    prepare_non_external_confirmation_count_without_events,
+};
+use preferences::{adjust_posture_for_preferences, preference_adjustment_code};
 
 #[allow(clippy::too_many_arguments)]
 pub(in super::super) fn build_time_to_risk_bucket(
@@ -136,169 +109,6 @@ pub(in super::super) fn build_time_to_risk_bucket(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn build_posture_clause_diagnostics(
-    snapshot: &RiskSnapshot,
-    probabilities: &ProbabilityBlock,
-    prepare_reference_p60d: Option<f64>,
-    actionability: Option<&ActionabilityBlock>,
-    conviction_score: f64,
-    data_trust: &DataTrust,
-    external_shock_score: f64,
-    breadth_score: f64,
-    jpy_carry: &JpyCarrySnapshot,
-    event_assessment: &EventAssessment,
-    thresholds: ProbabilityActionThresholds,
-) -> PostureClauseDiagnostics {
-    let severe_quality_block =
-        matches!(data_trust.quality_grade, QualityGrade::D | QualityGrade::F);
-    let prepare_p60d = prepare_reference_p60d.unwrap_or(probabilities.p_60d);
-    let defend_quality_gate = matches!(data_trust.quality_grade, QualityGrade::A | QualityGrade::B);
-    let confirmation_count = posture_confirmation_count(
-        snapshot.trigger_score,
-        external_shock_score,
-        event_assessment.confirmation_score,
-    );
-    let prepare_confirmation_count = prepare_context_confirmation_count(
-        snapshot.trigger_score,
-        external_shock_score,
-        breadth_score,
-        event_assessment.confirmation_score,
-        jpy_carry.funding_pressure_score,
-    );
-    let prepare_non_external_confirmation_count = prepare_non_external_confirmation_count(
-        snapshot.trigger_score,
-        breadth_score,
-        event_assessment.confirmation_score,
-        jpy_carry.funding_pressure_score,
-    );
-    let prepare_non_carry_confirmation_count = prepare_non_carry_confirmation_count(
-        snapshot.trigger_score,
-        external_shock_score,
-        breadth_score,
-        event_assessment.confirmation_score,
-    );
-    let severe_carry = jpy_carry.score >= 70.0 && jpy_carry.funding_pressure_score >= 55.0;
-    let stressed_carry = jpy_carry.score >= 58.0 && jpy_carry.funding_pressure_score >= 48.0;
-
-    let mut defend_trigger_codes = Vec::new();
-    if defend_quality_gate
-        && confirmation_count >= 2
-        && conviction_score >= 0.62
-        && breadth_score >= 48.0
-    {
-        if probabilities.p_5d >= thresholds.defend_p5d && snapshot.trigger_score >= 60.0 {
-            defend_trigger_codes.push("defend_p5d_trigger");
-        }
-        if severe_carry && snapshot.trigger_score >= 55.0 && external_shock_score >= 55.0 {
-            defend_trigger_codes.push("defend_carry_trigger");
-        }
-        if actionability.is_some_and(|scores| {
-            scores.defend >= 0.36
-                && (snapshot.trigger_score >= 55.0 || external_shock_score >= 55.0)
-        }) {
-            defend_trigger_codes.push("defend_actionability");
-        }
-    }
-
-    let mut hedge_trigger_codes = Vec::new();
-    let hedge_context_support_count = [
-        snapshot.trigger_score >= 50.0,
-        external_shock_score >= 50.0,
-        breadth_score >= 40.0,
-        event_assessment.confirmation_score >= 40.0,
-    ]
-    .into_iter()
-    .filter(|supported| *supported)
-    .count();
-    let hedge_medium_horizon_support = snapshot.structural_score >= 48.0
-        || probabilities.p_60d >= thresholds.downgrade_prepare_p60d()
-        || stressed_carry;
-    let hedge_context_ready = snapshot.overall_score >= 58.0
-        || external_shock_score >= 50.0
-        || event_assessment.confirmation_score >= 45.0
-        || stressed_carry;
-    if probabilities.p_20d >= thresholds.hedge_p20d
-        && hedge_context_support_count >= 2
-        && hedge_medium_horizon_support
-        && hedge_context_ready
-    {
-        hedge_trigger_codes.push("hedge_p20d_context");
-    }
-    if probabilities.p_60d >= thresholds.elevated_weeks_p60d()
-        && snapshot.structural_score >= 55.0
-        && snapshot.trigger_score >= 54.0
-        && external_shock_score >= 48.0
-    {
-        hedge_trigger_codes.push("hedge_p60d_elevated");
-    }
-    if stressed_carry
-        && external_shock_score >= 50.0
-        && snapshot.structural_score >= 50.0
-        && snapshot.trigger_score >= 45.0
-    {
-        hedge_trigger_codes.push("hedge_carry_structural");
-    }
-    if actionability.is_some_and(|scores| {
-        scores.hedge >= 0.36
-            && (snapshot.trigger_score >= 46.0
-                || external_shock_score >= 48.0
-                || event_assessment.confirmation_score >= 35.0)
-    }) {
-        hedge_trigger_codes.push("hedge_actionability");
-    }
-
-    let mut prepare_trigger_codes = Vec::new();
-    if conviction_score >= 0.54 {
-        if prepare_p60d >= thresholds.prepare_p60d
-            && snapshot.structural_score >= 58.0
-            && prepare_confirmation_count >= 2
-        {
-            prepare_trigger_codes.push("prepare_p60d_structural");
-        }
-        if snapshot.structural_score >= 64.0
-            && prepare_p60d >= thresholds.downgrade_prepare_p60d()
-            && prepare_confirmation_count >= 2
-        {
-            prepare_trigger_codes.push("prepare_structural_downgrade");
-        }
-        if external_shock_score >= 58.0
-            && snapshot.structural_score >= 54.0
-            && probabilities.p_20d >= thresholds.external_prepare_p20d()
-            && prepare_non_external_confirmation_count >= 1
-        {
-            prepare_trigger_codes.push("prepare_external_structural");
-        }
-        if stressed_carry
-            && snapshot.structural_score >= 56.0
-            && prepare_p60d >= thresholds.carry_prepare_p60d()
-            && prepare_non_carry_confirmation_count >= 1
-        {
-            prepare_trigger_codes.push("prepare_carry_structural");
-        }
-        if actionability.is_some_and(|scores| {
-            scores.prepare >= 0.40
-                && prepare_p60d >= thresholds.downgrade_prepare_p60d()
-                && prepare_confirmation_count >= 2
-                && (snapshot.structural_score >= 56.0 || external_shock_score >= 55.0)
-        }) {
-            prepare_trigger_codes.push("prepare_actionability");
-        }
-    }
-
-    let mut blocker_codes = Vec::new();
-    if severe_quality_block && !hedge_trigger_codes.is_empty() {
-        blocker_codes.push("quality_blocked_hedge");
-    }
-
-    PostureClauseDiagnostics {
-        defend_trigger_codes,
-        hedge_trigger_codes,
-        prepare_trigger_codes,
-        blocker_codes,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
 pub(in super::super) fn build_posture_guidance(
     snapshot: &RiskSnapshot,
     probabilities: &ProbabilityBlock,
@@ -329,9 +139,9 @@ pub(in super::super) fn build_posture_guidance(
         event_assessment,
         thresholds,
     );
-    let defend_signal = !clause_diagnostics.defend_trigger_codes.is_empty();
-    let hedge_signal = !clause_diagnostics.hedge_trigger_codes.is_empty();
-    let prepare_signal = !clause_diagnostics.prepare_trigger_codes.is_empty();
+    let defend_signal = clause_diagnostics.has_defend_signal();
+    let hedge_signal = clause_diagnostics.has_hedge_signal();
+    let prepare_signal = clause_diagnostics.has_prepare_signal();
 
     let base_posture = if defend_signal {
         DecisionPosture::Defend
@@ -345,12 +155,7 @@ pub(in super::super) fn build_posture_guidance(
     let posture = adjust_posture_for_preferences(base_posture, user_preferences, event_assessment);
     let mut trigger_codes = clause_diagnostics.selected_trigger_codes(base_posture);
     if posture != base_posture {
-        let adjustment_code = match user_preferences.profile {
-            UserRiskProfile::Conservative => "preference_conservative_escalation",
-            UserRiskProfile::Aggressive => "preference_aggressive_deescalation",
-            UserRiskProfile::Neutral => "preference_neutral_no_adjustment",
-        };
-        trigger_codes.push(adjustment_code.to_string());
+        trigger_codes.push(preference_adjustment_code(user_preferences).to_string());
     }
 
     let mut reasons = Vec::new();
@@ -449,157 +254,5 @@ pub(in super::super) fn build_posture_guidance(
         downgrade_condition,
         trigger_codes,
         blocker_codes: clause_diagnostics.blocker_code_strings(),
-    }
-}
-
-fn posture_confirmation_count(
-    trigger_score: f64,
-    external_shock_score: f64,
-    event_confirmation_score: f64,
-) -> u8 {
-    [
-        trigger_score >= 60.0,
-        external_shock_score >= 55.0,
-        event_confirmation_score >= 55.0,
-    ]
-    .into_iter()
-    .filter(|flag| *flag)
-    .count() as u8
-}
-
-fn prepare_context_confirmation_count(
-    trigger_score: f64,
-    external_shock_score: f64,
-    breadth_score: f64,
-    event_confirmation_score: f64,
-    carry_funding_pressure_score: f64,
-) -> u8 {
-    [
-        trigger_score >= 45.0,
-        external_shock_score >= 50.0,
-        breadth_score >= 36.0,
-        event_confirmation_score >= 38.0,
-        carry_funding_pressure_score >= 48.0,
-    ]
-    .into_iter()
-    .filter(|flag| *flag)
-    .count() as u8
-}
-
-fn prepare_context_confirmation_count_without_events(
-    trigger_score: f64,
-    external_shock_score: f64,
-    breadth_score: f64,
-    carry_funding_pressure_score: f64,
-) -> u8 {
-    [
-        trigger_score >= 45.0,
-        external_shock_score >= 50.0,
-        breadth_score >= 36.0,
-        carry_funding_pressure_score >= 48.0,
-    ]
-    .into_iter()
-    .filter(|flag| *flag)
-    .count() as u8
-}
-
-fn prepare_non_external_confirmation_count(
-    trigger_score: f64,
-    breadth_score: f64,
-    event_confirmation_score: f64,
-    carry_funding_pressure_score: f64,
-) -> u8 {
-    [
-        trigger_score >= 45.0,
-        breadth_score >= 36.0,
-        event_confirmation_score >= 38.0,
-        carry_funding_pressure_score >= 48.0,
-    ]
-    .into_iter()
-    .filter(|flag| *flag)
-    .count() as u8
-}
-
-fn prepare_non_external_confirmation_count_without_events(
-    trigger_score: f64,
-    breadth_score: f64,
-    carry_funding_pressure_score: f64,
-) -> u8 {
-    [
-        trigger_score >= 45.0,
-        breadth_score >= 36.0,
-        carry_funding_pressure_score >= 48.0,
-    ]
-    .into_iter()
-    .filter(|flag| *flag)
-    .count() as u8
-}
-
-fn prepare_non_carry_confirmation_count(
-    trigger_score: f64,
-    external_shock_score: f64,
-    breadth_score: f64,
-    event_confirmation_score: f64,
-) -> u8 {
-    [
-        trigger_score >= 45.0,
-        external_shock_score >= 50.0,
-        breadth_score >= 36.0,
-        event_confirmation_score >= 38.0,
-    ]
-    .into_iter()
-    .filter(|flag| *flag)
-    .count() as u8
-}
-
-fn prepare_non_carry_confirmation_count_without_events(
-    trigger_score: f64,
-    external_shock_score: f64,
-    breadth_score: f64,
-) -> u8 {
-    [
-        trigger_score >= 45.0,
-        external_shock_score >= 50.0,
-        breadth_score >= 36.0,
-    ]
-    .into_iter()
-    .filter(|flag| *flag)
-    .count() as u8
-}
-
-fn adjust_posture_for_preferences(
-    base_posture: DecisionPosture,
-    user_preferences: &UserRiskPreferences,
-    event_assessment: &EventAssessment,
-) -> DecisionPosture {
-    match user_preferences.profile {
-        UserRiskProfile::Conservative => escalate_posture(base_posture),
-        UserRiskProfile::Aggressive => {
-            if matches!(
-                event_assessment.state,
-                EventConfirmationState::Quiet | EventConfirmationState::Watching
-            ) {
-                deescalate_posture(base_posture)
-            } else {
-                base_posture
-            }
-        }
-        UserRiskProfile::Neutral => base_posture,
-    }
-}
-
-fn escalate_posture(posture: DecisionPosture) -> DecisionPosture {
-    match posture {
-        DecisionPosture::Normal => DecisionPosture::Prepare,
-        DecisionPosture::Prepare => DecisionPosture::Hedge,
-        DecisionPosture::Hedge | DecisionPosture::Defend => DecisionPosture::Defend,
-    }
-}
-
-fn deescalate_posture(posture: DecisionPosture) -> DecisionPosture {
-    match posture {
-        DecisionPosture::Defend => DecisionPosture::Hedge,
-        DecisionPosture::Hedge => DecisionPosture::Prepare,
-        DecisionPosture::Prepare | DecisionPosture::Normal => DecisionPosture::Normal,
     }
 }
