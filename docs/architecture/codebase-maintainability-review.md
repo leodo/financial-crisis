@@ -174,10 +174,10 @@ config/
 这让 `sqlite.rs` 本身已经回到“连接壳层 + 常量/record type + trait 转接”的轻量边界；同时 `sqlite/metadata.rs` 也已继续收口为模块壳层，并把实现拆到 `sqlite/metadata/catalog.rs` 与 `sqlite/metadata/mappings.rs`；本轮又把 `sqlite/metadata/catalog.rs` 继续细分成 `catalog.rs` + `catalog/seeds.rs` + `catalog/upsert.rs`，让 metadata seed 定义、upsert SQL 与初始化编排重新落回独立边界；`sqlite/seeds.rs` 已进一步收口为模块壳层，seed 定义与 mapping helper 下沉到 `sqlite/seeds/indicator_catalog.rs` 与 `sqlite/seeds/mappings.rs`；本轮又把 `sqlite/seeds/indicator_catalog.rs` 继续细分成 `indicator_catalog.rs` + `indicator_catalog/{fred,boj,world_bank,sec_events,gdelt}.rs`，让各免费数据源的 indicator seed 列表重新落回独立边界；`sqlite/formal_datasets.rs` 本轮也继续拆成 `formal_datasets.rs` + `formal_datasets/{datasets,rows}.rs`，把 dataset manifest upsert/load/list 与 dataset row replace/list 重新收回独立边界；`sqlite/historical_replay.rs` 本轮也继续拆成 `historical_replay.rs` + `historical_replay/{runs,points}.rs`，把 replay run upsert/load/list 与 replay assessment point replace/list 重新收回独立边界；`sqlite/tests.rs` 也已拆成 `sqlite/tests/mod.rs` 与多份主题测试模块。当前存储层仍有二级维护风险：
 
 - `sqlite/seeds/indicator_catalog.rs` 虽已收口为共享 seed type + wrapper 壳层，但若后续继续扩展来源或复用规则，仍可能再次堆入跨来源共享逻辑；
-- 存储测试虽然已按主题拆开，但 `tests/historical_replay.rs`、`tests/formal_datasets.rs` 仍会继续承接较重的 round-trip 断言；
+- 存储测试虽然已按主题拆开，但若 replay / dataset 断言继续扩展，仍应优先沿着 `tests/historical_replay/{fixtures,runs,points}.rs` 与 `tests/formal_datasets/{fixtures,snapshots,rows}.rs` 继续收窄，而不是重新回到单文件堆叠；
 - metadata catalog 的 SQL/seed 边界已经收口，但后续若继续扩展数据源，仍应优先落到 `catalog/seeds.rs` 与 `catalog/upsert.rs`，避免重新把编排壳层堆大。
 
-因此，存储层风险已经从“单个超大入口文件”转为“个别剩余大子模块 + 少数偏重测试模块仍需继续按主题收窄”。
+因此，存储层风险已经从“单个超大入口文件”转为“个别剩余运行时子模块需继续观察增长，以及测试主题需要沿现有 fixture / topic 边界持续收窄”。
 
 ### 4.5 Web `App.tsx` 已开始变成页面总控 + 领域解释器
 

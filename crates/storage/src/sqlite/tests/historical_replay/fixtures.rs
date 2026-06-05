@@ -1,17 +1,12 @@
-use chrono::{NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use fc_domain::{
     HistoricalAssessmentPointRecord, HistoricalReplayRunRecord, ModelReleaseManifest,
     ModelReleaseRecord, ProbabilityDiagnostics, ProbabilityHorizonOverlayDiagnostics,
     ProbabilityOverlayContribution,
 };
 
-use crate::sqlite::tests::in_memory_store;
-
-#[tokio::test]
-async fn sqlite_store_round_trips_historical_replay_runs_and_points() {
-    let store = in_memory_store().await;
-    let created_at = Utc::now();
-    let release = ModelReleaseRecord {
+pub(super) fn model_release(created_at: DateTime<Utc>) -> ModelReleaseRecord {
+    ModelReleaseRecord {
         manifest: ModelReleaseManifest {
             release_id: "release-1".to_string(),
             market_scope: "financial_system".to_string(),
@@ -40,10 +35,11 @@ async fn sqlite_store_round_trips_historical_replay_runs_and_points() {
         created_at,
         activated_at: None,
         retired_at: None,
-    };
-    store.upsert_model_release(&release).await.unwrap();
+    }
+}
 
-    let run = HistoricalReplayRunRecord {
+pub(super) fn replay_run(created_at: DateTime<Utc>) -> HistoricalReplayRunRecord {
+    HistoricalReplayRunRecord {
         replay_run_id: "replay-1".to_string(),
         release_id: Some("release-1".to_string()),
         market_scope: "financial_system".to_string(),
@@ -61,11 +57,15 @@ async fn sqlite_store_round_trips_historical_replay_runs_and_points() {
         point_count: 1,
         failure_reason: None,
         created_at,
-    };
-    store.upsert_historical_replay_run(&run).await.unwrap();
+    }
+}
 
-    let point = HistoricalAssessmentPointRecord {
-        replay_run_id: run.replay_run_id.clone(),
+pub(super) fn assessment_point(
+    created_at: DateTime<Utc>,
+    replay_run_id: &str,
+) -> HistoricalAssessmentPointRecord {
+    HistoricalAssessmentPointRecord {
+        replay_run_id: replay_run_id.to_string(),
         entity_id: "us".to_string(),
         market_scope: "financial_system".to_string(),
         release_id: Some("release-1".to_string()),
@@ -117,66 +117,5 @@ async fn sqlite_store_round_trips_historical_replay_runs_and_points() {
         coverage_score: 0.92,
         freshness_status: "fresh".to_string(),
         generated_at: created_at,
-    };
-    store
-        .replace_historical_assessment_points(&run.replay_run_id, &[point.clone()])
-        .await
-        .unwrap();
-
-    let loaded_run = store
-        .load_latest_historical_replay_run(
-            "financial_system",
-            Some("release-1"),
-            "history_cache_v3|release=release-1",
-            NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 5, 30).unwrap(),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(loaded_run.replay_run_id, "replay-1");
-    assert_eq!(loaded_run.point_count, 1);
-
-    let runs = store
-        .list_historical_replay_runs(
-            Some("financial_system"),
-            Some("release-1"),
-            Some(NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
-            Some(NaiveDate::from_ymd_opt(2026, 5, 31).unwrap()),
-            Some(10),
-        )
-        .await
-        .unwrap();
-    assert_eq!(runs.len(), 1);
-    assert_eq!(
-        runs[0].history_cache_key,
-        "history_cache_v3|release=release-1"
-    );
-
-    let points = store
-        .list_historical_assessment_points(
-            Some("replay-1"),
-            Some("financial_system"),
-            Some("release-1"),
-            Some(NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
-            Some(NaiveDate::from_ymd_opt(2026, 5, 31).unwrap()),
-            Some(10),
-        )
-        .await
-        .unwrap();
-    assert_eq!(points.len(), 1);
-    assert_eq!(points[0].posture, "prepare");
-    assert_eq!(points[0].actionability_prepare, 0.61);
-    assert_eq!(
-        points[0].posture_trigger_codes,
-        vec!["prepare_p60d_structural".to_string()]
-    );
-    assert_eq!(
-        points[0].probability_diagnostics.horizon_overlays[0].final_probability,
-        0.21
-    );
-    assert_eq!(
-        points[0].probability_diagnostics.horizon_overlays[0].contributions[0].family_id,
-        "jpy_carry"
-    );
+    }
 }

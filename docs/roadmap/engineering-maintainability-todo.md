@@ -192,8 +192,8 @@
 - `sqlite/seeds/indicator_catalog.rs` 本轮又继续拆成 `indicator_catalog.rs` + `indicator_catalog/{fred,boj,world_bank,sec_events,gdelt}.rs`；父文件已收缩到约 `166` 行共享 seed type / `indicator()` helper / wrapper 壳层，各免费源的 seed 列表已各自落回独立文件。
 - `sqlite/formal_datasets.rs` 本轮也已继续拆成 `formal_datasets.rs` + `formal_datasets/{datasets,rows}.rs`；dataset manifest 的 upsert/load/list 与 dataset rows 的 replace/list 已各自落回独立边界。
 - `sqlite/historical_replay.rs` 本轮也已继续拆成 `historical_replay.rs` + `historical_replay/{runs,points}.rs`；replay run 的 upsert/load/list 与 replay assessment point 的 replace/list 已各自落回独立边界。
-- `sqlite/tests.rs` 本轮也已继续拆成 `tests/mod.rs` + `tests/{observations,operational,releases,prediction_snapshots,formal_datasets,historical_replay}.rs`；共享 `in_memory_store()` 构造器与各主题 round-trip 测试已完成分层。
-- 当前工程治理优先热点已切换为未来若继续增长时需再细分的 `tests/historical_replay.rs`、`tests/formal_datasets.rs`，以及仍偏大的少量 worker 运行时代码热点；共享训练模块 `apps/worker/src/training.rs` 的子模块化拆分已完成，formal dataset / historical replay 运行时代码的子模块化拆分也已完成，API 入口测试也已完成外移。
+- `sqlite/tests.rs` 本轮也已继续拆成 `tests/mod.rs` + `tests/{observations,operational,releases,prediction_snapshots,formal_datasets,historical_replay}.rs`；共享 `in_memory_store()` 构造器与各主题 round-trip 测试已完成分层。随后 `tests/historical_replay.rs` 又继续细分成 `tests/historical_replay/{mod,fixtures,runs,points}.rs`，把 replay run fixture、run lookup 断言与 assessment point round-trip 断言重新收回独立边界；`tests/formal_datasets.rs` 也继续细分成 `tests/formal_datasets/{mod,fixtures,snapshots,rows}.rs`，把 feature snapshot fixture、snapshot round-trip 与 dataset row round-trip 断言重新收回独立边界。
+- 当前工程治理优先热点已切换为仍偏大的少量 worker / api / web 运行时代码热点；共享训练模块 `apps/worker/src/training.rs` 的子模块化拆分已完成，formal dataset / historical replay 运行时代码与存储层重型测试主题的子模块化拆分也已完成，API 入口测试也已完成外移。
 
 - Web 首屏加载策略本轮也做了治理：`apps/web/src/App.tsx` 不再等待所有标签页的数据查询全部完成后再渲染当前视图，而是只 gate 当前活动视图所需的数据，避免单个附属接口拖住首页“正在加载评估数据…”的首屏体验。
 
