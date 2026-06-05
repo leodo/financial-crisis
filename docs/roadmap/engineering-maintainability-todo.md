@@ -91,6 +91,7 @@
 - `apps/worker/src/probability.rs` 本轮已继续瘦身：family overlay 的 audit spec、候选样本装配、family-aware/balanced split 与 overlay 训练已经拆到 `apps/worker/src/probability/overlay.rs`，主文件开始回到“概率主头 + 阈值/诊断/评估”主链路。
 - `apps/worker/src/probability.rs` 本轮继续瘦身：calibration selection、threshold selection、regime-support threshold repair、threshold diagnostics / calibration evidence 已拆到 `apps/worker/src/probability/threshold.rs`，主文件进一步回到“概率主头训练 + regime evaluation / bundle summary”边界。
 - 已新增 `apps/worker/src/model.rs`，把 logistic 拟合、样本加权、sign / regime pairwise 约束、Platt 校准、runtime 打分与基础概率评估从 `main.rs` 中拆出，避免训练数学细节继续和命令编排混在一起。
+- `apps/worker/src/model.rs` 本轮继续瘦身：前向危机符号/边界约束已拆到 `apps/worker/src/model/constraints.rs`，regime pairwise 目标与梯度已拆到 `apps/worker/src/model/regime.rs`；当前 `model.rs` 已从约 `1169` 行收缩到约 `706` 行，边界开始回到“拟合主循环 + 样本标签/权重 + 评估”主链路。
 - release 相关的 `activate_release_with_runtime_guard`、review stage activate/restore、market scope resolve 也已迁到 `commands/release.rs`。
 - `release review` 的 runtime snapshot 抓取、CLI 选项解析、对比 orchestration 与建议/总结 helper 已继续迁到 `commands/release/review.rs`，`commands/release.rs` 重新收缩为 release 生命周期壳层与共享 runtime guard 入口。
 - `release review` 专属的 probability/actionability/runtime sanity guardrail、recommendation、summary helper 现已随主流程收口到 `commands/release/review.rs`。
@@ -110,7 +111,7 @@
 - 这一轮之后，`apps/worker/src/main.rs` 已从约 `7,573` 行继续收缩到约 `165` 行，当前已基本收口为“顶层模块声明 + 共享导出 + 常量 + 入口壳层”。
 - 当前 `main.rs` 已不再直接承载训练管线、release review 报告结构、动作 episode / scenario 时间窗逻辑、通用 API/IO helper，也不再直接承载超大测试块；下一步可优先继续评估是否还需要把跨专题的少量测试导入/夹具进一步下沉，避免测试聚合壳层重新长胖。
 - `apps/worker/src/commands/dataset.rs` 本轮继续瘦身：formal dataset 的报表结构、切片导出和 CLI 摘要打印已经拆到 `apps/worker/src/commands/dataset/report.rs`；split profile、scenario-aware split bounds、label support 与 scenario range helper 现已继续拆到 `apps/worker/src/commands/dataset/split.rs`，scenario catalog 装配与 metadata 编码 helper 已拆到 `apps/worker/src/commands/dataset/scenarios.rs`。当前 `dataset.rs` 已从约 `1218` 行收缩到约 `676` 行，后续可优先把注意力转向下一个超大热点模块。
-- 工程治理的下一个高收益热点已明确转向 `apps/worker/src/model.rs`：这里仍同时承载训练数学、样本约束、校准拟合与 runtime scoring 相关能力，后续应继续把“纯训练拟合/约束”和“共享可复用 scoring helper”边界再收紧。
+- 工程治理的下一个高收益热点仍在 `apps/worker/src/model.rs`：前向危机约束层已经拆出，后续应继续把样本权重/标签策略、Platt 校准拟合与 runtime scoring helper 再分层，避免训练数学主链再次长回单文件。
 
 ### 3.2 API
 
