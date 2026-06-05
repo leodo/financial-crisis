@@ -132,6 +132,7 @@
 - `assessment.rs` 当前剩余逻辑已基本回到 assessment 总装配层；下一步可继续观察 `assessment/tests.rs` 是否还要按 posture/probability/runtime policy 再拆子测试模块，并评估 `common.rs` 中哪些 helper 值得继续下沉到 shared crate。
 - 已把原本约 `1344` 行的 `apps/worker/src/tests/training.rs` 拆成 `apps/worker/src/tests/training/mod.rs` + `visibility.rs`、`scenario_regimes.rs`、`weighting.rs`、`sign_constraints.rs`、`family_constraints.rs` 五个主题子模块，降低训练测试随主线演进继续堆成长文件的风险。
 - 已把原本约 `1254` 行的 `apps/worker/src/tests/review.rs` 拆成 `apps/worker/src/tests/review/mod.rs` + `focus.rs`、`historical_audit.rs`、`runtime.rs` 三个主题子模块，降低 release review 测试随诊断逻辑扩展继续堆成长文件的风险。
+- 已把原本约 `983` 行的 `apps/worker/src/tests/quality.rs` 拆成 `apps/worker/src/tests/quality/mod.rs` + `render.rs`、`actionability.rs`、`probability_thresholds.rs`、`regime_guardrails.rs` 四个主题子模块，降低质量门禁测试随阈值/校准/guardrail 逻辑扩展继续堆成长文件的风险。
 
 ### 3.3 Shared Logic
 
