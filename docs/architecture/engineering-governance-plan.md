@@ -137,7 +137,8 @@ just verify
 
 ```text
 apps/worker/src/
-  main.rs                  # 顶层入口 + 少量共享导出
+  lib.rs                   # crate 根，承接共享导出与默认配置
+  main.rs                  # 纯 CLI / Tokio 入口壳层
   actionability.rs
   actionability/
     guardrails.rs
@@ -188,7 +189,7 @@ apps/worker/src/
 
 边界要求：
 
-- `main.rs` 继续朝“只保留顶层分发”收缩，但在完全拆干净之前，可以暂时承载少量共享导出与底层 helper；不要为了形式上只留一个入口，先制造空目录或额外跳转层。
+- `lib.rs` 负责 worker crate 根上的共享导出、默认配置常量与测试聚合入口；`main.rs` 只保留 Tokio 初始化、参数收集与 `run_from_args` 转发，不再承接共享导出、默认配置或测试聚合。
 - `reporting.rs` 负责结构化报告渲染与导出；当前主文件应保持在“写盘入口 + 模块导出”边界，release review Markdown 细节下沉到 `reporting/release_review.rs`，rolling audit Markdown 细节下沉到 `reporting/audit.rs`。
 - `reporting/release_review.rs` 负责 release review Markdown 总装配；`reporting/release_review/overview.rs` 负责 release rows、runtime snapshot、runtime separation、backtest/failure summary，`historical.rs` 负责 historical audit 各表段，`focus.rs` 负责 focus scenarios 明细，`diagnostics.rs` 负责 runtime/actionability diagnostics、guardrail 与 recommendation。
 - `model.rs` 负责训练数学、样本标签/权重、校准拟合与 runtime scoring 的主链路；前向危机符号/边界约束应下沉到 `model/constraints.rs`，regime pairwise 目标与梯度应下沉到 `model/regime.rs`，样本标签/权重策略应下沉到 `model/weighting.rs`，`Platt` 校准、runtime scoring 与概率评估 helper 应下沉到 `model/calibration.rs`，主文件尽量回到“拟合主循环 + 少量共享数学 helper”边界。
