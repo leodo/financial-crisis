@@ -74,6 +74,7 @@
 
 - 已先抽出 `apps/worker/src/output_paths.rs`，统一实验/追踪输出路径策略。
 - 已先抽出 `apps/worker/src/reporting.rs`，收走 release review / formal dataset summary 的写盘逻辑。
+- `apps/worker/src/reporting.rs` 本轮已进一步从约 `1131` 行收缩到约 `73` 行；release review Markdown 已下沉到 `apps/worker/src/reporting/release_review.rs`，rolling audit Markdown 已下沉到 `apps/worker/src/reporting/audit.rs`，主文件重新回到“写盘入口 + 模块导出”边界。
 - 已新增 `apps/worker/src/commands/mod.rs`，收走顶层 CLI 参数匹配、帮助文本和一级命令分发。
 - 已新增 `apps/worker/src/commands/audit.rs` 与 `commands/research.rs`，把 `audit` / `research` 一级命令入口从路由文件中继续分层。
 - 已新增 `apps/worker/src/commands/release.rs`，把 release 选项解析与 `publish/list/show/activate/rollback/review` handler 从 `main.rs` 中移出。
@@ -109,6 +110,7 @@
 - 这一轮之后，`apps/worker/src/main.rs` 已从约 `7,573` 行继续收缩到约 `165` 行，当前已基本收口为“顶层模块声明 + 共享导出 + 常量 + 入口壳层”。
 - 当前 `main.rs` 已不再直接承载训练管线、release review 报告结构、动作 episode / scenario 时间窗逻辑、通用 API/IO helper，也不再直接承载超大测试块；下一步可优先继续评估是否还需要把跨专题的少量测试导入/夹具进一步下沉，避免测试聚合壳层重新长胖。
 - `apps/worker/src/commands/dataset.rs` 本轮继续瘦身：formal dataset 的报表结构、切片导出和 CLI 摘要打印已经拆到 `apps/worker/src/commands/dataset/report.rs`；split profile、scenario-aware split bounds、label support 与 scenario range helper 现已继续拆到 `apps/worker/src/commands/dataset/split.rs`，scenario catalog 装配与 metadata 编码 helper 已拆到 `apps/worker/src/commands/dataset/scenarios.rs`。当前 `dataset.rs` 已从约 `1218` 行收缩到约 `676` 行，后续可优先把注意力转向下一个超大热点模块。
+- 工程治理的下一个高收益热点已明确转向 `apps/worker/src/model.rs`：这里仍同时承载训练数学、样本约束、校准拟合与 runtime scoring 相关能力，后续应继续把“纯训练拟合/约束”和“共享可复用 scoring helper”边界再收紧。
 
 ### 3.2 API
 
