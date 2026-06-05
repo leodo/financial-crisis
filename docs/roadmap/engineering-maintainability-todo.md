@@ -255,6 +255,7 @@
 - shared `MetricGrid` / `Metric` 已补 `hint` 与长 token value class 支持，像 release id、bundle id 这类长字符串不再轻易把指标卡撑坏。
 - 已把 `format.ts` 扩成前端显示标签层，统一兜底 `dimension` / `source_id` / `source_type` / `event_type` / 事件相关指标 ID 的人话映射，减少页面直接暴露内部枚举和值域代码。
 - `apps/web/src/format/labels.ts` 本轮继续拆成 `labels.ts` + `labels/{risk,source,indicator,release}.ts`，主文件已从约 `431` 行收缩到约 `4` 行；风险/姿态、数据源、指标元数据与 release/review 标签映射已各自落回独立边界。
+- `crates/scoring/src/lib.rs` 本轮继续拆成 `lib.rs` + `engine.rs` + `signal.rs` + `aggregation.rs` + `narrative.rs` + `tests.rs`，主文件已从约 `749` 行收缩到约 `16` 行；评分引擎、信号构造、维度聚合、解释文案与测试已各自落回独立边界。
 - 已继续把 `unit` 的机器值（如 `percent` / `index` / `count` / `jpy_per_usd`）映射成更适合面板阅读的展示文本，避免指标页和决策页继续出现底层单位代码。
 - 已继续把 `audit / method / decision` 的 runtime / release / PIT / 概率模式等内部英文术语压到统一显示层，审计页表头、状态值和说明文案已改成中文可读版本，并保留必要的技术码作括号提示。
 - 已继续把 `App` 顶栏元信息、视图标题说明、决策页动态说明文本和用户约束摘要做前端“人话翻译”层，减少 `As of / Mode / profile=neutral / structural score / prepare / normal` 这类直接暴露给用户的内部字样。
