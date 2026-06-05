@@ -87,6 +87,7 @@
 - 已新增 `apps/worker/src/training.rs`，把 `ProbabilityTrainingRow/Input`、chronological split、label-mode 支持检查、formal bundle 训练管线以及 `forward_crisis` 标签 / regime helper 从 `main.rs` 中抽离，固定训练数据 contract 与训练编排的归属边界。
 - 已新增 `apps/worker/src/actionability.rs`，把 actionability bundle 训练、阈值选择、校准策略、guardrail 与 actionability evaluation summary 从 `main.rs` 中拆出，供训练与 release review 共用。
 - 已新增 `apps/worker/src/probability.rs`，把 probability bundle 训练、Platt 校准择优、threshold 选择、regime separation 诊断与 evaluation summary 从 `main.rs` 中拆出，收拢概率训练主链路的模块边界。
+- `apps/worker/src/probability.rs` 本轮已继续瘦身：family overlay 的 audit spec、候选样本装配、family-aware/balanced split 与 overlay 训练已经拆到 `apps/worker/src/probability/overlay.rs`，主文件开始回到“概率主头 + 阈值/诊断/评估”主链路。
 - 已新增 `apps/worker/src/model.rs`，把 logistic 拟合、样本加权、sign / regime pairwise 约束、Platt 校准、runtime 打分与基础概率评估从 `main.rs` 中拆出，避免训练数学细节继续和命令编排混在一起。
 - release 相关的 `activate_release_with_runtime_guard`、review stage activate/restore、market scope resolve 也已迁到 `commands/release.rs`。
 - `release review` 的 runtime snapshot 抓取、CLI 选项解析、对比 orchestration 与建议/总结 helper 已继续迁到 `commands/release/review.rs`，`commands/release.rs` 重新收缩为 release 生命周期壳层与共享 runtime guard 入口。
