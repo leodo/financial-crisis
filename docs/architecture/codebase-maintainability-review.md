@@ -116,7 +116,7 @@ config/
 - `apps/worker/src/support.rs` 已继续收走 `ApiReloadHistoryMode`、demo run、API fetch/reload、SQLite/raw payload IO、格式化 helper 和通用 rounding/hash/path helper；
 - 原先内联在 `main.rs` 的超大测试块已整体迁到 `apps/worker/src/tests.rs`，共享测试构造器已继续下沉到 `apps/worker/src/tests/fixtures.rs`；其中原本约 `1344` 行的 `apps/worker/src/tests/training.rs` 本轮又继续拆成 `apps/worker/src/tests/training/{visibility,scenario_regimes,weighting,sign_constraints,family_constraints}.rs` 与聚合 `mod.rs`；原本约 `1254` 行的 `apps/worker/src/tests/review.rs` 也继续拆成 `apps/worker/src/tests/review/{focus,historical_audit,runtime}.rs` 与聚合 `mod.rs`；原本约 `983` 行的 `apps/worker/src/tests/quality.rs` 也继续拆成 `apps/worker/src/tests/quality/{render,actionability,probability_thresholds,regime_guardrails}.rs` 与聚合 `mod.rs`，option parsing / training / quality / review / split requirement 也已切成真实测试子模块而不再依赖 `include!` 聚合；
 - `main.rs` 体量已从约 `7.6k` 行进一步降到约 `165` 行；
-- 因此，worker 当前的主要维护风险已从“所有 release 能力都堆在一个文件里”，下降为“运行时代码已基本按边界收口，测试层也开始具备稳定模块边界；后续仍可继续把 cross-topic fixture 与少量共享导入继续收窄”。随着 `overlay`、`threshold`、`focus`、`focus/runtime`、`review`、`reporting/release_review`、`dataset/report`、`pipeline`、`release`、`feature`、`release/probability`、`dataset`、`backfill`、`release/probability/compare`、`assessment/posture`、`web/format`、`assessment/tests`、`demo_seed`、`history_replay`、`backtest` 主文件进一步收口，下一阶段的优先热点转向 `apps/api/src/assessment/probability.rs` 与 worker 测试聚合热点。
+- 因此，worker 当前的主要维护风险已从“所有 release 能力都堆在一个文件里”，下降为“运行时代码已基本按边界收口，测试层也开始具备稳定模块边界；后续仍可继续把 cross-topic fixture 与少量共享导入继续收窄”。随着 `overlay`、`threshold`、`focus`、`focus/runtime`、`review`、`reporting/release_review`、`dataset/report`、`pipeline`、`release`、`feature`、`release/probability`、`dataset`、`backfill`、`release/probability/compare`、`assessment/posture`、`assessment/probability`、`web/format`、`assessment/tests`、`demo_seed`、`history_replay`、`backtest` 主文件进一步收口，下一阶段的优先热点转向 worker 测试聚合热点。
 
 ### 4.2 API runtime、demo、history replay 曾有明显耦合
 
@@ -143,9 +143,10 @@ config/
 - 静态 demo 指标样本、观测样本、源状态样本和 demo alert 构造已拆到 `apps/api/src/demo_seed.rs`；本轮又继续拆成 `demo_seed.rs` + `demo_seed/{indicators,observations,sources,alerts}.rs`，父文件回到纯导出壳层；
 - `history_replay.rs` 本轮又继续拆成 `history_replay.rs` + `history_replay/cache.rs` + `history_replay/transform.rs`，历史重放缓存持久化、水位校验、cache key/method version 与 history point / prediction snapshot 转换已各自落回独立边界；
 - `backtest.rs` 本轮又继续拆成 `backtest.rs` + `backtest/{actionability,scenarios,rolling_audit,timeline}.rs`，动作级历史判定、场景目录/回退模板、滚动审计 episode 分类与 timeline 构造已各自落回独立边界；
+- `assessment/probability.rs` 本轮又继续拆成 `assessment/probability.rs` + `assessment/probability/{heuristic,features,actionability,trace}.rs`，启发式概率、formal/runtime 特征映射、动作置信度融合与 bundle trace / overlay diagnostics 已各自落回独立边界；
 - assessment history 装配、SQLite prediction snapshot 重建和窗口筛选已拆到 `apps/api/src/history_builder.rs`。
 
-因此，`demo.rs` 的风险已明显下降，当前已主要收缩为 demo 当前截面装配、runtime assessment snapshot 组装与用户偏好加载；`demo_seed.rs`、`history_replay.rs` 与 `backtest.rs` 也不再继续把示例样本、历史缓存、动作级历史判定与滚动审计逻辑堆在单文件里。API 侧后续重点已从 `demo.rs`、`demo_seed.rs`、`history_replay.rs`、`backtest.rs` 主拆分，转向 `assessment/probability.rs` 这类仍偏大的评分运行时模块。
+因此，`demo.rs` 的风险已明显下降，当前已主要收缩为 demo 当前截面装配、runtime assessment snapshot 组装与用户偏好加载；`demo_seed.rs`、`history_replay.rs`、`backtest.rs` 与 `assessment/probability.rs` 也不再继续把示例样本、历史缓存、动作级历史判定、滚动审计与评分融合逻辑堆在单文件里。API 侧当前的大块运行时代码已基本按边界收口，下一阶段重点转向 worker 测试聚合热点与剩余超大展示/样式文件。
 
 ### 4.3 训练侧与运行侧已有重复实现，后续容易漂移
 
