@@ -196,6 +196,7 @@ config/
 
 - `apps/web/src/App.tsx` 已较早收缩回壳层；
 - 本轮又把 `apps/web/src/format.ts` 继续拆成 `format.ts` + `format/{labels,narrative,technical,posture,value}.ts`，原入口只保留 re-export；
+- `apps/web/src/views/decision/builders.ts` 本轮继续拆成 `builders.ts` + `builderTypes.ts` + `buildersCore.ts` + `buildersBacktests.ts`，父文件已收缩到约 `3` 行；纯展示行模型、runtime/hero/analog/action plan 拼装与 backtest/rolling audit 拼装已各自落回独立边界；
 - 标签映射、解释文案、人话化 technical id、posture clause 说明和数值/时间格式化职责已经分离，后续 UI 解释层扩展不再继续堆进单文件。
 
 ### 4.6 生成物治理还不够清晰

@@ -245,9 +245,10 @@
 - 当前 shared table/list 展示积木已形成 `DetailRows` / `MetricPairsGrid` / `StackedTableCell` / `PillTableCell` / `renderClauseBulletRows` 这一组基础层，可继续优先承接 Web 端后续展示治理。
 - 已新增 `apps/web/src/views/decision/builders.ts`，把 runtime prelude、风险档位、signal layer、历史类比、回测摘要、滚动审计 episode 行等纯展示拼装从 hook/面板层继续外提；`useDecisionViewModel.ts` 当前重新收缩为编排层。
 - 决策页当前更多由 “`logic.ts` 解释规则 + `charts.ts` 图表模型 + `builders.ts` 纯展示行模型 + `useDecisionViewModel.ts` hook 编排 + `sections/panels/components` 渲染层” 组成，页面层已较少再直接拼字符串或拼表格行。
+- `apps/web/src/views/decision/builders.ts` 本轮继续拆成 `builders.ts` + `builderTypes.ts` + `buildersCore.ts` + `buildersBacktests.ts`，主文件已从约 `405` 行收缩到约 `3` 行；展示行模型类型、runtime/hero/analog/action plan 拼装与 backtest/rolling audit 拼装已各自落回独立边界。
 - 已新增 `apps/web/src/viewRegistry.tsx`，把导航定义、懒加载页面注册和 `readyData` 到各页面 props 的装配从 `App.tsx` 中继续下沉；主壳层当前只保留导航、状态提示和活动视图渲染。
 - 已把各视图的顶栏标题/说明并入 `viewRegistry.tsx` 的导航元数据，切换到方法页、事件页、回测页时不再错误地继续显示“风险决策面板”标题。
-- 当前决策页文件边界已变为：`DecisionView.tsx`（222 行壳层编排）/ `sections.tsx`（135 行首屏摘要）/ `panels.tsx`（281 行重型业务面板）/ `components.tsx`（163 行 decision-specific 小组件）/ `builders.ts`（405 行纯展示拼装）/ `useDecisionViewModel.ts`（189 行 hook 编排）/ `content.ts`（55 行页面文案）。
+- 当前决策页文件边界已变为：`DecisionView.tsx`（222 行壳层编排）/ `sections.tsx`（135 行首屏摘要）/ `panels.tsx`（281 行重型业务面板）/ `components.tsx`（163 行 decision-specific 小组件）/ `builders.ts`（3 行导出壳层）/ `builderTypes.ts`（19 行类型定义）/ `buildersCore.ts`（317 行核心展示拼装）/ `buildersBacktests.ts`（115 行回测与滚动审计拼装）/ `useDecisionViewModel.ts`（189 行 hook 编排）/ `content.ts`（55 行页面文案）。
 - 已把移动端/平板导航从横向滚动改为 4 列网格，并把顶部刷新按钮并回标题行，减少首屏空白和滚动条占位。
 - 已把 `sources` 页改成“顶部摘要双列 + 下方全宽源状态表”，避免短说明卡与长表绑成同一栅格后在桌面端留下大块空白。
 - 已把 `backtests` 页顶部摘要区改成桌面 3 列、宽屏退化 2 列、窄屏 1 列，去掉 3 张卡套 2 列时留下的半屏空洞。
