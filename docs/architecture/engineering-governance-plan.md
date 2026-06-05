@@ -211,7 +211,7 @@ apps/worker/src/
 - `backtest.rs` 只负责 backtest 子模块导出；`backtest/actionability.rs` 负责动作级历史判定、过渡 bridge 与姿态对应 horizon helper，`backtest/scenarios.rs` 负责场景目录映射、fallback 模板与真实历史场景汇总，`backtest/rolling_audit.rs` 负责滚动审计 episode 分类、受保护压力窗口说明与 summary 生成，`backtest/timeline.rs` 负责 timeline 点位构造；避免场景回退、滚动审计和动作级历史规则继续堆在单文件里。
 - `apps/web/src/format.ts` 只负责前端格式化子模块导出；`format/labels.ts` 负责风险等级、source、dataset、review status 等人话标签，`format/narrative.ts` 负责人话解释文案与 license/method/audit note 翻译，`format/technical.ts` 负责 technical id / release id / file reference 压缩显示，`format/posture.ts` 负责 posture clause 中文说明，`format/value.ts` 负责数值、百分比、日期与时间轴标签格式化；页面层只消费格式化 API，不再内联这些映射细节。
 - `apps/worker/src/tests/training/mod.rs` 负责训练测试聚合；`training/visibility.rs`、`scenario_regimes.rs`、`weighting.rs`、`sign_constraints.rs`、`family_constraints.rs` 分别承接 PIT 可见性、危机标签/训练 regime、样本权重/训练目标、符号约束和 family cap 约束测试，避免训练测试再次回到单文件堆叠。
-- `apps/worker/src/tests/review/mod.rs` 负责 release review 测试聚合；`review/focus.rs`、`historical_audit.rs`、`runtime.rs` 分别承接 scenario focus、historical audit、runtime separation 相关测试，避免 release review 测试再次回到单文件堆叠。
+- `apps/worker/src/tests/review/mod.rs` 负责 release review 测试聚合；`review/focus/mod.rs` 负责 scenario focus 测试聚合，`review/focus/comparison.rs`、`diagnostics.rs`、`continuity.rs`、`failure_modes.rs` 分别承接 backtest compare、focus diagnostics、posture continuity 与 failure summary 场景测试；`historical_audit.rs`、`runtime.rs` 继续承接 historical audit、runtime separation 相关测试，避免 release review 测试再次回到单文件堆叠。
 - `apps/worker/src/tests/quality/mod.rs` 负责质量门禁测试聚合；`quality/render.rs`、`actionability.rs`、`probability_thresholds.rs`、`regime_guardrails.rs` 分别承接 CSV 渲染、actionability 质量门禁、概率校准/阈值与 regime/guardrail 测试，避免质量测试再次回到单文件堆叠。
 - `commands/*` 其余模块只负责 CLI 层 glue code。
 
