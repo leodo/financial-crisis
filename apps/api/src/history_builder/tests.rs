@@ -295,3 +295,85 @@ async fn bundle_history_rebuild_does_not_backfill_prediction_snapshots() {
         "bundle-backed history rebuild should persist replay points only, not backfill prediction snapshots"
     );
 }
+
+#[tokio::test]
+async fn default_mode_bundle_release_ignores_partial_prediction_snapshot_bridge() {
+    let store = in_memory_store().await;
+    store.seed_fred_metadata().await.unwrap();
+    let as_of_date = NaiveDate::from_ymd_opt(2026, 5, 30).unwrap();
+    let indicators = demo_indicators();
+    for indicator in &indicators {
+        store.upsert_indicator(indicator).await.unwrap();
+    }
+    let observations = demo_observations(as_of_date);
+    store.insert_observations(&observations).await.unwrap();
+
+    let serving_model = formal_serving_model_context();
+    store
+        .upsert_model_release(&serving_model.release)
+        .await
+        .unwrap();
+    let release_id = serving_model.release.manifest.release_id.clone();
+    let method_version = expected_prediction_snapshot_method_version(Some(&serving_model));
+
+    let target_dates = observations
+        .iter()
+        .filter(|observation| observation.entity_id == "us")
+        .map(|observation| observation.as_of_date)
+        .collect::<std::collections::BTreeSet<_>>();
+    let partial_snapshot_date = target_dates.iter().copied().next().unwrap();
+    store
+        .upsert_prediction_snapshots(&[persisted_snapshot(
+            partial_snapshot_date,
+            Some(&release_id),
+            &method_version,
+        )])
+        .await
+        .unwrap();
+
+    let history = load_sqlite_assessment_history(
+        &store,
+        &indicators,
+        &observations,
+        &[],
+        Some(&serving_model),
+        &load_user_preferences(),
+        as_of_date,
+        260,
+        AssessmentHistoryBuildMode::Default,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(history.len(), target_dates.len());
+    assert!(
+        history.iter().any(|point| point.overall_score != 99.0),
+        "bundle-backed default history should rebuild from raw even if partial prediction snapshots exist"
+    );
+
+    let replay_runs = store
+        .list_historical_replay_runs(
+            Some("financial_system"),
+            Some(&release_id),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(replay_runs.len(), 1);
+    assert_eq!(replay_runs[0].point_count, target_dates.len());
+
+    let snapshots = store
+        .list_prediction_snapshots(
+            Some("financial_system"),
+            Some(&release_id),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(snapshots[0].as_of_date, partial_snapshot_date);
+}

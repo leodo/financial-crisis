@@ -241,6 +241,7 @@ fn history_cache_key(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn should_refresh_full_release_history(
     serving_model: Option<&ServingModelContext>,
     persisted_rows: &[fc_domain::PredictionSnapshotRecord],
@@ -260,6 +261,7 @@ pub(crate) fn should_refresh_full_release_history(
         .any(|snapshot| snapshot.method_version != expected_method_version)
 }
 
+#[cfg(test)]
 fn uses_bundle_backed_history(serving_model: Option<&ServingModelContext>) -> bool {
     serving_model.is_some_and(|context| context.probability_bundle.is_some())
 }

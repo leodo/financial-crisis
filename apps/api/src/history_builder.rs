@@ -15,8 +15,7 @@ use crate::history_replay::{
     assessment_history_point_from_assessment, historical_output_from_prediction_snapshots,
     historical_replay_point_draft_from_assessment, load_cached_historical_replay_output,
     merge_historical_outputs, persist_historical_replay_output,
-    prediction_snapshot_from_assessment, should_refresh_full_release_history,
-    HistoricalAssessmentOutput,
+    prediction_snapshot_from_assessment, HistoricalAssessmentOutput,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -182,30 +181,14 @@ pub(crate) async fn load_sqlite_assessment_history(
     history_build_mode: AssessmentHistoryBuildMode,
 ) -> anyhow::Result<Vec<fc_domain::AssessmentHistoryPoint>> {
     let release_filter = serving_model.map(|context| context.release.manifest.release_id.as_str());
-    let persisted_rows = store
-        .list_prediction_snapshots(Some("financial_system"), release_filter, None, None, None)
-        .await?;
     let target_dates = observations
         .iter()
         .filter(|observation| observation.entity_id == "us")
         .map(|observation| observation.as_of_date)
         .chain(std::iter::once(as_of_date))
         .collect::<BTreeSet<_>>();
-    let existing_dates = persisted_rows
-        .iter()
-        .map(|snapshot| snapshot.as_of_date)
-        .collect::<BTreeSet<_>>();
-    let missing_dates = target_dates
-        .difference(&existing_dates)
-        .copied()
-        .collect::<Vec<_>>();
     let bundle_backed_history = uses_bundle_backed_history(serving_model);
     let persist_prediction_snapshots = !bundle_backed_history;
-    let full_history_refresh = should_refresh_full_release_history(
-        serving_model,
-        &persisted_rows,
-        !missing_dates.is_empty(),
-    );
 
     if matches!(
         history_build_mode,
@@ -251,16 +234,12 @@ pub(crate) async fn load_sqlite_assessment_history(
 
     if bundle_backed_history {
         let rebuild_dates = target_dates.iter().copied().collect::<Vec<_>>();
-        let reason = if full_history_refresh {
-            "cached prediction snapshots are stale or incomplete"
-        } else {
-            "no reusable historical replay cache was found"
-        };
+        // Formal bundle history now treats replay cache as the only reusable history source.
+        // If no matching replay run exists for the target dates, fall back directly to raw replay.
         tracing::info!(
             release_id = release_filter.unwrap_or("heuristic"),
             rebuild_dates = rebuild_dates.len(),
-            reason,
-            "rebuilding full release history from raw observations for bundle-backed release"
+            "rebuilding full release history from raw observations for bundle-backed release because replay cache is unavailable for the current target dates"
         );
         let rebuilt = rebuild_full_release_history_from_raw(
             store,
@@ -276,6 +255,17 @@ pub(crate) async fn load_sqlite_assessment_history(
         return Ok(rebuilt.history_points);
     }
 
+    let persisted_rows = store
+        .list_prediction_snapshots(Some("financial_system"), release_filter, None, None, None)
+        .await?;
+    let existing_dates = persisted_rows
+        .iter()
+        .map(|snapshot| snapshot.as_of_date)
+        .collect::<BTreeSet<_>>();
+    let missing_dates = target_dates
+        .difference(&existing_dates)
+        .copied()
+        .collect::<Vec<_>>();
     let mut historical =
         historical_output_from_prediction_snapshots(persisted_rows.clone(), release_filter);
 
