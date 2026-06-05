@@ -111,7 +111,7 @@
 - 这一轮之后，`apps/worker/src/main.rs` 已从约 `7,573` 行继续收缩到约 `165` 行，当前已基本收口为“顶层模块声明 + 共享导出 + 常量 + 入口壳层”。
 - 当前 `main.rs` 已不再直接承载训练管线、release review 报告结构、动作 episode / scenario 时间窗逻辑、通用 API/IO helper，也不再直接承载超大测试块；下一步可优先继续评估是否还需要把跨专题的少量测试导入/夹具进一步下沉，避免测试聚合壳层重新长胖。
 - `apps/worker/src/commands/dataset.rs` 本轮继续瘦身：formal dataset 的报表结构、切片导出和 CLI 摘要打印已经拆到 `apps/worker/src/commands/dataset/report.rs`；split profile、scenario-aware split bounds、label support 与 scenario range helper 现已继续拆到 `apps/worker/src/commands/dataset/split.rs`，scenario catalog 装配与 metadata 编码 helper 已拆到 `apps/worker/src/commands/dataset/scenarios.rs`。当前 `dataset.rs` 已从约 `1218` 行收缩到约 `676` 行，后续可优先把注意力转向下一个超大热点模块。
-- `apps/worker/src/model.rs` 的高收益拆分已基本完成；当前工程治理的下一个优先热点转向 `apps/worker/src/probability/overlay.rs` 与 `apps/worker/src/probability/threshold.rs`，后续应优先继续把 overlay 训练、split 策略、audit spec 与 threshold/cali diagnostics 主链进一步拆开。
+- `apps/worker/src/model.rs` 的高收益拆分已基本完成；`apps/worker/src/probability/overlay.rs` 本轮也已进一步拆成 `overlay.rs` + `overlay/audit.rs` + `overlay/split.rs`，主文件从约 `1260` 行收缩到约 `438` 行。当前工程治理的下一个优先热点转向 `apps/worker/src/probability/threshold.rs` 与 `apps/worker/src/commands/release/review/focus.rs`，后续应优先继续把 threshold/cali diagnostics 与 release review focus 诊断主链进一步拆开。
 
 ### 3.2 API
 
