@@ -146,7 +146,7 @@ config/
 - `assessment/probability.rs` 本轮又继续拆成 `assessment/probability.rs` + `assessment/probability/{heuristic,features,actionability,trace}.rs`，启发式概率、formal/runtime 特征映射、动作置信度融合与 bundle trace / overlay diagnostics 已各自落回独立边界；
 - assessment history 装配、SQLite prediction snapshot 重建和窗口筛选已拆到 `apps/api/src/history_builder.rs`。
 
-因此，`demo.rs` 的风险已明显下降，当前已主要收缩为 demo 当前截面装配、runtime assessment snapshot 组装与用户偏好加载；`demo_seed.rs`、`history_replay.rs`、`backtest.rs` 与 `assessment/probability.rs` 也不再继续把示例样本、历史缓存、动作级历史判定、滚动审计与评分融合逻辑堆在单文件里。API 侧当前的大块运行时代码已基本按边界收口；前端侧 `apps/web/src/types.ts` 本轮也已继续拆成 `types.ts` + `types/{common,risk,backtest,assessment,research}.ts`，把 600 行级别的响应/展示类型按主题收回独立边界。下一阶段重点转向剩余超大展示/样式文件与少数 worker 运行时代码热点。
+因此，`demo.rs` 的风险已明显下降，当前已主要收缩为 demo 当前截面装配、runtime assessment snapshot 组装与用户偏好加载；`demo_seed.rs`、`history_replay.rs`、`backtest.rs` 与 `assessment/probability.rs` 也不再继续把示例样本、历史缓存、动作级历史判定、滚动审计与评分融合逻辑堆在单文件里。API 侧当前的大块运行时代码已基本按边界收口；前端侧 `apps/web/src/types.ts` 本轮也已继续拆成 `types.ts` + `types/{common,risk,backtest,assessment,research}.ts`，`apps/web/src/styles.css` 也已继续拆成 `styles.css` + `styles/{base,surfaces,analysis,responsive}.css`，把 600 行级别的类型聚合和 1k+ 行样式聚合分别按主题收回独立边界。下一阶段重点转向少数剩余 worker 运行时代码热点。
 
 ### 4.3 训练侧与运行侧已有重复实现，后续容易漂移
 
