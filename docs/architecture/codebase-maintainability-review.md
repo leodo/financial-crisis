@@ -171,11 +171,11 @@ config/
 - 聚合子模块 `metadata.rs`、`observations.rs`、`operational.rs`、`releases.rs`、`prediction_snapshots.rs`、`feature_snapshots.rs`、`formal_datasets.rs`、`historical_replay.rs`；
 - 共享底层子模块 `helpers.rs`、`rows.rs`、`migrations.rs`、`seeds.rs` / `seeds/*`、`tests/mod.rs` / `tests/*`。
 
-这让 `sqlite.rs` 本身已经回到“连接壳层 + 常量/record type + trait 转接”的轻量边界；同时 `sqlite/metadata.rs` 也已继续收口为模块壳层，并把实现拆到 `sqlite/metadata/catalog.rs` 与 `sqlite/metadata/mappings.rs`；`sqlite/seeds.rs` 已进一步收口为模块壳层，seed 定义与 mapping helper 下沉到 `sqlite/seeds/indicator_catalog.rs` 与 `sqlite/seeds/mappings.rs`；`sqlite/tests.rs` 也已拆成 `sqlite/tests/mod.rs` 与多份主题测试模块。当前存储层仍有二级维护风险：
+这让 `sqlite.rs` 本身已经回到“连接壳层 + 常量/record type + trait 转接”的轻量边界；同时 `sqlite/metadata.rs` 也已继续收口为模块壳层，并把实现拆到 `sqlite/metadata/catalog.rs` 与 `sqlite/metadata/mappings.rs`；本轮又把 `sqlite/metadata/catalog.rs` 继续细分成 `catalog.rs` + `catalog/seeds.rs` + `catalog/upsert.rs`，让 metadata seed 定义、upsert SQL 与初始化编排重新落回独立边界；`sqlite/seeds.rs` 已进一步收口为模块壳层，seed 定义与 mapping helper 下沉到 `sqlite/seeds/indicator_catalog.rs` 与 `sqlite/seeds/mappings.rs`；`sqlite/tests.rs` 也已拆成 `sqlite/tests/mod.rs` 与多份主题测试模块。当前存储层仍有二级维护风险：
 
-- `sqlite/metadata/catalog.rs` 仍集中承载 metadata source/dataset/entity seed 与多源初始化编排；
 - `sqlite/seeds/indicator_catalog.rs` 仍集中维护多套 indicator seed 定义；
-- 存储测试虽然已按主题拆开，但 `historical_replay.rs`、`formal_datasets.rs` 仍会继续承接较重的 round-trip 断言。
+- 存储测试虽然已按主题拆开，但 `historical_replay.rs`、`formal_datasets.rs` 仍会继续承接较重的 round-trip 断言；
+- metadata catalog 的 SQL/seed 边界已经收口，但后续若继续扩展数据源，仍应优先落到 `catalog/seeds.rs` 与 `catalog/upsert.rs`，避免重新把编排壳层堆大。
 
 因此，存储层风险已经从“单个超大入口文件”转为“个别剩余大子模块 + 少数偏重测试模块仍需继续按主题收窄”。
 
@@ -308,7 +308,7 @@ config/
 ### 第三阶段：再拆前端和 SQLite store
 
 1. 拆 `App.tsx` 为按页面职责组织的 view/container/component。
-2. 继续细分 SQLite store 剩余大子模块，优先 `sqlite/metadata/catalog.rs`、`sqlite/seeds/indicator_catalog.rs`，并视测试继续增长情况再收窄 `sqlite/tests/historical_replay.rs`、`sqlite/tests/formal_datasets.rs`。
+2. 继续细分 SQLite store 剩余大子模块，优先 `sqlite/seeds/indicator_catalog.rs`，并视测试继续增长情况再收窄 `sqlite/tests/historical_replay.rs`、`sqlite/tests/formal_datasets.rs`。
 
 ## 9. 不建议现在做的事
 

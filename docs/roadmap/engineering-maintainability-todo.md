@@ -186,9 +186,10 @@
 - `sqlite.rs` 当前已收缩为约 124 行壳层，只保留连接选项、store shell、共享常量/record type、模块导入与 `RiskStore` trait 转接；日期/ID helper、row mapper、迁移补列、seed 定义和 storage round-trip tests 已分别下沉到子模块。
 - 本轮是低风险机械拆分：SQL、表结构、public method 签名和调用方不变。
 - `sqlite/metadata.rs` 本轮也已继续拆成 `metadata.rs` + `metadata/catalog.rs` + `metadata/mappings.rs`；主文件已收缩到约 `2` 行模块壳层，source/dataset/entity 注册和 indicator catalog 初始化已下沉到 `catalog.rs`，mapping loader 已下沉到 `mappings.rs`。
+- `sqlite/metadata/catalog.rs` 本轮又继续拆成 `catalog.rs` + `catalog/seeds.rs` + `catalog/upsert.rs`；编排壳层已收缩到约 `80` 行，metadata seed 定义与 upsert SQL 已各自落回独立边界。
 - `sqlite/seeds.rs` 本轮也已继续拆成 `seeds.rs` + `seeds/indicator_catalog.rs` + `seeds/mappings.rs`；父文件已收缩到约 `7` 行模块壳层，indicator seed 定义与 mapping upsert helper 已各自落回独立边界。
 - `sqlite/tests.rs` 本轮也已继续拆成 `tests/mod.rs` + `tests/{observations,operational,releases,prediction_snapshots,formal_datasets,historical_replay}.rs`；共享 `in_memory_store()` 构造器与各主题 round-trip 测试已完成分层。
-- 当前存储层治理优先热点已切换为仍偏大的 `sqlite/metadata/catalog.rs`、`sqlite/seeds/indicator_catalog.rs`，以及未来若继续增长时需再细分的 `tests/historical_replay.rs`、`tests/formal_datasets.rs`。
+- 当前存储层治理优先热点已切换为仍偏大的 `sqlite/seeds/indicator_catalog.rs`，以及未来若继续增长时需再细分的 `tests/historical_replay.rs`、`tests/formal_datasets.rs`。
 
 ### 4.2 Web
 
