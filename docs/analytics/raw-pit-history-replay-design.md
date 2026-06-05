@@ -165,6 +165,7 @@ created_at
 
 - 不再把它作为 formal dataset builder 的正式输入；
 - 不再把它作为 release review 的默认历史依据；
+- `research snapshot dataset` 与 `train-probability --dataset-source snapshot` 只允许读取 heuristic/transitional research snapshots，不允许把 formal bundle release 的 `prediction snapshots` 当训练输入；
 - 不再以“snapshot 已存在”为理由跳过 raw PIT replay。
 
 ## 7. 历史缓存键

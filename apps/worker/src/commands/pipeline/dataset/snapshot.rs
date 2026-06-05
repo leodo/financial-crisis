@@ -1,3 +1,4 @@
+use anyhow::Context;
 use fc_domain::PredictionSnapshotRecord;
 use fc_storage::SqliteStore;
 
@@ -66,8 +67,11 @@ pub(super) async fn load_snapshot_training_dataset(
     store: &SqliteStore,
     options: &PipelineTrainOptions,
 ) -> anyhow::Result<crate::ProbabilityTrainingInput> {
-    let snapshots =
-        super::super::super::snapshot::load_training_snapshots(store, &options.query).await?;
+    let snapshots = super::super::super::snapshot::load_training_snapshots(store, &options.query)
+        .await
+        .with_context(|| {
+            "snapshot dataset source only supports heuristic/transitional research snapshots; use --dataset-source formal for formal bundle releases"
+        })?;
     let dataset = build_pipeline_dataset_rows(&snapshots);
     if dataset.len() < 90 {
         anyhow::bail!(

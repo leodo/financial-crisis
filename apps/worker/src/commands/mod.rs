@@ -125,7 +125,7 @@ fn print_help() {
       Export persisted prediction snapshots as JSON or CSV for external audit and release review.
 
   cargo run -p fc-worker -- research snapshot dataset [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format json|csv] [--output-path FILE]
-      Build a point-in-time feature + forward-crisis-label dataset from persisted prediction snapshots.
+      Build a point-in-time feature + forward-crisis-label dataset from persisted heuristic prediction snapshots. Formal bundle releases are rejected here; this path is only for transitional research.
 
   cargo run -p fc-worker -- research feature build [--market-scope SCOPE] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--feature-set-version VERSION] [--point-in-time-mode MODE] [--force-rebuild]
       Build raw-observation-backed feature snapshots for the formal model pipeline and persist them into SQLite. Existing snapshots with the same feature_set_version + PIT mode are reused unless --force-rebuild is passed.
@@ -146,7 +146,7 @@ fn print_help() {
       Export a scenario-focused formal dataset slice as JSON + CSV, preserving split/label/feature columns for root-cause analysis of one crisis window.
 
   cargo run -p fc-worker -- research pipeline train-probability [--dataset-source formal|snapshot] [--model-shape linear_v1|interaction_tail_v1|family_conditional_v1|family_hybrid_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--manifest-dir DIR] [--release-prefix PREFIX]
-      Train a probability bundle for research. By default it uses the latest persisted formal dataset with model-shape=linear_v1 and writes generated artifacts to ignored artifacts/research directories; `--dataset-source snapshot` is still allowed only for transitional research, and generated manifests are marked candidate/shadow so they cannot be activated directly as formal releases.
+      Train a probability bundle for research. By default it uses the latest persisted formal dataset with model-shape=linear_v1 and writes generated artifacts to ignored artifacts/research directories; `--dataset-source snapshot` is still allowed only for heuristic/transitional research snapshots, and generated manifests are marked candidate/shadow so they cannot be activated directly as formal releases.
 
   cargo run -p fc-worker -- research pipeline bootstrap-formal-release [--dataset-source formal] [--model-shape linear_v1|interaction_tail_v1|family_conditional_v1|family_hybrid_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--manifest-dir DIR] [--release-prefix PREFIX] [--no-activate] [--no-reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
       Train a formal bundle from persisted formal datasets only, publish it into SQLite as a model release, optionally activate it, and optionally reload the API runtime. Snapshot-backed transitional datasets are rejected here so release publishing cannot fall back to prediction snapshots.
