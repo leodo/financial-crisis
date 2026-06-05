@@ -205,6 +205,7 @@ apps/worker/src/
 - `commands/release/probability/compare.rs` 负责 formal probability compare 的结构定义与子模块导出；`commands/release/probability/compare/build.rs` 负责窗口对齐、阈值/命中统计、feature delta 聚合与窗口汇总，`commands/release/probability/compare/render.rs` 负责 JSON/CSV 导出与 CLI 摘要打印；
 - `commands/release/probability/common.rs` 负责文件名清洗与 CSV 转义等共享小工具。
 - `assessment.rs` 负责 assessment 总装配、method version 与 snapshot envelope；`assessment/posture.rs` 负责 posture 子模块导出，`assessment/posture/guidance.rs` 负责风险时距、posture clause、用户偏好升降级与姿态摘要，`assessment/posture/position.rs` 负责仓位预算、动作手册、执行护栏和治理条款；`assessment/runtime_policy.rs` 负责 runtime threshold / serving policy / history runtime policy version；`assessment/common.rs` 负责 rounding、formatting、pressure 这类跨 assessment 子模块共享 helper；`assessment/tests.rs` 承接 assessment 相关模块测试，避免主文件继续内联大测试块。
+- `apps/web/src/format.ts` 只负责前端格式化子模块导出；`format/labels.ts` 负责风险等级、source、dataset、review status 等人话标签，`format/narrative.ts` 负责人话解释文案与 license/method/audit note 翻译，`format/technical.ts` 负责 technical id / release id / file reference 压缩显示，`format/posture.ts` 负责 posture clause 中文说明，`format/value.ts` 负责数值、百分比、日期与时间轴标签格式化；页面层只消费格式化 API，不再内联这些映射细节。
 - `apps/worker/src/tests/training/mod.rs` 负责训练测试聚合；`training/visibility.rs`、`scenario_regimes.rs`、`weighting.rs`、`sign_constraints.rs`、`family_constraints.rs` 分别承接 PIT 可见性、危机标签/训练 regime、样本权重/训练目标、符号约束和 family cap 约束测试，避免训练测试再次回到单文件堆叠。
 - `apps/worker/src/tests/review/mod.rs` 负责 release review 测试聚合；`review/focus.rs`、`historical_audit.rs`、`runtime.rs` 分别承接 scenario focus、historical audit、runtime separation 相关测试，避免 release review 测试再次回到单文件堆叠。
 - `apps/worker/src/tests/quality/mod.rs` 负责质量门禁测试聚合；`quality/render.rs`、`actionability.rs`、`probability_thresholds.rs`、`regime_guardrails.rs` 分别承接 CSV 渲染、actionability 质量门禁、概率校准/阈值与 regime/guardrail 测试，避免质量测试再次回到单文件堆叠。
@@ -301,7 +302,7 @@ apps/api/src/
 | `crates/domain` | 纯领域模型、bundle schema、纯概率打分、Platt 应用、特征 transform resolver、观测窗口排序/差值、静态场景目录 | IO、环境变量、HTTP、数据库、缓存、当前时间、用户 profile、source-specific PIT 发布规则 | `probability_bundle.rs`、`observation_window.rs`、`stress_window.rs` |
 | `apps/worker` | 数据刷新/回填命令、训练样本构建、PIT feature snapshot、模型拟合、阈值选择、release review、候选实验 guardrail | API response shape、前端展示文案、请求级用户偏好、运行时重新训练 | `commands/feature.rs`、`model.rs`、`probability.rs`、`commands/release.rs` |
 | `apps/api` | 当前评估装配、active release 加载、runtime cache、用户偏好升降级、posture/position guidance、API DTO | 训练样本切分、候选模型搜索、离线实验输出、UI 文案硬编码 | `assessment/*.rs`、`data_source.rs`、`history_replay.rs` |
-| `apps/web` | 人话标签、格式化、页面 view model、图表和交互状态 | 概率计算、阈值选择、仓位规则事实来源、数据抓取 | `format.ts`、`views/**` |
+| `apps/web` | 人话标签、格式化、页面 view model、图表和交互状态 | 概率计算、阈值选择、仓位规则事实来源、数据抓取 | `format.ts`、`format/**`、`views/**` |
 
 判定规则：
 

@@ -116,7 +116,7 @@ config/
 - `apps/worker/src/support.rs` 已继续收走 `ApiReloadHistoryMode`、demo run、API fetch/reload、SQLite/raw payload IO、格式化 helper 和通用 rounding/hash/path helper；
 - 原先内联在 `main.rs` 的超大测试块已整体迁到 `apps/worker/src/tests.rs`，共享测试构造器已继续下沉到 `apps/worker/src/tests/fixtures.rs`；其中原本约 `1344` 行的 `apps/worker/src/tests/training.rs` 本轮又继续拆成 `apps/worker/src/tests/training/{visibility,scenario_regimes,weighting,sign_constraints,family_constraints}.rs` 与聚合 `mod.rs`；原本约 `1254` 行的 `apps/worker/src/tests/review.rs` 也继续拆成 `apps/worker/src/tests/review/{focus,historical_audit,runtime}.rs` 与聚合 `mod.rs`；原本约 `983` 行的 `apps/worker/src/tests/quality.rs` 也继续拆成 `apps/worker/src/tests/quality/{render,actionability,probability_thresholds,regime_guardrails}.rs` 与聚合 `mod.rs`，option parsing / training / quality / review / split requirement 也已切成真实测试子模块而不再依赖 `include!` 聚合；
 - `main.rs` 体量已从约 `7.6k` 行进一步降到约 `165` 行；
-- 因此，worker 当前的主要维护风险已从“所有 release 能力都堆在一个文件里”，下降为“运行时代码已基本按边界收口，测试层也开始具备稳定模块边界；后续仍可继续把 cross-topic fixture 与少量共享导入继续收窄”。随着 `overlay`、`threshold`、`focus`、`focus/runtime`、`review`、`reporting/release_review`、`dataset/report`、`pipeline`、`release`、`feature`、`release/probability`、`dataset`、`backfill`、`release/probability/compare`、`assessment/posture` 主文件进一步收口，下一阶段的优先热点转向 `apps/web/src/format.ts` 这类前端解释/展示层大文件，其次再观察 `apps/api/src/assessment/tests.rs` 和 worker 测试聚合热点。
+- 因此，worker 当前的主要维护风险已从“所有 release 能力都堆在一个文件里”，下降为“运行时代码已基本按边界收口，测试层也开始具备稳定模块边界；后续仍可继续把 cross-topic fixture 与少量共享导入继续收窄”。随着 `overlay`、`threshold`、`focus`、`focus/runtime`、`review`、`reporting/release_review`、`dataset/report`、`pipeline`、`release`、`feature`、`release/probability`、`dataset`、`backfill`、`release/probability/compare`、`assessment/posture`、`web/format` 主文件进一步收口，下一阶段的优先热点转向 `apps/api/src/assessment/tests.rs` 和 worker 测试聚合热点，其次再观察 `apps/api/src/demo_seed.rs`、`history_replay.rs` 这类剩余大文件。
 
 ### 4.2 API runtime、demo、history replay 曾有明显耦合
 
@@ -187,6 +187,12 @@ config/
 - analog / probability / JPY carry 卡片编排。
 
 这说明前端虽然没有选错框架，但组件层次还不够细，继续增加方法页、研究页、审计页后会继续膨胀。
+
+最新进展：
+
+- `apps/web/src/App.tsx` 已较早收缩回壳层；
+- 本轮又把 `apps/web/src/format.ts` 继续拆成 `format.ts` + `format/{labels,narrative,technical,posture,value}.ts`，原入口只保留 re-export；
+- 标签映射、解释文案、人话化 technical id、posture clause 说明和数值/时间格式化职责已经分离，后续 UI 解释层扩展不再继续堆进单文件。
 
 ### 4.6 生成物治理还不够清晰
 
