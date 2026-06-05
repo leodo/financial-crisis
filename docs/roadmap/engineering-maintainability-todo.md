@@ -99,6 +99,7 @@
 - 已新增 `apps/worker/src/commands/release/review.rs`，把 `research release review` 的 CLI 编排、runtime snapshot 抓取、阶段切换/恢复、比较诊断、recommendation 与 summary 从 `commands/release.rs` 中拆出，减少 release 主模块的职责混杂。
 - `apps/worker/src/commands/release/review/focus.rs` 本轮继续收走 structured signal counts、backtest scenario compare、scenario focus diagnostics、runtime actionable block/facet 统计与 primary failure mode 判定，`commands/release/review.rs` 已重新收缩到“review 编排 + runtime separation compare + recommendation / summary”主链路。
 - 已新增 `apps/worker/src/release_review.rs`，把 release review 专属的 report wire structs、historical audit takeaways、failure mode / attribution / action / workstream 汇总、runtime regime probability / separation diagnostics，以及 review Markdown 渲染入口从 `main.rs` 中拆出，统一 release review helper 与报告数据结构的归属边界。
+- `apps/worker/src/release_review.rs` 本轮继续瘦身：historical audit 的 failure mode / priority / attribution / action / workstream 汇总与 takeaways 已拆到 `apps/worker/src/release_review/historical.rs`，runtime regime probability / separation diagnostics、分类 helper 与 runtime takeaways 已拆到 `apps/worker/src/release_review/runtime.rs`；主文件开始回到“report wire structs + shared formatter + Markdown 壳层”边界。
 - 已新增 `apps/worker/src/commands/db.rs`，把 `db init/seed/check` 从超大入口文件中拆出。
 - 已新增 `apps/worker/src/commands/refresh.rs` 与 `commands/backfill.rs`，开始把免费数据刷新与回填入口从 `main.rs` 中剥离。
 - 已新增 `apps/worker/src/scenario.rs`，把 `CrisisScenario`、action episode window、protected context、primary/forward scenario 选择和 action window label 这组场景时间窗逻辑从 `main.rs` 中拆出，固定场景标签与动作窗口 helper 的归属边界。

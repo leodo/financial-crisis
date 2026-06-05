@@ -193,6 +193,7 @@ apps/worker/src/
 - `commands/dataset.rs` 负责 formal dataset build、split/scenario 约束与研究命令编排；`commands/dataset/report.rs` 负责 formal dataset summary、slice export、Markdown/CSV/JSON 渲染与 CLI 摘要打印。
 - `commands/release.rs` 负责 release 生命周期总入口、共享 activate/runtime guard 与 market scope resolve。
 - `commands/release/review.rs` 负责 release review 的 CLI 选项解析、runtime snapshot、runtime separation compare、建议与总结；`commands/release/review/focus.rs` 负责 structured signal counts、backtest scenario compare、scenario focus diagnostics、runtime actionable block/facet 统计与 primary failure mode 判定。
+- `release_review.rs` 负责 release review 报告结构、共享 formatter 与 Markdown 壳层；`release_review/historical.rs` 负责 failure mode、historical audit priority / attribution / action / workstream 汇总与 takeaways；`release_review/runtime.rs` 负责 runtime regime probability / separation diagnostics、分类 helper 与 runtime takeaways。
 - `commands/release/probability.rs` 负责 probability slice / formal slice / formal compare 的 CLI 解析、release lookup 与 orchestration；
 - `commands/release/probability/slice.rs` 负责 runtime probability slice 的 JSON/CSV 导出、overlay 展开与 CLI 摘要打印；
 - `commands/release/probability/formal.rs` 负责 formal dataset slice 的 bundle 打分、base model diagnostics、CSV/JSON 导出与 CLI 摘要打印；

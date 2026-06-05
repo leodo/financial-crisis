@@ -102,9 +102,7 @@ pub(crate) use release_review::{
     summarize_release_review_historical_audit_workstreams, ReleaseActionabilityLevelReview,
     ReleaseActionabilityReview, ReleaseReviewBacktestScenarioComparison,
     ReleaseReviewComparisonSummary, ReleaseReviewCountMetric, ReleaseReviewEnvelope,
-    ReleaseReviewFailureModeSummary, ReleaseReviewHistoricalAuditActionSummary,
-    ReleaseReviewHistoricalAuditAttributionSummary, ReleaseReviewHistoricalAuditPriority,
-    ReleaseReviewHistoricalAuditWorkstreamSummary, ReleaseReviewRuntimeBlockCount,
+    ReleaseReviewHistoricalAuditActionSummary, ReleaseReviewRuntimeBlockCount,
     ReleaseReviewRuntimeDominantCategories, ReleaseReviewRuntimeSeparationComparison,
     ReleaseReviewScalarMetric, ReleaseReviewScenarioFocusDiagnostic,
     ReleaseReviewScenarioPointComparison, ReleaseRuntimeReviewDiagnostics,
@@ -113,7 +111,8 @@ pub(crate) use release_review::{
 #[cfg(test)]
 pub(crate) use release_review::{
     classify_regime_separation, summarize_release_runtime_regime_probabilities,
-    summarize_release_runtime_regime_separation,
+    summarize_release_runtime_regime_separation, ReleaseReviewHistoricalAuditAttributionSummary,
+    ReleaseReviewHistoricalAuditPriority,
 };
 use reporting::write_formal_dataset_summary_report;
 pub(crate) use scenario::{
