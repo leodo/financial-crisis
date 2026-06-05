@@ -9,6 +9,14 @@ use chrono::{NaiveDate, Utc};
 use fc_domain::LogisticProbabilityModelScoreDiagnostics;
 use serde::Serialize;
 
+use super::{
+    common::{release_probability_csv_escape, sanitize_release_probability_slice_component},
+    formal::{
+        release_formal_probability_base_model, release_formal_probability_horizon,
+        ReleaseFormalProbabilitySlicePoint,
+    },
+};
+
 #[derive(Debug, Clone, Serialize)]
 pub(super) struct ReleaseFormalProbabilityCompareExport {
     exported_at: String,
@@ -135,8 +143,8 @@ pub(super) struct ReleaseFormalProbabilityCompareBuildInput<'a> {
     pub(super) candidate_release_id: &'a str,
     pub(super) baseline_bundle: &'a fc_domain::ProbabilityBundle,
     pub(super) candidate_bundle: &'a fc_domain::ProbabilityBundle,
-    pub(super) baseline_rows: Vec<super::ReleaseFormalProbabilitySlicePoint>,
-    pub(super) candidate_rows: Vec<super::ReleaseFormalProbabilitySlicePoint>,
+    pub(super) baseline_rows: Vec<ReleaseFormalProbabilitySlicePoint>,
+    pub(super) candidate_rows: Vec<ReleaseFormalProbabilitySlicePoint>,
 }
 
 pub(super) fn build_release_formal_probability_compare_export(
@@ -183,21 +191,21 @@ pub(super) fn build_release_formal_probability_compare_export(
         let Some(candidate_row) = candidate_by_date.get(&baseline_row.as_of_date) else {
             continue;
         };
-        let baseline_horizon_20d = super::release_formal_probability_horizon(&baseline_row, 20)
+        let baseline_horizon_20d = release_formal_probability_horizon(&baseline_row, 20)
             .with_context(|| "baseline slice missing 20d diagnostics")?;
-        let candidate_horizon_20d = super::release_formal_probability_horizon(candidate_row, 20)
+        let candidate_horizon_20d = release_formal_probability_horizon(candidate_row, 20)
             .with_context(|| "candidate slice missing 20d diagnostics")?;
-        let baseline_horizon_60d = super::release_formal_probability_horizon(&baseline_row, 60)
+        let baseline_horizon_60d = release_formal_probability_horizon(&baseline_row, 60)
             .with_context(|| "baseline slice missing 60d diagnostics")?;
-        let candidate_horizon_60d = super::release_formal_probability_horizon(candidate_row, 60)
+        let candidate_horizon_60d = release_formal_probability_horizon(candidate_row, 60)
             .with_context(|| "candidate slice missing 60d diagnostics")?;
-        let baseline_base_20d = super::release_formal_probability_base_model(&baseline_row, 20)
+        let baseline_base_20d = release_formal_probability_base_model(&baseline_row, 20)
             .with_context(|| "baseline slice missing 20d base diagnostics")?;
-        let candidate_base_20d = super::release_formal_probability_base_model(candidate_row, 20)
+        let candidate_base_20d = release_formal_probability_base_model(candidate_row, 20)
             .with_context(|| "candidate slice missing 20d base diagnostics")?;
-        let baseline_base_60d = super::release_formal_probability_base_model(&baseline_row, 60)
+        let baseline_base_60d = release_formal_probability_base_model(&baseline_row, 60)
             .with_context(|| "baseline slice missing 60d base diagnostics")?;
-        let candidate_base_60d = super::release_formal_probability_base_model(candidate_row, 60)
+        let candidate_base_60d = release_formal_probability_base_model(candidate_row, 60)
             .with_context(|| "candidate slice missing 60d base diagnostics")?;
 
         let baseline_hit_20d = baseline_threshold_20d
@@ -540,16 +548,14 @@ pub(super) fn write_release_formal_probability_compare_report(
     fs::create_dir_all(output_dir)?;
     let mut stem = format!(
         "{}-vs-{}-{}-{}-formal-probability-compare",
-        super::sanitize_release_probability_slice_component(&export.baseline_release_id),
-        super::sanitize_release_probability_slice_component(&export.candidate_release_id),
+        sanitize_release_probability_slice_component(&export.baseline_release_id),
+        sanitize_release_probability_slice_component(&export.candidate_release_id),
         export.from_date,
         export.to_date
     );
     if let Some(scenario_id) = export.scenario_id.as_deref() {
         stem.push('-');
-        stem.push_str(&super::sanitize_release_probability_slice_component(
-            scenario_id,
-        ));
+        stem.push_str(&sanitize_release_probability_slice_component(scenario_id));
     }
     let json_path = output_dir.join(format!("{stem}.json"));
     let csv_path = output_dir.join(format!("{stem}.csv"));
@@ -607,7 +613,7 @@ fn render_release_formal_probability_compare_csv(
         csv.push_str(
             &columns
                 .into_iter()
-                .map(|value| super::release_probability_csv_escape(&value))
+                .map(|value| release_probability_csv_escape(&value))
                 .collect::<Vec<_>>()
                 .join(","),
         );
