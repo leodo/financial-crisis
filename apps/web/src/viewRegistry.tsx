@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 import { lazy, type ReactElement } from "react";
 import type { ConsoleReadyData } from "./useConsoleData";
+import DecisionView from "./views/decision/DecisionView";
 
-const DecisionView = lazy(async () => import("./views/decision/DecisionView"));
 const DriversView = lazy(async () => import("./views/drivers/DriversView"));
 const IndicatorsView = lazy(async () => import("./views/indicators/IndicatorsView"));
 const SourcesView = lazy(async () => import("./views/sources/SourcesView"));
