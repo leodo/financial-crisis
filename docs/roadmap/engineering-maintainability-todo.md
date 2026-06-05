@@ -128,7 +128,8 @@
 - 已新增 `apps/api/src/assessment/probability.rs`，把 heuristic probability、bundle scoring、formal feature map、actionability 融合与相关测试依赖的 helper 从 `assessment.rs` 中拆出，避免模型评分逻辑继续和 assessment orchestration 混在一起。
 - 已新增 `apps/api/src/assessment/context.rs`，把 runtime freshness、关键指标状态、事件确认、历史类比和 backtest summary 从 `assessment.rs` 中拆出，让解释层上下文与概率/姿态决策链解耦。
 - 已新增 `apps/api/src/assessment/market_context.rs`，把 data trust、JPY carry、conviction、risk breadth 和相关观测窗口 helper 从 `assessment.rs` 中拆出，assessment 主文件已基本收缩为 runtime threshold 与总装配层。
-- `assessment.rs` 当前剩余逻辑已主要是 runtime threshold / serving policy 与少量通用格式化 helper；后续如果再扩展，可以优先考虑把共用小工具继续下沉到 shared crate。
+- `apps/api/src/assessment/runtime_policy.rs` 本轮继续收走 runtime threshold、serving model policy、history runtime policy version 与 diagnostics；`apps/api/src/assessment/common.rs` 收走 rounding/format/pressure 这类共享 helper，`assessment.rs` 已从约 `1174` 行收缩到约 `982` 行。
+- `assessment.rs` 当前剩余逻辑已主要是 assessment 总装配与内联测试模块；下一步可优先把 assessment 测试块外移到独立测试子模块，并继续观察 common helper 中哪些值得下沉到 shared crate。
 
 ### 3.3 Shared Logic
 

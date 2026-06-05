@@ -199,6 +199,7 @@ apps/worker/src/
 - `commands/release/probability/formal.rs` 负责 formal dataset slice 的 bundle 打分、base model diagnostics、CSV/JSON 导出与 CLI 摘要打印；
 - `commands/release/probability/compare.rs` 负责 formal probability compare 的阈值摘要、feature delta 聚合、窗口汇总、CSV/JSON 导出与 CLI 摘要打印；
 - `commands/release/probability/common.rs` 负责文件名清洗与 CSV 转义等共享小工具。
+- `assessment.rs` 负责 assessment 总装配、method version 与 snapshot envelope；`assessment/runtime_policy.rs` 负责 runtime threshold / serving policy / history runtime policy version；`assessment/common.rs` 负责 rounding、formatting、pressure 这类跨 assessment 子模块共享 helper。
 - `commands/*` 其余模块只负责 CLI 层 glue code。
 
 ## 5. API 拆分边界

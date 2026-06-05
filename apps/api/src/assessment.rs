@@ -1,18 +1,21 @@
-use std::env;
-
 use fc_domain::{
     AlertEvent, AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot,
-    BacktestRollingAudit, BacktestScenarioSummary, DataMode, DecisionPosture, IndicatorRisk,
-    ModelReleaseRecord, Observation, PostureGuidance, ProbabilityBundle, RiskDimension,
-    RiskSnapshot, UserRiskPreferences,
+    BacktestRollingAudit, BacktestScenarioSummary, DataMode, IndicatorRisk, Observation,
+    PostureGuidance, RiskDimension, RiskSnapshot, UserRiskPreferences,
 };
-use serde::Serialize;
 
+mod common;
 mod context;
 mod market_context;
 mod posture;
 mod probability;
+mod runtime_policy;
 
+use common::{
+    clamp_probability, format_probability_threshold, posture_label, round6, round_option,
+    scaled_pressure,
+};
+use common::{round1, round3};
 pub(crate) use context::build_backtest_summary;
 use context::{
     build_event_assessment, build_historical_analogs, build_key_indicator_statuses,
@@ -29,6 +32,11 @@ pub(crate) use probability::ProbabilityComputationTrace;
 #[cfg(test)]
 use probability::{actionability_confidence_from_probability, fuse_actionability_confidence};
 use probability::{build_probabilities, build_probability_trace};
+pub use runtime_policy::runtime_threshold_diagnostics;
+pub(crate) use runtime_policy::{
+    history_runtime_policy_version, probability_action_thresholds, ProbabilityActionThresholds,
+};
+pub use runtime_policy::{RuntimeThresholdDiagnostics, ServingModelContext};
 
 const PROB_MODEL_VERSION: &str = "prob_v1_20260531";
 const CALIBRATION_VERSION: &str = "calib_v1_20260531";
@@ -38,197 +46,6 @@ const POSTURE_POLICY_VERSION: &str = "posture_v1_20260530";
 const ACTION_PLAYBOOK_VERSION: &str = "action_playbook_v1_20260531";
 const PROBABILITY_MODE: &str = "heuristic_mvp";
 const RELEASE_STATUS: &str = "degraded";
-const PREPARE_P60D_THRESHOLD: f64 = 0.35;
-const HEDGE_P20D_THRESHOLD: f64 = 0.30;
-const DEFEND_P5D_THRESHOLD: f64 = 0.30;
-const FORMAL_MAIN_PREPARE_P60D_THRESHOLD: f64 = 0.10;
-const FORMAL_MAIN_HEDGE_P20D_THRESHOLD: f64 = 0.07;
-const FORMAL_MAIN_DEFEND_P5D_THRESHOLD: f64 = 0.03;
-const FORMAL_MAIN_RUNTIME_PREPARE_P60D_FLOOR: f64 = 0.12;
-const FORMAL_MAIN_RUNTIME_HEDGE_P20D_FLOOR: f64 = 0.06;
-const FORMAL_MAIN_RUNTIME_DEFEND_P5D_FLOOR: f64 = 0.05;
-
-#[derive(Debug, Clone, Copy)]
-struct ProbabilityActionThresholds {
-    prepare_p60d: f64,
-    hedge_p20d: f64,
-    defend_p5d: f64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct RuntimeThresholdDiagnostics {
-    pub prepare_p60d: f64,
-    pub hedge_p20d: f64,
-    pub defend_p5d: f64,
-    pub severe_now_p20d: f64,
-    pub elevated_weeks_p60d: f64,
-    pub external_prepare_p20d: f64,
-    pub carry_prepare_p60d: f64,
-    pub downgrade_prepare_p60d: f64,
-    pub downgrade_hedge_p20d: f64,
-    pub downgrade_defend_p5d: f64,
-    pub history_runtime_policy_version: String,
-}
-
-impl ProbabilityActionThresholds {
-    fn legacy() -> Self {
-        Self {
-            prepare_p60d: PREPARE_P60D_THRESHOLD,
-            hedge_p20d: HEDGE_P20D_THRESHOLD,
-            defend_p5d: DEFEND_P5D_THRESHOLD,
-        }
-    }
-
-    fn formal_main_runtime() -> Self {
-        Self {
-            prepare_p60d: probability_threshold_env_override(
-                "FC_FORMAL_MAIN_RUNTIME_PREPARE_P60D_FLOOR",
-                FORMAL_MAIN_RUNTIME_PREPARE_P60D_FLOOR,
-            ),
-            hedge_p20d: probability_threshold_env_override(
-                "FC_FORMAL_MAIN_RUNTIME_HEDGE_P20D_FLOOR",
-                FORMAL_MAIN_RUNTIME_HEDGE_P20D_FLOOR,
-            ),
-            defend_p5d: probability_threshold_env_override(
-                "FC_FORMAL_MAIN_RUNTIME_DEFEND_P5D_FLOOR",
-                FORMAL_MAIN_RUNTIME_DEFEND_P5D_FLOOR,
-            ),
-        }
-    }
-
-    fn severe_now_p20d(self) -> f64 {
-        (self.hedge_p20d + 0.20).max(self.hedge_p20d * 2.0)
-    }
-
-    fn elevated_weeks_p60d(self) -> f64 {
-        (self.prepare_p60d + 0.10).max(self.prepare_p60d * 1.6)
-    }
-
-    fn external_prepare_p20d(self) -> f64 {
-        (self.hedge_p20d * 0.7).max(0.04)
-    }
-
-    fn carry_prepare_p60d(self) -> f64 {
-        (self.prepare_p60d * 0.8).max(0.05)
-    }
-
-    fn downgrade_prepare_p60d(self) -> f64 {
-        (self.prepare_p60d * 0.75).max(0.05)
-    }
-
-    fn downgrade_hedge_p20d(self) -> f64 {
-        (self.hedge_p20d * 0.75).max(0.04)
-    }
-
-    fn downgrade_defend_p5d(self) -> f64 {
-        (self.defend_p5d * 0.67).max(0.02)
-    }
-
-    fn capital_preservation_p5d(self) -> f64 {
-        (self.defend_p5d * 1.5).max(self.defend_p5d + 0.02)
-    }
-}
-
-fn probability_threshold_env_override(name: &str, fallback: f64) -> f64 {
-    env::var(name)
-        .ok()
-        .and_then(|raw| raw.parse::<f64>().ok())
-        .map(|value| value.clamp(0.001, 0.90))
-        .unwrap_or(fallback)
-}
-
-#[derive(Debug, Clone)]
-pub struct ServingModelContext {
-    pub release: ModelReleaseRecord,
-    pub probability_bundle: Option<ProbabilityBundle>,
-    pub runtime_probability_mode: String,
-    pub runtime_release_status: String,
-}
-
-fn probability_action_thresholds(
-    serving_model: Option<&ServingModelContext>,
-) -> ProbabilityActionThresholds {
-    let Some(serving_model) = serving_model else {
-        return ProbabilityActionThresholds::legacy();
-    };
-    let active_release = &serving_model.release;
-
-    if active_release.manifest.feature_set_version == "feature_formal_v1_main_20260531"
-        && active_release.manifest.label_version == "formal_label_v1_main"
-    {
-        if let Some(bundle) = serving_model.probability_bundle.as_ref() {
-            ProbabilityActionThresholds {
-                prepare_p60d: bundle_horizon_threshold(
-                    bundle,
-                    60,
-                    FORMAL_MAIN_PREPARE_P60D_THRESHOLD,
-                )
-                .max(FORMAL_MAIN_RUNTIME_PREPARE_P60D_FLOOR),
-                hedge_p20d: bundle_horizon_threshold(bundle, 20, FORMAL_MAIN_HEDGE_P20D_THRESHOLD)
-                    .max(FORMAL_MAIN_RUNTIME_HEDGE_P20D_FLOOR),
-                defend_p5d: bundle_horizon_threshold(bundle, 5, FORMAL_MAIN_DEFEND_P5D_THRESHOLD)
-                    .max(FORMAL_MAIN_RUNTIME_DEFEND_P5D_FLOOR),
-            }
-        } else {
-            ProbabilityActionThresholds::formal_main_runtime()
-        }
-    } else {
-        ProbabilityActionThresholds::legacy()
-    }
-}
-
-pub(crate) fn history_runtime_policy_version(
-    serving_model: Option<&ServingModelContext>,
-) -> String {
-    let thresholds = probability_action_thresholds(serving_model);
-    let release_class = if serving_model.is_some_and(|context| {
-        context.release.manifest.feature_set_version == "feature_formal_v1_main_20260531"
-            && context.release.manifest.label_version == "formal_label_v1_main"
-    }) {
-        "formal_main"
-    } else if serving_model.is_some() {
-        "release"
-    } else {
-        "heuristic"
-    };
-
-    // Cached prediction snapshots embed posture/time-bucket outputs. When runtime
-    // thresholds are tightened or relaxed, history must be recomputed even if the
-    // release manifest itself did not change.
-    format!(
-        "runtime_history_v2_20260602|class={release_class}|prepare={:.3}|hedge={:.3}|defend={:.3}",
-        thresholds.prepare_p60d, thresholds.hedge_p20d, thresholds.defend_p5d
-    )
-}
-
-pub fn runtime_threshold_diagnostics(
-    serving_model: Option<&ServingModelContext>,
-) -> RuntimeThresholdDiagnostics {
-    let thresholds = probability_action_thresholds(serving_model);
-    RuntimeThresholdDiagnostics {
-        prepare_p60d: round3(thresholds.prepare_p60d),
-        hedge_p20d: round3(thresholds.hedge_p20d),
-        defend_p5d: round3(thresholds.defend_p5d),
-        severe_now_p20d: round3(thresholds.severe_now_p20d()),
-        elevated_weeks_p60d: round3(thresholds.elevated_weeks_p60d()),
-        external_prepare_p20d: round3(thresholds.external_prepare_p20d()),
-        carry_prepare_p60d: round3(thresholds.carry_prepare_p60d()),
-        downgrade_prepare_p60d: round3(thresholds.downgrade_prepare_p60d()),
-        downgrade_hedge_p20d: round3(thresholds.downgrade_hedge_p20d()),
-        downgrade_defend_p5d: round3(thresholds.downgrade_defend_p5d()),
-        history_runtime_policy_version: history_runtime_policy_version(serving_model),
-    }
-}
-
-fn bundle_horizon_threshold(bundle: &ProbabilityBundle, horizon_days: u32, fallback: f64) -> f64 {
-    bundle
-        .horizons
-        .iter()
-        .find(|horizon| horizon.horizon_days == horizon_days)
-        .and_then(|horizon| horizon.decision_threshold)
-        .map(|threshold| threshold.clamp(0.001, 0.90))
-        .unwrap_or(fallback)
-}
 
 #[allow(clippy::too_many_arguments)]
 pub fn build_assessment_snapshot(
@@ -426,44 +243,6 @@ pub fn build_assessment_snapshot(
         posture_guidance,
         probability_trace,
     )
-}
-
-fn scaled_pressure(score: f64, center: f64, width: f64) -> f64 {
-    ((score - center) / width).clamp(0.0, 1.0)
-}
-
-fn clamp_probability(value: f64) -> f64 {
-    value.clamp(0.0, 0.93)
-}
-
-fn posture_label(posture: DecisionPosture) -> &'static str {
-    match posture {
-        DecisionPosture::Normal => "normal",
-        DecisionPosture::Prepare => "prepare",
-        DecisionPosture::Hedge => "hedge",
-        DecisionPosture::Defend => "defend",
-    }
-}
-
-fn round1(value: f64) -> f64 {
-    (value * 10.0).round() / 10.0
-}
-
-fn round3(value: f64) -> f64 {
-    (value * 1000.0).round() / 1000.0
-}
-
-fn format_probability_threshold(value: f64) -> String {
-    format!("{value:.2}")
-}
-
-fn round6(value: f64) -> f64 {
-    (value * 1_000_000.0).round() / 1_000_000.0
-}
-
-fn round_option(value: Option<f64>, decimals: i32) -> Option<f64> {
-    let scale = 10_f64.powi(decimals);
-    value.map(|value| (value * scale).round() / scale)
 }
 
 #[cfg(test)]
