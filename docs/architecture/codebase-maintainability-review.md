@@ -98,6 +98,7 @@ config/
 - 顶层 CLI 分发、research 子命令、release 主流程、db/refresh/backfill 入口已先后从 `main.rs` 中拆出；
 - `apps/worker/src/commands/release.rs` 又进一步把概率切片研究工具拆到 `apps/worker/src/commands/release/probability.rs`，并把 release review 的 CLI 选项、runtime snapshot、比较诊断、建议与总结继续拆到 `apps/worker/src/commands/release/review.rs`；当前 `release.rs` 主要保留 publish/list/show/activate/rollback 与共享 runtime guard helper；
 - `apps/worker/src/training.rs` 已进一步收走 formal bundle 训练管线、`forward_crisis` 标签 / regime helper；`apps/worker/src/release_review.rs` 也已继续收走 release review 专属 report wire structs、historical audit helper、runtime regime diagnostics 与 Markdown 渲染入口；
+- `apps/worker/src/commands/dataset/report.rs` 已继续收走 formal dataset summary/slice 的 envelope、split/scenario/regime 汇总、Markdown/CSV/JSON 渲染与 CLI 摘要打印，`commands/dataset.rs` 开始回到“数据构建 + 研究命令编排”边界；
 - `apps/worker/src/scenario.rs` 已继续收走 `CrisisScenario`、action episode window、protected context、primary/forward scenario 选择和 action window label；
 - `apps/worker/src/support.rs` 已继续收走 `ApiReloadHistoryMode`、demo run、API fetch/reload、SQLite/raw payload IO、格式化 helper 和通用 rounding/hash/path helper；
 - 原先内联在 `main.rs` 的超大测试块已整体迁到 `apps/worker/src/tests.rs`，共享测试构造器已继续下沉到 `apps/worker/src/tests/fixtures.rs`，option parsing / training / quality / review / split requirement 也已切成真实测试子模块而不再依赖 `include!` 聚合；

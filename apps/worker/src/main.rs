@@ -23,13 +23,10 @@ pub(crate) use actionability::{
     select_actionability_decision_threshold,
 };
 pub(crate) use commands::{
-    build_formal_dataset_summary, collect_formal_dataset_scenario_ranges, feature_quality_grade,
-    formal_dataset_split_profile, has_extension_acute_core_features,
-    has_main_dataset_core_features, load_formal_dataset_scenario_sets,
-    load_label_set_crisis_scenarios, print_formal_dataset_summary,
-    render_formal_dataset_summary_markdown, row_has_action_episode_label,
-    scenario_count_for_split_range, AuditExportEnvelope, AuditMethodResponseWire,
-    FormalDatasetSplitProfile, FormalDatasetSummaryEnvelope, RuntimeThresholdDiagnosticsWire,
+    feature_quality_grade, has_extension_acute_core_features, has_main_dataset_core_features,
+    load_formal_dataset_scenario_sets, load_label_set_crisis_scenarios,
+    render_formal_dataset_summary_markdown, scenario_count_for_split_range, AuditExportEnvelope,
+    AuditMethodResponseWire, FormalDatasetSummaryEnvelope, RuntimeThresholdDiagnosticsWire,
     ScenarioRowRange,
 };
 #[cfg(test)]

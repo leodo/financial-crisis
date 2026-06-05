@@ -16,20 +16,17 @@ pub(crate) use audit::AuditExportOptions;
 pub(crate) use audit::{
     AuditExportEnvelope, AuditMethodResponseWire, RuntimeThresholdDiagnosticsWire,
 };
-pub(crate) use dataset::{
-    build_formal_dataset_summary, collect_formal_dataset_scenario_ranges,
-    formal_dataset_split_profile, load_formal_dataset_scenario_sets,
-    load_label_set_crisis_scenarios, print_formal_dataset_summary,
-    render_formal_dataset_summary_markdown, row_has_action_episode_label,
-    scenario_count_for_split_range, FormalDatasetSplitProfile, FormalDatasetSummaryEnvelope,
-    ScenarioRowRange,
-};
 #[cfg(test)]
 pub(crate) use dataset::{
     formal_dataset_min_date, formal_dataset_snapshot_is_usable, formal_dataset_split_requirements,
     render_formal_dataset_slice_csv, sanitize_filename_component,
     scenario_aware_formal_split_bounds, scenario_count_for_index_range, FormalDatasetBuildOptions,
     FormalDatasetSliceOptions, FormalDatasetSummaryOptions, FormalSplitLabelSupport,
+};
+pub(crate) use dataset::{
+    load_formal_dataset_scenario_sets, load_label_set_crisis_scenarios,
+    render_formal_dataset_summary_markdown, scenario_count_for_split_range,
+    FormalDatasetSummaryEnvelope, ScenarioRowRange,
 };
 pub(crate) use db::{db_check, db_init, db_seed};
 pub(crate) use feature::{

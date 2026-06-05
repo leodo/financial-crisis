@@ -160,6 +160,8 @@ apps/worker/src/
     audit.rs
     backfill.rs
     dataset.rs
+    dataset/
+      report.rs
     db.rs
     feature.rs
     pipeline.rs
@@ -180,6 +182,7 @@ apps/worker/src/
 - `support.rs` 负责 `ApiReloadHistoryMode`、demo run、API fetch/reload、SQLite/raw payload IO、格式化 helper 和通用 rounding/hash/path helper。
 - `tests.rs` 作为第一层测试聚合壳层；共享测试构造器下沉到 `tests/fixtures.rs`，主题测试以真实子模块形式落在 `tests/*.rs`，避免继续依赖 `include!` 共享词法作用域。
 - `actionability.rs`、`probability.rs`、`model.rs`、`training.rs`、`formal.rs` 负责训练、特征、数据集构建与共享数学/标签逻辑；其中 `training.rs` 还承接 formal bundle 训练管线和 `forward_crisis` 标签 / regime helper。
+- `commands/dataset.rs` 负责 formal dataset build、split/scenario 约束与研究命令编排；`commands/dataset/report.rs` 负责 formal dataset summary、slice export、Markdown/CSV/JSON 渲染与 CLI 摘要打印。
 - `commands/release.rs` 负责 release 生命周期总入口、共享 activate/runtime guard 与 market scope resolve。
 - `commands/release/review.rs` 负责 release review 的 CLI 选项解析、runtime snapshot、对比诊断、建议与总结。
 - `commands/release/probability.rs` 负责 probability slice / compare 的 CLI 解析、bundle 评分、导出与摘要打印。

@@ -80,8 +80,9 @@
 - 已新增 `apps/worker/src/commands/snapshot.rs`、`commands/feature.rs`、`commands/dataset.rs`、`commands/pipeline.rs`，把 research 下的 snapshot / feature / dataset / pipeline CLI 选项解析与入口 handler 从 `main.rs` 中继续剥离。
 - snapshot 导出写盘、heuristic snapshot 训练样本装配、formal dataset 训练集解析等 research helper 也已开始跟随迁移到对应子模块，不再继续堆在 `main.rs` 的同一层里。
 - formal feature snapshot 的观测可见性判断、时区截止规则、覆盖率汇总、核心特征门槛与单日快照构建实现，已继续迁入 `commands/feature.rs`，`main.rs` 不再直接承载这一整块特征工程细节。
-- formal dataset summary 的 envelope 结构、split/scenario/regime 汇总、Markdown 渲染与 CLI 打印，也已迁入 `commands/dataset.rs`，`main.rs` 只保留场景切分与共享训练 helper。
+- formal dataset summary 的 envelope 结构、split/scenario/regime 汇总、Markdown 渲染与 CLI 打印，已先迁入 `commands/dataset.rs`，再继续下沉到 `apps/worker/src/commands/dataset/report.rs`；`dataset.rs` 现在主要保留样本装配、split/scenario 约束与研究命令编排。
 - formal dataset 的主样本装配、场景集加载/切分要求、scenario metadata 编码 helper 也已继续迁入 `commands/dataset.rs`，`main.rs` 进一步缩回到 actionability / 概率训练共享逻辑。
+- formal dataset slice 的过滤、feature 列收集、CSV/JSON 导出与摘要打印也已一并收口到 `commands/dataset/report.rs`，避免 `dataset.rs` 同时持有“数据构建”和“报表输出”两类职责。
 - 已新增 `apps/worker/src/formal.rs`，把 snapshot/formal dataset 共用的场景标签推导收敛成单一 helper，避免两条训练输入链路各自维护一套 crisis/actionability 标注逻辑。
 - 已新增 `apps/worker/src/training.rs`，把 `ProbabilityTrainingRow/Input`、chronological split、label-mode 支持检查、formal bundle 训练管线以及 `forward_crisis` 标签 / regime helper 从 `main.rs` 中抽离，固定训练数据 contract 与训练编排的归属边界。
 - 已新增 `apps/worker/src/actionability.rs`，把 actionability bundle 训练、阈值选择、校准策略、guardrail 与 actionability evaluation summary 从 `main.rs` 中拆出，供训练与 release review 共用。
@@ -101,6 +102,7 @@
 - `tests.rs` 已进一步收口为第一层测试聚合壳层，并按 `options / training / quality / review / split_requirements` 拆到 `apps/worker/src/tests/*.rs`；共享测试构造器已继续收敛到 `apps/worker/src/tests/fixtures.rs`，专题测试也已改成真实子模块，避免继续依赖 `include!` 共享词法作用域。
 - 这一轮之后，`apps/worker/src/main.rs` 已从约 `7,573` 行继续收缩到约 `165` 行，当前已基本收口为“顶层模块声明 + 共享导出 + 常量 + 入口壳层”。
 - 当前 `main.rs` 已不再直接承载训练管线、release review 报告结构、动作 episode / scenario 时间窗逻辑、通用 API/IO helper，也不再直接承载超大测试块；下一步可优先继续评估是否还需要把跨专题的少量测试导入/夹具进一步下沉，避免测试聚合壳层重新长胖。
+- `apps/worker/src/commands/dataset.rs` 本轮也已继续瘦身：formal dataset 的报表结构、切片导出和 CLI 摘要打印已经拆到 `apps/worker/src/commands/dataset/report.rs`，后续可以继续评估是否还要把 split/scenario policy 再拆成独立子模块。
 
 ### 3.2 API
 
