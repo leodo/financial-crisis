@@ -37,7 +37,7 @@ fn extension_acute_dataset_allows_proxy_feature_gate_without_vix() {
         as_of_date: NaiveDate::from_ymd_opt(1987, 10, 19).unwrap(),
         entity_id: "us".to_string(),
         market_scope: "financial_system".to_string(),
-        feature_set_version: "feature_formal_v1_main_20260531".to_string(),
+        feature_set_version: crate::DEFAULT_FORMAL_FEATURE_SET_VERSION.to_string(),
         point_in_time_mode: "best_effort".to_string(),
         visibility_status: "coverage_or_visibility_failed".to_string(),
         latest_visible_at: Some(Utc::now()),
@@ -73,7 +73,7 @@ fn extension_stress_dataset_allows_1990s_partial_coverage_gate() {
         as_of_date: NaiveDate::from_ymd_opt(1993, 1, 5).unwrap(),
         entity_id: "us".to_string(),
         market_scope: "financial_system".to_string(),
-        feature_set_version: "feature_formal_v1_main_20260531".to_string(),
+        feature_set_version: crate::DEFAULT_FORMAL_FEATURE_SET_VERSION.to_string(),
         point_in_time_mode: "best_effort".to_string(),
         visibility_status: "ready".to_string(),
         latest_visible_at: Some(Utc::now()),
@@ -98,6 +98,40 @@ fn extension_stress_dataset_allows_1990s_partial_coverage_gate() {
         "formal_label_v1_ext_stress"
     ));
     assert!(!crate::formal_dataset_snapshot_is_usable(
+        &snapshot,
+        "formal_label_v1_main"
+    ));
+}
+
+#[test]
+fn formal_main_dataset_accepts_pre_stlfsi_snapshot_when_date_effective_gate_is_met() {
+    let snapshot = FeatureSnapshotRecord {
+        as_of_date: NaiveDate::from_ymd_opt(1993, 1, 5).unwrap(),
+        entity_id: "us".to_string(),
+        market_scope: "financial_system".to_string(),
+        feature_set_version: crate::DEFAULT_FORMAL_FEATURE_SET_VERSION.to_string(),
+        point_in_time_mode: "best_effort".to_string(),
+        visibility_status: "ready".to_string(),
+        latest_visible_at: Some(Utc::now()),
+        coverage_score: 1.0,
+        core_feature_coverage: 1.0,
+        trigger_feature_coverage: 1.0,
+        external_feature_coverage: 1.0,
+        feature_count: 6,
+        features: [
+            ("us_vix_level".to_string(), 12.0),
+            ("us_curve_10y2y_level".to_string(), 1.2),
+            ("us_baa_10y_spread_level".to_string(), 2.1),
+            ("us_fed_funds_level".to_string(), 3.0),
+            ("us_nfci_level".to_string(), 0.1),
+            ("us_usdjpy_level".to_string(), 0.0072),
+        ]
+        .into_iter()
+        .collect(),
+        created_at: Utc::now(),
+    };
+
+    assert!(crate::formal_dataset_snapshot_is_usable(
         &snapshot,
         "formal_label_v1_main"
     ));

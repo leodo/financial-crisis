@@ -4,6 +4,8 @@ param(
     [int]$ChunkYears = 1,
     [string]$PointInTimeMode = "best_effort",
     [string]$MarketScope = "financial_system",
+    [string]$FeatureSetVersion = "",
+    [switch]$ForceRebuild,
     [string]$DatasetVersion = ""
 )
 
@@ -39,11 +41,23 @@ while ($cursor -le $end) {
     Write-Host ""
     Write-Host ("[{0}] feature build {1} -> {2} pit={3}" -f $chunkIndex, $fromText, $toText, $PointInTimeMode)
 
-    cargo run -p fc-worker -- research feature build `
-        --market-scope $MarketScope `
-        --from $fromText `
-        --to $toText `
-        --point-in-time-mode $PointInTimeMode
+    $featureArgs = @(
+        "run", "-p", "fc-worker", "--",
+        "research", "feature", "build",
+        "--market-scope", $MarketScope,
+        "--from", $fromText,
+        "--to", $toText,
+        "--point-in-time-mode", $PointInTimeMode
+    )
+
+    if ($FeatureSetVersion) {
+        $featureArgs += @("--feature-set-version", $FeatureSetVersion)
+    }
+    if ($ForceRebuild) {
+        $featureArgs += "--force-rebuild"
+    }
+
+    & cargo @featureArgs
 
     $cursor = $chunkEnd.AddDays(1)
 }
@@ -59,6 +73,10 @@ $datasetArgs = @(
     "--to", $end.ToString("yyyy-MM-dd"),
     "--point-in-time-mode", $PointInTimeMode
 )
+
+if ($FeatureSetVersion) {
+    $datasetArgs += @("--feature-set-version", $FeatureSetVersion)
+}
 
 if ($DatasetVersion) {
     $datasetArgs += @("--dataset-version", $DatasetVersion)

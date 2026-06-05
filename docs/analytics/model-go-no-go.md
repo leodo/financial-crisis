@@ -197,7 +197,7 @@ not active_default
 
 我们还额外验证过一轮“运行时动作阈值下调”，即：
 
-- 对 `feature_formal_v1_main_20260531 + formal_label_v1_main` 这条正式主线，
+- 对当时的 `feature_formal_v1_main_20260531 + formal_label_v1_main` 这条正式主线，
 - 将 `prepare / hedge / defend` 阈值从旧过渡版的高阈值切到更低的 PIT 口径阈值，
 - 然后重新跑 release review。
 

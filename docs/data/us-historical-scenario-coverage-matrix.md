@@ -203,10 +203,14 @@ blocking_gaps_json
    - `calibration / evaluation` 已拿到 forward 正例、episode-native 主正例与 `protected` 行；
    - 可用于 protected stress、历史对照与扩展训练研究；
    - 不作为正式主模型 go/no-go 的单独依据。
+3. `formal_v1_main_1990_daily:20260606Tfullhistorygatefix`
+   - 已使用 `feature_formal_v1_main_20260606_gatefix` 完成全历史重建；
+   - 范围已从旧版 `1998-01-05 -> 2026-05-31` 恢复为 `1990-01-02 -> 2026-05-31`；
+   - `jp_rates_call_rate` 不再被当作 formal main 硬依赖，`STLFSI` 仅从 `1993-12-31` 起进入核心/触发硬覆盖；
+   - 当前 formal main 的主问题已不再是历史覆盖起点，而是后续训练是否能恢复 timely warning 与 actionability。
 
 后续编码顺序建议是：
 
-1. 用最新 episode-native / regime-aware 口径重建 `formal main`；
-2. 重训 candidate release，并重跑 release review / rolling audit / runtime regime audit；
-3. 继续补 raw PIT 与 `best_effort PIT` 的长期可回放能力；
-4. 最后再决定哪些扩展样本有资格进入更正式的 regime-aware 主线训练。
+1. 重训 candidate release，并重跑 release review / rolling audit / runtime regime audit；
+2. 继续补 raw PIT 与 `best_effort PIT` 的长期可回放能力；
+3. 最后再决定哪些扩展样本有资格进入更正式的 regime-aware 主线训练。

@@ -315,7 +315,7 @@ mod tests {
             probability_mode: "formal_bundle_v1".to_string(),
             serving_status: serving_status.to_string(),
             bundle_uri: "bundle.json".to_string(),
-            feature_set_version: "feature_formal_v1_main_20260531".to_string(),
+            feature_set_version: crate::DEFAULT_FORMAL_FEATURE_SET_VERSION.to_string(),
             label_version: "formal_label_v1_main".to_string(),
             prob_model_version: "prob".to_string(),
             calibration_version: "calib".to_string(),

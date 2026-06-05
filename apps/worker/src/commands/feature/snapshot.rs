@@ -265,7 +265,7 @@ pub(crate) fn build_formal_feature_snapshot_for_date(
         trigger_feature_coverage,
         external_feature_coverage,
         coverage_score,
-    ) = coverage_summary(&output.indicator_risks);
+    ) = coverage_summary(&output.indicator_risks, as_of_date);
     let latest_visible_at = visible_candidates.into_iter().max();
     let visibility_status =
         feature_snapshot_visibility_status(&features, coverage_score, latest_visible_at);

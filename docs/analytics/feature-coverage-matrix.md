@@ -77,7 +77,7 @@
 | `us_baa_10y_spread` | 信用压力代理 | FRED `BAA10Y` | 日 | `1986-01-02` | `best_effort` | 是 | 是 | `core_1990` | `1987` 可直接使用 |
 | `us_fed_funds_level` | 政策/资金价格 | FRED `DFF` 或 `FEDFUNDS` | 日 / 月 | `1954-07-01` | `best_effort` | 是 | 是 | `core_1990` | `1987` 可用，频率按源选择 |
 | `us_nfci_level` | 综合金融条件 | FRED `NFCI` | 周 | `1971-01-08` | `best_effort` | 是 | 是 | `core_1990` | 主面板与扩展场景均有价值 |
-| `us_stlfsi_level` | 金融压力指数 | FRED `STLFSI4` | 周 | `1993-12-31` | `best_effort` | 是 | 否 | `core_1990` | 不能覆盖 `1987` |
+| `us_stlfsi_level` | 金融压力指数 | FRED `STLFSI4` | 周 | `1993-12-31` | `best_effort` | 是 | 否 | `core_1990` | 不能覆盖 `1987`；formal main 仅从 `1993-12-31` 起把它计入核心/触发硬覆盖 |
 | `us_unemployment_level` | 劳动力脆弱性 | FRED `UNRATE` | 月 | `1948-01-01` | `best_effort` | 是 | 是 | `core_1990` | 慢变量 |
 | `us_industrial_production_level` | 周期动能 | FRED `INDPRO` | 月 | `1919-01-01` | `best_effort` | 是 | 是 | `core_1990` | 慢变量 |
 | `us_housing_starts_level` | 房地产动能 | FRED `HOUST` | 月 | `1959-01-01` | `best_effort` | 是 | 是 | `core_1990` | 慢变量 |
@@ -93,7 +93,7 @@
 | `us_sec_banking_event_count` | SEC EDGAR | 事件 / 日聚合 | `1994+` | `strict` | `enhancement` | 适合 `2008 / 2023`，不覆盖 `1987` |
 | `us_sec_liquidity_keyword_score` | SEC EDGAR | 事件 / 日聚合 | `1994+` | `strict` | `enhancement` | 事件确认层 |
 | `us_gdelt_financial_stress_count` | GDELT | 日 | `2015+` | `none` | `explain_only` | 只能做辅助原型，不进正式模型 |
-| `us_jpy_carry_rate_diff` | FRED + BOJ | 日 / 月 | `待按 BOJ/FRED 对齐验证` | `best_effort` | `enhancement` | 有研究价值，但先不列为主面板硬依赖 |
+| `us_jpy_carry_rate_diff` | FRED + BOJ | 日 / 月 | `待按 BOJ/FRED 对齐验证` | `best_effort` | `enhancement` | 有研究价值，但先不列为主面板硬依赖；formal main 覆盖门槛不以 `jp_rates_call_rate` 为必要条件 |
 | `us_banking_event_market_coupling` | SEC + 市场特征派生 | 日 | 取决于底层 | 取决于底层 | `enhancement` | 第二阶段交互项 |
 
 ## 7. `1987 / 1998` 扩展场景代理包

@@ -144,7 +144,8 @@ pub(crate) const DEFAULT_RAW_DATA_DIR: &str = "data/raw";
 pub(crate) const DEFAULT_API_RELOAD_URL: &str = "http://127.0.0.1:18080/api/system/reload";
 pub(crate) const DEFAULT_AUDIT_API_BASE_URL: &str = "http://127.0.0.1:18080";
 pub(crate) const DEFAULT_AUDIT_OUTPUT_DIR: &str = "reports/rolling-audit";
-pub(crate) const DEFAULT_FORMAL_FEATURE_SET_VERSION: &str = "feature_formal_v1_main_20260531";
+pub(crate) const DEFAULT_FORMAL_FEATURE_SET_VERSION: &str =
+    "feature_formal_v1_main_20260606_gatefix";
 pub(crate) const DEFAULT_FORMAL_DATASET_ID: &str = "formal_v1_main_1990_daily";
 pub(crate) const DEFAULT_FORMAL_LABEL_VERSION: &str = "formal_label_v1_main";
 pub(crate) const DEFAULT_FORMAL_SCENARIO_SET_VERSION: &str = "scenario_v1_main";

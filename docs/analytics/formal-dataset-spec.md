@@ -167,6 +167,13 @@ protected_action_window
    - `us_baa_10y_spread`
    - `us_fed_funds_level`
 
+覆盖口径补充：
+
+- `us_jpy_carry_rate_diff` 属于第二阶段增强特征，不能反向变成 formal main 的硬依赖；
+- `external_feature_coverage` 的 formal main 硬门槛只要求 `USDJPY` 主轴，不要求 `jp_rates_call_rate`；
+- `us_stlfsi_level` 在 `1993-12-31` 之后纳入 formal main 的核心/触发覆盖计算；
+- `1990-01-02` 到 `1993-12-30` 这段历史仍可进入 formal main，但覆盖率按当时实际可回放的核心集合计算，不因 `STLFSI` 尚未发布而被一律剔除。
+
 若任一条件不满足：
 
 - 主训练集剔除；

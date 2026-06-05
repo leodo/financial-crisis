@@ -513,7 +513,10 @@
    - [x] 保持 `1987` 作为 acute extension + historical analog，不强行并入主宽表
    - [ ] 按覆盖矩阵补齐 `best_effort PIT` 可回放能力
 5. 重建、重训、重审计
-   - [ ] 重建 formal dataset（`ext_acute/ext_stress` 已完成，`formal main` 待按“恢复 timely warning”目标重建）
+   - [x] 重建 formal dataset（`ext_acute/ext_stress` 已完成，`formal main` 已按“恢复 timely warning”目标重建）
+     - 已修正 formal main 的覆盖门槛实现偏差：`jp_rates_call_rate` 不再被当作主数据集硬依赖，`STLFSI` 仅从 `1993-12-31` 起计入核心/触发硬覆盖
+     - 已完成全历史重建：`formal_v1_main_1990_daily:20260606Tfullhistorygatefix`
+     - 实测范围已从旧版 `1998-01-05 -> 2026-05-31` 恢复为 `1990-01-02 -> 2026-05-31`，行数 `13296`
    - [ ] 重训 candidate release（下一轮重点不再是压误报，而是恢复可执行提前量）
    - [ ] 重跑 release review / rolling audit / runtime regime audit
 
@@ -532,13 +535,12 @@
 
 当前剩余主线不再是“扩展历史样本有没有数据”，而是：
 
-1. 用最新 episode-native / regime-aware 口径重建 `formal main`；
-2. 先补 `release review` 双口径审计，避免继续把 runtime 与 strict review 混成一个指标；
-3. 再专项修 `1990-1993 / 2000-2001` 的 posture continuity；
-4. 在此基础上重训 candidate release；
-5. 再处理剩余 runtime false-positive episode 收口；
-6. 重跑 release review / rolling audit / runtime regime audit；
-7. 继续把 raw PIT history 与 persisted snapshot 彻底解耦。
+1. 先补 `release review` 双口径审计，避免继续把 runtime 与 strict review 混成一个指标；
+2. 再专项修 `1990-1993 / 2000-2001` 的 posture continuity；
+3. 在此基础上重训 candidate release；
+4. 再处理剩余 runtime false-positive episode 收口；
+5. 重跑 release review / rolling audit / runtime regime audit；
+6. 继续把 raw PIT history 与 persisted snapshot 彻底解耦。
 
 ### 6.5 2026-06-01 Episode-native 第一阶段代码已落地
 
