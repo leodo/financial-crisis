@@ -137,11 +137,12 @@
 - 已新增 `apps/api/src/history_builder.rs`，把 assessment history 装配、SQLite prediction snapshot 重建与时间窗口筛选从 `demo.rs` 中拆出，`handlers.rs` / `data_source.rs` 已直接依赖新模块。
 - `demo.rs` 当前已进一步收缩为 demo 当前截面装配、runtime assessment snapshot 组装与用户偏好加载；后续可以优先继续观察 `load_user_preferences` 是否值得下沉到 shared/runtime config 层。
 - 已新增 `apps/api/src/assessment/posture.rs`，把 `time_to_risk_bucket`、posture clause、position guidance、用户偏好升降级和 summary 这条姿态决策链从 `assessment.rs` 中拆出，主装配逻辑只保留调用点。
+- `apps/api/src/assessment/posture.rs` 本轮也继续拆成 `posture.rs` + `posture/guidance.rs` + `posture/position.rs`，主文件已从约 `901` 行收缩到约 `5` 行；风险时距、posture clause、用户偏好升降级与姿态摘要已拆到 `guidance.rs`，仓位预算、动作手册、执行护栏和治理条款已拆到 `position.rs`。
 - 已新增 `apps/api/src/assessment/probability.rs`，把 heuristic probability、bundle scoring、formal feature map、actionability 融合与相关测试依赖的 helper 从 `assessment.rs` 中拆出，避免模型评分逻辑继续和 assessment orchestration 混在一起。
 - 已新增 `apps/api/src/assessment/context.rs`，把 runtime freshness、关键指标状态、事件确认、历史类比和 backtest summary 从 `assessment.rs` 中拆出，让解释层上下文与概率/姿态决策链解耦。
 - 已新增 `apps/api/src/assessment/market_context.rs`，把 data trust、JPY carry、conviction、risk breadth 和相关观测窗口 helper 从 `assessment.rs` 中拆出，assessment 主文件已基本收缩为 runtime threshold 与总装配层。
 - `apps/api/src/assessment/runtime_policy.rs` 本轮继续收走 runtime threshold、serving model policy、history runtime policy version 与 diagnostics；`apps/api/src/assessment/common.rs` 收走 rounding/format/pressure 这类共享 helper；随后又把 assessment 测试块整体外移到 `apps/api/src/assessment/tests.rs`，`assessment.rs` 已从约 `1174` 行收缩到约 `241` 行。
-- `assessment.rs` 当前剩余逻辑已基本回到 assessment 总装配层；下一步可继续观察 `assessment/tests.rs` 是否还要按 posture/probability/runtime policy 再拆子测试模块，并评估 `common.rs` 中哪些 helper 值得继续下沉到 shared crate。
+- `assessment.rs` 当前剩余逻辑已基本回到 assessment 总装配层；下一步优先热点转向 `apps/web/src/format.ts` 这类前端解释/展示层大文件，其次可继续观察 `assessment/tests.rs` 是否还要按 posture/probability/runtime policy 再拆子测试模块，并评估 `common.rs` 中哪些 helper 值得继续下沉到 shared crate。
 - 已把原本约 `1344` 行的 `apps/worker/src/tests/training.rs` 拆成 `apps/worker/src/tests/training/mod.rs` + `visibility.rs`、`scenario_regimes.rs`、`weighting.rs`、`sign_constraints.rs`、`family_constraints.rs` 五个主题子模块，降低训练测试随主线演进继续堆成长文件的风险。
 - 已把原本约 `1254` 行的 `apps/worker/src/tests/review.rs` 拆成 `apps/worker/src/tests/review/mod.rs` + `focus.rs`、`historical_audit.rs`、`runtime.rs` 三个主题子模块，降低 release review 测试随诊断逻辑扩展继续堆成长文件的风险。
 - 已把原本约 `983` 行的 `apps/worker/src/tests/quality.rs` 拆成 `apps/worker/src/tests/quality/mod.rs` + `render.rs`、`actionability.rs`、`probability_thresholds.rs`、`regime_guardrails.rs` 四个主题子模块，降低质量门禁测试随阈值/校准/guardrail 逻辑扩展继续堆成长文件的风险。
