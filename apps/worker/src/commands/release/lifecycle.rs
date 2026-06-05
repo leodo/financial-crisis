@@ -1,6 +1,6 @@
 use anyhow::{bail, Context};
 use chrono::Utc;
-use fc_domain::ModelReleaseRecord;
+use fc_domain::{ModelReleaseManifest, ModelReleaseRecord};
 
 use super::guardrails::{compare_operational_guardrails, print_operational_guardrail_summary};
 use super::options::{
@@ -12,6 +12,7 @@ pub(crate) async fn research_release_publish(args: &[String]) -> anyhow::Result<
     let store = crate::open_sqlite_store().await?;
     store.migrate().await?;
     let manifest = crate::read_release_manifest(&options.manifest_path)?;
+    ensure_release_publish_eligible(&manifest, options.review_only)?;
     let record = ModelReleaseRecord {
         manifest,
         created_at: Utc::now(),
@@ -26,6 +27,9 @@ pub(crate) async fn research_release_publish(args: &[String]) -> anyhow::Result<
     println!("  Bundle     {}", record.manifest.bundle_uri);
     println!("  Prob mode  {}", record.manifest.probability_mode);
     println!("  PIT mode   {}", record.manifest.point_in_time_mode);
+    if options.review_only {
+        println!("  Publish    review-only");
+    }
 
     if options.activate {
         activate_release_with_runtime_guard(
@@ -238,14 +242,42 @@ pub(crate) async fn activate_release_with_runtime_guard(
     Ok(activated)
 }
 
-fn ensure_release_activation_eligible(release: &ModelReleaseRecord) -> anyhow::Result<()> {
-    if release.manifest.serving_status == "shadow" {
+fn ensure_release_publish_eligible(
+    manifest: &ModelReleaseManifest,
+    review_only: bool,
+) -> anyhow::Result<()> {
+    if review_only {
+        return Ok(());
+    }
+
+    if release_requires_review_only(manifest) {
         bail!(
-            "release {} is marked shadow and cannot be activated directly; rebuild it from formal datasets or use review-only tooling instead",
-            release.manifest.release_id
+            "release {} is marked {} and cannot be published as a formal release without --review-only; keep it in review-only storage or republish an approved healthy release",
+            manifest.release_id,
+            release_state_label(manifest)
+        );
+    }
+
+    Ok(())
+}
+
+fn ensure_release_activation_eligible(release: &ModelReleaseRecord) -> anyhow::Result<()> {
+    if release_requires_review_only(&release.manifest) {
+        bail!(
+            "release {} is marked {} and cannot be activated directly; complete review and promote an approved healthy release instead",
+            release.manifest.release_id,
+            release_state_label(&release.manifest)
         );
     }
     Ok(())
+}
+
+fn release_requires_review_only(manifest: &ModelReleaseManifest) -> bool {
+    manifest.status == "candidate" || manifest.serving_status == "shadow"
+}
+
+fn release_state_label(manifest: &ModelReleaseManifest) -> String {
+    format!("{}/{}", manifest.status, manifest.serving_status)
 }
 
 async fn resolve_release_market_scope(
@@ -268,35 +300,39 @@ mod tests {
     use chrono::Utc;
     use fc_domain::{ModelReleaseManifest, ModelReleaseRecord};
 
-    use super::ensure_release_activation_eligible;
+    use super::{ensure_release_activation_eligible, ensure_release_publish_eligible};
 
-    fn release(serving_status: &str) -> ModelReleaseRecord {
+    fn manifest(status: &str, serving_status: &str) -> ModelReleaseManifest {
+        ModelReleaseManifest {
+            release_id: format!("release-{status}-{serving_status}"),
+            market_scope: "financial_system".to_string(),
+            status: status.to_string(),
+            probability_mode: "formal_bundle_v1".to_string(),
+            serving_status: serving_status.to_string(),
+            bundle_uri: "bundle.json".to_string(),
+            feature_set_version: "feature_formal_v1_main_20260531".to_string(),
+            label_version: "formal_label_v1_main".to_string(),
+            prob_model_version: "prob".to_string(),
+            calibration_version: "calib".to_string(),
+            posture_policy_version: "posture".to_string(),
+            action_playbook_version: "playbook".to_string(),
+            point_in_time_mode: "best_effort".to_string(),
+            training_range_start: None,
+            training_range_end: None,
+            calibration_range_start: None,
+            calibration_range_end: None,
+            evaluation_range_start: None,
+            evaluation_range_end: None,
+            brier_score: None,
+            log_loss: None,
+            ece: None,
+            note: String::new(),
+        }
+    }
+
+    fn release(status: &str, serving_status: &str) -> ModelReleaseRecord {
         ModelReleaseRecord {
-            manifest: ModelReleaseManifest {
-                release_id: format!("release-{serving_status}"),
-                market_scope: "financial_system".to_string(),
-                status: "candidate".to_string(),
-                probability_mode: "formal_bundle_v1".to_string(),
-                serving_status: serving_status.to_string(),
-                bundle_uri: "bundle.json".to_string(),
-                feature_set_version: "feature_formal_v1_main_20260531".to_string(),
-                label_version: "formal_label_v1_main".to_string(),
-                prob_model_version: "prob".to_string(),
-                calibration_version: "calib".to_string(),
-                posture_policy_version: "posture".to_string(),
-                action_playbook_version: "playbook".to_string(),
-                point_in_time_mode: "best_effort".to_string(),
-                training_range_start: None,
-                training_range_end: None,
-                calibration_range_start: None,
-                calibration_range_end: None,
-                evaluation_range_start: None,
-                evaluation_range_end: None,
-                brier_score: None,
-                log_loss: None,
-                ece: None,
-                note: String::new(),
-            },
+            manifest: manifest(status, serving_status),
             created_at: Utc::now(),
             activated_at: None,
             retired_at: None,
@@ -304,16 +340,46 @@ mod tests {
     }
 
     #[test]
-    fn shadow_release_is_not_activation_eligible() {
-        let error = ensure_release_activation_eligible(&release("shadow")).unwrap_err();
+    fn candidate_release_is_not_activation_eligible() {
+        let error =
+            ensure_release_activation_eligible(&release("candidate", "healthy")).unwrap_err();
         assert!(
-            error.to_string().contains("cannot be activated directly"),
+            error.to_string().contains("candidate/healthy"),
             "unexpected error: {error:#}"
         );
     }
 
     #[test]
-    fn healthy_release_is_activation_eligible() {
-        ensure_release_activation_eligible(&release("healthy")).unwrap();
+    fn shadow_release_is_not_activation_eligible() {
+        let error = ensure_release_activation_eligible(&release("approved", "shadow")).unwrap_err();
+        assert!(
+            error.to_string().contains("approved/shadow"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[test]
+    fn approved_healthy_release_is_activation_eligible() {
+        ensure_release_activation_eligible(&release("approved", "healthy")).unwrap();
+    }
+
+    #[test]
+    fn candidate_shadow_release_requires_review_only_publish() {
+        let error =
+            ensure_release_publish_eligible(&manifest("candidate", "shadow"), false).unwrap_err();
+        assert!(
+            error.to_string().contains("without --review-only"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[test]
+    fn candidate_shadow_release_can_publish_for_review_only() {
+        ensure_release_publish_eligible(&manifest("candidate", "shadow"), true).unwrap();
+    }
+
+    #[test]
+    fn approved_healthy_release_can_publish_formally() {
+        ensure_release_publish_eligible(&manifest("approved", "healthy"), false).unwrap();
     }
 }

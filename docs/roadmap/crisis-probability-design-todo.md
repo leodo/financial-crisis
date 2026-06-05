@@ -502,7 +502,7 @@
    - [ ] 让 `analytics_prediction_snapshots` 退回到运行审计与桥接视图角色
      - 已完成一部分：API 默认历史路径对 `bundle-backed release` 已切到 `replay-first`，若无可复用 replay cache 会直接 raw rebuild 并落 replay run，不再静默复用旧 `prediction snapshots`
      - 已完成一部分：`bootstrap-formal-release` 已拒绝 `--dataset-source snapshot`，正式发布命令层不再允许把过渡 snapshot 训练直接包装成 formal release
-     - 已完成一部分：snapshot 过渡训练生成的 manifest 现在会标成 `candidate/shadow`，且 `release activate/publish --activate` 会拒绝直接激活 `shadow` release
+    - 已完成一部分：snapshot 过渡训练生成的 manifest 现在会标成 `candidate/shadow`；`release publish` 默认只接受 `approved/healthy` 正式 manifest，候选版必须显式 `--review-only` 才能入库，且 `release activate/publish --activate` 会拒绝直接激活 `candidate/*` 或 `*/shadow` release
      - 当前剩余缺口：heuristic / 兼容路径仍允许复用 `prediction snapshots`，formal dataset / 长历史审计链也还没有完全摆脱 bridge 视图
 4. 美国扩展历史样本落地
    - [x] 把 `1994 / 1998 / 2000-2001 / 2011` 逐个纳入 extension/protected stress 数据集与 summary

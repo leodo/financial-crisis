@@ -91,8 +91,8 @@ fn print_help() {
   cargo run -p fc-worker -- audit export-current [--api-base-url URL] [--output-dir DIR]
       Fetch /api/assessment/current, /api/backtests, and /api/assessment/method from the running API, then export a JSON + Markdown rolling-audit report.
 
-  cargo run -p fc-worker -- research release publish --manifest FILE [--activate] [--reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
-      Save a release manifest into SQLite, and optionally activate it and reload the API runtime. With --reload-api, worker compares timely-warning / actionable-precision guardrails and auto-rolls back on clear regression unless --skip-operational-guard is set.
+  cargo run -p fc-worker -- research release publish --manifest FILE [--review-only] [--activate] [--reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
+      Save a release manifest into SQLite. Only approved/healthy manifests can be published as formal releases by default; candidate/shadow manifests require --review-only and cannot be activated through this command. With --reload-api, worker compares timely-warning / actionable-precision guardrails and auto-rolls back on clear regression unless --skip-operational-guard is set.
 
   cargo run -p fc-worker -- research release list [--market-scope SCOPE]
       List model releases stored in SQLite.

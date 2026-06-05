@@ -20,6 +20,36 @@ fn parses_release_publish_options() {
         options.manifest_path,
         PathBuf::from("config/model-releases/us-heuristic-bootstrap.json")
     );
+    assert!(!options.review_only);
+}
+
+#[test]
+fn parses_release_publish_review_only_option() {
+    let args = vec![
+        "--manifest".to_string(),
+        "config/model-releases/us-formal-candidate.json".to_string(),
+        "--review-only".to_string(),
+    ];
+    let options = ReleasePublishOptions::parse(&args).unwrap();
+    assert!(options.review_only);
+    assert!(!options.activate);
+}
+
+#[test]
+fn release_publish_rejects_review_only_activate_combination() {
+    let args = vec![
+        "--manifest".to_string(),
+        "config/model-releases/us-formal-candidate.json".to_string(),
+        "--review-only".to_string(),
+        "--activate".to_string(),
+    ];
+    let error = ReleasePublishOptions::parse(&args).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("--review-only cannot be combined with --activate"),
+        "unexpected error: {error:#}"
+    );
 }
 
 #[test]

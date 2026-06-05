@@ -6,6 +6,7 @@ use anyhow::{bail, Context};
 pub(crate) struct ReleasePublishOptions {
     pub(crate) manifest_path: PathBuf,
     pub(crate) activate: bool,
+    pub(crate) review_only: bool,
     pub(crate) reload_api: bool,
     pub(crate) api_reload_url: String,
     pub(crate) skip_operational_guard: bool,
@@ -16,6 +17,7 @@ impl ReleasePublishOptions {
     pub(crate) fn parse(args: &[String]) -> anyhow::Result<Self> {
         let mut manifest_path = None;
         let mut activate = false;
+        let mut review_only = false;
         let mut reload_api = false;
         let mut api_reload_url = crate::DEFAULT_API_RELOAD_URL.to_string();
         let mut skip_operational_guard = false;
@@ -31,6 +33,7 @@ impl ReleasePublishOptions {
                     ));
                 }
                 "--activate" => activate = true,
+                "--review-only" => review_only = true,
                 "--reload-api" => reload_api = true,
                 "--skip-operational-guard" => skip_operational_guard = true,
                 "--api-reload-url" => {
@@ -51,9 +54,13 @@ impl ReleasePublishOptions {
             }
             index += 1;
         }
+        if review_only && activate {
+            bail!("--review-only cannot be combined with --activate; review-only releases must stay inactive");
+        }
         Ok(Self {
             manifest_path: manifest_path.with_context(|| "--manifest is required")?,
             activate,
+            review_only,
             reload_api,
             api_reload_url,
             skip_operational_guard,
