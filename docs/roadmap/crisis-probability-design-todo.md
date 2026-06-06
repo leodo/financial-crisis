@@ -535,7 +535,28 @@
             3. 只有在不牺牲上述连续性的前提下，才允许小幅回调 `20d threshold`。
          - [ ] 对 `mixed_systemic` 先重做 proxy 定义；当前 `gate_active_total=0`，继续训练 overlay 没有有效样本基础。
            - [x] 已把 proxy 改成“信用利差 / 曲线 / NFCI”作为慢性压力锚点，`trigger / VIX / external` 只做确认，并把 overlay gate 从 `0.50` 收到 `0.38`。
-           - [ ] 还需要用真实 formal overlay 审计复核 `2000 / 2011` 是否已形成足够的 gate-active rows。
+           - [x] 已用真实 formal dataset 切片和 `formal-probability-compare` 复核 `2000 / 2011`：
+             1. 真正的问题不只是 “gate_active_total=0”，还包括 `mixed_systemic proxy` 对
+                `overall / trigger / external` 这组 score 特征误用了 `0-100` 门槛，
+                但 formal feature store 里实际喂入的是 `0-1` 归一化值；
+             2. 修正量纲后，候选 `us_formal_family_hybrid_20260606T112926` 的
+                overlay 审计已明显恢复：`mixed_systemic` gate-active rows 从
+                `1452/1208/5881`（主要落在 2011 后段与 cooldown）提升为
+                `1452/1208/5881` 之外，`2000 / 2011` 的有效窗口也开始能点亮 gate；
+             3. 场景级 compare 显示：
+                - `2000-2001` 从 `20d hits 0 -> 7`，说明 dotcom unwind 不再完全冷掉；
+                - `2011` 仍未形成正式 `20d hit`，但 candidate `max p20d` 已从
+                  `0.007 -> 0.234`，不再是“完全无感”；
+             4. 正式 `strict_rebuild release review` 结果也同步改善：
+                `strict_actionable_point_count 65 -> 67`、
+                `runtime_floor_hit_count 360 -> 439`、
+                `actionable_precision 69.7% -> 72.5%`。
+           - [ ] 但这还不等于 `mixed_systemic` 已经完成：
+             1. `2000-2001` 仍落在 `strict_review_vs_runtime_mapping`，candidate 现在是
+                `p20d_and_p60d` 双 gate gap；
+             2. `2011` 依然只到“有明显抬升但没形成正式命中”的状态；
+             3. 下一步不再继续猜 proxy 权重，而是转向 strict gate / runtime floor /
+                continuity 的逐场景复核。
          - [x] 已把 `jpy_carry` 继续维持为 proxy-only family，并补齐足以进入正式 overlay 训练的 protected / proxy rows 支持。
            - [x] `proxy-only audit` 现在会把 `protected_action_window` 和 gate-active carry rows 一并视为候选支持，不再和训练数据集构建口径脱节。
            - [x] overlay dataset builder 现在会在 formal main / ext_stress / ext_acute 叠加时合并重复 identity 行，保留更强的 `label/regime/protected_action_window`，不再让主数据集的弱标签覆盖扩展数据。

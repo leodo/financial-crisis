@@ -150,6 +150,39 @@ fn mixed_systemic_proxy_requires_chronic_pressure_anchor() {
 }
 
 #[test]
+fn score_tail_features_support_normalized_score_inputs() {
+    let mut features = BTreeMap::new();
+    features.insert(FEATURE_OVERALL_SCORE.to_string(), 0.60);
+    features.insert(FEATURE_TRIGGER_SCORE.to_string(), 0.58);
+
+    let overall_tail =
+        resolve_probability_feature_value("tail_pos__overall_score__55", &features).unwrap();
+    let trigger_tail =
+        resolve_probability_feature_value("tail_pos__trigger_score__50", &features).unwrap();
+
+    assert!((overall_tail - 0.05).abs() < 1e-9);
+    assert!((trigger_tail - 0.08).abs() < 1e-9);
+}
+
+#[test]
+fn mixed_systemic_proxy_supports_normalized_score_inputs() {
+    let mut features = BTreeMap::new();
+    features.insert(FEATURE_OVERALL_SCORE.to_string(), 0.52);
+    features.insert(FEATURE_TRIGGER_SCORE.to_string(), 0.23);
+    features.insert(FEATURE_EXTERNAL_DIMENSION_SCORE.to_string(), 0.53);
+    features.insert(FEATURE_US_VIX_LEVEL.to_string(), 18.49);
+    features.insert(FEATURE_US_BAA_10Y_SPREAD_LEVEL.to_string(), 2.75);
+    features.insert(FEATURE_US_CURVE_10Y2Y_LEVEL.to_string(), 2.58);
+    features.insert(FEATURE_US_NFCI_LEVEL.to_string(), -0.546);
+    features.insert(FEATURE_US_USDJPY_CHANGE_20D.to_string(), 2.51);
+
+    let mixed =
+        resolve_probability_feature_value("family_proxy__mixed_systemic", &features).unwrap();
+
+    assert!(mixed > 0.30 && mixed <= 1.0);
+}
+
+#[test]
 fn shared_probability_scorer_uses_stats_and_fill_values() {
     let model = LogisticProbabilityModel {
         intercept: 0.5,

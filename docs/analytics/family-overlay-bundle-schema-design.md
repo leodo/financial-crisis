@@ -246,8 +246,29 @@ family_overlays == []
    - `2026-06-06` 已把 proxy 从“overall/trigger/external/VIX”泛化分数改成
      “credit spread / curve inversion / NFCI”作为慢性压力锚点，`trigger / VIX / external`
      只做确认，同时把 overlay gate 从 `0.50` 下调到 `0.38`；
-   - 下一步不再继续拍脑袋调权重，而是直接用真实 formal overlay audit 复核
-     `2000 / 2011` 是否已经出现足够的 gate-active rows。
+   - 随后又用真实 formal dataset 切片把这条线继续往下拆清：
+     1. `2000` 在旧实现下 `max proxy ≈ 0.221`，`2011` 的 pre-warning / hedge 窗口
+        `max proxy ≈ 0.252`，这说明问题不只是 gate 太高；
+     2. 真正的根因之一是 `mixed_systemic proxy` 对
+        `overall_score / trigger_score / external_dimension_score`
+        这三组特征误用了 `42/48/45` 这种 `0-100` 阈值，而 formal feature store 实际输入是
+        `0-1` 归一化值；结果是确认项长期被压成 `0`，proxy 只能靠 credit/curve/vix 单独发力；
+     3. `2026-06-06` 已在 `crates/domain/src/probability_bundle/features.rs`
+        修掉这层量纲错配：当 family proxy / tail feature 读到的是归一化 score 时，
+        会自动把 `0-100` 阈值和 scale 按同量纲解释。
+   - 修复后的第一轮候选 `us_formal_family_hybrid_20260606T112926` 已出现实质改善：
+     1. `us_dotcom_unwind_2000` 从 `20d hits 0 -> 7`，不再是完全冷掉；
+     2. `us_funding_stress_2011` 的 `max p20d` 从 `0.007 -> 0.234`，说明这条线终于开始感知
+        2011 的 mixed systemic 压力；
+     3. `strict_rebuild release review` 也同步改善：
+        `strict_actionable_point_count 65 -> 67`、
+        `runtime_floor_hit_count 360 -> 439`、
+        `actionable_precision 69.7% -> 72.5%`。
+   - 但这一步仍然不是终点：
+     1. `2000-2001` 仍落在 `strict_review_vs_runtime_mapping`；
+     2. `2011` 仍是“明显抬升但未正式命中”；
+     3. 因此下一步重点已从“继续拍脑袋调 proxy”转成
+        `strict gate / runtime floor / continuity facets` 的逐场景复核。
 4. 对 `jpy_carry` 单独补 family proxy / protected stress 样本后再决定是否进入正式 overlay 训练；
    - `2026-06-06` 已把这条线继续前推到“真实可训练”：
      1. `proxy-only audit` 现在把 `protected_action_window` 和 gate-active carry rows

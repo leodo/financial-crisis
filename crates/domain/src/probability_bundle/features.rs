@@ -143,19 +143,21 @@ pub fn resolve_probability_feature_value(
         return resolve_interaction_feature_value(&parts[1..], features);
     }
     match parts.as_slice() {
-        ["tail_pos", base, threshold] => Some(
-            (resolve_probability_feature_value(base, features)? - threshold.parse::<f64>().ok()?)
-                .max(0.0),
-        ),
-        ["tail_neg", base, threshold] => Some(
-            (threshold.parse::<f64>().ok()? - resolve_probability_feature_value(base, features)?)
-                .max(0.0),
-        ),
-        ["tail_abs_pos", base, threshold] => Some(
-            (resolve_probability_feature_value(base, features)?.abs()
-                - threshold.parse::<f64>().ok()?)
-            .max(0.0),
-        ),
+        ["tail_pos", base, threshold] => {
+            let value = resolve_probability_feature_value(base, features)?;
+            let threshold = normalize_score_threshold(base, value, threshold.parse::<f64>().ok()?);
+            Some((value - threshold).max(0.0))
+        }
+        ["tail_neg", base, threshold] => {
+            let value = resolve_probability_feature_value(base, features)?;
+            let threshold = normalize_score_threshold(base, value, threshold.parse::<f64>().ok()?);
+            Some((threshold - value).max(0.0))
+        }
+        ["tail_abs_pos", base, threshold] => {
+            let value = resolve_probability_feature_value(base, features)?;
+            let threshold = normalize_score_threshold(base, value, threshold.parse::<f64>().ok()?);
+            Some((value.abs() - threshold).max(0.0))
+        }
         ["family_proxy", family] => resolve_family_proxy_value(family, features),
         ["family_context", family, base] => Some(
             resolve_family_proxy_value(family, features)?
@@ -251,10 +253,11 @@ fn scaled_tail_pos(
     threshold: f64,
     scale: f64,
 ) -> Option<f64> {
+    let value = resolve_probability_feature_value(feature_name, features)?;
+    let threshold = normalize_score_threshold(feature_name, value, threshold);
+    let scale = normalize_score_scale(feature_name, value, scale);
     Some(
-        ((resolve_probability_feature_value(feature_name, features)? - threshold)
-            / scale.max(1e-6))
-        .clamp(0.0, 1.0),
+        ((value - threshold) / scale.max(1e-6)).clamp(0.0, 1.0),
     )
 }
 
@@ -264,10 +267,11 @@ fn scaled_tail_neg(
     threshold: f64,
     scale: f64,
 ) -> Option<f64> {
+    let value = resolve_probability_feature_value(feature_name, features)?;
+    let threshold = normalize_score_threshold(feature_name, value, threshold);
+    let scale = normalize_score_scale(feature_name, value, scale);
     Some(
-        ((threshold - resolve_probability_feature_value(feature_name, features)?)
-            / scale.max(1e-6))
-        .clamp(0.0, 1.0),
+        ((threshold - value) / scale.max(1e-6)).clamp(0.0, 1.0),
     )
 }
 
@@ -277,9 +281,43 @@ fn scaled_tail_abs(
     threshold: f64,
     scale: f64,
 ) -> Option<f64> {
+    let value = resolve_probability_feature_value(feature_name, features)?;
+    let threshold = normalize_score_threshold(feature_name, value, threshold);
+    let scale = normalize_score_scale(feature_name, value, scale);
     Some(
-        ((resolve_probability_feature_value(feature_name, features)?.abs() - threshold)
-            / scale.max(1e-6))
-        .clamp(0.0, 1.0),
+        ((value.abs() - threshold) / scale.max(1e-6)).clamp(0.0, 1.0),
+    )
+}
+
+fn normalize_score_threshold(feature_name: &str, feature_value: f64, threshold: f64) -> f64 {
+    if uses_normalized_score_units(feature_name)
+        && feature_value.abs() <= 1.0
+        && threshold.abs() > 1.0
+    {
+        threshold / 100.0
+    } else {
+        threshold
+    }
+}
+
+fn normalize_score_scale(feature_name: &str, feature_value: f64, scale: f64) -> f64 {
+    if uses_normalized_score_units(feature_name)
+        && feature_value.abs() <= 1.0
+        && scale.abs() > 1.0
+    {
+        scale / 100.0
+    } else {
+        scale
+    }
+}
+
+fn uses_normalized_score_units(feature_name: &str) -> bool {
+    matches!(
+        feature_name,
+        FEATURE_OVERALL_SCORE
+            | FEATURE_STRUCTURAL_SCORE
+            | FEATURE_TRIGGER_SCORE
+            | FEATURE_EXTERNAL_DIMENSION_SCORE
+            | FEATURE_EXTERNAL_SHOCK_SCORE
     )
 }
