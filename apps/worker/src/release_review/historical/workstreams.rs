@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::{
     format_runtime_category_list, ReleaseReviewHistoricalAuditPriority,
-    ReleaseReviewHistoricalAuditWorkstreamSummary,
+    ReleaseReviewHistoricalAuditWorkstreamSummary, ReleaseReviewRuntimeBlockCount,
+    ReleaseReviewScenarioFocusDiagnostic,
 };
 use super::{release_review_gate_gap_profile_label, release_review_historical_workstream_priority};
 
@@ -37,9 +38,75 @@ fn gate_gap_focus_summary(profiles: &[String]) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn summarize_release_review_historical_audit_workstreams(
+fn format_gate_gap_point_counts(
+    counts: &[ReleaseReviewRuntimeBlockCount],
+    for_candidate: bool,
+) -> String {
+    let rendered = counts
+        .iter()
+        .filter_map(|count| {
+            let value = if for_candidate {
+                count.candidate_count
+            } else {
+                count.baseline_count
+            };
+            (value > 0).then(|| {
+                format!(
+                    "{}={}",
+                    release_review_gate_gap_profile_label(&count.category),
+                    value
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    if rendered.is_empty() {
+        "—".to_string()
+    } else {
+        rendered.join(", ")
+    }
+}
+
+fn gate_gap_point_count_focus_summary(
+    counts: &[ReleaseReviewRuntimeBlockCount],
+) -> Option<&'static str> {
+    if counts.is_empty() {
+        return None;
+    }
+    let p20d_only = counts
+        .iter()
+        .find(|count| count.category == "p20d_only")
+        .map(|count| count.candidate_count.max(count.baseline_count))
+        .unwrap_or(0);
+    let p60d_only = counts
+        .iter()
+        .find(|count| count.category == "p60d_only")
+        .map(|count| count.candidate_count.max(count.baseline_count))
+        .unwrap_or(0);
+    let both = counts
+        .iter()
+        .find(|count| count.category == "p20d_and_p60d")
+        .map(|count| count.candidate_count.max(count.baseline_count))
+        .unwrap_or(0);
+    let total = p20d_only + p60d_only + both;
+    if total == 0 {
+        None
+    } else if p20d_only > p60d_only + both {
+        Some("下一轮应先复核 p20d strict gate。")
+    } else if p60d_only > p20d_only + both {
+        Some("下一轮应先复核 p60d strict gate。")
+    } else {
+        Some("下一轮应同时复核 p20d / p60d strict gate。")
+    }
+}
+
+fn summarize_release_review_historical_audit_workstreams_internal(
     priorities: &[ReleaseReviewHistoricalAuditPriority],
+    scenarios: &[ReleaseReviewScenarioFocusDiagnostic],
 ) -> Vec<ReleaseReviewHistoricalAuditWorkstreamSummary> {
+    let scenarios_by_id = scenarios
+        .iter()
+        .map(|scenario| (scenario.scenario_id.as_str(), scenario))
+        .collect::<BTreeMap<_, _>>();
     let mut workstreams = BTreeMap::<
         String,
         (
@@ -51,6 +118,7 @@ pub(crate) fn summarize_release_review_historical_audit_workstreams(
             BTreeSet<String>,
             BTreeSet<String>,
             BTreeSet<String>,
+            BTreeMap<String, (u32, u32)>,
         ),
     >::new();
     for priority in priorities {
@@ -66,6 +134,7 @@ pub(crate) fn summarize_release_review_historical_audit_workstreams(
                     BTreeSet::new(),
                     BTreeSet::new(),
                     BTreeSet::new(),
+                    BTreeMap::new(),
                 )
             });
         entry.0.insert(priority.scenario_name.clone());
@@ -81,6 +150,19 @@ pub(crate) fn summarize_release_review_historical_audit_workstreams(
         }
         if let Some(profile) = &priority.candidate_gate_gap_profile {
             entry.7.insert(profile.clone());
+        }
+        if let Some(scenario) = scenarios_by_id.get(priority.scenario_id.as_str()) {
+            for facet in &scenario.runtime_continuity_facet_counts {
+                let Some(category) = facet.category.strip_prefix("gate_gap:") else {
+                    continue;
+                };
+                if category == "none" {
+                    continue;
+                }
+                let count_entry = entry.8.entry(category.to_string()).or_insert((0, 0));
+                count_entry.0 += facet.baseline_count;
+                count_entry.1 += facet.candidate_count;
+            }
         }
     }
 
@@ -98,6 +180,7 @@ pub(crate) fn summarize_release_review_historical_audit_workstreams(
                     scenario_ids,
                     baseline_gate_gap_profiles,
                     candidate_gate_gap_profiles,
+                    gate_gap_point_counts,
                 ),
             )| {
                 ReleaseReviewHistoricalAuditWorkstreamSummary {
@@ -109,6 +192,17 @@ pub(crate) fn summarize_release_review_historical_audit_workstreams(
                     training_roles: training_roles.into_iter().collect(),
                     baseline_gate_gap_profiles: baseline_gate_gap_profiles.into_iter().collect(),
                     candidate_gate_gap_profiles: candidate_gate_gap_profiles.into_iter().collect(),
+                    gate_gap_point_counts: gate_gap_point_counts
+                        .into_iter()
+                        .map(|(category, (baseline_count, candidate_count))| {
+                            ReleaseReviewRuntimeBlockCount {
+                                delta: candidate_count as i64 - baseline_count as i64,
+                                category,
+                                baseline_count,
+                                candidate_count,
+                            }
+                        })
+                        .collect(),
                     suggested_review: suggested_reviews
                         .into_iter()
                         .collect::<Vec<_>>()
@@ -128,6 +222,20 @@ pub(crate) fn summarize_release_review_historical_audit_workstreams(
     rows
 }
 
+#[cfg(test)]
+pub(crate) fn summarize_release_review_historical_audit_workstreams(
+    priorities: &[ReleaseReviewHistoricalAuditPriority],
+) -> Vec<ReleaseReviewHistoricalAuditWorkstreamSummary> {
+    summarize_release_review_historical_audit_workstreams_internal(priorities, &[])
+}
+
+pub(crate) fn summarize_release_review_historical_audit_workstreams_with_focus(
+    priorities: &[ReleaseReviewHistoricalAuditPriority],
+    scenarios: &[ReleaseReviewScenarioFocusDiagnostic],
+) -> Vec<ReleaseReviewHistoricalAuditWorkstreamSummary> {
+    summarize_release_review_historical_audit_workstreams_internal(priorities, scenarios)
+}
+
 pub(crate) fn release_review_historical_audit_takeaways(
     rows: &[ReleaseReviewHistoricalAuditWorkstreamSummary],
 ) -> Vec<String> {
@@ -135,15 +243,18 @@ pub(crate) fn release_review_historical_audit_takeaways(
     for row in rows {
         match row.workstream.as_str() {
             "strict_review_vs_runtime_mapping" => {
-                let focus_text = gate_gap_focus_summary(&row.candidate_gate_gap_profiles)
+                let focus_text = gate_gap_point_count_focus_summary(&row.gate_gap_point_counts)
+                    .or_else(|| gate_gap_focus_summary(&row.candidate_gate_gap_profiles))
                     .or_else(|| gate_gap_focus_summary(&row.baseline_gate_gap_profiles))
                     .unwrap_or("下一轮应继续逐点复核 strict gate。");
                 takeaways.push(format!(
-                    "{} 个历史样本首先应复核 strict review gate 与 runtime floor 的映射，涉及 {}。当前更像 runtime 已经看到风险，但 strict gate 仍比运行时口径更严。strict gate gap 画像：baseline={}，candidate={}。{}",
+                    "{} 个历史样本首先应复核 strict review gate 与 runtime floor 的映射，涉及 {}。当前更像 runtime 已经看到风险，但 strict gate 仍比运行时口径更严。strict gate gap 画像：baseline={}，candidate={}；点位计数：baseline={}，candidate={}。{}",
                     row.scenario_count,
                     format_runtime_category_list(&row.scenarios),
                     format_gate_gap_profiles(&row.baseline_gate_gap_profiles),
                     format_gate_gap_profiles(&row.candidate_gate_gap_profiles),
+                    format_gate_gap_point_counts(&row.gate_gap_point_counts, false),
+                    format_gate_gap_point_counts(&row.gate_gap_point_counts, true),
                     focus_text
                 ));
             }

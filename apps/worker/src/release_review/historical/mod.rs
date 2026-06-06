@@ -13,9 +13,11 @@ pub(crate) use attribution::{
 };
 pub(crate) use failure_modes::summarize_release_review_failure_modes;
 pub(crate) use priorities::summarize_release_review_historical_audit_priorities;
+#[cfg(test)]
+pub(crate) use workstreams::summarize_release_review_historical_audit_workstreams;
 pub(crate) use workstreams::{
     release_review_historical_audit_takeaways,
-    summarize_release_review_historical_audit_workstreams,
+    summarize_release_review_historical_audit_workstreams_with_focus,
 };
 
 fn release_review_historical_audit_attribution_label(

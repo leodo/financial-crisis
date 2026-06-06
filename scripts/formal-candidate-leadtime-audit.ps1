@@ -183,6 +183,16 @@ const workstreamRows = (review.historical_audit_workstreams || []).map((row) => 
   scenarios: (row.scenarios || []).join(" | "),
   scenario_families: (row.scenario_families || []).join(" | "),
   training_roles: (row.training_roles || []).join(" | "),
+  baseline_gate_gap_profiles: (row.baseline_gate_gap_profiles || []).join(" | "),
+  candidate_gate_gap_profiles: (row.candidate_gate_gap_profiles || []).join(" | "),
+  baseline_gate_gap_points: (row.gate_gap_point_counts || [])
+    .filter((count) => (count.baseline_count ?? 0) > 0)
+    .map((count) => `${count.category}=${count.baseline_count}`)
+    .join(" | "),
+  candidate_gate_gap_points: (row.gate_gap_point_counts || [])
+    .filter((count) => (count.candidate_count ?? 0) > 0)
+    .map((count) => `${count.category}=${count.candidate_count}`)
+    .join(" | "),
   suggested_review: row.suggested_review ?? null
 }));
 
@@ -258,6 +268,7 @@ function Get-LeadtimeTakeaways {
     $leadtimeGaps = @($Summary.leadtime_gap_rows)
     $blockRows = @($Summary.block_mix_rows)
     $continuityFacetRows = @($Summary.continuity_facet_rows)
+    $workstreamRows = @($Summary.workstream_rows)
 
     if (
         $comparison.timely_warning_rate -and
@@ -324,6 +335,42 @@ function Get-LeadtimeTakeaways {
         $scenarioNames = ($candidateBothGapRows | Select-Object -ExpandProperty name -Unique) -join ", "
         $message = 'gate_gap:p20d_and_p60d remains active in scenarios such as {0}; both medium- and long-horizon strict gates are still suppressing L3 conversion.' -f $scenarioNames
         Add-Takeaway -List $takeaways -Text $message
+    }
+
+    $strictWorkstream = $workstreamRows |
+        Where-Object { $_.workstream -eq "strict_review_vs_runtime_mapping" } |
+        Select-Object -First 1
+    if ($strictWorkstream) {
+        $baselinePoints = [string]$strictWorkstream.baseline_gate_gap_points
+        $candidatePoints = [string]$strictWorkstream.candidate_gate_gap_points
+        if ($baselinePoints -or $candidatePoints) {
+            $message = 'historical workstream strict_review_vs_runtime_mapping point counts: baseline [{0}] candidate [{1}].' -f `
+                ($(if ($baselinePoints) { $baselinePoints } else { "—" })), `
+                ($(if ($candidatePoints) { $candidatePoints } else { "—" }))
+            Add-Takeaway -List $takeaways -Text $message
+        }
+        $candidateP20Matches = [regex]::Matches($candidatePoints, 'p20d_only=(\d+)')
+        $candidateP60Matches = [regex]::Matches($candidatePoints, 'p60d_only=(\d+)')
+        $candidateBothMatches = [regex]::Matches($candidatePoints, 'p20d_and_p60d=(\d+)')
+        $candidateP20Count = 0
+        $candidateP60Count = 0
+        $candidateBothCount = 0
+        if ($candidateP20Matches.Count -gt 0) {
+            $candidateP20Count = [int]$candidateP20Matches[0].Groups[1].Value
+        }
+        if ($candidateP60Matches.Count -gt 0) {
+            $candidateP60Count = [int]$candidateP60Matches[0].Groups[1].Value
+        }
+        if ($candidateBothMatches.Count -gt 0) {
+            $candidateBothCount = [int]$candidateBothMatches[0].Groups[1].Value
+        }
+        if ($candidateP20Count -gt ($candidateP60Count + $candidateBothCount)) {
+            Add-Takeaway -List $takeaways -Text 'workstream-level gate-gap point counts now lean toward p20d_only as the dominant strict mapping blocker.'
+        } elseif ($candidateP60Count -gt ($candidateP20Count + $candidateBothCount)) {
+            Add-Takeaway -List $takeaways -Text 'workstream-level gate-gap point counts now lean toward p60d_only as the dominant strict mapping blocker.'
+        } elseif (($candidateP20Count + $candidateP60Count + $candidateBothCount) -gt 0) {
+            Add-Takeaway -List $takeaways -Text 'workstream-level gate-gap point counts remain mixed, so strict mapping still competes with continuity as the next fix target.'
+        }
     }
 
     foreach ($focus in $focusRows) {
@@ -427,7 +474,7 @@ Write-Host ""
 Write-Host "Historical audit workstreams"
 if (($summary.workstream_rows | Measure-Object).Count -gt 0) {
     $summary.workstream_rows |
-        Format-Table workstream, scenario_count, protected_count, scenarios, training_roles -AutoSize
+        Format-Table workstream, scenario_count, protected_count, baseline_gate_gap_profiles, candidate_gate_gap_profiles, baseline_gate_gap_points, candidate_gate_gap_points, training_roles -AutoSize
 } else {
     Write-Host "  (none)"
 }

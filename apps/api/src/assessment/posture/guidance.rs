@@ -9,7 +9,10 @@ use fc_domain::{
 };
 
 use super::super::{format_probability_threshold, ProbabilityActionThresholds};
-use clauses::{build_posture_clause_diagnostics, prepare_continuity_bridge_signal};
+use clauses::{
+    build_posture_clause_diagnostics, prepare_continuity_bridge_signal,
+    prepare_probability_plateau_signal,
+};
 use counters::{
     prepare_context_confirmation_count_without_events,
     prepare_non_carry_confirmation_count_without_events,
@@ -23,6 +26,7 @@ pub(in super::super) fn build_time_to_risk_bucket(
     prepare_reference_p60d: Option<f64>,
     actionability_trigger: Option<&ActionabilityBlock>,
     actionability_support: Option<&ActionabilityBlock>,
+    overall_score: f64,
     structural_score: f64,
     trigger_score: f64,
     external_shock_score: f64,
@@ -73,6 +77,15 @@ pub(in super::super) fn build_time_to_risk_bucket(
         external_shock_score,
         breadth_score,
     );
+    let prepare_probability_plateau = prepare_probability_plateau_signal(
+        probabilities,
+        prepare_reference_p60d,
+        overall_score,
+        structural_score,
+        trigger_score,
+        external_shock_score,
+        breadth_score,
+    );
 
     if (probabilities.p_5d >= thresholds.defend_p5d
         && trigger_score >= 62.0
@@ -112,6 +125,7 @@ pub(in super::super) fn build_time_to_risk_bucket(
             && prepare_p60d >= thresholds.carry_prepare_p60d())
         || prepare_head_months
         || prepare_continuity_bridge
+        || prepare_probability_plateau
     {
         TimeToRiskBucket::Months
     } else {

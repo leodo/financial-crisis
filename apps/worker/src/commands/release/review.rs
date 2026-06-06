@@ -208,7 +208,10 @@ async fn run_release_review(
     let historical_audit_actions =
         crate::summarize_release_review_historical_audit_actions(&historical_audit_attribution);
     let historical_audit_workstreams =
-        crate::summarize_release_review_historical_audit_workstreams(&historical_audit_priorities);
+        crate::summarize_release_review_historical_audit_workstreams_with_focus(
+            &historical_audit_priorities,
+            &scenario_focus,
+        );
 
     let report = crate::ReleaseReviewEnvelope {
         reviewed_at: Utc::now().to_rfc3339(),

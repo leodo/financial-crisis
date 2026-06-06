@@ -529,6 +529,19 @@
                 3. 这样下一轮训练和 policy 调整可以直接回答
                    “先修 `p60d` strict gate，还是 `p20d/p60d` 都还卡住”，
                    不再需要手工翻 continuity facet 长表。
+            4.11 [x] API/runtime 已补 `prepare_probability_plateau`：
+                1. 面向 `1987 / 1990-1993` 这类长窗高 `p20d/p60d` 平台期，
+                   不再只依赖 `prepare_continuity_bridge` 的 actionability 头；
+                2. 新规则会在 `overall / structural / trigger / external / breadth`
+                   达到平台期上下文时，把 `posture` 推到 `prepare`、
+                   `time_to_risk_bucket` 推到 `months`；
+                3. backtest `is_actionable_warning_point` 与 worker strict review
+                   已同步识别这条 trigger code，避免 runtime 升级后 review 仍按旧 continuity 口径漏掉。
+            4.12 [ ] 还需要补真实历史证据闭环：
+                1. 重新跑 candidate 的 `strict_rebuild release review`；
+                2. 再用 `formal-candidate-leadtime-audit` 确认
+                   `1987 / 1990-1993` 是否从 `posture_continuity_failure`
+                   真实退出，还是只改善了部分点位。
             5. 下一步不再把两类 missed 场景混成一个问题：
                - 对 `2000-2001` 先专项复核 strict gate 与 runtime floor 的映射；
                - 对 `1990-1993` 先专项复核为什么高 `p20d/p60d` 长期无法推动 `prepare/months` 连续成立。

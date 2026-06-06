@@ -120,6 +120,7 @@ pub fn build_assessment_snapshot(
         prepare_reference_p60d,
         actionability_trigger,
         actionability_support,
+        snapshot.overall_score,
         snapshot.structural_score,
         snapshot.trigger_score,
         external_shock_score,

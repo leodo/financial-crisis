@@ -248,6 +248,93 @@ fn release_review_historical_audit_workstreams_group_priorities() {
 }
 
 #[test]
+fn release_review_historical_audit_workstreams_with_focus_aggregate_gate_gap_point_counts() {
+    let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+    let priorities = vec![ReleaseReviewHistoricalAuditPriority {
+        scenario_id: "us_dotcom_unwind_2000".to_string(),
+        scenario_name: "2000-2001 科网泡沫出清".to_string(),
+        scenario_family: "mixed_systemic_stress".to_string(),
+        training_role: "candidate_optional".to_string(),
+        protected_window: true,
+        baseline_failure_mode: "strict_gate_mismatch".to_string(),
+        candidate_failure_mode: "strict_gate_mismatch".to_string(),
+        baseline_gate_gap_profile: Some("p20d_and_p60d".to_string()),
+        candidate_gate_gap_profile: Some("p20d_only".to_string()),
+        primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
+        suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
+    }];
+    let scenarios = vec![ReleaseReviewScenarioFocusDiagnostic {
+        scenario_id: "us_dotcom_unwind_2000".to_string(),
+        name: "2000-2001 科网泡沫出清".to_string(),
+        outcome: "missed_to_missed".to_string(),
+        window_start: crisis_start,
+        window_end: crisis_start,
+        crisis_start,
+        crisis_end: crisis_start,
+        baseline_first_l2_date: None,
+        candidate_first_l2_date: None,
+        baseline_first_l3_date: None,
+        candidate_first_l3_date: None,
+        baseline_first_non_normal_date: None,
+        candidate_first_non_normal_date: None,
+        baseline_actionable_point_count: 0,
+        candidate_actionable_point_count: 0,
+        baseline_runtime_floor_hit_point_count: 0,
+        candidate_runtime_floor_hit_point_count: 0,
+        baseline_max_p20d: None,
+        candidate_max_p20d: None,
+        baseline_max_p60d: None,
+        candidate_max_p60d: None,
+        baseline_first_runtime_floor_hit_without_l3_date: None,
+        candidate_first_runtime_floor_hit_without_l3_date: None,
+        baseline_first_runtime_floor_hit_without_l3_reason: None,
+        candidate_first_runtime_floor_hit_without_l3_reason: None,
+        baseline_primary_failure_mode: Some("strict_gate_mismatch".to_string()),
+        candidate_primary_failure_mode: Some("strict_gate_mismatch".to_string()),
+        dominant_runtime_blocks: ReleaseReviewRuntimeDominantCategories {
+            baseline_categories: vec!["review_gate_gap".to_string()],
+            baseline_count: 3,
+            candidate_categories: vec!["review_gate_gap".to_string()],
+            candidate_count: 5,
+        },
+        dominant_runtime_continuity_facets: ReleaseReviewRuntimeDominantCategories {
+            baseline_categories: vec!["gate_gap:p20d_only".to_string()],
+            baseline_count: 3,
+            candidate_categories: vec!["gate_gap:p20d_only".to_string()],
+            candidate_count: 5,
+        },
+        runtime_block_counts: Vec::new(),
+        runtime_continuity_facet_counts: vec![
+            ReleaseReviewRuntimeBlockCount {
+                category: "gate_gap:p20d_only".to_string(),
+                baseline_count: 3,
+                candidate_count: 5,
+                delta: 2,
+            },
+            ReleaseReviewRuntimeBlockCount {
+                category: "gate_gap:p60d_only".to_string(),
+                baseline_count: 1,
+                candidate_count: 0,
+                delta: -1,
+            },
+        ],
+        interesting_points: Vec::new(),
+    }];
+
+    let rows =
+        summarize_release_review_historical_audit_workstreams_with_focus(&priorities, &scenarios);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].workstream, "strict_review_vs_runtime_mapping");
+    assert_eq!(rows[0].gate_gap_point_counts.len(), 2);
+    assert_eq!(rows[0].gate_gap_point_counts[0].category, "p20d_only");
+    assert_eq!(rows[0].gate_gap_point_counts[0].baseline_count, 3);
+    assert_eq!(rows[0].gate_gap_point_counts[0].candidate_count, 5);
+    assert_eq!(rows[0].gate_gap_point_counts[1].category, "p60d_only");
+    assert_eq!(rows[0].gate_gap_point_counts[1].baseline_count, 1);
+    assert_eq!(rows[0].gate_gap_point_counts[1].candidate_count, 0);
+}
+
+#[test]
 fn release_review_historical_audit_attribution_distinguishes_shared_and_regression() {
     let rows = summarize_release_review_historical_audit_attribution(&[
         ReleaseReviewHistoricalAuditPriority {
@@ -430,4 +517,43 @@ fn release_review_historical_audit_takeaways_explain_primary_workstreams() {
     assert!(rendered
         .iter()
         .any(|row| row.contains("高 p20d/p60d 仍长期停在 normal")));
+}
+
+#[test]
+fn release_review_historical_audit_takeaways_prefer_point_count_signal_for_gate_priority() {
+    let rows = vec![ReleaseReviewHistoricalAuditWorkstreamSummary {
+        workstream: "strict_review_vs_runtime_mapping".to_string(),
+        scenario_count: 2,
+        protected_count: 2,
+        scenarios: vec![
+            "2000-2001 科网泡沫出清".to_string(),
+            "1998 LTCM 与俄罗斯违约冲击".to_string(),
+        ],
+        scenario_families: vec!["mixed_systemic_stress".to_string()],
+        training_roles: vec!["candidate_optional".to_string()],
+        baseline_gate_gap_profiles: vec!["p20d_only".to_string(), "p60d_only".to_string()],
+        candidate_gate_gap_profiles: vec!["p20d_only".to_string()],
+        gate_gap_point_counts: vec![
+            ReleaseReviewRuntimeBlockCount {
+                category: "p20d_only".to_string(),
+                baseline_count: 7,
+                candidate_count: 9,
+                delta: 2,
+            },
+            ReleaseReviewRuntimeBlockCount {
+                category: "p60d_only".to_string(),
+                baseline_count: 1,
+                candidate_count: 0,
+                delta: -1,
+            },
+        ],
+        suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
+    }];
+
+    let takeaways = release_review_historical_audit_takeaways(&rows);
+    assert_eq!(takeaways.len(), 1);
+    assert!(takeaways[0].contains("点位计数"));
+    assert!(takeaways[0].contains("baseline=p20d only=7, p60d only=1"));
+    assert!(takeaways[0].contains("candidate=p20d only=9"));
+    assert!(takeaways[0].contains("下一轮应先复核 p20d strict gate。"));
 }

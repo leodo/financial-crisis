@@ -2,6 +2,37 @@ use std::fmt::Write;
 
 use crate::ReleaseReviewEnvelope;
 
+fn gate_gap_point_label(category: &str) -> &str {
+    match category {
+        "p20d_only" => "p20d only",
+        "p60d_only" => "p60d only",
+        "p20d_and_p60d" => "p20d + p60d",
+        _ => category,
+    }
+}
+
+fn format_gate_gap_point_counts(
+    counts: &[crate::ReleaseReviewRuntimeBlockCount],
+    for_candidate: bool,
+) -> String {
+    let rendered = counts
+        .iter()
+        .filter_map(|count| {
+            let value = if for_candidate {
+                count.candidate_count
+            } else {
+                count.baseline_count
+            };
+            (value > 0).then(|| format!("{}={}", gate_gap_point_label(&count.category), value))
+        })
+        .collect::<Vec<_>>();
+    if rendered.is_empty() {
+        "—".to_string()
+    } else {
+        rendered.join(", ")
+    }
+}
+
 pub(super) fn render_release_historical_audit_markdown(
     markdown: &mut String,
     report: &ReleaseReviewEnvelope,
@@ -25,16 +56,16 @@ pub(super) fn render_release_historical_audit_markdown(
         }
         let _ = writeln!(
             markdown,
-            "| Workstream | Scenarios | Protected | Families | Roles | Baseline gate gap | Candidate gate gap | Suggested review |"
+            "| Workstream | Scenarios | Protected | Families | Roles | Baseline gate gap | Candidate gate gap | Baseline gate-gap points | Candidate gate-gap points | Suggested review |"
         );
         let _ = writeln!(
             markdown,
-            "| --- | --- | --- | --- | --- | --- | --- | --- |"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
         );
         for row in &report.historical_audit_workstreams {
             let _ = writeln!(
                 markdown,
-                "| {} | {} ({}) | {} | {} | {} | {} | {} | {} |",
+                "| {} | {} ({}) | {} | {} | {} | {} | {} | {} | {} | {} |",
                 row.workstream,
                 row.scenario_count,
                 crate::format_runtime_category_list(&row.scenarios),
@@ -43,6 +74,8 @@ pub(super) fn render_release_historical_audit_markdown(
                 crate::format_runtime_category_list(&row.training_roles),
                 crate::format_runtime_category_list(&row.baseline_gate_gap_profiles),
                 crate::format_runtime_category_list(&row.candidate_gate_gap_profiles),
+                format_gate_gap_point_counts(&row.gate_gap_point_counts, false),
+                format_gate_gap_point_counts(&row.gate_gap_point_counts, true),
                 row.suggested_review,
             );
         }

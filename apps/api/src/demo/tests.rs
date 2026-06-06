@@ -216,6 +216,27 @@ fn actionable_warning_point_accepts_strong_prepare_clause_for_formal_main() {
 }
 
 #[test]
+fn actionable_warning_point_accepts_probability_plateau_clause_for_formal_main() {
+    let point = fc_domain::AssessmentHistoryPoint {
+        as_of_date: NaiveDate::from_ymd_opt(1987, 8, 24).unwrap(),
+        overall_score: 44.4,
+        p_5d: 0.03,
+        p_20d: 0.905,
+        p_60d: 0.892,
+        raw_p_5d: Some(0.02),
+        raw_p_20d: Some(0.741),
+        raw_p_60d: Some(0.892),
+        posture: DecisionPosture::Prepare,
+        time_to_risk_bucket: TimeToRiskBucket::Months,
+        external_shock_score: 48.2,
+        posture_trigger_codes: vec!["prepare_probability_plateau".to_string()],
+        posture_blocker_codes: Vec::new(),
+    };
+
+    assert!(is_actionable_warning_point(&point, false));
+}
+
+#[test]
 fn actionable_warning_point_rejects_weak_prepare_clause_for_formal_main() {
     let point = fc_domain::AssessmentHistoryPoint {
         as_of_date: NaiveDate::from_ymd_opt(2007, 3, 1).unwrap(),
@@ -230,6 +251,27 @@ fn actionable_warning_point_rejects_weak_prepare_clause_for_formal_main() {
         time_to_risk_bucket: TimeToRiskBucket::Months,
         external_shock_score: 38.5,
         posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
+        posture_blocker_codes: Vec::new(),
+    };
+
+    assert!(!is_actionable_warning_point(&point, false));
+}
+
+#[test]
+fn actionable_warning_point_rejects_weak_probability_plateau_clause_for_formal_main() {
+    let point = fc_domain::AssessmentHistoryPoint {
+        as_of_date: NaiveDate::from_ymd_opt(1987, 8, 24).unwrap(),
+        overall_score: 41.9,
+        p_5d: 0.03,
+        p_20d: 0.905,
+        p_60d: 0.892,
+        raw_p_5d: Some(0.02),
+        raw_p_20d: Some(0.741),
+        raw_p_60d: Some(0.892),
+        posture: DecisionPosture::Prepare,
+        time_to_risk_bucket: TimeToRiskBucket::Months,
+        external_shock_score: 31.5,
+        posture_trigger_codes: vec!["prepare_probability_plateau".to_string()],
         posture_blocker_codes: Vec::new(),
     };
 

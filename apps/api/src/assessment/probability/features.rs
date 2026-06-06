@@ -30,6 +30,7 @@ pub(super) fn build_probability_feature_map(
         None,
         None,
         None,
+        snapshot.overall_score,
         snapshot.structural_score,
         snapshot.trigger_score,
         external_shock_score,

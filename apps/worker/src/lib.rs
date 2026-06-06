@@ -96,20 +96,21 @@ pub(crate) use release_review::{
     summarize_release_review_historical_audit_actions,
     summarize_release_review_historical_audit_attribution,
     summarize_release_review_historical_audit_priorities,
-    summarize_release_review_historical_audit_workstreams, ReleaseActionabilityLevelReview,
-    ReleaseActionabilityReview, ReleaseReviewBacktestScenarioComparison,
-    ReleaseReviewComparisonSummary, ReleaseReviewCountMetric, ReleaseReviewEnvelope,
-    ReleaseReviewHistoricalAuditActionSummary, ReleaseReviewRuntimeBlockCount,
-    ReleaseReviewRuntimeDominantCategories, ReleaseReviewRuntimeSeparationComparison,
-    ReleaseReviewScalarMetric, ReleaseReviewScenarioFocusDiagnostic,
-    ReleaseReviewScenarioPointComparison, ReleaseRuntimeReviewDiagnostics,
-    ReleaseRuntimeSeparationSummary,
+    summarize_release_review_historical_audit_workstreams_with_focus,
+    ReleaseActionabilityLevelReview, ReleaseActionabilityReview,
+    ReleaseReviewBacktestScenarioComparison, ReleaseReviewComparisonSummary,
+    ReleaseReviewCountMetric, ReleaseReviewEnvelope, ReleaseReviewHistoricalAuditActionSummary,
+    ReleaseReviewRuntimeBlockCount, ReleaseReviewRuntimeDominantCategories,
+    ReleaseReviewRuntimeSeparationComparison, ReleaseReviewScalarMetric,
+    ReleaseReviewScenarioFocusDiagnostic, ReleaseReviewScenarioPointComparison,
+    ReleaseRuntimeReviewDiagnostics, ReleaseRuntimeSeparationSummary,
 };
 #[cfg(test)]
 pub(crate) use release_review::{
-    classify_regime_separation, summarize_release_runtime_regime_probabilities,
-    summarize_release_runtime_regime_separation, ReleaseReviewHistoricalAuditAttributionSummary,
-    ReleaseReviewHistoricalAuditPriority,
+    classify_regime_separation, summarize_release_review_historical_audit_workstreams,
+    summarize_release_runtime_regime_probabilities, summarize_release_runtime_regime_separation,
+    ReleaseReviewHistoricalAuditAttributionSummary, ReleaseReviewHistoricalAuditPriority,
+    ReleaseReviewHistoricalAuditWorkstreamSummary,
 };
 pub(crate) use reporting::write_formal_dataset_summary_report;
 pub(crate) use scenario::{

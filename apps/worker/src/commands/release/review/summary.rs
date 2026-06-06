@@ -76,6 +76,37 @@ fn release_review_action_workstream_labels(
     labels
 }
 
+fn gate_gap_point_label(category: &str) -> &str {
+    match category {
+        "p20d_only" => "p20d only",
+        "p60d_only" => "p60d only",
+        "p20d_and_p60d" => "p20d + p60d",
+        _ => category,
+    }
+}
+
+fn format_workstream_gate_gap_point_counts(
+    counts: &[crate::ReleaseReviewRuntimeBlockCount],
+    for_candidate: bool,
+) -> String {
+    let rendered = counts
+        .iter()
+        .filter_map(|count| {
+            let value = if for_candidate {
+                count.candidate_count
+            } else {
+                count.baseline_count
+            };
+            (value > 0).then(|| format!("{}={}", gate_gap_point_label(&count.category), value))
+        })
+        .collect::<Vec<_>>();
+    if rendered.is_empty() {
+        "—".to_string()
+    } else {
+        rendered.join(", ")
+    }
+}
+
 pub(super) fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope) {
     println!("Review comparison:");
     println!(
@@ -153,7 +184,7 @@ pub(super) fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope
         }
         for row in &report.historical_audit_workstreams {
             println!(
-                "  - {} scenarios={} ({}) protected={} families={} roles={} baseline_gate_gap={} candidate_gate_gap={} review={}",
+                "  - {} scenarios={} ({}) protected={} families={} roles={} baseline_gate_gap={} candidate_gate_gap={} baseline_gate_gap_points={} candidate_gate_gap_points={} review={}",
                 row.workstream,
                 row.scenario_count,
                 row.scenarios.join(", "),
@@ -170,6 +201,8 @@ pub(super) fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope
                 } else {
                     row.candidate_gate_gap_profiles.join(", ")
                 },
+                format_workstream_gate_gap_point_counts(&row.gate_gap_point_counts, false),
+                format_workstream_gate_gap_point_counts(&row.gate_gap_point_counts, true),
                 row.suggested_review
             );
         }

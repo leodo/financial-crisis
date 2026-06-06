@@ -1,6 +1,6 @@
 use super::*;
-use fc_domain::ActionabilityLevel;
 use crate::assessment::{build_assessment_snapshot, ServingModelContext};
+use fc_domain::ActionabilityLevel;
 
 #[test]
 fn actionability_confidence_requires_margin_above_decision_threshold() {
@@ -244,8 +244,14 @@ fn assessment_snapshot_uses_support_actionability_for_prepare_continuity_without
     let external_indicator = indicator("external", RiskDimension::ExternalSector);
     let indicator_risks = vec![
         indicator_risk(core_indicator.clone(), observation(&core_indicator, 1.0)),
-        indicator_risk(trigger_indicator.clone(), observation(&trigger_indicator, 1.0)),
-        indicator_risk(external_indicator.clone(), observation(&external_indicator, 1.0)),
+        indicator_risk(
+            trigger_indicator.clone(),
+            observation(&trigger_indicator, 1.0),
+        ),
+        indicator_risk(
+            external_indicator.clone(),
+            observation(&external_indicator, 1.0),
+        ),
     ];
     let snapshot = RiskSnapshot {
         as_of_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
@@ -321,8 +327,8 @@ fn assessment_snapshot_uses_support_actionability_for_prepare_continuity_without
     assert!(!assessment.method.actionability_enabled);
     assert_eq!(assessment.time_to_risk_bucket, TimeToRiskBucket::Months);
     assert_eq!(posture.posture, DecisionPosture::Prepare);
-    assert_eq!(
-        posture.trigger_codes,
-        vec!["prepare_continuity_bridge".to_string()]
-    );
+    assert!(posture
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_continuity_bridge"));
 }

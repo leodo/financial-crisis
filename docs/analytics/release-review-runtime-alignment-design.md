@@ -378,6 +378,9 @@ This audit is intentionally narrower than the full release-review report. It exi
 2. whether `60d` is still `separated_but_below_runtime_floor`, or has already crossed into
    `usable_early_warning_separation` without converting into higher `timely_warning_rate`;
 3. which real-history scenarios still have `L2 lead time` but no `L3 actionable`;
+4. whether the dominant blocker is still `review_gate_gap`,
+   `posture_bucket_normal`, or another runtime block family;
+5. which `Historical Audit Workstreams / Actions` remain active for the candidate.
 
 ## 9. 2026-06-06 当前结论
 
@@ -423,9 +426,48 @@ This audit is intentionally narrower than the full release-review report. It exi
 
 - `p60d` 这一刀已经证明“review/runtime 口径失配”是真问题；
 - 但它不是当前 `timely_warning_rate` 卡住不动的唯一问题，更不是最后一个问题。
-4. whether the dominant blocker is still `review_gate_gap`,
-   `posture_bucket_normal`, or another runtime block family;
-5. which `Historical Audit Workstreams / Actions` remain active for the candidate.
+
+### 9.4 2026-06-07 补充：posture continuity 先落一刀 plateau 修复
+
+基于 `1987` 与 `1990-1993` 的逐点复盘，当前已经确认一类更具体的 continuity 失效：
+
+1. `p20d / p60d` 已长期处在高位；
+2. 但 `posture` 仍停在 `normal`，`time_to_risk_bucket` 也停在 `normal`；
+3. 同时 `actionability_prepare` 在早期历史样本上经常过低，无法单靠
+   `prepare_continuity_bridge` 自己把 `prepare/months` 推起来。
+
+因此本轮先补了一条新的 runtime policy：
+
+- `prepare_probability_plateau`
+
+它专门处理“长窗高概率平台期”：
+
+- `p20d` 已明显抬高；
+- `p60d` 保持高位；
+- `overall / structural / trigger / external / breadth` 至少形成一组平台期上下文；
+- 即使 actionability 头还偏弱，也允许先把 `posture` 推到 `prepare`，
+  并把 `time_to_risk_bucket` 推到 `months`。
+
+同步约束也已经补齐：
+
+1. API `posture guidance` / `time bucket` 已识别 `prepare_probability_plateau`；
+2. backtest `is_actionable_warning_point` 已把这条 code 视为 formal-main 的强
+   `prepare` 证据之一；
+3. worker `release review` strict L3 逻辑已使用同一条 code，避免 runtime 已升级、
+   review 仍按旧 continuity 口径漏掉。
+
+这不是“已经证明 posture continuity 全修好”。
+当前已经完成的是：
+
+- 规则与测试已落地；
+- `1987` / `1990-1993` 的目标样本已经能被新的 unit / review tests 覆盖；
+- 本地服务已重启到新代码版本。
+
+仍待补的证据是：
+
+1. 重新跑一轮真实 `strict_rebuild release review`；
+2. 再用 lead-time audit 确认 `1987 / 1990-1993` 是否从
+   `posture_continuity_failure` 中真实退出，还是只改善了其中一部分点位。
 
 After this entrypoint exists, the expected workflow is:
 

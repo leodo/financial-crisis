@@ -247,7 +247,7 @@ fn posture_guidance_emits_prepare_continuity_bridge_for_long_window_pressure() {
     };
     let probabilities = ProbabilityBlock {
         p_5d: 0.01,
-        p_20d: 0.93,
+        p_20d: 0.44,
         p_60d: 0.99,
     };
     let posture = build_posture_guidance(
@@ -313,7 +313,7 @@ fn posture_guidance_does_not_emit_prepare_continuity_bridge_without_support() {
     };
     let probabilities = ProbabilityBlock {
         p_5d: 0.01,
-        p_20d: 0.93,
+        p_20d: 0.44,
         p_60d: 0.99,
     };
     let posture = build_posture_guidance(
@@ -376,7 +376,7 @@ fn posture_guidance_uses_support_actionability_for_continuity_without_trigger_he
     };
     let probabilities = ProbabilityBlock {
         p_5d: 0.01,
-        p_20d: 0.93,
+        p_20d: 0.44,
         p_60d: 0.99,
     };
     let posture = build_posture_guidance(
@@ -408,6 +408,64 @@ fn posture_guidance_uses_support_actionability_for_continuity_without_trigger_he
     assert_eq!(
         posture.trigger_codes,
         vec!["prepare_continuity_bridge".to_string()]
+    );
+    assert!(posture.blocker_codes.is_empty());
+}
+
+#[test]
+fn posture_guidance_emits_prepare_probability_plateau_for_long_window_high_probability_regime() {
+    let snapshot = RiskSnapshot {
+        as_of_date: NaiveDate::from_ymd_opt(1987, 8, 18).unwrap(),
+        entity_id: "us".to_string(),
+        market_scope: "financial_system".to_string(),
+        overall_score: 42.7,
+        overall_level: RiskLevel::Stress,
+        structural_score: 47.5,
+        trigger_score: 36.8,
+        level_reason: "test".to_string(),
+        dimensions: Vec::new(),
+        top_contributors: Vec::new(),
+        data_quality_summary: DataQualitySummary {
+            overall_score: 90.0,
+            grade: QualityGrade::A,
+            stale_indicator_count: 0,
+            low_quality_indicator_count: 0,
+            prototype_source_count: 0,
+            blocked_indicator_count: 0,
+        },
+        generated_at: Utc::now(),
+        method_version: "test".to_string(),
+    };
+    let probabilities = ProbabilityBlock {
+        p_5d: 0.01,
+        p_20d: 0.749,
+        p_60d: 0.84,
+    };
+    let posture = build_posture_guidance(
+        &snapshot,
+        &probabilities,
+        Some(0.84),
+        None,
+        None,
+        0.53,
+        &test_data_trust(QualityGrade::A),
+        42.7,
+        38.0,
+        &[],
+        &quiet_jpy_carry(20.0),
+        &quiet_event_assessment(20.0),
+        &neutral_preferences(),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.12,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.05,
+        },
+    );
+
+    assert_eq!(posture.posture, DecisionPosture::Prepare);
+    assert_eq!(
+        posture.trigger_codes,
+        vec!["prepare_probability_plateau".to_string()]
     );
     assert!(posture.blocker_codes.is_empty());
 }

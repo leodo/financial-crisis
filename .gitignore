@@ -30,6 +30,8 @@ data/backtests/
 reports/rolling-audit/
 reports/snapshot-export.json
 reports/pipeline-dataset.json
+reports/formal-slices/
+reports/leadtime-audit/
 tmp_assessment_history.json
 tmp_assessment_history_full.json
 output/

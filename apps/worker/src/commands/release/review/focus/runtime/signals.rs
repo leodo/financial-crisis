@@ -12,6 +12,10 @@ const LEGACY_STRICT_PREPARE_P60D_THRESHOLD: f64 = 0.45;
 const STRICT_PREPARE_P60D_THRESHOLD_BUFFER: f64 = 0.04;
 const STRICT_PREPARE_P60D_THRESHOLD_LIFT: f64 = 1.10;
 const STRICT_PREPARE_P60D_THRESHOLD_MIN: f64 = 0.25;
+const STRICT_PREPARE_PLATEAU_P20D_THRESHOLD: f64 = 0.45;
+const STRICT_PREPARE_PLATEAU_P60D_THRESHOLD: f64 = 0.70;
+const STRICT_PREPARE_PLATEAU_OVERALL_FLOOR: f64 = 42.0;
+const STRICT_PREPARE_PLATEAU_EXTERNAL_FLOOR: f64 = 32.0;
 
 pub(crate) fn release_review_structured_signal_counts(
     backtests: &[BacktestScenarioSummary],
@@ -143,6 +147,13 @@ pub(super) fn release_review_is_actionable_warning_point(
             || (point.overall_score >= 53.0
                 && !matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
                 && release_review_has_strong_prepare_trigger_code(point)));
+    let probability_plateau_prepare_signal = matches!(point.posture, DecisionPosture::Prepare)
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && point.p_20d >= STRICT_PREPARE_PLATEAU_P20D_THRESHOLD
+        && point.p_60d >= strict_prepare_p60d_threshold.max(STRICT_PREPARE_PLATEAU_P60D_THRESHOLD)
+        && point.overall_score >= STRICT_PREPARE_PLATEAU_OVERALL_FLOOR
+        && point.external_shock_score >= STRICT_PREPARE_PLATEAU_EXTERNAL_FLOOR
+        && release_review_has_probability_plateau_trigger_code(point);
     let high_probability_months_signal =
         matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
             && point.overall_score >= 62.0
@@ -161,6 +172,7 @@ pub(super) fn release_review_is_actionable_warning_point(
 
     strict_short_horizon_signal
         || high_probability_prepare_signal
+        || probability_plateau_prepare_signal
         || high_probability_months_signal
         || prepare_bridge_signal
         || months_bridge_signal
@@ -177,6 +189,14 @@ pub(super) fn release_review_has_strong_prepare_trigger_code(
                 | "prepare_carry_structural"
                 | "prepare_external_structural"
                 | "prepare_continuity_bridge"
+                | "prepare_probability_plateau"
         )
     })
+}
+
+fn release_review_has_probability_plateau_trigger_code(point: &AssessmentHistoryPoint) -> bool {
+    point
+        .posture_trigger_codes
+        .iter()
+        .any(|code| code == "prepare_probability_plateau")
 }

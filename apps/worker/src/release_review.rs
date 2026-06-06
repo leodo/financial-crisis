@@ -7,12 +7,14 @@ use crate::{reporting, RuntimeThresholdDiagnosticsWire};
 mod historical;
 mod runtime;
 
+#[cfg(test)]
+pub(crate) use historical::summarize_release_review_historical_audit_workstreams;
 pub(crate) use historical::{
     release_review_historical_audit_takeaways, summarize_release_review_failure_modes,
     summarize_release_review_historical_audit_actions,
     summarize_release_review_historical_audit_attribution,
     summarize_release_review_historical_audit_priorities,
-    summarize_release_review_historical_audit_workstreams,
+    summarize_release_review_historical_audit_workstreams_with_focus,
 };
 pub(crate) use runtime::{
     build_release_runtime_review_diagnostics, lift_vs_baseline,
@@ -176,6 +178,7 @@ pub(crate) struct ReleaseReviewHistoricalAuditWorkstreamSummary {
     pub(crate) training_roles: Vec<String>,
     pub(crate) baseline_gate_gap_profiles: Vec<String>,
     pub(crate) candidate_gate_gap_profiles: Vec<String>,
+    pub(crate) gate_gap_point_counts: Vec<ReleaseReviewRuntimeBlockCount>,
     pub(crate) suggested_review: String,
 }
 

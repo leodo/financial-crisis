@@ -206,3 +206,49 @@ fn release_review_runtime_separation_takeaways_explain_floor_gap() {
     assert!(takeaways[0].contains("runtime floor"));
     assert!(takeaways[0].contains("阈值 / runtime policy 瓶颈"));
 }
+
+#[test]
+fn release_review_structured_signal_counts_accept_probability_plateau_clause_for_formal_main() {
+    let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+    let plateau_date = NaiveDate::from_ymd_opt(2023, 2, 1).unwrap();
+    let backtests = vec![synthetic_backtest_summary_with_dates(
+        "scenario_probability_plateau",
+        "Probability Plateau",
+        Some(plateau_date),
+        Some(plateau_date),
+        Some(56),
+        Some(56),
+        0,
+    )];
+    let history = vec![
+        runtime_history_point_with_state(
+            plateau_date,
+            44.4,
+            0.03,
+            0.905,
+            0.892,
+            DecisionPosture::Prepare,
+            TimeToRiskBucket::Months,
+            48.2,
+            &["prepare_probability_plateau"],
+        ),
+        runtime_history_point_with_state(
+            crisis_start,
+            62.0,
+            0.05,
+            0.35,
+            0.52,
+            DecisionPosture::Hedge,
+            TimeToRiskBucket::Weeks,
+            52.0,
+            &["hedge_p20d_context"],
+        ),
+    ];
+    let method = formal_main_audit_method_wire();
+
+    let (strict_actionable_point_count, runtime_floor_hit_count) =
+        release_review_structured_signal_counts(&backtests, &history, &method);
+
+    assert_eq!(strict_actionable_point_count, 1);
+    assert_eq!(runtime_floor_hit_count, 1);
+}
