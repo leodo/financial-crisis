@@ -138,6 +138,7 @@ pub(super) fn release_review_has_strong_prepare_trigger_code(
                 | "prepare_structural_downgrade"
                 | "prepare_carry_structural"
                 | "prepare_external_structural"
+                | "prepare_continuity_bridge"
         )
     })
 }

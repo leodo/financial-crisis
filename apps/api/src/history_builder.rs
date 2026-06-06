@@ -177,16 +177,22 @@ pub(crate) async fn load_sqlite_assessment_history(
     serving_model: Option<&ServingModelContext>,
     user_preferences: &UserRiskPreferences,
     as_of_date: NaiveDate,
-    _max_history_points: usize,
+    max_history_points: usize,
     history_build_mode: AssessmentHistoryBuildMode,
 ) -> anyhow::Result<Vec<fc_domain::AssessmentHistoryPoint>> {
     let release_filter = serving_model.map(|context| context.release.manifest.release_id.as_str());
-    let target_dates = observations
+    let mut target_dates = observations
         .iter()
         .filter(|observation| observation.entity_id == "us")
         .map(|observation| observation.as_of_date)
         .chain(std::iter::once(as_of_date))
-        .collect::<BTreeSet<_>>();
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if max_history_points > 0 && target_dates.len() > max_history_points {
+        target_dates = target_dates[target_dates.len().saturating_sub(max_history_points)..].to_vec();
+    }
+    let target_dates = target_dates.into_iter().collect::<BTreeSet<_>>();
     let bundle_backed_history = uses_bundle_backed_history(serving_model);
     let persist_prediction_snapshots = !bundle_backed_history;
 
@@ -194,22 +200,11 @@ pub(crate) async fn load_sqlite_assessment_history(
         history_build_mode,
         AssessmentHistoryBuildMode::StrictRebuild
     ) {
-        if let Some(cached_replay) =
-            load_cached_historical_replay_output(store, serving_model, observations, &target_dates)
-                .await?
-        {
-            tracing::info!(
-                release_id = release_filter.unwrap_or("heuristic"),
-                cached_dates = cached_replay.history_points.len(),
-                "reusing cached strict-rebuild historical replay for current reload"
-            );
-            return Ok(cached_replay.history_points);
-        }
         let rebuild_dates = target_dates.into_iter().collect::<Vec<_>>();
         tracing::info!(
             release_id = release_filter.unwrap_or("heuristic"),
             rebuild_dates = rebuild_dates.len(),
-            "strictly rebuilding full release history from raw observations for current reload"
+            "strictly rebuilding full release history from raw observations and bypassing replay cache for current reload"
         );
         let rebuilt = rebuild_full_release_history_from_raw(
             store,
@@ -256,7 +251,13 @@ pub(crate) async fn load_sqlite_assessment_history(
     }
 
     let persisted_rows = store
-        .list_prediction_snapshots(Some("financial_system"), release_filter, None, None, None)
+        .list_prediction_snapshots(
+            Some("financial_system"),
+            release_filter,
+            target_dates.iter().next().copied(),
+            target_dates.iter().next_back().copied(),
+            None,
+        )
         .await?;
     let existing_dates = persisted_rows
         .iter()

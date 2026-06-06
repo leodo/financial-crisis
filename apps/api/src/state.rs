@@ -55,7 +55,7 @@ impl AppState {
             source,
             reload_options: RwLock::new(AppReloadOptions {
                 history_build_mode: AssessmentHistoryBuildMode::Default,
-                max_history_points,
+                max_history_points: default_history_points,
                 runtime_purpose: ServingRuntimePurpose::Production,
             }),
             default_history_points,

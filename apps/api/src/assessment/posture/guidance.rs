@@ -9,7 +9,7 @@ use fc_domain::{
 };
 
 use super::super::{format_probability_threshold, ProbabilityActionThresholds};
-use clauses::build_posture_clause_diagnostics;
+use clauses::{build_posture_clause_diagnostics, prepare_continuity_bridge_signal};
 use counters::{
     prepare_context_confirmation_count_without_events,
     prepare_non_carry_confirmation_count_without_events,
@@ -21,7 +21,8 @@ use preferences::{adjust_posture_for_preferences, preference_adjustment_code};
 pub(in super::super) fn build_time_to_risk_bucket(
     probabilities: &ProbabilityBlock,
     prepare_reference_p60d: Option<f64>,
-    actionability: Option<&ActionabilityBlock>,
+    actionability_trigger: Option<&ActionabilityBlock>,
+    actionability_support: Option<&ActionabilityBlock>,
     structural_score: f64,
     trigger_score: f64,
     external_shock_score: f64,
@@ -49,20 +50,29 @@ pub(in super::super) fn build_time_to_risk_bucket(
         external_shock_score,
         breadth_score,
     );
-    let defend_head_now = actionability.is_some_and(|scores| {
+    let defend_head_now = actionability_trigger.is_some_and(|scores| {
         scores.defend >= 0.33
             && (trigger_score >= 55.0 || external_shock_score >= 55.0 || breadth_score >= 44.0)
     });
-    let hedge_head_weeks = actionability.is_some_and(|scores| {
+    let hedge_head_weeks = actionability_trigger.is_some_and(|scores| {
         scores.hedge >= 0.34
             && (trigger_score >= 48.0 || external_shock_score >= 48.0 || breadth_score >= 38.0)
     });
-    let prepare_head_months = actionability.is_some_and(|scores| {
+    let prepare_head_months = actionability_trigger.is_some_and(|scores| {
         scores.prepare >= 0.38
             && prepare_p60d >= thresholds.downgrade_prepare_p60d()
             && prepare_confirmation_count >= 2
             && (structural_score >= 56.0 || external_shock_score >= 55.0)
     });
+    let prepare_continuity_bridge = prepare_continuity_bridge_signal(
+        probabilities,
+        prepare_reference_p60d,
+        actionability_support,
+        structural_score,
+        trigger_score,
+        external_shock_score,
+        breadth_score,
+    );
 
     if (probabilities.p_5d >= thresholds.defend_p5d
         && trigger_score >= 62.0
@@ -101,6 +111,7 @@ pub(in super::super) fn build_time_to_risk_bucket(
             && prepare_non_carry_confirmation_count >= 1
             && prepare_p60d >= thresholds.carry_prepare_p60d())
         || prepare_head_months
+        || prepare_continuity_bridge
     {
         TimeToRiskBucket::Months
     } else {
@@ -113,7 +124,8 @@ pub(in super::super) fn build_posture_guidance(
     snapshot: &RiskSnapshot,
     probabilities: &ProbabilityBlock,
     prepare_reference_p60d: Option<f64>,
-    actionability: Option<&ActionabilityBlock>,
+    actionability_trigger: Option<&ActionabilityBlock>,
+    actionability_support: Option<&ActionabilityBlock>,
     conviction_score: f64,
     data_trust: &DataTrust,
     external_shock_score: f64,
@@ -130,7 +142,8 @@ pub(in super::super) fn build_posture_guidance(
         snapshot,
         probabilities,
         prepare_reference_p60d,
-        actionability,
+        actionability_trigger,
+        actionability_support,
         conviction_score,
         data_trust,
         external_shock_score,

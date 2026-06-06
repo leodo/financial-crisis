@@ -32,7 +32,7 @@ pub async fn run() -> anyhow::Result<()> {
     init_tracing();
     let config = AppConfig::from_env();
     let source = data_source::source_from_env()?;
-    let data = data_source::load_app_data(&source, config.max_history_points).await?;
+    let data = data_source::load_app_data(&source, config.default_history_points).await?;
     let state = Arc::new(AppState::new(
         data,
         source.clone(),

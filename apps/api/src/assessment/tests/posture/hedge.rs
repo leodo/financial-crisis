@@ -34,6 +34,7 @@ fn posture_guidance_marks_quality_blocked_hedge_clause() {
         &probabilities,
         None,
         None,
+        None,
         0.58,
         &test_data_trust(QualityGrade::F),
         52.0,
@@ -91,6 +92,7 @@ fn posture_guidance_requires_multi_signal_context_for_hedge_clause() {
         &probabilities,
         None,
         None,
+        None,
         0.58,
         &test_data_trust(QualityGrade::A),
         42.0,
@@ -142,6 +144,7 @@ fn posture_guidance_allows_hedge_when_short_and_medium_horizon_context_align() {
     let posture = build_posture_guidance(
         &snapshot,
         &probabilities,
+        None,
         None,
         None,
         0.60,
@@ -198,6 +201,7 @@ fn posture_guidance_blocks_hedge_when_short_horizon_lacks_overall_confirmation()
     let posture = build_posture_guidance(
         &snapshot,
         &probabilities,
+        None,
         None,
         None,
         0.60,

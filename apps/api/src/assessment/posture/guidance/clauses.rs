@@ -9,6 +9,11 @@ use super::counters::{
     prepare_non_carry_confirmation_count, prepare_non_external_confirmation_count,
 };
 
+const PREPARE_CONTINUITY_P20D_FLOOR: f64 = 0.18;
+const PREPARE_CONTINUITY_P60D_FLOOR: f64 = 0.45;
+const PREPARE_CONTINUITY_STRUCTURAL_FLOOR: f64 = 60.0;
+const PREPARE_CONTINUITY_ACTIONABILITY_FLOOR: f64 = 0.18;
+
 #[derive(Debug, Clone, Default)]
 pub(super) struct PostureClauseDiagnostics {
     defend_trigger_codes: Vec<&'static str>,
@@ -60,11 +65,33 @@ impl PostureClauseDiagnostics {
 }
 
 #[allow(clippy::too_many_arguments)]
+pub(super) fn prepare_continuity_bridge_signal(
+    probabilities: &ProbabilityBlock,
+    prepare_reference_p60d: Option<f64>,
+    actionability: Option<&ActionabilityBlock>,
+    structural_score: f64,
+    trigger_score: f64,
+    external_shock_score: f64,
+    breadth_score: f64,
+) -> bool {
+    let prepare_p60d = prepare_reference_p60d.unwrap_or(probabilities.p_60d);
+
+    actionability.is_some_and(|scores| {
+        scores.prepare >= PREPARE_CONTINUITY_ACTIONABILITY_FLOOR
+            && probabilities.p_20d >= PREPARE_CONTINUITY_P20D_FLOOR
+            && prepare_p60d >= PREPARE_CONTINUITY_P60D_FLOOR
+            && structural_score >= PREPARE_CONTINUITY_STRUCTURAL_FLOOR
+            && (trigger_score >= 40.0 || external_shock_score >= 42.0 || breadth_score >= 36.0)
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn build_posture_clause_diagnostics(
     snapshot: &RiskSnapshot,
     probabilities: &ProbabilityBlock,
     prepare_reference_p60d: Option<f64>,
-    actionability: Option<&ActionabilityBlock>,
+    actionability_trigger: Option<&ActionabilityBlock>,
+    actionability_support: Option<&ActionabilityBlock>,
     conviction_score: f64,
     data_trust: &DataTrust,
     external_shock_score: f64,
@@ -116,7 +143,7 @@ pub(super) fn build_posture_clause_diagnostics(
         if severe_carry && snapshot.trigger_score >= 55.0 && external_shock_score >= 55.0 {
             defend_trigger_codes.push("defend_carry_trigger");
         }
-        if actionability.is_some_and(|scores| {
+        if actionability_trigger.is_some_and(|scores| {
             scores.defend >= 0.36
                 && (snapshot.trigger_score >= 55.0 || external_shock_score >= 55.0)
         }) {
@@ -162,7 +189,7 @@ pub(super) fn build_posture_clause_diagnostics(
     {
         hedge_trigger_codes.push("hedge_carry_structural");
     }
-    if actionability.is_some_and(|scores| {
+    if actionability_trigger.is_some_and(|scores| {
         scores.hedge >= 0.36
             && (snapshot.trigger_score >= 46.0
                 || external_shock_score >= 48.0
@@ -199,13 +226,24 @@ pub(super) fn build_posture_clause_diagnostics(
         {
             prepare_trigger_codes.push("prepare_carry_structural");
         }
-        if actionability.is_some_and(|scores| {
+        if actionability_trigger.is_some_and(|scores| {
             scores.prepare >= 0.40
                 && prepare_p60d >= thresholds.downgrade_prepare_p60d()
                 && prepare_confirmation_count >= 2
                 && (snapshot.structural_score >= 56.0 || external_shock_score >= 55.0)
         }) {
             prepare_trigger_codes.push("prepare_actionability");
+        }
+        if prepare_continuity_bridge_signal(
+            probabilities,
+            prepare_reference_p60d,
+            actionability_support,
+            snapshot.structural_score,
+            snapshot.trigger_score,
+            external_shock_score,
+            breadth_score,
+        ) {
+            prepare_trigger_codes.push("prepare_continuity_bridge");
         }
     }
 

@@ -92,6 +92,7 @@ fn has_strong_prepare_trigger_code(point: &AssessmentHistoryPoint) -> bool {
                 | "prepare_structural_downgrade"
                 | "prepare_carry_structural"
                 | "prepare_external_structural"
+                | "prepare_continuity_bridge"
         )
     })
 }

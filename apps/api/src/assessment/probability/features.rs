@@ -29,6 +29,7 @@ pub(super) fn build_probability_feature_map(
         heuristic_probabilities,
         None,
         None,
+        None,
         snapshot.structural_score,
         snapshot.trigger_score,
         external_shock_score,

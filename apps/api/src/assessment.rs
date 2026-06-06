@@ -103,9 +103,10 @@ pub fn build_assessment_snapshot(
     );
     let probabilities = probability_trace.calibrated_probabilities.clone();
     let actionability = probability_trace.actionability.clone();
-    let actionability_fusion = probability_trace
+    let actionability_trigger = probability_trace
         .actionability_enabled
         .then_some(&actionability);
+    let actionability_support = Some(&actionability);
     let prepare_reference_p60d = probability_trace
         .probability_diagnostics
         .horizon_overlays
@@ -117,7 +118,8 @@ pub fn build_assessment_snapshot(
     let time_to_risk_bucket = build_time_to_risk_bucket(
         &probabilities,
         prepare_reference_p60d,
-        actionability_fusion,
+        actionability_trigger,
+        actionability_support,
         snapshot.structural_score,
         snapshot.trigger_score,
         external_shock_score,
@@ -140,7 +142,8 @@ pub fn build_assessment_snapshot(
         snapshot,
         &probabilities,
         prepare_reference_p60d,
-        actionability_fusion,
+        actionability_trigger,
+        actionability_support,
         conviction_score,
         &data_trust,
         external_shock_score,

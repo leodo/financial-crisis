@@ -29,6 +29,16 @@ function Test-ProcessAlive {
     return [bool](Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)
 }
 
+function Get-RecordedProcessId {
+    param([string]$PidFile)
+
+    if (-not (Test-Path -LiteralPath $PidFile)) {
+        return $null
+    }
+
+    Get-Content -LiteralPath $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1
+}
+
 function Remove-StalePidFile {
     param([string]$PidFile)
 
@@ -41,6 +51,47 @@ function Remove-StalePidFile {
     }
 
     Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
+}
+
+function Get-ProcessInfo {
+    param([int]$ProcessId)
+
+    Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction SilentlyContinue
+}
+
+function Test-ProjectProcess {
+    param([int]$ProcessId)
+
+    $ProcessInfo = Get-ProcessInfo -ProcessId $ProcessId
+    if (-not $ProcessInfo) {
+        return $false
+    }
+
+    return ($ProcessInfo.CommandLine -like "*$($Root.Path)*") -or ($ProcessInfo.ExecutablePath -like "*$($Root.Path)*")
+}
+
+function Stop-ProjectProcessTree {
+    param(
+        [string]$Name,
+        [int]$ProcessId
+    )
+
+    $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if (-not $Process) {
+        return
+    }
+
+    if (-not (Test-ProjectProcess -ProcessId $ProcessId)) {
+        Write-Host "Refusing to stop PID $ProcessId for $Name because it does not look like this project."
+        return
+    }
+
+    $Children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $ProcessId" -ErrorAction SilentlyContinue
+    foreach ($Child in $Children) {
+        Stop-ProjectProcessTree -Name "$Name child" -ProcessId $Child.ProcessId
+    }
+
+    Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
 }
 
 function Get-ListenerPids {
@@ -89,9 +140,15 @@ function Start-HiddenService {
     Remove-StalePidFile -PidFile $PidFile
 
     if (Test-ProcessAlive -PidFile $PidFile) {
-        $ExistingPid = Get-Content -LiteralPath $PidFile | Select-Object -First 1
-        Write-Host "$Name already running, PID $ExistingPid"
-        return
+        $ExistingPid = [int](Get-RecordedProcessId -PidFile $PidFile)
+        if (Test-PortBusy -Ports $Ports) {
+            Write-Host "$Name already running, PID $ExistingPid"
+            return
+        }
+
+        Write-Host "$Name recorded PID $ExistingPid is alive but not listening; restarting it."
+        Stop-ProjectProcessTree -Name "$Name stale process" -ProcessId $ExistingPid
+        Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
     }
 
     if (Test-PortBusy -Ports $Ports) {
