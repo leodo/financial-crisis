@@ -1,5 +1,6 @@
 import { Suspense, useMemo, useState } from "react";
 import {
+  Activity,
   AlertTriangle,
   RefreshCw,
   RotateCcw,
@@ -26,6 +27,20 @@ const VIEW_DATA_KEYS: Record<View, Array<keyof ConsoleReadyData>> = {
   indicators: ["indicators"],
   sources: ["assessment", "sources"],
   method: ["assessment", "posture", "method"]
+};
+
+const DATASET_LABELS: Record<keyof ConsoleReadyData, string> = {
+  assessment: "当前评估快照",
+  assessmentHistory: "概率轨迹",
+  posture: "执行节奏建议",
+  method: "方法与版本说明",
+  audit: "发布审计",
+  overview: "维度总览",
+  indicators: "指标细项",
+  events: "事件确认",
+  sources: "数据源状态",
+  backtests: "历史回测摘要",
+  backtestTimeline: "滚动回测轨迹"
 };
 
 function buildReadyData(
@@ -65,13 +80,33 @@ function formatErrorText(error: unknown): string {
 
 export default function App() {
   const [view, setView] = useState<View>("decision");
+  const requiredKeys = VIEW_DATA_KEYS[view];
   const {
     assessment,
     queries,
     data,
     reload
-  } = useConsoleData();
+  } = useConsoleData(requiredKeys);
   const activeNavItem = navItems.find((item) => item.id === view) ?? navItems[0];
+  const queryStateByKey: Record<
+    keyof ConsoleReadyData,
+    {
+      isPending: boolean;
+      isError: boolean;
+    }
+  > = {
+    assessment: queries.assessment,
+    assessmentHistory: queries.assessmentHistory,
+    posture: queries.posture,
+    method: queries.method,
+    audit: queries.audit,
+    overview: queries.overview,
+    indicators: queries.indicators,
+    events: queries.events,
+    sources: queries.sources,
+    backtests: queries.backtests,
+    backtestTimeline: queries.backtestTimeline
+  };
   const queryErrors: Partial<Record<keyof ConsoleReadyData, unknown>> = {
     assessment: queries.assessment.error,
     assessmentHistory: queries.assessmentHistory.error,
@@ -89,6 +124,15 @@ export default function App() {
   const viewError = firstQueryError(data, queryErrors, view);
   const hasViewError = viewError !== null && viewError !== undefined;
   const isViewLoading = !readyData && !viewError;
+  const loadProgress = requiredKeys.map((key) => ({
+    key,
+    label: DATASET_LABELS[key],
+    ready: data[key] !== undefined,
+    pending: queryStateByKey[key].isPending,
+    error: queryStateByKey[key].isError
+  }));
+  const readyCount = loadProgress.filter((item) => item.ready).length;
+  const pendingLabels = loadProgress.filter((item) => !item.ready).map((item) => item.label);
   const errorText = formatErrorText(viewError);
   const assessmentErrorText = formatErrorText(queries.assessment.error);
   const healthErrorText = formatErrorText(queries.systemHealth.error);
@@ -225,7 +269,44 @@ export default function App() {
           />
         )}
 
-        {isViewLoading && <div className="notice">正在加载评估数据…</div>}
+        {isViewLoading && (
+          <section className="loading-state-panel" aria-live="polite">
+            <div className="loading-state-head">
+              <div className="loading-state-icon" aria-hidden="true">
+                <Activity size={18} />
+              </div>
+              <div className="loading-state-copy">
+                <strong>正在加载{activeNavItem.label}</strong>
+                <p>
+                  当前视图需要 {requiredKeys.length} 组数据，已就绪 {readyCount} 组。
+                  首次启动本地服务、刚刷新 SQLite，或者 API 刚完成热重启时，首屏会有短暂等待。
+                </p>
+              </div>
+            </div>
+            <div className="loading-state-grid">
+              {loadProgress.map((item) => (
+                <div
+                  key={item.key}
+                  className={
+                    item.ready
+                      ? "loading-chip ready"
+                      : item.error
+                        ? "loading-chip error"
+                        : "loading-chip pending"
+                  }
+                >
+                  <span>{item.label}</span>
+                  <strong>{item.ready ? "已就绪" : item.error ? "失败" : "加载中"}</strong>
+                </div>
+              ))}
+            </div>
+            <small className="loading-state-footer">
+              {pendingLabels.length > 0
+                ? `仍在等待：${pendingLabels.join("、")}。如果超过 10 秒仍未进入页面，先执行 just status，再点右上角刷新。`
+                : "正在拼装当前视图。"}
+            </small>
+          </section>
+        )}
         {hasViewError && readyData && <div className="notice error">当前视图存在部分接口错误：{errorText}</div>}
         {reload.isError && (
           <div className="notice error">重新加载本地库失败，请检查 API 日志或数据源状态。</div>

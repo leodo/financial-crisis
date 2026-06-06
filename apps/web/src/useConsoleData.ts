@@ -37,8 +37,9 @@ export interface ConsoleDataSnapshot {
   backtestTimeline?: ConsoleReadyData["backtestTimeline"];
 }
 
-export function useConsoleData() {
+export function useConsoleData(requiredKeys: Array<keyof ConsoleReadyData>) {
   const queryClient = useQueryClient();
+  const isRequired = (key: keyof ConsoleReadyData) => requiredKeys.includes(key);
 
   const assessment = useQuery({
     queryKey: ["assessment-current"],
@@ -53,43 +54,61 @@ export function useConsoleData() {
   const assessmentHistory = useQuery({
     queryKey: ["assessment-history"],
     queryFn: api.assessmentHistory,
+    enabled: isRequired("assessmentHistory"),
     ...liveQueryOptions
   });
   const posture = useQuery({
     queryKey: ["assessment-posture"],
     queryFn: api.assessmentPosture,
+    enabled: isRequired("posture"),
     ...liveQueryOptions
   });
   const method = useQuery({
     queryKey: ["assessment-method"],
     queryFn: api.assessmentMethod,
+    enabled: isRequired("method"),
     ...liveQueryOptions
   });
   const audit = useQuery({
     queryKey: ["research-audit"],
     queryFn: api.researchAudit,
+    enabled: isRequired("audit"),
     ...liveQueryOptions
   });
-  const overview = useQuery({ queryKey: ["overview"], queryFn: api.overview, ...liveQueryOptions });
+  const overview = useQuery({
+    queryKey: ["overview"],
+    queryFn: api.overview,
+    enabled: isRequired("overview"),
+    ...liveQueryOptions
+  });
   const indicators = useQuery({
     queryKey: ["indicators"],
     queryFn: api.indicators,
+    enabled: isRequired("indicators"),
     ...liveQueryOptions
   });
   const events = useQuery({
     queryKey: ["events-recent"],
     queryFn: api.eventsRecent,
+    enabled: isRequired("events"),
     ...liveQueryOptions
   });
-  const sources = useQuery({ queryKey: ["sources"], queryFn: api.sources, ...liveQueryOptions });
+  const sources = useQuery({
+    queryKey: ["sources"],
+    queryFn: api.sources,
+    enabled: isRequired("sources"),
+    ...liveQueryOptions
+  });
   const backtests = useQuery({
     queryKey: ["backtests"],
     queryFn: api.backtests,
+    enabled: isRequired("backtests"),
     ...liveQueryOptions
   });
   const backtestTimeline = useQuery({
     queryKey: ["backtests-timeline"],
     queryFn: api.backtestTimeline,
+    enabled: isRequired("backtestTimeline"),
     ...liveQueryOptions
   });
   const reload = useMutation({

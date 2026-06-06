@@ -228,6 +228,102 @@ td span,
   background: #fff8f7;
 }
 
+.loading-state-panel {
+  background: #ffffff;
+  border: 1px solid #dde4e9;
+  border-radius: 8px;
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.loading-state-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.loading-state-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #eef5f7;
+  color: #245261;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.loading-state-icon svg {
+  animation: spin 1s linear infinite;
+}
+
+.loading-state-copy {
+  min-width: 0;
+}
+
+.loading-state-copy strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.loading-state-copy p {
+  margin: 0;
+  color: #62707b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.loading-state-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.loading-chip {
+  border: 1px solid #dde4e9;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fbfcfd;
+  display: grid;
+  gap: 4px;
+}
+
+.loading-chip span {
+  color: #62707b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.loading-chip strong {
+  font-size: 18px;
+  line-height: 1.15;
+  color: #1c2730;
+}
+
+.loading-chip.ready {
+  background: #f6fbf8;
+  border-color: #cfe3d6;
+}
+
+.loading-chip.pending {
+  background: #fbfcfd;
+  border-color: #dbe4ea;
+}
+
+.loading-chip.error {
+  background: #fff8f7;
+  border-color: #e2b0b0;
+}
+
+.loading-state-footer {
+  color: #62707b;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .app-root-fallback {
   min-height: 100vh;
   display: grid;
