@@ -138,6 +138,14 @@ vs
 
 否则像 `1990-1993` 这种关键结构性失败样本会被静默漏掉。
 
+同时，当前实现还要额外覆盖另一类样本：
+
+- backtest 摘要里还没有记成 `L2`；
+- 但逐日 runtime 已经出现 `runtime floor hit without L3`。
+
+因为这类样本同样说明“模型已经看见了风险，只是没有转成 strict/actionable”，
+如果只靠 backtest 摘要字段筛选，仍会把 `2000-2001` 这类长窗结构性失败静默漏掉。
+
 ## 5. 实施方案
 
 ### 5.1 已完成
@@ -147,6 +155,7 @@ vs
   - point-level `actionable_diagnostic`
 - `Focus Scenarios` 选择逻辑已扩展到：
   - `lead_time_days.is_some() && actionable_lead_time_days.is_none()`
+  - or any pre-crisis point already satisfies `runtime_floor_hit_without_l3`
 - `release review` 输出已新增结构化双口径字段：
   - point-level:
     - `strict_review_actionable`

@@ -506,6 +506,18 @@
                 让最终 recommendation 能直接回答
                 “该判退 candidate、先修共享 blocker，
                 还是纳入 formal main 主线修复”；
+            4.9 [x] `Focus Scenarios` 的筛选逻辑已继续从“只看 backtest
+                `L2/L3` 摘要差异”扩成“也覆盖 `runtime floor hit without L3`
+                的真实样本”：
+                1. 现在不会再因为 backtest 摘要还没记成 `L2`，就把
+                   `2000-2001` 这类 runtime 已经命中 floor 的长窗场景静默漏掉；
+                2. 重新执行 `strict_rebuild release review` 后，当前报告已能稳定把
+                   `2000-2001`、`2022` 归到
+                   `strict_review_vs_runtime_mapping`，
+                   同时把 `1987 / 1990-1993 / 1998` 归到
+                   `posture_continuity`；
+                3. 这样后续 lead-time / posture 主线不再只靠人工翻大 JSON 才能发现
+                   哪些历史样本该优先修。
             5. 下一步不再把两类 missed 场景混成一个问题：
                - 对 `2000-2001` 先专项复核 strict gate 与 runtime floor 的映射；
                - 对 `1990-1993` 先专项复核为什么高 `p20d/p60d` 长期无法推动 `prepare/months` 连续成立。

@@ -50,10 +50,6 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
         .iter()
         .filter_map(|baseline| {
             let candidate = candidate_by_id.get(baseline.scenario_id.as_str()).copied();
-            if !scenario_requires_focus_review(baseline, candidate) {
-                return None;
-            }
-
             let prepared = prepare_focus_window(
                 baseline,
                 candidate,
@@ -61,6 +57,11 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                 candidate_history,
                 &runtime_config,
             );
+            if !scenario_requires_focus_review(baseline, candidate)
+                && !prepared_scenario_requires_focus_review(&prepared)
+            {
+                return None;
+            }
             let interesting_points = build_interesting_points(
                 &prepared,
                 &baseline_points_by_date,
@@ -83,4 +84,15 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
         .collect::<Vec<_>>();
     rows.sort_by(|left, right| left.scenario_id.cmp(&right.scenario_id));
     rows
+}
+
+fn prepared_scenario_requires_focus_review(prepared: &window::PreparedScenarioWindow<'_>) -> bool {
+    prepared.baseline_runtime_floor_hit_point_count > 0
+        || prepared.candidate_runtime_floor_hit_point_count > 0
+        || prepared
+            .baseline_first_runtime_floor_hit_without_l3
+            .is_some()
+        || prepared
+            .candidate_first_runtime_floor_hit_without_l3
+            .is_some()
 }

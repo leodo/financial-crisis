@@ -431,3 +431,83 @@ fn release_review_focus_diagnostic_includes_structural_only_missed_scenarios() {
         .iter()
         .any(|point| point.as_of_date == runtime_floor_date));
 }
+
+#[test]
+fn release_review_focus_diagnostic_includes_runtime_floor_only_scenarios_without_l2() {
+    let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+    let runtime_floor_date = NaiveDate::from_ymd_opt(2023, 2, 10).unwrap();
+    let baseline = vec![synthetic_backtest_summary_with_dates(
+        "scenario_runtime_floor_only",
+        "Runtime Floor Only",
+        None,
+        None,
+        None,
+        None,
+        0,
+    )];
+    let candidate = baseline.clone();
+    let history = vec![
+        runtime_history_point_with_state(
+            runtime_floor_date,
+            58.0,
+            0.02,
+            0.12,
+            0.47,
+            DecisionPosture::Normal,
+            TimeToRiskBucket::Normal,
+            41.0,
+            &[],
+        ),
+        runtime_history_point_with_state(
+            NaiveDate::from_ymd_opt(2023, 2, 17).unwrap(),
+            61.0,
+            0.03,
+            0.17,
+            0.49,
+            DecisionPosture::Normal,
+            TimeToRiskBucket::Normal,
+            43.0,
+            &[],
+        ),
+        runtime_history_point_with_state(
+            crisis_start,
+            65.0,
+            0.06,
+            0.23,
+            0.52,
+            DecisionPosture::Prepare,
+            TimeToRiskBucket::Weeks,
+            45.0,
+            &["hedge_p20d_context"],
+        ),
+    ];
+    let method = formal_main_audit_method_wire();
+
+    let rows = build_release_review_scenario_focus_diagnostics(
+        &baseline, &candidate, &history, &history, &method, &method,
+    );
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].scenario_id, "scenario_runtime_floor_only");
+    assert_eq!(rows[0].outcome, "missed_to_missed");
+    assert_eq!(rows[0].baseline_first_l2_date, None);
+    assert_eq!(rows[0].candidate_first_l2_date, None);
+    assert_eq!(rows[0].baseline_runtime_floor_hit_point_count, 2);
+    assert_eq!(rows[0].candidate_runtime_floor_hit_point_count, 2);
+    assert_eq!(
+        rows[0].baseline_primary_failure_mode.as_deref(),
+        Some("strict_gate_mismatch")
+    );
+    assert_eq!(
+        rows[0].candidate_primary_failure_mode.as_deref(),
+        Some("strict_gate_mismatch")
+    );
+    assert_eq!(
+        rows[0].baseline_first_runtime_floor_hit_without_l3_date,
+        Some(runtime_floor_date)
+    );
+    assert_eq!(
+        rows[0].candidate_first_runtime_floor_hit_without_l3_date,
+        Some(runtime_floor_date)
+    );
+}
