@@ -10,7 +10,8 @@ import type {
   IndicatorRisk,
   PostureGuidance,
   ResearchAuditResponse,
-  RiskSnapshot
+  RiskSnapshot,
+  ServiceHealthResponse
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -72,6 +73,7 @@ async function sendJson<T>(path: string, method: string): Promise<T> {
 }
 
 export const api = {
+  systemHealth: () => getJson<ServiceHealthResponse>("/health"),
   overview: () => getJson<RiskSnapshot>("/api/overview"),
   dimensions: () => getJson<DimensionScore[]>("/api/dimensions"),
   indicators: () => getJson<IndicatorRisk[]>("/api/indicators"),

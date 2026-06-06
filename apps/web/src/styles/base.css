@@ -228,6 +228,109 @@ td span,
   background: #fff8f7;
 }
 
+.app-root-fallback {
+  min-height: 100vh;
+  display: grid;
+  align-items: center;
+  padding: 28px;
+}
+
+.recovery-panel {
+  background: #ffffff;
+  border: 1px solid #dde4e9;
+  border-radius: 8px;
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.recovery-panel.error {
+  border-color: #e2b0b0;
+  background: #fff8f7;
+}
+
+.recovery-panel.warning {
+  border-color: #ecd7b4;
+  background: #fffaf2;
+}
+
+.recovery-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.recovery-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(22, 62, 75, 0.08);
+  color: #163e4b;
+  flex: 0 0 auto;
+}
+
+.recovery-copy strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.recovery-copy p,
+.recovery-detail-list li,
+.recovery-footer {
+  color: #55636d;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.recovery-copy p {
+  margin: 0;
+}
+
+.recovery-detail-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+}
+
+.recovery-footer {
+  display: block;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.action-button {
+  border: 1px solid #cad5dc;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #163e4b;
+  cursor: pointer;
+  padding: 8px 12px;
+}
+
+.action-button:hover:not(:disabled) {
+  border-color: #aebdc8;
+}
+
+.action-button.primary {
+  background: #163e4b;
+  border-color: #163e4b;
+  color: #ffffff;
+}
+
+.action-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .runtime-surface {
   background: #ffffff;
   border: 1px solid #dde4e9;

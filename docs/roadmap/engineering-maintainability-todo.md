@@ -272,6 +272,7 @@
 - 已继续清理 audit / method / decision 的 release id 展示，把 `extmix`、完整 bundle 文件名和原始模型路径从正文显示中移出，统一通过 `releaseIdLabel` 输出“候选版本 / 主线版本 + 日期”。
 - 已把 indicators 页摘要、焦点指标和明细表接入统一指标名映射，避免不同页面继续各自暴露后端 `display_name` 或内部 indicator id。
 - 已继续把 sources / audit / method / decision / charts 里残留的页面私有 helper（如 source lag/quality、release review 标签、人话翻译、时间轴换行）抽到 `apps/web/src/format.ts`，页面层不再持有这些解释/格式化细节。
+- 已新增 Web 根级/视图级错误边界与 API 失效降级面板；即使局部视图抛异常、评估接口失败或本地 API 暂时不可达，前端也不再直接退化成整页白屏，而是切换到带恢复动作的诊断面板。
 - Web 页面当前剩余重点：视需要继续把 `builders.ts` 中的高复用行模型向 shared 层沉淀。
 
 ## 5. 约束机制

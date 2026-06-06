@@ -1,6 +1,9 @@
-import { Suspense, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   RefreshCw,
+  RotateCcw,
+  ServerCrash,
   ShieldCheck
 } from "lucide-react";
 import {
@@ -10,6 +13,8 @@ import {
   timeBucketLabel
 } from "./format";
 import { useConsoleData, type ConsoleReadyData, type ConsoleDataSnapshot } from "./useConsoleData";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { RecoveryPanel } from "./components/RecoveryPanel";
 import { navItems, renderActiveView, type View } from "./viewRegistry";
 
 const VIEW_DATA_KEYS: Record<View, Array<keyof ConsoleReadyData>> = {
@@ -46,6 +51,18 @@ function firstQueryError(
     .find((value) => value !== null && value !== undefined);
 }
 
+function formatErrorText(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "string" && error.trim().length > 0) {
+    return error;
+  }
+
+  return "未知错误";
+}
+
 export default function App() {
   const [view, setView] = useState<View>("decision");
   const {
@@ -72,7 +89,24 @@ export default function App() {
   const viewError = firstQueryError(data, queryErrors, view);
   const hasViewError = viewError !== null && viewError !== undefined;
   const isViewLoading = !readyData && !viewError;
-  const errorText = viewError instanceof Error ? viewError.message : "未知错误";
+  const errorText = formatErrorText(viewError);
+  const assessmentErrorText = formatErrorText(queries.assessment.error);
+  const healthErrorText = formatErrorText(queries.systemHealth.error);
+  const isAssessmentUnavailable = !assessment.data && queries.assessment.isError;
+  const systemHealthOk = queries.systemHealth.data?.status === "ok";
+  const latestLagDays = assessment.data?.runtime.latest_observation_lag_days ?? null;
+  const hasDataLag = latestLagDays !== null && latestLagDays >= 5;
+  const statusSummary = useMemo(() => {
+    if (!assessment.data) {
+      return null;
+    }
+
+    return [
+      `风险时距 ${timeBucketLabel(assessment.data.time_to_risk_bucket)}`,
+      `可信度 ${qualityLabel(assessment.data.data_trust.quality_grade)}`,
+      `最近数据 ${assessment.data.runtime.latest_observation_at ?? "—"}`
+    ];
+  }, [assessment.data]);
 
   return (
     <div className="app-shell">
@@ -142,16 +176,151 @@ export default function App() {
           </div>
         </header>
 
+        {isAssessmentUnavailable && (
+          <RecoveryPanel
+            actions={[
+              {
+                label: reload.isPending ? "正在重新加载本地库…" : "重新加载本地库",
+                onClick: () => {
+                  reload.mutate();
+                },
+                disabled: reload.isPending,
+                tone: "primary"
+              },
+              {
+                label: "整页刷新",
+                onClick: () => {
+                  window.location.reload();
+                }
+              }
+            ]}
+            details={[
+              systemHealthOk
+                ? "API 健康检查可达，但当前评估接口没有返回可用快照。"
+                : "前端当前没有确认到本地 API 健康响应，服务可能未启动或已卡住。",
+              `评估接口错误：${assessmentErrorText}`,
+              queries.systemHealth.isError ? `健康检查错误：${healthErrorText}` : "健康检查：/health 正常响应",
+              "若问题反复出现，先执行 `just status`，必要时再执行 `just dev` 重新拉起服务。"
+            ]}
+            footer="面板不会自动推断缺失结论；拿不到当前评估快照时，只展示恢复方式和诊断信息。"
+            icon={<ServerCrash size={18} />}
+            summary="当前面板没有拿到评估快照，因此不继续渲染结论型视图，避免把空数据误当成低风险。"
+            title="本地评估服务当前不可用"
+            tone="error"
+          />
+        )}
+
+        {assessment.data && hasDataLag && view !== "decision" && (
+          <RecoveryPanel
+            details={[
+              `当前评估依赖的最新观测值落后 ${latestLagDays} 天。`,
+              ...(statusSummary ?? []),
+              "这套系统是免费日频/周频预警面板，不是盘中行情终端；近端风险判断必须保守解释。"
+            ]}
+            footer="如果你刚补完数据，可以用右上角刷新按钮重新载入本地库。"
+            icon={<AlertTriangle size={18} />}
+            summary="页面虽然可用，但当前数据时效性不足，短期决策不要把低概率直接理解成风险消失。"
+            title="当前数据存在时效性提醒"
+            tone="warning"
+          />
+        )}
+
         {isViewLoading && <div className="notice">正在加载评估数据…</div>}
-        {hasViewError && <div className="notice error">API 请求失败：{errorText}</div>}
+        {hasViewError && readyData && <div className="notice error">当前视图存在部分接口错误：{errorText}</div>}
         {reload.isError && (
           <div className="notice error">重新加载本地库失败，请检查 API 日志或数据源状态。</div>
         )}
 
-        {readyData && (
-          <Suspense fallback={<div className="notice">正在加载视图…</div>}>
-            {renderActiveView(view, readyData)}
-          </Suspense>
+        {!readyData && hasViewError && !isAssessmentUnavailable && (
+          <RecoveryPanel
+            actions={[
+              {
+                label: "重试当前视图",
+                onClick: () => {
+                  queries.assessment.refetch();
+                  reload.mutate();
+                },
+                disabled: reload.isPending,
+                tone: "primary"
+              },
+              ...(view === "decision"
+                ? []
+                : [
+                    {
+                      label: "切回决策面板",
+                      onClick: () => {
+                        setView("decision");
+                      }
+                    }
+                  ]),
+              {
+                label: "整页刷新",
+                onClick: () => {
+                  window.location.reload();
+                }
+              }
+            ]}
+            details={[
+              `当前视图：${activeNavItem.label}`,
+              `接口错误：${errorText}`,
+              "这通常是局部接口失败或数据结构暂时不完整，不代表系统已经得出低风险结论。 "
+            ]}
+            footer="如果只有某个标签页反复失败，优先检查对应 API 返回和该视图最近的字段变更。"
+            icon={<AlertTriangle size={18} />}
+            summary="当前标签页缺少必要数据，面板暂停渲染该视图，避免把不完整结果拼成正常页面。"
+            title={`${activeNavItem.label} 当前无法完整显示`}
+            tone="error"
+          />
+        )}
+
+        {readyData && !isAssessmentUnavailable && (
+          <ErrorBoundary
+            fallback={({ error, reset }) => (
+              <RecoveryPanel
+                actions={[
+                  {
+                    label: "重试当前视图",
+                    onClick: () => {
+                      reset();
+                    },
+                    tone: "primary"
+                  },
+                  ...(view === "decision"
+                    ? []
+                    : [
+                        {
+                          label: "切回决策面板",
+                          onClick: () => {
+                            setView("decision");
+                            reset();
+                          }
+                        }
+                      ]),
+                  {
+                    label: "整页刷新",
+                    onClick: () => {
+                      window.location.reload();
+                    }
+                  }
+                ]}
+                details={[
+                  `当前视图：${activeNavItem.label}`,
+                  `渲染异常：${formatErrorText(error)}`,
+                  "这是前端渲染层错误，不会直接说明当前风险高低。"
+                ]}
+                footer="其他标签页和刷新按钮仍然可用；这类错误通常意味着某个页面没有兼容新的字段形态。"
+                icon={<RotateCcw size={18} />}
+                summary="当前标签页在处理数据时抛出了前端异常，系统已阻断整页白屏并切换到恢复面板。"
+                title={`${activeNavItem.label} 渲染失败`}
+                tone="error"
+              />
+            )}
+            resetKey={`${view}:${assessment.data?.as_of_date ?? "unknown"}`}
+          >
+            <Suspense fallback={<div className="notice">正在加载视图…</div>}>
+              {renderActiveView(view, readyData)}
+            </Suspense>
+          </ErrorBoundary>
         )}
       </main>
     </div>

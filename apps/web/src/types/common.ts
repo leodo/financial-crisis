@@ -18,6 +18,11 @@ export interface DataQualitySummary {
   blocked_indicator_count: number;
 }
 
+export interface ServiceHealthResponse {
+  service: string;
+  status: string;
+}
+
 export interface RiskContributor {
   indicator_id: string;
   display_name: string;

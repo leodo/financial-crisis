@@ -152,6 +152,23 @@
     padding: 8px;
   }
 
+  .app-root-fallback {
+    padding: 14px;
+  }
+
+  .recovery-head {
+    flex-direction: column;
+  }
+
+  .action-row {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .action-button {
+    width: 100%;
+  }
+
   thead th {
     font-size: 11px;
     padding: 0 8px 8px 0;

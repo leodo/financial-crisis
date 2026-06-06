@@ -45,6 +45,11 @@ export function useConsoleData() {
     queryFn: api.assessmentCurrent,
     ...liveQueryOptions
   });
+  const systemHealth = useQuery({
+    queryKey: ["system-health"],
+    queryFn: api.systemHealth,
+    ...liveQueryOptions
+  });
   const assessmentHistory = useQuery({
     queryKey: ["assessment-history"],
     queryFn: api.assessmentHistory,
@@ -110,6 +115,7 @@ export function useConsoleData() {
 
   const queries = {
     assessment,
+    systemHealth,
     assessmentHistory,
     posture,
     method,
@@ -126,6 +132,6 @@ export function useConsoleData() {
     ...queries,
     data,
     queries,
-    reload,
+    reload
   };
 }
