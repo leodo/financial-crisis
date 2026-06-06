@@ -518,6 +518,14 @@
                    `posture_continuity`；
                 3. 这样后续 lead-time / posture 主线不再只靠人工翻大 JSON 才能发现
                    哪些历史样本该优先修。
+            4.10 [x] `strict_review_vs_runtime_mapping` 已进一步细分出
+                `baseline_gate_gap_profile / candidate_gate_gap_profile`：
+                1. 当前会直接区分 `p20d_only / p60d_only / p20d_and_p60d`；
+                2. `Historical Audit Priorities / Workstream Summary / Takeaways`
+                   和控制台摘要都已直接带出这层 subtype；
+                3. 这样下一轮训练和 policy 调整可以直接回答
+                   “先修 `p60d` strict gate，还是 `p20d/p60d` 都还卡住”，
+                   不再需要手工翻 continuity facet 长表。
             5. 下一步不再把两类 missed 场景混成一个问题：
                - 对 `2000-2001` 先专项复核 strict gate 与 runtime floor 的映射；
                - 对 `1990-1993` 先专项复核为什么高 `p20d/p60d` 长期无法推动 `prepare/months` 连续成立。

@@ -1,5 +1,7 @@
 use fc_domain::{CrisisScenarioDefinition, CrisisScenarioFamily, CrisisScenarioTrainingRole};
 
+use super::ReleaseReviewScenarioFocusDiagnostic;
+
 mod attribution;
 mod failure_modes;
 mod priorities;
@@ -126,6 +128,64 @@ fn release_review_primary_workstream(
             .or(baseline_failure_mode)
             .unwrap_or_default(),
     )
+}
+
+fn release_review_gate_gap_profile_for_scenario(
+    scenario: &ReleaseReviewScenarioFocusDiagnostic,
+    for_candidate: bool,
+) -> Option<String> {
+    let mut best: Option<(&str, u32)> = None;
+    for facet in &scenario.runtime_continuity_facet_counts {
+        let category = facet.category.as_str();
+        if !category.starts_with("gate_gap:") || category == "gate_gap:none" {
+            continue;
+        }
+        let count = if for_candidate {
+            facet.candidate_count
+        } else {
+            facet.baseline_count
+        };
+        if count == 0 {
+            continue;
+        }
+        let should_replace = match best {
+            Some((best_category, best_count)) => {
+                count > best_count || (count == best_count && category < best_category)
+            }
+            None => true,
+        };
+        if should_replace {
+            best = Some((category, count));
+        }
+    }
+
+    best.map(|(category, _)| category.trim_start_matches("gate_gap:").to_string())
+        .or_else(|| {
+            let categories = if for_candidate {
+                &scenario
+                    .dominant_runtime_continuity_facets
+                    .candidate_categories
+            } else {
+                &scenario
+                    .dominant_runtime_continuity_facets
+                    .baseline_categories
+            };
+            categories
+                .iter()
+                .find(|category| {
+                    category.starts_with("gate_gap:") && category.as_str() != "gate_gap:none"
+                })
+                .map(|category| category.trim_start_matches("gate_gap:").to_string())
+        })
+}
+
+fn release_review_gate_gap_profile_label(profile: &str) -> &'static str {
+    match profile {
+        "p20d_only" => "p20d only",
+        "p60d_only" => "p60d only",
+        "p20d_and_p60d" => "p20d + p60d",
+        _ => "mixed gate gap",
+    }
 }
 
 fn release_review_workstream_for_failure_mode(failure_mode: &str) -> &'static str {

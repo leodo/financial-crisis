@@ -146,6 +146,14 @@ fn release_review_historical_audit_priorities_map_scenarios_to_workstreams() {
     );
     assert_eq!(summary[0].training_role, "candidate_optional");
     assert!(summary[0].protected_window);
+    assert_eq!(
+        summary[0].baseline_gate_gap_profile.as_deref(),
+        Some("p20d_and_p60d")
+    );
+    assert_eq!(
+        summary[0].candidate_gate_gap_profile.as_deref(),
+        Some("p20d_and_p60d")
+    );
     assert!(summary[0]
         .suggested_review
         .contains("strict review gate 与 runtime floor"));
@@ -153,6 +161,8 @@ fn release_review_historical_audit_priorities_map_scenarios_to_workstreams() {
     assert_eq!(summary[1].scenario_id, "us_early_90s_banking_stress");
     assert_eq!(summary[1].primary_workstream, "posture_continuity");
     assert_eq!(summary[1].training_role, "extension_only");
+    assert!(summary[1].baseline_gate_gap_profile.is_none());
+    assert!(summary[1].candidate_gate_gap_profile.is_none());
     assert!(summary[1]
         .suggested_review
         .contains("prepare/months 连续性"));
@@ -169,6 +179,8 @@ fn release_review_historical_audit_workstreams_group_priorities() {
             protected_window: true,
             baseline_failure_mode: "strict_gate_mismatch".to_string(),
             candidate_failure_mode: "strict_gate_mismatch".to_string(),
+            baseline_gate_gap_profile: Some("p20d_and_p60d".to_string()),
+            candidate_gate_gap_profile: Some("p20d_only".to_string()),
             primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
             suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
         },
@@ -180,6 +192,8 @@ fn release_review_historical_audit_workstreams_group_priorities() {
             protected_window: true,
             baseline_failure_mode: "posture_continuity_failure".to_string(),
             candidate_failure_mode: "posture_continuity_failure".to_string(),
+            baseline_gate_gap_profile: None,
+            candidate_gate_gap_profile: None,
             primary_workstream: "posture_continuity".to_string(),
             suggested_review: "复核 prepare/months 连续性".to_string(),
         },
@@ -191,6 +205,8 @@ fn release_review_historical_audit_workstreams_group_priorities() {
             protected_window: true,
             baseline_failure_mode: "posture_continuity_failure".to_string(),
             candidate_failure_mode: "score_confirmation_failure".to_string(),
+            baseline_gate_gap_profile: None,
+            candidate_gate_gap_profile: None,
             primary_workstream: "posture_continuity".to_string(),
             suggested_review: "复核 prepare/months 连续性".to_string(),
         },
@@ -204,6 +220,14 @@ fn release_review_historical_audit_workstreams_group_priorities() {
         rows[0].scenarios,
         vec!["2000-2001 科网泡沫出清".to_string()]
     );
+    assert_eq!(
+        rows[0].baseline_gate_gap_profiles,
+        vec!["p20d_and_p60d".to_string()]
+    );
+    assert_eq!(
+        rows[0].candidate_gate_gap_profiles,
+        vec!["p20d_only".to_string()]
+    );
     let posture = rows
         .iter()
         .find(|row| row.workstream == "posture_continuity")
@@ -215,6 +239,8 @@ fn release_review_historical_audit_workstreams_group_priorities() {
         vec!["mixed_systemic_stress".to_string()]
     );
     assert_eq!(posture.training_roles, vec!["extension_only".to_string()]);
+    assert!(posture.baseline_gate_gap_profiles.is_empty());
+    assert!(posture.candidate_gate_gap_profiles.is_empty());
     assert!(posture
         .scenarios
         .contains(&"1990-1993 美国银行与衰退压力".to_string()));
@@ -232,6 +258,8 @@ fn release_review_historical_audit_attribution_distinguishes_shared_and_regressi
             protected_window: true,
             baseline_failure_mode: "strict_gate_mismatch".to_string(),
             candidate_failure_mode: "strict_gate_mismatch".to_string(),
+            baseline_gate_gap_profile: Some("p20d_and_p60d".to_string()),
+            candidate_gate_gap_profile: Some("p20d_only".to_string()),
             primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
             suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
         },
@@ -243,6 +271,8 @@ fn release_review_historical_audit_attribution_distinguishes_shared_and_regressi
             protected_window: true,
             baseline_failure_mode: "posture_continuity_failure".to_string(),
             candidate_failure_mode: "—".to_string(),
+            baseline_gate_gap_profile: None,
+            candidate_gate_gap_profile: None,
             primary_workstream: "posture_continuity".to_string(),
             suggested_review: "复核 prepare/months 连续性".to_string(),
         },
@@ -254,6 +284,8 @@ fn release_review_historical_audit_attribution_distinguishes_shared_and_regressi
             protected_window: true,
             baseline_failure_mode: "residual_review_l3_failure".to_string(),
             candidate_failure_mode: "score_confirmation_failure".to_string(),
+            baseline_gate_gap_profile: None,
+            candidate_gate_gap_profile: None,
             primary_workstream: "score_confirmation".to_string(),
             suggested_review: "复核 months/prepare 的 score confirmation".to_string(),
         },
@@ -367,6 +399,8 @@ fn release_review_historical_audit_takeaways_explain_primary_workstreams() {
             protected_window: true,
             baseline_failure_mode: "strict_gate_mismatch".to_string(),
             candidate_failure_mode: "strict_gate_mismatch".to_string(),
+            baseline_gate_gap_profile: Some("p20d_and_p60d".to_string()),
+            candidate_gate_gap_profile: Some("p60d_only".to_string()),
             primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
             suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
         },
@@ -378,6 +412,8 @@ fn release_review_historical_audit_takeaways_explain_primary_workstreams() {
             protected_window: true,
             baseline_failure_mode: "posture_continuity_failure".to_string(),
             candidate_failure_mode: "posture_continuity_failure".to_string(),
+            baseline_gate_gap_profile: None,
+            candidate_gate_gap_profile: None,
             primary_workstream: "posture_continuity".to_string(),
             suggested_review: "复核 prepare/months 连续性".to_string(),
         },
@@ -388,6 +424,9 @@ fn release_review_historical_audit_takeaways_explain_primary_workstreams() {
     assert!(rendered
         .iter()
         .any(|row| row.contains("strict review gate 与 runtime floor")));
+    assert!(rendered
+        .iter()
+        .any(|row| row.contains("baseline=p20d + p60d，candidate=p60d only")));
     assert!(rendered
         .iter()
         .any(|row| row.contains("高 p20d/p60d 仍长期停在 normal")));

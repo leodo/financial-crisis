@@ -160,6 +160,8 @@ pub(crate) struct ReleaseReviewHistoricalAuditPriority {
     pub(crate) protected_window: bool,
     pub(crate) baseline_failure_mode: String,
     pub(crate) candidate_failure_mode: String,
+    pub(crate) baseline_gate_gap_profile: Option<String>,
+    pub(crate) candidate_gate_gap_profile: Option<String>,
     pub(crate) primary_workstream: String,
     pub(crate) suggested_review: String,
 }
@@ -172,6 +174,8 @@ pub(crate) struct ReleaseReviewHistoricalAuditWorkstreamSummary {
     pub(crate) scenarios: Vec<String>,
     pub(crate) scenario_families: Vec<String>,
     pub(crate) training_roles: Vec<String>,
+    pub(crate) baseline_gate_gap_profiles: Vec<String>,
+    pub(crate) candidate_gate_gap_profiles: Vec<String>,
     pub(crate) suggested_review: String,
 }
 

@@ -392,3 +392,42 @@ After this entrypoint exists, the expected workflow is:
 
 That keeps future work anchored to evidence instead of ad hoc reading of large
 `release-review` JSON files.
+
+## 9. Strict Gate Gap Subtype Audit
+
+The historical audit chain now carries one more layer for
+`strict_review_vs_runtime_mapping` scenarios:
+
+- `baseline_gate_gap_profile`
+- `candidate_gate_gap_profile`
+
+Current labels are intentionally narrow:
+
+- `p20d_only`
+- `p60d_only`
+- `p20d_and_p60d`
+
+These labels are derived from `Focus Scenarios` runtime continuity facets,
+not from manual reading of the long JSON report. The goal is to stop treating
+all `strict_gate_mismatch` cases as one undifferentiated blocker.
+
+This now answers a more actionable question:
+
+- is the candidate still mainly blocked by the `20d` strict gate;
+- is it already through `20d` but still blocked by `60d`;
+- or are both long-window gates still too strict.
+
+The subtype is now surfaced in:
+
+1. `Historical Audit Priorities`
+2. `Historical Audit Workstream Summary`
+3. `Historical Audit Takeaways`
+4. console `release review` summary output
+5. exported Markdown review artifacts
+
+That means the next research loop can say, directly and repeatably:
+
+- “first loosen/fix `p60d` strict gate mapping”,
+- or “the real blocker is still both `p20d` and `p60d`”,
+
+without re-reading the raw continuity facet tables by hand.

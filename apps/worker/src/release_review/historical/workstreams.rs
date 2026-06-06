@@ -4,7 +4,38 @@ use super::super::{
     format_runtime_category_list, ReleaseReviewHistoricalAuditPriority,
     ReleaseReviewHistoricalAuditWorkstreamSummary,
 };
-use super::release_review_historical_workstream_priority;
+use super::{release_review_gate_gap_profile_label, release_review_historical_workstream_priority};
+
+fn format_gate_gap_profiles(profiles: &[String]) -> String {
+    if profiles.is_empty() {
+        "—".to_string()
+    } else {
+        profiles
+            .iter()
+            .map(|profile| release_review_gate_gap_profile_label(profile).to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+fn gate_gap_focus_summary(profiles: &[String]) -> Option<&'static str> {
+    if profiles.is_empty() {
+        return None;
+    }
+    let has_p20d_only = profiles.iter().any(|profile| profile == "p20d_only");
+    let has_p60d_only = profiles.iter().any(|profile| profile == "p60d_only");
+    let has_both = profiles.iter().any(|profile| profile == "p20d_and_p60d");
+
+    if has_both || (has_p20d_only && has_p60d_only) {
+        Some("下一轮应同时复核 p20d / p60d strict gate。")
+    } else if has_p20d_only {
+        Some("下一轮应先复核 p20d strict gate。")
+    } else if has_p60d_only {
+        Some("下一轮应先复核 p60d strict gate。")
+    } else {
+        None
+    }
+}
 
 pub(crate) fn summarize_release_review_historical_audit_workstreams(
     priorities: &[ReleaseReviewHistoricalAuditPriority],
@@ -14,6 +45,8 @@ pub(crate) fn summarize_release_review_historical_audit_workstreams(
         (
             BTreeSet<String>,
             u32,
+            BTreeSet<String>,
+            BTreeSet<String>,
             BTreeSet<String>,
             BTreeSet<String>,
             BTreeSet<String>,
@@ -31,6 +64,8 @@ pub(crate) fn summarize_release_review_historical_audit_workstreams(
                     BTreeSet::new(),
                     BTreeSet::new(),
                     BTreeSet::new(),
+                    BTreeSet::new(),
+                    BTreeSet::new(),
                 )
             });
         entry.0.insert(priority.scenario_name.clone());
@@ -41,6 +76,12 @@ pub(crate) fn summarize_release_review_historical_audit_workstreams(
         entry.3.insert(priority.training_role.clone());
         entry.4.insert(priority.suggested_review.clone());
         entry.5.insert(priority.scenario_id.clone());
+        if let Some(profile) = &priority.baseline_gate_gap_profile {
+            entry.6.insert(profile.clone());
+        }
+        if let Some(profile) = &priority.candidate_gate_gap_profile {
+            entry.7.insert(profile.clone());
+        }
     }
 
     let mut rows = workstreams
@@ -55,6 +96,8 @@ pub(crate) fn summarize_release_review_historical_audit_workstreams(
                     training_roles,
                     suggested_reviews,
                     scenario_ids,
+                    baseline_gate_gap_profiles,
+                    candidate_gate_gap_profiles,
                 ),
             )| {
                 ReleaseReviewHistoricalAuditWorkstreamSummary {
@@ -64,6 +107,8 @@ pub(crate) fn summarize_release_review_historical_audit_workstreams(
                     scenarios: scenarios.into_iter().collect(),
                     scenario_families: scenario_families.into_iter().collect(),
                     training_roles: training_roles.into_iter().collect(),
+                    baseline_gate_gap_profiles: baseline_gate_gap_profiles.into_iter().collect(),
+                    candidate_gate_gap_profiles: candidate_gate_gap_profiles.into_iter().collect(),
                     suggested_review: suggested_reviews
                         .into_iter()
                         .collect::<Vec<_>>()
@@ -90,10 +135,16 @@ pub(crate) fn release_review_historical_audit_takeaways(
     for row in rows {
         match row.workstream.as_str() {
             "strict_review_vs_runtime_mapping" => {
+                let focus_text = gate_gap_focus_summary(&row.candidate_gate_gap_profiles)
+                    .or_else(|| gate_gap_focus_summary(&row.baseline_gate_gap_profiles))
+                    .unwrap_or("下一轮应继续逐点复核 strict gate。");
                 takeaways.push(format!(
-                    "{} 个历史样本首先应复核 strict review gate 与 runtime floor 的映射，涉及 {}。当前更像 runtime 已经看到风险，但 strict gate 仍比运行时口径更严。",
+                    "{} 个历史样本首先应复核 strict review gate 与 runtime floor 的映射，涉及 {}。当前更像 runtime 已经看到风险，但 strict gate 仍比运行时口径更严。strict gate gap 画像：baseline={}，candidate={}。{}",
                     row.scenario_count,
-                    format_runtime_category_list(&row.scenarios)
+                    format_runtime_category_list(&row.scenarios),
+                    format_gate_gap_profiles(&row.baseline_gate_gap_profiles),
+                    format_gate_gap_profiles(&row.candidate_gate_gap_profiles),
+                    focus_text
                 ));
             }
             "posture_continuity" => {

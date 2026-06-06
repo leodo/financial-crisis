@@ -32,6 +32,7 @@ reports/snapshot-export.json
 reports/pipeline-dataset.json
 tmp_assessment_history.json
 tmp_assessment_history_full.json
+output/
 
 # Generated research artifacts in versioned evidence directories.
 # Already tracked baselines remain tracked; new curated evidence must use `git add -f`

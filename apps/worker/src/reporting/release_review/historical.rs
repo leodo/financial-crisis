@@ -25,19 +25,24 @@ pub(super) fn render_release_historical_audit_markdown(
         }
         let _ = writeln!(
             markdown,
-            "| Workstream | Scenarios | Protected | Families | Roles | Suggested review |"
+            "| Workstream | Scenarios | Protected | Families | Roles | Baseline gate gap | Candidate gate gap | Suggested review |"
         );
-        let _ = writeln!(markdown, "| --- | --- | --- | --- | --- | --- |");
+        let _ = writeln!(
+            markdown,
+            "| --- | --- | --- | --- | --- | --- | --- | --- |"
+        );
         for row in &report.historical_audit_workstreams {
             let _ = writeln!(
                 markdown,
-                "| {} | {} ({}) | {} | {} | {} | {} |",
+                "| {} | {} ({}) | {} | {} | {} | {} | {} | {} |",
                 row.workstream,
                 row.scenario_count,
                 crate::format_runtime_category_list(&row.scenarios),
                 row.protected_count,
                 crate::format_runtime_category_list(&row.scenario_families),
                 crate::format_runtime_category_list(&row.training_roles),
+                crate::format_runtime_category_list(&row.baseline_gate_gap_profiles),
+                crate::format_runtime_category_list(&row.candidate_gate_gap_profiles),
                 row.suggested_review,
             );
         }
@@ -97,22 +102,24 @@ pub(super) fn render_release_historical_audit_markdown(
     let _ = writeln!(markdown);
     let _ = writeln!(
         markdown,
-        "| Scenario | Family | Role | Protected | Baseline mode | Candidate mode | Workstream | Suggested review |"
+        "| Scenario | Family | Role | Protected | Baseline mode | Candidate mode | Baseline gate gap | Candidate gate gap | Workstream | Suggested review |"
     );
     let _ = writeln!(
         markdown,
-        "| --- | --- | --- | --- | --- | --- | --- | --- |"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
     );
     for row in &report.historical_audit_priorities {
         let _ = writeln!(
             markdown,
-            "| {} | {} | {} | {} | {} | {} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
             row.scenario_name,
             row.scenario_family,
             row.training_role,
             if row.protected_window { "yes" } else { "no" },
             row.baseline_failure_mode,
             row.candidate_failure_mode,
+            row.baseline_gate_gap_profile.as_deref().unwrap_or("—"),
+            row.candidate_gate_gap_profile.as_deref().unwrap_or("—"),
             row.primary_workstream,
             row.suggested_review,
         );

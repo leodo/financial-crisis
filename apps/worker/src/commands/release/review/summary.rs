@@ -153,13 +153,23 @@ pub(super) fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope
         }
         for row in &report.historical_audit_workstreams {
             println!(
-                "  - {} scenarios={} ({}) protected={} families={} roles={} review={}",
+                "  - {} scenarios={} ({}) protected={} families={} roles={} baseline_gate_gap={} candidate_gate_gap={} review={}",
                 row.workstream,
                 row.scenario_count,
                 row.scenarios.join(", "),
                 row.protected_count,
                 row.scenario_families.join(", "),
                 row.training_roles.join(", "),
+                if row.baseline_gate_gap_profiles.is_empty() {
+                    "—".to_string()
+                } else {
+                    row.baseline_gate_gap_profiles.join(", ")
+                },
+                if row.candidate_gate_gap_profiles.is_empty() {
+                    "—".to_string()
+                } else {
+                    row.candidate_gate_gap_profiles.join(", ")
+                },
                 row.suggested_review
             );
         }
@@ -207,12 +217,14 @@ pub(super) fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope
         println!("Historical audit priorities:");
         for row in &report.historical_audit_priorities {
             println!(
-                "  - {} [{}] workstream={} baseline={} candidate={} protected={} review={}",
+                "  - {} [{}] workstream={} baseline={} candidate={} baseline_gate_gap={} candidate_gate_gap={} protected={} review={}",
                 row.scenario_name,
                 row.training_role,
                 row.primary_workstream,
                 row.baseline_failure_mode,
                 row.candidate_failure_mode,
+                row.baseline_gate_gap_profile.as_deref().unwrap_or("—"),
+                row.candidate_gate_gap_profile.as_deref().unwrap_or("—"),
                 if row.protected_window { "yes" } else { "no" },
                 row.suggested_review
             );

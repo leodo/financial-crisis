@@ -4,9 +4,9 @@ use fc_domain::{load_crisis_scenario_catalog, CrisisScenarioTrainingRole};
 
 use super::super::{ReleaseReviewHistoricalAuditPriority, ReleaseReviewScenarioFocusDiagnostic};
 use super::{
-    release_review_historical_workstream_priority, release_review_primary_workstream,
-    release_review_scenario_family_name, release_review_scenario_training_role_name,
-    release_review_suggested_historical_audit,
+    release_review_gate_gap_profile_for_scenario, release_review_historical_workstream_priority,
+    release_review_primary_workstream, release_review_scenario_family_name,
+    release_review_scenario_training_role_name, release_review_suggested_historical_audit,
 };
 
 pub(crate) fn summarize_release_review_historical_audit_priorities(
@@ -44,6 +44,15 @@ pub(crate) fn summarize_release_review_historical_audit_priorities(
                 scenario.candidate_primary_failure_mode.as_deref(),
             )
             .to_string();
+            let (baseline_gate_gap_profile, candidate_gate_gap_profile) =
+                if primary_workstream == "strict_review_vs_runtime_mapping" {
+                    (
+                        release_review_gate_gap_profile_for_scenario(scenario, false),
+                        release_review_gate_gap_profile_for_scenario(scenario, true),
+                    )
+                } else {
+                    (None, None)
+                };
 
             Some(ReleaseReviewHistoricalAuditPriority {
                 scenario_id: scenario.scenario_id.clone(),
@@ -54,6 +63,8 @@ pub(crate) fn summarize_release_review_historical_audit_priorities(
                 protected_window: definition.protected_window,
                 baseline_failure_mode,
                 candidate_failure_mode,
+                baseline_gate_gap_profile,
+                candidate_gate_gap_profile,
                 primary_workstream: primary_workstream.clone(),
                 suggested_review: release_review_suggested_historical_audit(
                     definition,
