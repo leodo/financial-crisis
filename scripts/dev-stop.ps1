@@ -95,11 +95,49 @@ function Stop-PortListeners {
     }
 }
 
+function Wait-ForPortsReleased {
+    param(
+        [int[]]$Ports,
+        [int]$TimeoutSeconds = 15
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        $StillListening = $false
+        foreach ($Port in $Ports) {
+            $Listeners = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty OwningProcess -Unique |
+                Where-Object { $_ -and $_ -ne 0 }
+            if ($Listeners) {
+                $StillListening = $true
+                break
+            }
+        }
+
+        if (-not $StillListening) {
+            return
+        }
+
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+
+    $Remaining = foreach ($Port in $Ports) {
+        Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty OwningProcess -Unique |
+            Where-Object { $_ -and $_ -ne 0 } |
+            ForEach-Object { "${Port}:$_" }
+    }
+    if ($Remaining) {
+        Write-Warning ("Ports not fully released yet: {0}" -f ($Remaining -join ", "))
+    }
+}
+
 foreach ($Item in $PidFiles) {
     Stop-RecordedProcess -Name $Item.Name -PidFile $Item.Path
     foreach ($Port in $Item.Ports) {
         Stop-PortListeners -Name $Item.Name -Port $Port
     }
+    Wait-ForPortsReleased -Ports $Item.Ports
     if (Test-Path -LiteralPath $Item.Path) {
         Remove-Item -LiteralPath $Item.Path -Force -ErrorAction SilentlyContinue
     }

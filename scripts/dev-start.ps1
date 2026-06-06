@@ -105,6 +105,36 @@ function Get-ListenerPids {
     @($pids | Select-Object -Unique)
 }
 
+function Get-ActiveListenerPids {
+    param([int[]]$Ports)
+
+    @(
+        Get-ListenerPids -Ports $Ports |
+            Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue } |
+            Select-Object -Unique
+    )
+}
+
+function Get-ProjectListenerPids {
+    param([int[]]$Ports)
+
+    @(
+        Get-ActiveListenerPids -Ports $Ports |
+            Where-Object { Test-ProjectProcess -ProcessId $_ } |
+            Select-Object -Unique
+    )
+}
+
+function Get-ForeignListenerPids {
+    param([int[]]$Ports)
+
+    @(
+        Get-ActiveListenerPids -Ports $Ports |
+            Where-Object { -not (Test-ProjectProcess -ProcessId $_) } |
+            Select-Object -Unique
+    )
+}
+
 function Wait-ForListenerPid {
     param(
         [int[]]$Ports,
@@ -113,7 +143,7 @@ function Wait-ForListenerPid {
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     do {
-        $pids = Get-ListenerPids -Ports $Ports
+        $pids = Get-ActiveListenerPids -Ports $Ports
         if ($pids.Count -gt 0) {
             return $pids[0]
         }
@@ -126,7 +156,25 @@ function Wait-ForListenerPid {
 function Test-PortBusy {
     param([int[]]$Ports)
 
-    return [bool](Get-ListenerPids -Ports $Ports)
+    return [bool](Get-ActiveListenerPids -Ports $Ports)
+}
+
+function Adopt-ProjectListener {
+    param(
+        [string]$Name,
+        [string]$PidFile,
+        [int[]]$Ports
+    )
+
+    $ProjectListenerPids = Get-ProjectListenerPids -Ports $Ports
+    if ($ProjectListenerPids.Count -eq 0) {
+        return $false
+    }
+
+    $ListenerPid = [int]$ProjectListenerPids[0]
+    Set-Content -LiteralPath $PidFile -Value $ListenerPid
+    Write-Host "$Name already running, adopted listener PID $ListenerPid"
+    return $true
 }
 
 function Start-HiddenService {
@@ -152,7 +200,11 @@ function Start-HiddenService {
     }
 
     if (Test-PortBusy -Ports $Ports) {
-        $ListenerPids = (Get-ListenerPids -Ports $Ports) -join ","
+        if (Adopt-ProjectListener -Name $Name -PidFile $PidFile -Ports $Ports) {
+            return
+        }
+
+        $ListenerPids = (Get-ActiveListenerPids -Ports $Ports) -join ","
         throw "$Name could not start because port(s) $($Ports -join ',') are already in use by PID(s) $ListenerPids. Run `just stop` first."
     }
 
@@ -180,10 +232,32 @@ if (-not (Test-Path -LiteralPath (Join-Path $Root "apps/web/node_modules"))) {
     Pop-Location
 }
 
-Write-Host "Building API binary..."
-Push-Location $Root
-cargo build -p fc-api
-Pop-Location
+$ApiPorts = @(18080)
+$ForeignApiListeners = Get-ForeignListenerPids -Ports $ApiPorts
+if ($ForeignApiListeners.Count -gt 0) {
+    $ForeignApiListenerText = $ForeignApiListeners -join ","
+    throw "fc-api could not start because port(s) $($ApiPorts -join ',') are already in use by non-project PID(s) $ForeignApiListenerText. Stop those processes or change the bind port first."
+}
+
+Remove-StalePidFile -PidFile $ApiPidFile
+if (Test-ProcessAlive -PidFile $ApiPidFile) {
+    $ExistingApiPid = [int](Get-RecordedProcessId -PidFile $ApiPidFile)
+    if (-not (Test-PortBusy -Ports $ApiPorts)) {
+        Write-Host "fc-api recorded PID $ExistingApiPid is alive but not listening; stopping stale process before build."
+        Stop-ProjectProcessTree -Name "fc-api stale process" -ProcessId $ExistingApiPid
+        Remove-Item -LiteralPath $ApiPidFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+$ApiAlreadyRunning = Adopt-ProjectListener -Name "fc-api" -PidFile $ApiPidFile -Ports $ApiPorts
+if (-not $ApiAlreadyRunning) {
+    Write-Host "Building API binary..."
+    Push-Location $Root
+    cargo build -p fc-api
+    Pop-Location
+} else {
+    Write-Host "fc-api is already running; skipping API rebuild."
+}
 
 if (-not (Test-Path -LiteralPath $ApiBinary)) {
     throw "API binary was not produced at $ApiBinary"
@@ -234,7 +308,7 @@ Set-Location -LiteralPath '$EscapedRoot\apps\web'
 npm run dev *>> '$EscapedWebLog'
 "@
 
-Start-HiddenService -Name "fc-api" -Command $ApiCommand -PidFile $ApiPidFile -Ports @(18080)
+Start-HiddenService -Name "fc-api" -Command $ApiCommand -PidFile $ApiPidFile -Ports $ApiPorts
 Start-HiddenService -Name "web" -Command $WebCommand -PidFile $WebPidFile -Ports @(5173, 5174)
 
 Start-Sleep -Seconds 2
