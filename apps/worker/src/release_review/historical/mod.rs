@@ -21,12 +21,26 @@ pub(crate) use workstreams::{
 };
 
 fn release_review_historical_audit_attribution_label(
+    baseline_failure_mode: &str,
     baseline_matches: bool,
     candidate_matches: bool,
+    outcome: &str,
+    baseline_runtime_floor_hit_point_count: u32,
+    candidate_runtime_floor_hit_point_count: u32,
 ) -> &'static str {
     match (baseline_matches, candidate_matches) {
         (true, true) => "both_baseline_and_candidate",
         (true, false) => "baseline_shared_weakness",
+        (false, true)
+            if release_review_candidate_revealed_next_blocker(
+                baseline_failure_mode,
+                outcome,
+                baseline_runtime_floor_hit_point_count,
+                candidate_runtime_floor_hit_point_count,
+            ) =>
+        {
+            "candidate_revealed_next_blocker"
+        }
         (false, true) => "candidate_regression",
         (false, false) => "unclassified",
     }
@@ -35,6 +49,7 @@ fn release_review_historical_audit_attribution_label(
 fn release_review_historical_audit_action_type(attribution: &str) -> &'static str {
     match attribution {
         "candidate_regression" => "candidate_reject_or_retrain",
+        "candidate_revealed_next_blocker" => "next_blocker_fix_before_promotion",
         "both_baseline_and_candidate" => "shared_blocker_fix_before_promotion",
         "baseline_shared_weakness" => "baseline_research_fix",
         _ => "manual_review",
@@ -43,10 +58,11 @@ fn release_review_historical_audit_action_type(attribution: &str) -> &'static st
 
 fn release_review_historical_attribution_priority(attribution: &str) -> u8 {
     match attribution {
-        "both_baseline_and_candidate" => 0,
-        "candidate_regression" => 1,
-        "baseline_shared_weakness" => 2,
-        _ => 3,
+        "candidate_regression" => 0,
+        "both_baseline_and_candidate" => 1,
+        "candidate_revealed_next_blocker" => 2,
+        "baseline_shared_weakness" => 3,
+        _ => 4,
     }
 }
 
@@ -54,8 +70,9 @@ fn release_review_historical_action_priority(action_type: &str) -> u8 {
     match action_type {
         "candidate_reject_or_retrain" => 0,
         "shared_blocker_fix_before_promotion" => 1,
-        "baseline_research_fix" => 2,
-        _ => 3,
+        "next_blocker_fix_before_promotion" => 2,
+        "baseline_research_fix" => 3,
+        _ => 4,
     }
 }
 
@@ -79,6 +96,9 @@ fn release_review_historical_audit_attribution_explanation(
         ),
         "candidate_regression" => format!(
             "{scenario_count} 个样本主要是 candidate 新落入 {workstream_label}，涉及 {scenario_text}。baseline 在同一条线没有对应失败，这更像这次候选版本自己退化出来的问题。"
+        ),
+        "candidate_revealed_next_blocker" => format!(
+            "{scenario_count} 个样本当前主要落在 candidate 的 {workstream_label}，涉及 {scenario_text}。baseline 虽然没有同一条失败，但这些样本的动作结局没有比 baseline 更差，且 runtime floor 命中没有回退，因此更像 candidate 先修掉了上游阻塞，暴露出下一层 blocker，而不是纯粹退化。"
         ),
         "baseline_shared_weakness" => format!(
             "{scenario_count} 个样本在 baseline 已经落在 {workstream_label}，涉及 {scenario_text}。candidate 这版没有新增同类失败，因此这更像 formal main 既有短板。"
@@ -105,6 +125,9 @@ fn release_review_historical_audit_action_recommendation(
         "candidate_regression" => format!(
             "{scenario_count} 个样本显示 candidate 在 {workstream_label} 上新增退化。当前更合适的动作是先判定该候选不具备晋升条件，回到训练 / 阈值 / policy 改动复核。"
         ),
+        "candidate_revealed_next_blocker" => format!(
+            "{scenario_count} 个样本显示 candidate 在不恶化历史动作结局的前提下，把阻塞暴露到了 {workstream_label}。当前不应把它按纯退化判退，但仍应把这条线视为晋升前必须修掉的下一层 blocker。"
+        ),
         "both_baseline_and_candidate" => format!(
             "{scenario_count} 个样本显示 {workstream_label} 同时是 baseline 共性短板和 candidate 未修复阻塞。当前应先把这条线视为晋升前置 blocker。"
         ),
@@ -119,6 +142,37 @@ fn release_review_historical_audit_action_recommendation(
 
 fn release_review_failure_mode_matches_workstream(failure_mode: &str, workstream: &str) -> bool {
     failure_mode != "—" && release_review_workstream_for_failure_mode(failure_mode) == workstream
+}
+
+fn release_review_candidate_revealed_next_blocker(
+    baseline_failure_mode: &str,
+    outcome: &str,
+    baseline_runtime_floor_hit_point_count: u32,
+    candidate_runtime_floor_hit_point_count: u32,
+) -> bool {
+    release_review_has_known_failure_mode(baseline_failure_mode)
+        && release_review_candidate_outcome_not_worse(outcome)
+        && candidate_runtime_floor_hit_point_count >= baseline_runtime_floor_hit_point_count
+}
+
+fn release_review_has_known_failure_mode(failure_mode: &str) -> bool {
+    !failure_mode.is_empty() && failure_mode != "—" && failure_mode != "unclassified"
+}
+
+fn release_review_candidate_outcome_not_worse(outcome: &str) -> bool {
+    let Some((baseline, candidate)) = outcome.split_once("_to_") else {
+        return false;
+    };
+    release_review_warning_state_rank(candidate) >= release_review_warning_state_rank(baseline)
+}
+
+fn release_review_warning_state_rank(state: &str) -> i8 {
+    match state {
+        "timely" => 2,
+        "late_only" => 1,
+        "missed" => 0,
+        _ => -1,
+    }
 }
 
 fn release_review_primary_workstream(

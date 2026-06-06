@@ -57,12 +57,19 @@ pub(crate) fn summarize_release_review_historical_audit_priorities(
             Some(ReleaseReviewHistoricalAuditPriority {
                 scenario_id: scenario.scenario_id.clone(),
                 scenario_name: scenario.name.clone(),
+                outcome: scenario.outcome.clone(),
                 scenario_family: release_review_scenario_family_name(definition.family).to_string(),
                 training_role: release_review_scenario_training_role_name(definition.training_role)
                     .to_string(),
                 protected_window: definition.protected_window,
                 baseline_failure_mode,
                 candidate_failure_mode,
+                baseline_actionable_point_count: scenario.baseline_actionable_point_count,
+                candidate_actionable_point_count: scenario.candidate_actionable_point_count,
+                baseline_runtime_floor_hit_point_count: scenario
+                    .baseline_runtime_floor_hit_point_count,
+                candidate_runtime_floor_hit_point_count: scenario
+                    .candidate_runtime_floor_hit_point_count,
                 baseline_gate_gap_profile,
                 candidate_gate_gap_profile,
                 primary_workstream: primary_workstream.clone(),

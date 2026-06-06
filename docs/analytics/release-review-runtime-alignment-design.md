@@ -275,12 +275,17 @@ vs
 - 还要回答这条线更像：
   - `both_baseline_and_candidate`：baseline 和 candidate 都掉进同一类失败；
   - `baseline_shared_weakness`：这是 formal main 既有短板，不是 candidate 新退化；
-  - `candidate_regression`：baseline 没有同类问题，是 candidate 这版自己退化出来的。
+  - `candidate_regression`：baseline 没有同类问题，是 candidate 这版自己退化出来的；
+  - `candidate_revealed_next_blocker`：candidate 虽然在这条线上新暴露出阻塞，
+    但历史动作结局没有比 baseline 更差，且 runtime floor 命中没有回退，
+    更像 candidate 先修掉了上游问题，随后暴露出下一层 blocker。
 
 这层归因的目的，是避免把两种性质完全不同的问题混在一起讨论：
 
 - 如果是 `baseline_shared_weakness`，后续重点应放在 formal main 的长期结构修复；
 - 如果是 `candidate_regression`，后续重点应放在 candidate 这轮训练、阈值或 policy 改动；
+- 如果是 `candidate_revealed_next_blocker`，后续重点应放在这条新暴露出来的下游 blocker，
+  不应把它和“纯退化”混成同一类判退理由；
 - 如果是 `both_baseline_and_candidate`，说明 candidate 既没有修掉主线短板，也还不能拿来替换当前 active。
 
 再往前一步，还需要把这层归因继续压成 `Historical Audit Actions`：
@@ -288,12 +293,14 @@ vs
 - 不再让读报告的人自己把 attribution 翻译成下一步动作；
 - 直接给出这条 workstream 当前更应该进入哪一种处理路径：
   - `candidate_reject_or_retrain`
+  - `next_blocker_fix_before_promotion`
   - `shared_blocker_fix_before_promotion`
   - `baseline_research_fix`
 
 这样 `release review` 最终 recommendation 就不再只是泛化地说“需要继续复核”，而是能更明确地区分：
 
 - 当前 candidate 是否应该直接判退；
+- 当前 candidate 是否是在“不变差”的前提下暴露出新的下游 blocker；
 - 当前 candidate 是否只是被 baseline 主线共性短板挡住；
 - 某条问题到底是 release go/no-go blocker，还是 formal main 的长期研究修复项。
 
@@ -518,3 +525,38 @@ That means the next research loop can say, directly and repeatably:
 - or “the real blocker is still both `p20d` and `p60d`”,
 
 without re-reading the raw continuity facet tables by hand.
+
+## 10. Attribution Correction
+
+After the first plateau repair, a new audit-semantics issue showed up:
+
+- `1990-1993` / `1998` moved from `posture_continuity_failure`
+  to `strict_gate_mismatch`;
+- `2000-2001` moved from `strict_gate_mismatch`
+  to `residual_review_l3_failure`;
+- but some of these scenarios kept `timely_to_timely` or `missed_to_missed`
+  outcomes and did not lose runtime-floor coverage.
+
+Treating all of those as `candidate_regression` is too coarse. It collapses
+two different meanings:
+
+1. the candidate really made the scenario worse;
+2. the candidate repaired an upstream block enough to reveal the next blocker.
+
+The audit logic now distinguishes those two cases explicitly:
+
+- if the candidate makes the warning outcome worse, or runtime-floor coverage
+  falls back, keep `candidate_regression`;
+- if the baseline already had some other failure mode, the candidate outcome is
+  not worse, and runtime-floor hits do not fall back, mark it as
+  `candidate_revealed_next_blocker`.
+
+That new attribution maps to a different action:
+
+- `next_blocker_fix_before_promotion`
+
+So release review recommendation text can now separate:
+
+- “this candidate regressed and should be rejected/retrained”;
+- from “this candidate still cannot be promoted, but it exposed the next
+  blocker rather than simply getting worse”.

@@ -37,8 +37,14 @@ pub(crate) fn summarize_release_review_historical_audit_attribution(
             &priority.candidate_failure_mode,
             &priority.primary_workstream,
         );
-        let attribution =
-            release_review_historical_audit_attribution_label(baseline_matches, candidate_matches);
+        let attribution = release_review_historical_audit_attribution_label(
+            &priority.baseline_failure_mode,
+            baseline_matches,
+            candidate_matches,
+            &priority.outcome,
+            priority.baseline_runtime_floor_hit_point_count,
+            priority.candidate_runtime_floor_hit_point_count,
+        );
         let entry = rows
             .entry((priority.primary_workstream.clone(), attribution.to_string()))
             .or_insert_with(|| (BTreeSet::new(), 0, 0, 0, BTreeSet::new(), BTreeSet::new()));

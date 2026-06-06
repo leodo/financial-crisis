@@ -13,6 +13,10 @@ pub(super) fn build_release_review_recommendation(
         historical_audit_actions,
         "shared_blocker_fix_before_promotion",
     );
+    let next_blocker_workstreams = release_review_action_workstream_labels(
+        historical_audit_actions,
+        "next_blocker_fix_before_promotion",
+    );
     let baseline_fix_workstreams =
         release_review_action_workstream_labels(historical_audit_actions, "baseline_research_fix");
     if regressions.is_empty() {
@@ -20,6 +24,17 @@ pub(super) fn build_release_review_recommendation(
             format!(
                 "候选版虽然通过了当前护栏，但历史审计显示它在 {} 上出现新增退化。当前不应直接晋升，应先回到训练目标、阈值或 runtime policy 改动复核。",
                 candidate_regression_workstreams.join(", ")
+            )
+        } else if !next_blocker_workstreams.is_empty() && !shared_blocker_workstreams.is_empty() {
+            format!(
+                "候选版虽然通过了当前护栏，但历史审计显示 {} 仍是共享 blocker，另有部分样本在 {} 上只是暴露出下一层 blocker，而不是纯退化。当前仍不应直接晋升，应先清掉共享阻塞，再处理这条下游阻塞。",
+                shared_blocker_workstreams.join(", "),
+                next_blocker_workstreams.join(", ")
+            )
+        } else if !next_blocker_workstreams.is_empty() {
+            format!(
+                "候选版虽然通过了当前护栏，但历史审计显示它在 {} 上只是暴露出下一层 blocker，而不是纯退化。当前仍不应直接晋升，应先把这条下游阻塞修掉，再决定是否放行。",
+                next_blocker_workstreams.join(", ")
             )
         } else if !shared_blocker_workstreams.is_empty() {
             format!(
@@ -42,6 +57,17 @@ pub(super) fn build_release_review_recommendation(
         format!(
             "候选版未通过当前 review，且历史审计显示它在 {} 上出现新增退化，不应替代当前默认线上版本。应先回到训练目标、标签口径、阈值或 runtime policy 改动复核。",
             candidate_regression_workstreams.join(", ")
+        )
+    } else if !next_blocker_workstreams.is_empty() && !shared_blocker_workstreams.is_empty() {
+        format!(
+            "候选版未通过当前 review，关键阻塞一部分仍集中在 {}，另一部分则转到了 {}。后者更像候选版先修掉了上游问题、随后暴露出的下一层 blocker，而不是纯粹退化；当前仍不应晋升，但下一轮应先清共享 blocker，再专项修这条下游阻塞。",
+            shared_blocker_workstreams.join(", "),
+            next_blocker_workstreams.join(", ")
+        )
+    } else if !next_blocker_workstreams.is_empty() {
+        format!(
+            "候选版未通过当前 review，但历史审计显示主要阻塞已转到 {}。这更像候选版先修掉了上游问题、随后暴露出下一层 blocker，而不是纯粹退化；当前仍不应晋升，但下一轮应直接对这条下游阻塞做专项修复。",
+            next_blocker_workstreams.join(", ")
         )
     } else if !shared_blocker_workstreams.is_empty() {
         format!(

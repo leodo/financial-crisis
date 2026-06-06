@@ -499,15 +499,19 @@
                 会继续区分每条 workstream 到底是：
                 `both_baseline_and_candidate`、
                 `baseline_shared_weakness`，
-                还是 `candidate_regression`，
-                避免把 formal main 既有短板和 candidate 本轮退化混成同一个问题；
+                `candidate_regression`，
+                以及 `candidate_revealed_next_blocker`，
+                避免把 formal main 既有短板、candidate 本轮真实退化，
+                和“candidate 只是暴露出下一层 blocker”混成同一个问题；
             4.8 [x] `release review` 已新增 `Historical Audit Actions`，
                 会把 attribution 进一步落成
                 `candidate_reject_or_retrain` /
+                `next_blocker_fix_before_promotion` /
                 `shared_blocker_fix_before_promotion` /
                 `baseline_research_fix` 三类动作，
                 让最终 recommendation 能直接回答
                 “该判退 candidate、先修共享 blocker，
+                先修新暴露的下游 blocker，
                 还是纳入 formal main 主线修复”；
             4.9 [x] `Focus Scenarios` 的筛选逻辑已继续从“只看 backtest
                 `L2/L3` 摘要差异”扩成“也覆盖 `runtime floor hit without L3`

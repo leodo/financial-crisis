@@ -174,11 +174,16 @@ fn release_review_historical_audit_workstreams_group_priorities() {
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_dotcom_unwind_2000".to_string(),
             scenario_name: "2000-2001 科网泡沫出清".to_string(),
+            outcome: "missed_to_missed".to_string(),
             scenario_family: "mixed_systemic_stress".to_string(),
             training_role: "candidate_optional".to_string(),
             protected_window: true,
             baseline_failure_mode: "strict_gate_mismatch".to_string(),
             candidate_failure_mode: "strict_gate_mismatch".to_string(),
+            baseline_actionable_point_count: 0,
+            candidate_actionable_point_count: 0,
+            baseline_runtime_floor_hit_point_count: 3,
+            candidate_runtime_floor_hit_point_count: 2,
             baseline_gate_gap_profile: Some("p20d_and_p60d".to_string()),
             candidate_gate_gap_profile: Some("p20d_only".to_string()),
             primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
@@ -187,11 +192,16 @@ fn release_review_historical_audit_workstreams_group_priorities() {
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_early_90s_banking_stress".to_string(),
             scenario_name: "1990-1993 美国银行与衰退压力".to_string(),
+            outcome: "missed_to_missed".to_string(),
             scenario_family: "mixed_systemic_stress".to_string(),
             training_role: "extension_only".to_string(),
             protected_window: true,
             baseline_failure_mode: "posture_continuity_failure".to_string(),
             candidate_failure_mode: "posture_continuity_failure".to_string(),
+            baseline_actionable_point_count: 0,
+            candidate_actionable_point_count: 0,
+            baseline_runtime_floor_hit_point_count: 5,
+            candidate_runtime_floor_hit_point_count: 5,
             baseline_gate_gap_profile: None,
             candidate_gate_gap_profile: None,
             primary_workstream: "posture_continuity".to_string(),
@@ -200,11 +210,16 @@ fn release_review_historical_audit_workstreams_group_priorities() {
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_funding_stress_2011".to_string(),
             scenario_name: "2011 美欧融资压力".to_string(),
+            outcome: "missed_to_missed".to_string(),
             scenario_family: "mixed_systemic_stress".to_string(),
             training_role: "extension_only".to_string(),
             protected_window: true,
             baseline_failure_mode: "posture_continuity_failure".to_string(),
             candidate_failure_mode: "score_confirmation_failure".to_string(),
+            baseline_actionable_point_count: 0,
+            candidate_actionable_point_count: 0,
+            baseline_runtime_floor_hit_point_count: 3,
+            candidate_runtime_floor_hit_point_count: 3,
             baseline_gate_gap_profile: None,
             candidate_gate_gap_profile: None,
             primary_workstream: "posture_continuity".to_string(),
@@ -253,11 +268,16 @@ fn release_review_historical_audit_workstreams_with_focus_aggregate_gate_gap_poi
     let priorities = vec![ReleaseReviewHistoricalAuditPriority {
         scenario_id: "us_dotcom_unwind_2000".to_string(),
         scenario_name: "2000-2001 科网泡沫出清".to_string(),
+        outcome: "missed_to_missed".to_string(),
         scenario_family: "mixed_systemic_stress".to_string(),
         training_role: "candidate_optional".to_string(),
         protected_window: true,
         baseline_failure_mode: "strict_gate_mismatch".to_string(),
         candidate_failure_mode: "strict_gate_mismatch".to_string(),
+        baseline_actionable_point_count: 0,
+        candidate_actionable_point_count: 0,
+        baseline_runtime_floor_hit_point_count: 0,
+        candidate_runtime_floor_hit_point_count: 0,
         baseline_gate_gap_profile: Some("p20d_and_p60d".to_string()),
         candidate_gate_gap_profile: Some("p20d_only".to_string()),
         primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
@@ -340,11 +360,16 @@ fn release_review_historical_audit_attribution_distinguishes_shared_and_regressi
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_dotcom_unwind_2000".to_string(),
             scenario_name: "2000-2001 科网泡沫出清".to_string(),
+            outcome: "missed_to_missed".to_string(),
             scenario_family: "mixed_systemic_stress".to_string(),
             training_role: "candidate_optional".to_string(),
             protected_window: true,
             baseline_failure_mode: "strict_gate_mismatch".to_string(),
             candidate_failure_mode: "strict_gate_mismatch".to_string(),
+            baseline_actionable_point_count: 0,
+            candidate_actionable_point_count: 0,
+            baseline_runtime_floor_hit_point_count: 3,
+            candidate_runtime_floor_hit_point_count: 3,
             baseline_gate_gap_profile: Some("p20d_and_p60d".to_string()),
             candidate_gate_gap_profile: Some("p20d_only".to_string()),
             primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
@@ -353,11 +378,16 @@ fn release_review_historical_audit_attribution_distinguishes_shared_and_regressi
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_early_90s_banking_stress".to_string(),
             scenario_name: "1990-1993 美国银行与衰退压力".to_string(),
+            outcome: "missed_to_missed".to_string(),
             scenario_family: "mixed_systemic_stress".to_string(),
             training_role: "extension_only".to_string(),
             protected_window: true,
             baseline_failure_mode: "posture_continuity_failure".to_string(),
             candidate_failure_mode: "—".to_string(),
+            baseline_actionable_point_count: 0,
+            candidate_actionable_point_count: 0,
+            baseline_runtime_floor_hit_point_count: 5,
+            candidate_runtime_floor_hit_point_count: 0,
             baseline_gate_gap_profile: None,
             candidate_gate_gap_profile: None,
             primary_workstream: "posture_continuity".to_string(),
@@ -366,11 +396,16 @@ fn release_review_historical_audit_attribution_distinguishes_shared_and_regressi
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_regional_banks_2023".to_string(),
             scenario_name: "2023 美国区域银行危机".to_string(),
+            outcome: "timely_to_missed".to_string(),
             scenario_family: "banking_crisis".to_string(),
             training_role: "mandatory".to_string(),
             protected_window: true,
             baseline_failure_mode: "residual_review_l3_failure".to_string(),
             candidate_failure_mode: "score_confirmation_failure".to_string(),
+            baseline_actionable_point_count: 4,
+            candidate_actionable_point_count: 0,
+            baseline_runtime_floor_hit_point_count: 1,
+            candidate_runtime_floor_hit_point_count: 0,
             baseline_gate_gap_profile: None,
             candidate_gate_gap_profile: None,
             primary_workstream: "score_confirmation".to_string(),
@@ -409,6 +444,101 @@ fn release_review_historical_audit_attribution_distinguishes_shared_and_regressi
 }
 
 #[test]
+fn release_review_historical_audit_attribution_marks_revealed_next_blocker() {
+    let rows = summarize_release_review_historical_audit_attribution(&[
+        ReleaseReviewHistoricalAuditPriority {
+            scenario_id: "us_early_90s_banking_stress".to_string(),
+            scenario_name: "1990-1993 美国银行与衰退压力".to_string(),
+            outcome: "timely_to_timely".to_string(),
+            scenario_family: "mixed_systemic_stress".to_string(),
+            training_role: "extension_only".to_string(),
+            protected_window: true,
+            baseline_failure_mode: "posture_continuity_failure".to_string(),
+            candidate_failure_mode: "strict_gate_mismatch".to_string(),
+            baseline_actionable_point_count: 58,
+            candidate_actionable_point_count: 54,
+            baseline_runtime_floor_hit_point_count: 90,
+            candidate_runtime_floor_hit_point_count: 90,
+            baseline_gate_gap_profile: None,
+            candidate_gate_gap_profile: Some("p20d_only".to_string()),
+            primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
+            suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
+        },
+        ReleaseReviewHistoricalAuditPriority {
+            scenario_id: "us_dotcom_unwind_2000".to_string(),
+            scenario_name: "2000-2001 科网泡沫出清".to_string(),
+            outcome: "missed_to_missed".to_string(),
+            scenario_family: "mixed_systemic_stress".to_string(),
+            training_role: "candidate_optional".to_string(),
+            protected_window: true,
+            baseline_failure_mode: "strict_gate_mismatch".to_string(),
+            candidate_failure_mode: "residual_review_l3_failure".to_string(),
+            baseline_actionable_point_count: 0,
+            candidate_actionable_point_count: 0,
+            baseline_runtime_floor_hit_point_count: 3,
+            candidate_runtime_floor_hit_point_count: 13,
+            baseline_gate_gap_profile: None,
+            candidate_gate_gap_profile: None,
+            primary_workstream: "residual_release_review_audit".to_string(),
+            suggested_review: "继续逐点复核 mixed_systemic_stress 的 runtime block mix".to_string(),
+        },
+        ReleaseReviewHistoricalAuditPriority {
+            scenario_id: "us_regional_banks_2023".to_string(),
+            scenario_name: "2023 美国区域银行危机".to_string(),
+            outcome: "timely_to_missed".to_string(),
+            scenario_family: "banking_crisis".to_string(),
+            training_role: "mandatory".to_string(),
+            protected_window: true,
+            baseline_failure_mode: "posture_continuity_failure".to_string(),
+            candidate_failure_mode: "strict_gate_mismatch".to_string(),
+            baseline_actionable_point_count: 4,
+            candidate_actionable_point_count: 0,
+            baseline_runtime_floor_hit_point_count: 3,
+            candidate_runtime_floor_hit_point_count: 1,
+            baseline_gate_gap_profile: None,
+            candidate_gate_gap_profile: Some("p20d_only".to_string()),
+            primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
+            suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
+        },
+    ]);
+
+    let revealed_gate = rows
+        .iter()
+        .find(|row| {
+            row.attribution == "candidate_revealed_next_blocker"
+                && row.workstream == "strict_review_vs_runtime_mapping"
+        })
+        .expect("revealed next blocker gate row");
+    assert_eq!(revealed_gate.scenario_count, 1);
+    assert_eq!(revealed_gate.baseline_count, 0);
+    assert_eq!(revealed_gate.candidate_count, 1);
+    assert!(revealed_gate.explanation.contains("暴露出下一层 blocker"));
+
+    let revealed_residual = rows
+        .iter()
+        .find(|row| {
+            row.attribution == "candidate_revealed_next_blocker"
+                && row.workstream == "residual_release_review_audit"
+        })
+        .expect("revealed next blocker residual row");
+    assert_eq!(revealed_residual.scenario_count, 1);
+    assert_eq!(revealed_residual.candidate_count, 1);
+    assert!(revealed_residual
+        .candidate_scenarios
+        .contains(&"2000-2001 科网泡沫出清".to_string()));
+
+    let regression = rows
+        .iter()
+        .find(|row| row.attribution == "candidate_regression")
+        .expect("candidate regression row");
+    assert_eq!(regression.workstream, "strict_review_vs_runtime_mapping");
+    assert_eq!(regression.scenario_count, 1);
+    assert!(regression
+        .candidate_scenarios
+        .contains(&"2023 美国区域银行危机".to_string()));
+}
+
+#[test]
 fn release_review_historical_audit_actions_translate_attribution_to_next_step() {
     let actions = summarize_release_review_historical_audit_actions(&[
         ReleaseReviewHistoricalAuditAttributionSummary {
@@ -440,6 +570,17 @@ fn release_review_historical_audit_actions_translate_attribution_to_next_step() 
             explanation: "shared blocker".to_string(),
         },
         ReleaseReviewHistoricalAuditAttributionSummary {
+            workstream: "strict_review_vs_runtime_mapping".to_string(),
+            attribution: "candidate_revealed_next_blocker".to_string(),
+            scenario_count: 1,
+            protected_count: 1,
+            baseline_count: 0,
+            candidate_count: 1,
+            baseline_scenarios: Vec::new(),
+            candidate_scenarios: vec!["1990-1993 美国银行与衰退压力".to_string()],
+            explanation: "revealed next blocker".to_string(),
+        },
+        ReleaseReviewHistoricalAuditAttributionSummary {
             workstream: "posture_continuity".to_string(),
             attribution: "baseline_shared_weakness".to_string(),
             scenario_count: 1,
@@ -452,7 +593,7 @@ fn release_review_historical_audit_actions_translate_attribution_to_next_step() 
         },
     ]);
 
-    assert_eq!(actions.len(), 3);
+    assert_eq!(actions.len(), 4);
     let candidate = actions
         .iter()
         .find(|row| row.action_type == "candidate_reject_or_retrain")
@@ -466,6 +607,13 @@ fn release_review_historical_audit_actions_translate_attribution_to_next_step() 
         .expect("shared blocker action");
     assert_eq!(shared.workstream, "strict_review_vs_runtime_mapping");
     assert!(shared.recommendation.contains("晋升前置 blocker"));
+
+    let next_blocker = actions
+        .iter()
+        .find(|row| row.action_type == "next_blocker_fix_before_promotion")
+        .expect("next blocker action");
+    assert_eq!(next_blocker.workstream, "strict_review_vs_runtime_mapping");
+    assert!(next_blocker.recommendation.contains("不恶化历史动作结局"));
 
     let baseline = actions
         .iter()
@@ -481,11 +629,16 @@ fn release_review_historical_audit_takeaways_explain_primary_workstreams() {
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_dotcom_unwind_2000".to_string(),
             scenario_name: "2000-2001 科网泡沫出清".to_string(),
+            outcome: "missed_to_missed".to_string(),
             scenario_family: "mixed_systemic_stress".to_string(),
             training_role: "candidate_optional".to_string(),
             protected_window: true,
             baseline_failure_mode: "strict_gate_mismatch".to_string(),
             candidate_failure_mode: "strict_gate_mismatch".to_string(),
+            baseline_actionable_point_count: 0,
+            candidate_actionable_point_count: 0,
+            baseline_runtime_floor_hit_point_count: 0,
+            candidate_runtime_floor_hit_point_count: 0,
             baseline_gate_gap_profile: Some("p20d_and_p60d".to_string()),
             candidate_gate_gap_profile: Some("p60d_only".to_string()),
             primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
@@ -494,11 +647,16 @@ fn release_review_historical_audit_takeaways_explain_primary_workstreams() {
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_early_90s_banking_stress".to_string(),
             scenario_name: "1990-1993 美国银行与衰退压力".to_string(),
+            outcome: "missed_to_missed".to_string(),
             scenario_family: "mixed_systemic_stress".to_string(),
             training_role: "extension_only".to_string(),
             protected_window: true,
             baseline_failure_mode: "posture_continuity_failure".to_string(),
             candidate_failure_mode: "posture_continuity_failure".to_string(),
+            baseline_actionable_point_count: 0,
+            candidate_actionable_point_count: 0,
+            baseline_runtime_floor_hit_point_count: 0,
+            candidate_runtime_floor_hit_point_count: 0,
             baseline_gate_gap_profile: None,
             candidate_gate_gap_profile: None,
             primary_workstream: "posture_continuity".to_string(),
