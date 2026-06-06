@@ -11,7 +11,9 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchInterval: 60_000,
-      retry: 1
+      refetchOnReconnect: true,
+      retry: 3,
+      retryDelay: (attemptIndex) => Math.min(1_000 * 2 ** attemptIndex, 5_000)
     }
   }
 });

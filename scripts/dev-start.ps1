@@ -153,6 +153,29 @@ function Wait-ForListenerPid {
     return $null
 }
 
+function Wait-ForHttpOk {
+    param(
+        [string]$Url,
+        [int]$TimeoutSeconds = 30,
+        [int]$PollMilliseconds = 500
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        try {
+            $response = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec 5 -ErrorAction Stop
+            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
+                return $true
+            }
+        } catch {
+        }
+
+        Start-Sleep -Milliseconds $PollMilliseconds
+    } while ((Get-Date) -lt $deadline)
+
+    return $false
+}
+
 function Test-PortBusy {
     param([int[]]$Ports)
 
@@ -309,7 +332,14 @@ npm run dev *>> '$EscapedWebLog'
 "@
 
 Start-HiddenService -Name "fc-api" -Command $ApiCommand -PidFile $ApiPidFile -Ports $ApiPorts
+if (-not (Wait-ForHttpOk -Url "http://127.0.0.1:18080/health" -TimeoutSeconds 30)) {
+    throw "fc-api started but did not become healthy within 30 seconds. Check logs/api.log."
+}
+
 Start-HiddenService -Name "web" -Command $WebCommand -PidFile $WebPidFile -Ports @(5173, 5174)
+if (-not (Wait-ForHttpOk -Url "http://127.0.0.1:5173" -TimeoutSeconds 30)) {
+    throw "web started but did not serve http://127.0.0.1:5173 within 30 seconds. Check logs/web.log."
+}
 
 Start-Sleep -Seconds 2
 
