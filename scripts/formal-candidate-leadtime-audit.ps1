@@ -109,6 +109,7 @@ const leadtimeGapRows = (comparison.backtest_scenarios || [])
 
 const focusRows = (review.scenario_focus || []).map((scenario) => {
   const dominantBlocks = scenario.dominant_runtime_blocks || {};
+  const dominantContinuity = scenario.dominant_runtime_continuity_facets || {};
   const firstInteresting =
     (scenario.interesting_points || []).find((point) =>
       point.baseline_runtime_actionable_block_category != null ||
@@ -128,6 +129,12 @@ const focusRows = (review.scenario_focus || []).map((scenario) => {
     baseline_dominant_runtime_block_count: dominantBlocks.baseline_count ?? 0,
     candidate_dominant_runtime_block: (dominantBlocks.candidate_categories || []).join(" + "),
     candidate_dominant_runtime_block_count: dominantBlocks.candidate_count ?? 0,
+    baseline_dominant_continuity_facet:
+      (dominantContinuity.baseline_categories || []).join(" + "),
+    baseline_dominant_continuity_facet_count: dominantContinuity.baseline_count ?? 0,
+    candidate_dominant_continuity_facet:
+      (dominantContinuity.candidate_categories || []).join(" + "),
+    candidate_dominant_continuity_facet_count: dominantContinuity.candidate_count ?? 0,
     baseline_first_runtime_floor_hit_without_l3_reason:
       scenario.baseline_first_runtime_floor_hit_without_l3_reason ?? null,
     candidate_first_runtime_floor_hit_without_l3_reason:
@@ -145,6 +152,7 @@ const focusRows = (review.scenario_focus || []).map((scenario) => {
 });
 
 const blockMixRows = [];
+const continuityFacetRows = [];
 for (const scenario of review.scenario_focus || []) {
   for (const block of scenario.runtime_block_counts || []) {
     blockMixRows.push({
@@ -154,6 +162,16 @@ for (const scenario of review.scenario_focus || []) {
       baseline_count: block.baseline_count ?? 0,
       candidate_count: block.candidate_count ?? 0,
       delta: block.delta ?? 0
+    });
+  }
+  for (const facet of scenario.runtime_continuity_facet_counts || []) {
+    continuityFacetRows.push({
+      scenario_id: scenario.scenario_id,
+      name: scenario.name,
+      category: facet.category,
+      baseline_count: facet.baseline_count ?? 0,
+      candidate_count: facet.candidate_count ?? 0,
+      delta: facet.delta ?? 0
     });
   }
 }
@@ -200,6 +218,7 @@ console.log(
       leadtime_gap_rows: leadtimeGapRows,
       focus_rows: focusRows,
       block_mix_rows: blockMixRows,
+      continuity_facet_rows: continuityFacetRows,
       workstream_rows: workstreamRows,
       attribution_rows: attributionRows,
       action_rows: actionRows
@@ -238,6 +257,7 @@ function Get-LeadtimeTakeaways {
     $focusRows = @($Summary.focus_rows)
     $leadtimeGaps = @($Summary.leadtime_gap_rows)
     $blockRows = @($Summary.block_mix_rows)
+    $continuityFacetRows = @($Summary.continuity_facet_rows)
 
     if (
         $comparison.timely_warning_rate -and
@@ -288,6 +308,24 @@ function Get-LeadtimeTakeaways {
         Add-Takeaway -List $takeaways -Text $message
     }
 
+    $candidateP20OnlyRows = $continuityFacetRows | Where-Object {
+        $_.category -eq "gate_gap:p20d_only" -and [int]$_.candidate_count -gt 0
+    }
+    if (($candidateP20OnlyRows | Measure-Object).Count -gt 0) {
+        $scenarioNames = ($candidateP20OnlyRows | Select-Object -ExpandProperty name -Unique) -join ", "
+        $message = 'gate_gap:p20d_only still appears in scenarios such as {0}; the next strict-gate audit should verify whether p20d review thresholds are the main blocker.' -f $scenarioNames
+        Add-Takeaway -List $takeaways -Text $message
+    }
+
+    $candidateBothGapRows = $continuityFacetRows | Where-Object {
+        $_.category -eq "gate_gap:p20d_and_p60d" -and [int]$_.candidate_count -gt 0
+    }
+    if (($candidateBothGapRows | Measure-Object).Count -gt 0) {
+        $scenarioNames = ($candidateBothGapRows | Select-Object -ExpandProperty name -Unique) -join ", "
+        $message = 'gate_gap:p20d_and_p60d remains active in scenarios such as {0}; both medium- and long-horizon strict gates are still suppressing L3 conversion.' -f $scenarioNames
+        Add-Takeaway -List $takeaways -Text $message
+    }
+
     foreach ($focus in $focusRows) {
         if ($focus.candidate_primary_failure_mode) {
             $message = '{0} has candidate primary failure mode {1}.' -f $focus.name, $focus.candidate_primary_failure_mode
@@ -323,8 +361,20 @@ $summary.metric_rows | Format-Table -AutoSize
 Write-Host ""
 
 Write-Host "Runtime separation summary"
-$summary.runtime_rows |
-    Format-Table horizon_days, baseline_diagnosis, candidate_diagnosis, baseline_threshold, candidate_threshold, baseline_floor_gap, candidate_floor_gap, baseline_threshold_hit_rate, candidate_threshold_hit_rate -AutoSize
+$runtimeDisplayRows = @($summary.runtime_rows) | ForEach-Object {
+    [pscustomobject]@{
+        horizon = $_.horizon_days
+        baseline_diag = $_.baseline_diagnosis
+        candidate_diag = $_.candidate_diagnosis
+        base_thr = $_.baseline_threshold
+        cand_thr = $_.candidate_threshold
+        base_gap = $_.baseline_floor_gap
+        cand_gap = $_.candidate_floor_gap
+        base_hit = $_.baseline_threshold_hit_rate
+        cand_hit = $_.candidate_threshold_hit_rate
+    }
+}
+$runtimeDisplayRows | Format-Table -AutoSize
 Write-Host ""
 
 Write-Host "Scenarios with L2 lead time but no L3 actionable"
@@ -338,8 +388,19 @@ Write-Host ""
 
 Write-Host "Focus scenario failure modes"
 if (($summary.focus_rows | Measure-Object).Count -gt 0) {
-    $summary.focus_rows |
-        Format-Table name, outcome, baseline_primary_failure_mode, candidate_primary_failure_mode, baseline_actionable_point_count, candidate_actionable_point_count, baseline_runtime_floor_hit_point_count, candidate_runtime_floor_hit_point_count -AutoSize
+    $focusDisplayRows = @($summary.focus_rows) | ForEach-Object {
+        [pscustomobject]@{
+            name = $_.name
+            outcome = $_.outcome
+            baseline_failure = $_.baseline_primary_failure_mode
+            candidate_failure = $_.candidate_primary_failure_mode
+            baseline_block = $_.baseline_dominant_runtime_block
+            candidate_block = $_.candidate_dominant_runtime_block
+            baseline_facet = $_.baseline_dominant_continuity_facet
+            candidate_facet = $_.candidate_dominant_continuity_facet
+        }
+    }
+    $focusDisplayRows | Format-Table -AutoSize
 } else {
     Write-Host "  (none)"
 }
@@ -348,6 +409,15 @@ Write-Host ""
 Write-Host "Focus scenario runtime block mix"
 if (($summary.block_mix_rows | Measure-Object).Count -gt 0) {
     $summary.block_mix_rows |
+        Format-Table name, category, baseline_count, candidate_count, delta -AutoSize
+} else {
+    Write-Host "  (none)"
+}
+Write-Host ""
+
+Write-Host "Focus scenario continuity facets"
+if (($summary.continuity_facet_rows | Measure-Object).Count -gt 0) {
+    $summary.continuity_facet_rows |
         Format-Table name, category, baseline_count, candidate_count, delta -AutoSize
 } else {
     Write-Host "  (none)"
