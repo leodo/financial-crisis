@@ -2,7 +2,8 @@ use fc_domain::{AssessmentHistoryPoint, DecisionPosture, TimeToRiskBucket};
 
 use super::super::signals::{
     release_review_has_strong_prepare_trigger_code, release_review_hits_runtime_floor,
-    release_review_is_actionable_warning_point,
+    release_review_is_actionable_warning_point, release_review_strict_prepare_p20d_threshold,
+    release_review_strict_prepare_p60d_threshold,
 };
 
 pub(in super::super) fn release_review_actionable_diagnostic(
@@ -10,17 +11,27 @@ pub(in super::super) fn release_review_actionable_diagnostic(
     use_transitional_bridge: bool,
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> String {
-    if release_review_is_actionable_warning_point(point, use_transitional_bridge) {
+    if release_review_is_actionable_warning_point(point, use_transitional_bridge, thresholds) {
         return "actionable".to_string();
     }
 
     let runtime_floor_hit = release_review_hits_runtime_floor(point, thresholds);
+    let strict_prepare_p20d_threshold = release_review_strict_prepare_p20d_threshold(thresholds);
+    let strict_prepare_p60d_threshold = release_review_strict_prepare_p60d_threshold(thresholds);
     let mut review_gate_gaps = Vec::new();
-    if point.p_20d < 0.18 {
-        review_gate_gaps.push(format!("p20d {} < 18%", crate::format_pct(point.p_20d)));
+    if point.p_20d < strict_prepare_p20d_threshold {
+        review_gate_gaps.push(format!(
+            "p20d {} < {}",
+            crate::format_pct(point.p_20d),
+            crate::format_pct(strict_prepare_p20d_threshold)
+        ));
     }
-    if point.p_60d < 0.45 {
-        review_gate_gaps.push(format!("p60d {} < 45%", crate::format_pct(point.p_60d)));
+    if point.p_60d < strict_prepare_p60d_threshold {
+        review_gate_gaps.push(format!(
+            "p60d {} < {}",
+            crate::format_pct(point.p_60d),
+            crate::format_pct(strict_prepare_p60d_threshold)
+        ));
     }
     if !review_gate_gaps.is_empty() {
         let joined = review_gate_gaps.join(", ");
@@ -78,13 +89,15 @@ pub(in super::super) fn release_review_runtime_actionable_block_category(
     use_transitional_bridge: bool,
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> Option<&'static str> {
-    if release_review_is_actionable_warning_point(point, use_transitional_bridge)
+    if release_review_is_actionable_warning_point(point, use_transitional_bridge, thresholds)
         || !release_review_hits_runtime_floor(point, thresholds)
     {
         return None;
     }
 
-    if point.p_20d < 0.18 || point.p_60d < 0.45 {
+    let strict_prepare_p20d_threshold = release_review_strict_prepare_p20d_threshold(thresholds);
+    let strict_prepare_p60d_threshold = release_review_strict_prepare_p60d_threshold(thresholds);
+    if point.p_20d < strict_prepare_p20d_threshold || point.p_60d < strict_prepare_p60d_threshold {
         return Some("review_gate_gap");
     }
 

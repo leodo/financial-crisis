@@ -77,10 +77,12 @@ pub(super) fn prepare_focus_window<'a>(
         baseline_actionable_hits: release_review_actionable_forward_hits_by_date(
             &baseline_pre_crisis_points,
             config.baseline_use_transitional_bridge,
+            config.baseline_runtime_thresholds,
         ),
         candidate_actionable_hits: release_review_actionable_forward_hits_by_date(
             &candidate_pre_crisis_points,
             config.candidate_use_transitional_bridge,
+            config.candidate_runtime_thresholds,
         ),
         baseline_first_runtime_floor_hit_without_l3:
             release_review_first_runtime_floor_hit_without_l3(

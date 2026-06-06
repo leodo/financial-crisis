@@ -4,6 +4,8 @@ use fc_domain::{
     BacktestSignalSource, RiskContributor, RiskLevel, RiskSnapshot,
 };
 
+use crate::assessment::ProbabilityActionThresholds;
+
 use super::actionability::{is_actionable_warning_point, is_structural_warning_point};
 
 const BACKTEST_SIGNAL_WINDOW: usize = 5;
@@ -40,6 +42,7 @@ pub(crate) fn build_backtests(
     snapshot: &RiskSnapshot,
     history: &[AssessmentHistoryPoint],
     use_transitional_bridge: bool,
+    strict_thresholds: Option<ProbabilityActionThresholds>,
 ) -> Vec<BacktestScenarioSummary> {
     let history_start = history.first().map(|point| point.as_of_date);
     let history_end = history.last().map(|point| point.as_of_date);
@@ -51,6 +54,7 @@ pub(crate) fn build_backtests(
                 history,
                 &scenario,
                 use_transitional_bridge,
+                strict_thresholds,
                 snapshot.top_contributors.iter().take(3).cloned().collect(),
             )
             .unwrap_or_else(|| fallback_backtest(snapshot, &scenario, history_start, history_end))
@@ -168,6 +172,7 @@ fn scenario_summary_from_history(
     history: &[AssessmentHistoryPoint],
     scenario: &ScenarioDefinition,
     use_transitional_bridge: bool,
+    strict_thresholds: Option<ProbabilityActionThresholds>,
     top_contributors: Vec<RiskContributor>,
 ) -> Option<BacktestScenarioSummary> {
     let crisis_points = history
@@ -192,7 +197,7 @@ fn scenario_summary_from_history(
 
     let first_l2_date = first_sustained_signal_date(&warmup_points, is_structural_warning_point);
     let first_l3_date = first_sustained_signal_date(&warmup_points, |point| {
-        is_actionable_warning_point(point, use_transitional_bridge)
+        is_actionable_warning_point(point, use_transitional_bridge, strict_thresholds)
     });
 
     let max_point = crisis_points
@@ -201,8 +206,11 @@ fn scenario_summary_from_history(
         .expect("crisis_points is not empty");
     let lead_time_days = lead_time_from_date(scenario.crisis_start, first_l2_date);
     let actionable_lead_time_days = lead_time_from_date(scenario.crisis_start, first_l3_date);
-    let false_positive_count =
-        count_false_positive_actionable_episodes(&warmup_points, use_transitional_bridge);
+    let false_positive_count = count_false_positive_actionable_episodes(
+        &warmup_points,
+        use_transitional_bridge,
+        strict_thresholds,
+    );
 
     Some(BacktestScenarioSummary {
         scenario_id: scenario.scenario_id.clone(),
@@ -305,10 +313,11 @@ fn lead_time_from_date(crisis_start: NaiveDate, signal_date: Option<NaiveDate>) 
 fn count_false_positive_actionable_episodes(
     points: &[AssessmentHistoryPoint],
     use_transitional_bridge: bool,
+    strict_thresholds: Option<ProbabilityActionThresholds>,
 ) -> u32 {
     let actionable_flags = points
         .iter()
-        .map(|point| is_actionable_warning_point(point, use_transitional_bridge))
+        .map(|point| is_actionable_warning_point(point, use_transitional_bridge, strict_thresholds))
         .collect::<Vec<_>>();
     let mut episode_count = 0_u32;
     let mut index = 0_usize;

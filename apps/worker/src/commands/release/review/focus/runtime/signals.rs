@@ -7,6 +7,11 @@ use fc_domain::{
 
 const RELEASE_REVIEW_SIGNAL_WINDOW: usize = 5;
 const RELEASE_REVIEW_SIGNAL_MIN_HITS: usize = 3;
+const LEGACY_STRICT_PREPARE_P20D_THRESHOLD: f64 = 0.18;
+const LEGACY_STRICT_PREPARE_P60D_THRESHOLD: f64 = 0.45;
+const STRICT_PREPARE_P60D_THRESHOLD_BUFFER: f64 = 0.04;
+const STRICT_PREPARE_P60D_THRESHOLD_LIFT: f64 = 1.10;
+const STRICT_PREPARE_P60D_THRESHOLD_MIN: f64 = 0.25;
 
 pub(crate) fn release_review_structured_signal_counts(
     backtests: &[BacktestScenarioSummary],
@@ -24,7 +29,9 @@ pub(crate) fn release_review_structured_signal_counts(
     let strict_actionable_point_count = history
         .iter()
         .filter(|point| in_any_pre_crisis_window(point))
-        .filter(|point| release_review_is_actionable_warning_point(point, use_transitional_bridge))
+        .filter(|point| {
+            release_review_is_actionable_warning_point(point, use_transitional_bridge, thresholds)
+        })
         .count() as u32;
     let runtime_floor_hit_count = history
         .iter()
@@ -37,6 +44,7 @@ pub(crate) fn release_review_structured_signal_counts(
 pub(super) fn release_review_actionable_forward_hits_by_date(
     points: &[&AssessmentHistoryPoint],
     use_transitional_bridge: bool,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> BTreeMap<NaiveDate, (u32, bool)> {
     points
         .iter()
@@ -47,13 +55,19 @@ pub(super) fn release_review_actionable_forward_hits_by_date(
             let hit_count = window
                 .iter()
                 .filter(|candidate| {
-                    release_review_is_actionable_warning_point(candidate, use_transitional_bridge)
+                    release_review_is_actionable_warning_point(
+                        candidate,
+                        use_transitional_bridge,
+                        thresholds,
+                    )
                 })
                 .count();
             let required_hits = RELEASE_REVIEW_SIGNAL_MIN_HITS.min(window.len());
-            let sustained =
-                release_review_is_actionable_warning_point(point, use_transitional_bridge)
-                    && hit_count >= required_hits;
+            let sustained = release_review_is_actionable_warning_point(
+                point,
+                use_transitional_bridge,
+                thresholds,
+            ) && hit_count >= required_hits;
             (point.as_of_date, (hit_count as u32, sustained))
         })
         .collect()
@@ -82,10 +96,34 @@ pub(super) fn release_review_uses_transitional_actionable_bridge(
             .starts_with("feature_formal_v1_main"))
 }
 
+pub(super) fn release_review_strict_prepare_p20d_threshold(
+    _thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> f64 {
+    LEGACY_STRICT_PREPARE_P20D_THRESHOLD
+}
+
+pub(super) fn release_review_strict_prepare_p60d_threshold(
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> f64 {
+    thresholds
+        .map(|thresholds| {
+            (thresholds.prepare_p60d + STRICT_PREPARE_P60D_THRESHOLD_BUFFER)
+                .max(thresholds.prepare_p60d * STRICT_PREPARE_P60D_THRESHOLD_LIFT)
+                .clamp(
+                    STRICT_PREPARE_P60D_THRESHOLD_MIN,
+                    LEGACY_STRICT_PREPARE_P60D_THRESHOLD,
+                )
+        })
+        .unwrap_or(LEGACY_STRICT_PREPARE_P60D_THRESHOLD)
+}
+
 pub(super) fn release_review_is_actionable_warning_point(
     point: &AssessmentHistoryPoint,
     use_transitional_bridge: bool,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> bool {
+    let strict_prepare_p20d_threshold = release_review_strict_prepare_p20d_threshold(thresholds);
+    let strict_prepare_p60d_threshold = release_review_strict_prepare_p60d_threshold(thresholds);
     let strict_short_horizon_signal =
         matches!(
             point.posture,
@@ -99,8 +137,8 @@ pub(super) fn release_review_is_actionable_warning_point(
                 && point.external_shock_score >= 44.0);
 
     let high_probability_prepare_signal = matches!(point.posture, DecisionPosture::Prepare)
-        && point.p_20d >= 0.18
-        && point.p_60d >= 0.45
+        && point.p_20d >= strict_prepare_p20d_threshold
+        && point.p_60d >= strict_prepare_p60d_threshold
         && ((point.overall_score >= 60.0 && point.external_shock_score >= 46.0)
             || (point.overall_score >= 53.0
                 && !matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
@@ -108,8 +146,8 @@ pub(super) fn release_review_is_actionable_warning_point(
     let high_probability_months_signal =
         matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
             && point.overall_score >= 62.0
-            && point.p_20d >= 0.18
-            && point.p_60d >= 0.45
+            && point.p_20d >= strict_prepare_p20d_threshold
+            && point.p_60d >= strict_prepare_p60d_threshold
             && point.external_shock_score >= 48.0;
 
     let prepare_bridge_signal = use_transitional_bridge

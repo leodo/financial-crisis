@@ -81,10 +81,12 @@ pub(super) fn build_focus_diagnostic(
         baseline_actionable_point_count: actionable_point_count(
             &prepared.baseline_pre_crisis_points,
             baseline_use_transitional_bridge,
+            baseline_runtime_thresholds,
         ),
         candidate_actionable_point_count: actionable_point_count(
             &prepared.candidate_pre_crisis_points,
             candidate_use_transitional_bridge,
+            candidate_runtime_thresholds,
         ),
         baseline_runtime_floor_hit_point_count: prepared.baseline_runtime_floor_hit_point_count,
         candidate_runtime_floor_hit_point_count: prepared.candidate_runtime_floor_hit_point_count,
@@ -129,10 +131,13 @@ pub(super) fn build_focus_diagnostic(
 fn actionable_point_count(
     points: &[&AssessmentHistoryPoint],
     use_transitional_bridge: bool,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> u32 {
     points
         .iter()
-        .filter(|point| release_review_is_actionable_warning_point(point, use_transitional_bridge))
+        .filter(|point| {
+            release_review_is_actionable_warning_point(point, use_transitional_bridge, thresholds)
+        })
         .count() as u32
 }
 

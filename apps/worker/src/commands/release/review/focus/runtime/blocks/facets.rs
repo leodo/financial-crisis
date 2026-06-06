@@ -1,6 +1,9 @@
 use fc_domain::{AssessmentHistoryPoint, DecisionPosture, TimeToRiskBucket};
 
-use super::super::signals::release_review_has_strong_prepare_trigger_code;
+use super::super::signals::{
+    release_review_has_strong_prepare_trigger_code, release_review_strict_prepare_p20d_threshold,
+    release_review_strict_prepare_p60d_threshold,
+};
 use super::gating::release_review_runtime_actionable_block_category;
 
 pub(in super::super) fn release_review_posture_name(
@@ -25,8 +28,16 @@ pub(in super::super) fn release_review_time_bucket_name(
     }
 }
 
-fn release_review_runtime_gate_gap_facet(point: &AssessmentHistoryPoint) -> &'static str {
-    match (point.p_20d < 0.18, point.p_60d < 0.45) {
+fn release_review_runtime_gate_gap_facet(
+    point: &AssessmentHistoryPoint,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> &'static str {
+    let strict_prepare_p20d_threshold = release_review_strict_prepare_p20d_threshold(thresholds);
+    let strict_prepare_p60d_threshold = release_review_strict_prepare_p60d_threshold(thresholds);
+    match (
+        point.p_20d < strict_prepare_p20d_threshold,
+        point.p_60d < strict_prepare_p60d_threshold,
+    ) {
         (true, true) => "p20d_and_p60d",
         (true, false) => "p20d_only",
         (false, true) => "p60d_only",
@@ -124,7 +135,10 @@ pub(super) fn release_review_runtime_continuity_facets(
         format!("posture:{}", release_review_posture_name(point)),
         format!("bucket:{}", release_review_time_bucket_name(point)),
         format!("trigger:{}", release_review_trigger_family(point)),
-        format!("gate_gap:{}", release_review_runtime_gate_gap_facet(point)),
+        format!(
+            "gate_gap:{}",
+            release_review_runtime_gate_gap_facet(point, thresholds)
+        ),
         format!(
             "confirmation:{}",
             release_review_runtime_confirmation_facet(point, use_transitional_bridge)

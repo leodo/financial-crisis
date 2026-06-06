@@ -238,7 +238,7 @@ fn release_review_focus_diagnostic_highlights_missing_actionable_window() {
     assert!(rows[0]
         .runtime_continuity_facet_counts
         .iter()
-        .any(|facet| facet.category == "gate_gap:p20d_and_p60d"
+        .any(|facet| facet.category == "gate_gap:p20d_only"
             && facet.baseline_count == 1
             && facet.candidate_count == 4));
     assert!(rows[0]

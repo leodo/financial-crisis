@@ -6,9 +6,11 @@ use fc_domain::{
 
 use super::{
     build_rolling_backtest_audit, expected_prediction_snapshot_method_version,
-    is_actionable_warning_point, use_transitional_actionable_bridge, ServingModelContext,
-    FORMAL_MAIN_FEATURE_SET_VERSION, FORMAL_MAIN_LABEL_VERSION,
+    is_actionable_warning_point, is_actionable_warning_point_with_thresholds,
+    use_transitional_actionable_bridge, ServingModelContext, FORMAL_MAIN_FEATURE_SET_VERSION,
+    FORMAL_MAIN_LABEL_VERSION,
 };
+use crate::assessment::ProbabilityActionThresholds;
 use crate::history_replay::{
     historical_output_from_prediction_snapshots, should_refresh_full_release_history,
 };
@@ -232,6 +234,36 @@ fn actionable_warning_point_rejects_weak_prepare_clause_for_formal_main() {
     };
 
     assert!(!is_actionable_warning_point(&point, false));
+}
+
+#[test]
+fn actionable_warning_point_accepts_formal_main_relaxed_strict_p60d_mapping() {
+    let point = fc_domain::AssessmentHistoryPoint {
+        as_of_date: NaiveDate::from_ymd_opt(2007, 3, 1).unwrap(),
+        overall_score: 63.0,
+        p_5d: 0.03,
+        p_20d: 0.19,
+        p_60d: 0.26,
+        raw_p_5d: Some(0.02),
+        raw_p_20d: Some(0.18),
+        raw_p_60d: Some(0.24),
+        posture: DecisionPosture::Prepare,
+        time_to_risk_bucket: TimeToRiskBucket::Months,
+        external_shock_score: 49.0,
+        posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
+        posture_blocker_codes: Vec::new(),
+    };
+
+    assert!(!is_actionable_warning_point(&point, false));
+    assert!(is_actionable_warning_point_with_thresholds(
+        &point,
+        false,
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.12,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.05,
+        }
+    ));
 }
 
 #[test]

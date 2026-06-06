@@ -8,15 +8,16 @@ use fc_domain::{
 use fc_scoring::ScoringEngine;
 
 use crate::assessment::{
-    build_assessment_snapshot, build_backtest_summary, runtime_threshold_diagnostics,
-    ServingModelContext,
+    build_assessment_snapshot, build_backtest_summary, probability_action_thresholds,
+    runtime_threshold_diagnostics, ServingModelContext,
+};
+use crate::backtest::{
+    build_backtest_timeline, build_backtest_timeline_with_thresholds, build_backtests,
+    build_backtests_with_thresholds, build_rolling_backtest_audit,
+    build_rolling_backtest_audit_with_thresholds, use_transitional_actionable_bridge,
 };
 #[cfg(test)]
-use crate::backtest::is_actionable_warning_point;
-use crate::backtest::{
-    build_backtest_timeline, build_backtests, build_rolling_backtest_audit,
-    use_transitional_actionable_bridge,
-};
+use crate::backtest::{is_actionable_warning_point, is_actionable_warning_point_with_thresholds};
 use crate::demo_seed::{
     build_alerts, indicators, observations, select_recent_alerts_for_date, sources_demo,
     sources_runtime,
@@ -85,6 +86,8 @@ pub(crate) fn build_app_data_from_inputs(
     let scoring = ScoringEngine::default();
     let protected_stress_window_catalog = load_protected_stress_window_catalog();
     let threshold_diagnostics = runtime_threshold_diagnostics(serving_model.as_ref());
+    let strict_thresholds =
+        (!use_transitional_bridge).then(|| probability_action_thresholds(serving_model.as_ref()));
     let output = scoring.score(
         &indicators,
         &observations,
@@ -92,16 +95,38 @@ pub(crate) fn build_app_data_from_inputs(
         "us",
         "financial_system",
     );
-    let backtests = build_backtests(
-        &output.snapshot,
-        &assessment_history,
-        use_transitional_bridge,
-    );
-    let rolling_audit = build_rolling_backtest_audit(
-        &assessment_history,
-        &protected_stress_window_catalog.windows,
-        use_transitional_bridge,
-    );
+    let backtests = strict_thresholds
+        .map(|thresholds| {
+            build_backtests_with_thresholds(
+                &output.snapshot,
+                &assessment_history,
+                use_transitional_bridge,
+                Some(thresholds),
+            )
+        })
+        .unwrap_or_else(|| {
+            build_backtests(
+                &output.snapshot,
+                &assessment_history,
+                use_transitional_bridge,
+            )
+        });
+    let rolling_audit = strict_thresholds
+        .map(|thresholds| {
+            build_rolling_backtest_audit_with_thresholds(
+                &assessment_history,
+                &protected_stress_window_catalog.windows,
+                use_transitional_bridge,
+                Some(thresholds),
+            )
+        })
+        .unwrap_or_else(|| {
+            build_rolling_backtest_audit(
+                &assessment_history,
+                &protected_stress_window_catalog.windows,
+                use_transitional_bridge,
+            )
+        });
     let alerts = stored_alerts
         .map(|alerts| select_recent_alerts_for_date(&alerts, as_of_date))
         .unwrap_or_else(|| build_alerts(&output.snapshot));
@@ -132,7 +157,15 @@ pub(crate) fn build_app_data_from_inputs(
         }
         _ => assessment_history.push(current_history_point),
     }
-    let backtest_timeline = build_backtest_timeline(&assessment_history, use_transitional_bridge);
+    let backtest_timeline = strict_thresholds
+        .map(|thresholds| {
+            build_backtest_timeline_with_thresholds(
+                &assessment_history,
+                use_transitional_bridge,
+                Some(thresholds),
+            )
+        })
+        .unwrap_or_else(|| build_backtest_timeline(&assessment_history, use_transitional_bridge));
     let current_prediction_snapshot = prediction_snapshot_from_assessment(
         &assessment,
         &posture_guidance,

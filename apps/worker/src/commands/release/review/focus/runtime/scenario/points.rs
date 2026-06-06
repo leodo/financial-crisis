@@ -28,6 +28,8 @@ pub(super) fn build_interesting_points(
         candidate_points_by_date,
         baseline_use_transitional_bridge,
         candidate_use_transitional_bridge,
+        baseline_runtime_thresholds,
+        candidate_runtime_thresholds,
     )
     .into_iter()
     .filter_map(|date| {
@@ -37,10 +39,18 @@ pub(super) fn build_interesting_points(
             return None;
         }
         let baseline_strict_review_actionable = baseline_point.is_some_and(|point| {
-            release_review_is_actionable_warning_point(point, baseline_use_transitional_bridge)
+            release_review_is_actionable_warning_point(
+                point,
+                baseline_use_transitional_bridge,
+                baseline_runtime_thresholds,
+            )
         });
         let candidate_strict_review_actionable = candidate_point.is_some_and(|point| {
-            release_review_is_actionable_warning_point(point, candidate_use_transitional_bridge)
+            release_review_is_actionable_warning_point(
+                point,
+                candidate_use_transitional_bridge,
+                candidate_runtime_thresholds,
+            )
         });
         let baseline_runtime_floor_hit = baseline_point.is_some_and(|point| {
             release_review_hits_runtime_floor(point, baseline_runtime_thresholds)
@@ -149,6 +159,8 @@ fn collect_interesting_dates(
     candidate_points_by_date: &BTreeMap<NaiveDate, &AssessmentHistoryPoint>,
     baseline_use_transitional_bridge: bool,
     candidate_use_transitional_bridge: bool,
+    baseline_runtime_thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+    candidate_runtime_thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> BTreeSet<NaiveDate> {
     let mut interesting_dates = BTreeSet::new();
     for date in [
@@ -199,6 +211,8 @@ fn collect_interesting_dates(
             candidate_point,
             baseline_use_transitional_bridge,
             candidate_use_transitional_bridge,
+            baseline_runtime_thresholds,
+            candidate_runtime_thresholds,
         ) {
             interesting_dates.insert(date);
         }
@@ -220,12 +234,22 @@ fn release_review_point_is_interesting(
     candidate_point: Option<&AssessmentHistoryPoint>,
     baseline_use_transitional_bridge: bool,
     candidate_use_transitional_bridge: bool,
+    baseline_runtime_thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+    candidate_runtime_thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> bool {
     let baseline_actionable = baseline_point.is_some_and(|point| {
-        release_review_is_actionable_warning_point(point, baseline_use_transitional_bridge)
+        release_review_is_actionable_warning_point(
+            point,
+            baseline_use_transitional_bridge,
+            baseline_runtime_thresholds,
+        )
     });
     let candidate_actionable = candidate_point.is_some_and(|point| {
-        release_review_is_actionable_warning_point(point, candidate_use_transitional_bridge)
+        release_review_is_actionable_warning_point(
+            point,
+            candidate_use_transitional_bridge,
+            candidate_runtime_thresholds,
+        )
     });
     if baseline_actionable
         || candidate_actionable

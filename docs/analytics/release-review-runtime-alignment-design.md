@@ -378,6 +378,51 @@ This audit is intentionally narrower than the full release-review report. It exi
 2. whether `60d` is still `separated_but_below_runtime_floor`, or has already crossed into
    `usable_early_warning_separation` without converting into higher `timely_warning_rate`;
 3. which real-history scenarios still have `L2 lead time` but no `L3 actionable`;
+
+## 9. 2026-06-06 当前结论
+
+本轮先修的是最明显的 `strict review gate vs runtime floor` 失配，而且只动
+`p60d` 这一侧，不同时放松 `p20d`。
+
+### 9.1 已落地
+
+1. worker 侧 `release review` 的 strict `prepare p60d` 不再死写 `45%`：
+   - 现在改成从 runtime `prepare_p60d` 推导；
+   - 规则是 `max(runtime_prepare_p60d + 0.04, runtime_prepare_p60d * 1.10)`；
+   - 并限制在 `[25%, 45%]`。
+2. API / backtest / timeline / rolling audit 已同步到同一套 strict `p60d` 映射。
+3. legacy / heuristic 路径没有被一起改掉：
+   - 只有 formal-main runtime 才会启用这次新的 strict `p60d` 推导；
+   - 旧模式仍保持原来的 strict `18% / 45%` 回测口径。
+
+### 9.2 已验证的效果
+
+重新跑 formal candidate lead-time audit 后，能看到一类明确变化：
+
+- 一部分历史场景的 `review_gate_gap` 已从 `p20d_and_p60d` 收缩成 `p20d_only`；
+- 说明这次修复确实消除了“明明 runtime 已经可准备，但 strict review 还被 60d=45% 卡死”的一部分失配。
+
+但 top-line 结论没有因此根本改善：
+
+- `timely_warning_rate` 仍没有抬起来；
+- 当前主瓶颈更明确地收敛为：
+  1. strict `p20d` gate；
+  2. posture continuity；
+  3. 少量 residual `review_l3_gate_not_satisfied`。
+
+### 9.3 这意味着什么
+
+到这里可以把后续优先级讲清楚：
+
+1. 不应继续只围绕 `p60d` 做微调；
+2. 下一步要么继续审 strict `p20d` 映射；
+3. 要么直接进 `1990-1993 / 2000-2001 / 2007-2009 / 2023 regional banks`
+   的 posture continuity 复盘。
+
+更直接地说：
+
+- `p60d` 这一刀已经证明“review/runtime 口径失配”是真问题；
+- 但它不是当前 `timely_warning_rate` 卡住不动的唯一问题，更不是最后一个问题。
 4. whether the dominant blocker is still `review_gate_gap`,
    `posture_bucket_normal`, or another runtime block family;
 5. which `Historical Audit Workstreams / Actions` remain active for the candidate.

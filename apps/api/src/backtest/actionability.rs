@@ -1,15 +1,26 @@
 use fc_domain::{AssessmentHistoryPoint, DecisionPosture, TimeToRiskBucket};
 
-use crate::{assessment::ServingModelContext, history_replay::is_formal_main_release};
+use crate::{
+    assessment::{ProbabilityActionThresholds, ServingModelContext},
+    history_replay::is_formal_main_release,
+};
 
 const ACTIONABLE_AUDIT_HORIZON_DEFEND_DAYS: i64 = 5;
 const ACTIONABLE_AUDIT_HORIZON_HEDGE_DAYS: i64 = 20;
 const ACTIONABLE_AUDIT_HORIZON_PREPARE_DAYS: i64 = 60;
+const LEGACY_STRICT_PREPARE_P20D_THRESHOLD: f64 = 0.18;
+const LEGACY_STRICT_PREPARE_P60D_THRESHOLD: f64 = 0.45;
+const STRICT_PREPARE_P60D_THRESHOLD_BUFFER: f64 = 0.04;
+const STRICT_PREPARE_P60D_THRESHOLD_LIFT: f64 = 1.10;
+const STRICT_PREPARE_P60D_THRESHOLD_MIN: f64 = 0.25;
 
 pub(crate) fn is_actionable_warning_point(
     point: &AssessmentHistoryPoint,
     use_transitional_bridge: bool,
+    strict_thresholds: Option<ProbabilityActionThresholds>,
 ) -> bool {
+    let strict_prepare_p20d_threshold = strict_prepare_p20d_threshold(strict_thresholds);
+    let strict_prepare_p60d_threshold = strict_prepare_p60d_threshold(strict_thresholds);
     let strict_short_horizon_signal =
         matches!(
             point.posture,
@@ -23,8 +34,8 @@ pub(crate) fn is_actionable_warning_point(
                 && point.external_shock_score >= 44.0);
 
     let high_probability_prepare_signal = matches!(point.posture, DecisionPosture::Prepare)
-        && point.p_20d >= 0.18
-        && point.p_60d >= 0.45
+        && point.p_20d >= strict_prepare_p20d_threshold
+        && point.p_60d >= strict_prepare_p60d_threshold
         && ((point.overall_score >= 60.0 && point.external_shock_score >= 46.0)
             || (point.overall_score >= 53.0
                 && !matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
@@ -32,8 +43,8 @@ pub(crate) fn is_actionable_warning_point(
     let high_probability_months_signal =
         matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
             && point.overall_score >= 62.0
-            && point.p_20d >= 0.18
-            && point.p_60d >= 0.45
+            && point.p_20d >= strict_prepare_p20d_threshold
+            && point.p_60d >= strict_prepare_p60d_threshold
             && point.external_shock_score >= 48.0;
 
     // Persisted historical snapshots still carry a transitional posture/bucket view:
@@ -54,6 +65,23 @@ pub(crate) fn is_actionable_warning_point(
         || high_probability_months_signal
         || prepare_bridge_signal
         || months_bridge_signal
+}
+
+fn strict_prepare_p20d_threshold(_strict_thresholds: Option<ProbabilityActionThresholds>) -> f64 {
+    LEGACY_STRICT_PREPARE_P20D_THRESHOLD
+}
+
+fn strict_prepare_p60d_threshold(strict_thresholds: Option<ProbabilityActionThresholds>) -> f64 {
+    strict_thresholds
+        .map(|thresholds| {
+            (thresholds.prepare_p60d + STRICT_PREPARE_P60D_THRESHOLD_BUFFER)
+                .max(thresholds.prepare_p60d * STRICT_PREPARE_P60D_THRESHOLD_LIFT)
+                .clamp(
+                    STRICT_PREPARE_P60D_THRESHOLD_MIN,
+                    LEGACY_STRICT_PREPARE_P60D_THRESHOLD,
+                )
+        })
+        .unwrap_or(LEGACY_STRICT_PREPARE_P60D_THRESHOLD)
 }
 
 pub(crate) fn use_transitional_actionable_bridge(

@@ -4,6 +4,8 @@ use fc_domain::{
     ProtectedStressWindow,
 };
 
+use crate::assessment::ProbabilityActionThresholds;
+
 use super::{
     actionability::{actionable_audit_horizon_days, is_actionable_warning_point},
     scenarios::{scenario_catalog, ScenarioDefinition},
@@ -25,6 +27,7 @@ pub(crate) fn build_rolling_backtest_audit(
     history: &[AssessmentHistoryPoint],
     stress_windows: &[ProtectedStressWindow],
     use_transitional_bridge: bool,
+    strict_thresholds: Option<ProbabilityActionThresholds>,
 ) -> BacktestRollingAudit {
     let catalog_window_start = scenario_catalog()
         .iter()
@@ -75,7 +78,8 @@ pub(crate) fn build_rolling_backtest_audit(
     let mut current_episode: Option<RollingAuditEpisodeBuilder> = None;
 
     for point in &filtered_history {
-        let is_actionable = is_actionable_warning_point(point, use_transitional_bridge);
+        let is_actionable =
+            is_actionable_warning_point(point, use_transitional_bridge, strict_thresholds);
         let in_crisis = scenarios.iter().any(|scenario| {
             point.as_of_date >= scenario.crisis_start && point.as_of_date <= scenario.crisis_end
         });
