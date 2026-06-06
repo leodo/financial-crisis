@@ -271,3 +271,12 @@ $regimeRows | Format-Table -AutoSize
 Write-Host ""
 Write-Host "Tracked 20d weight deltas"
 $trackedRows | Format-Table -AutoSize
+Write-Host ""
+Write-Host "[4/4] Curve / USDJPY / threshold semantics audit"
+& (Join-Path $PSScriptRoot "formal-candidate-semantics-audit.ps1") `
+    -BaselineReleaseId $BaselineReleaseId `
+    -CandidateReleaseId $CandidateReleaseId `
+    -HorizonDays 20
+if ($LASTEXITCODE -ne 0) {
+    throw "formal-candidate-semantics-audit failed"
+}

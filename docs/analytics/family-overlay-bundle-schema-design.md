@@ -598,6 +598,38 @@ family_overlays == []
 那条分支；后面真正还没做完的，是验证这些约束是否足够把下一版候选稳定推向
 “保住 `regional_banks` 连续性，同时继续收口常态误报”的方向。
 
+## 14.5 2026-06-06 补充：已新增可重复的语义审计入口
+
+为了不再只靠文档结论人工复核，当前仓库已新增：
+
+- `scripts/formal-candidate-semantics-audit.ps1`
+- `just formal-candidate-semantics-audit <baseline> <candidate>`
+
+这条入口会固定输出三层信息：
+
+1. `20d threshold role`
+   - `decision/base/final threshold`
+   - `positive_window_avg_probability`
+   - `normal_avg_probability`
+   - `positive minus threshold gap`
+2. `curve / bond-spread / USDJPY / jpy carry / rate_shock` 权重
+   - 直接看 base weight、interaction、tail 与 family context 的差异
+3. `guardrail coverage`
+   - 哪些约束已经在训练层实现
+   - 哪些还只是 `doc_only`
+   - 真正要改代码时最小入口在哪
+
+当前已用 `034053 -> 064930` 这条旧坏分支做过一次验证：
+
+- 脚本能够直接指出 `curve tail negative suppression`、
+  `USDJPY base-level 下压`、`USDJPY external interaction 放大` 这三类问题；
+- 也能直接显示 `jpy_carry` 仍是 `proxy-only`，还不是正式主 family；
+- 同时把当前仍未自动化落实的残余项缩到两类：
+  - `USDJPY 20d change` 的语义迁移
+  - `BAA spread` 不应变成新的 suppressor
+
+这样下一轮再看候选时，不需要先翻设计文档猜“哪些已经在代码里，哪些还只是口头约束”。
+
 ## 15. 2026-06-04 补充：`081030` 已成为当前 family-hybrid 主线最好候选
 
 在把第 13、14 节的联合审计结论真正下沉到训练约束和离线筛选后，下一版候选

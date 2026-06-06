@@ -146,7 +146,13 @@ formal-candidate-window-audit baseline_release_id candidate_release_id:
 formal-candidate-feature-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-feature-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
-# 标准候选筛选入口：先跑三段窗口 compare，再跑 20d 特征/阈值审计。
+# 进一步对齐 `curve / bond-spread / USDJPY / jpy carry / 20d threshold` 语义审计。
+# 会明确输出哪些约束已经在训练层落实，哪些还只是文档约束，以及最小代码入口在哪。
+# 用法：`just formal-candidate-semantics-audit us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`
+formal-candidate-semantics-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-semantics-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
+# 标准候选筛选入口：先跑三段窗口 compare，再跑 20d 特征/阈值审计，最后补一轮语义审计。
 # 适合 family-hybrid 主线的新候选第一轮筛查；只有这一步结论足够好，才继续跑 `release-review-fast`。
 # 用法：`just formal-candidate-screen us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`
 formal-candidate-screen baseline_release_id candidate_release_id:

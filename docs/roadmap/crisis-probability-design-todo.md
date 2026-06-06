@@ -413,11 +413,24 @@
             2. 同时 `2023-02` 的 `20d hits 4 -> 1`、`2023-07` 的 `20d hits 12 -> 6`；
             3. `release-review-fast` 与 `strict_rebuild release-review` 都确认 runtime `actionable_precision 54.8% -> 71.4%`、`timely_warning_rate 10.0% -> 10.0%`、`longest_false_positive_episode_days 5 -> 5`；
             4. 结论：`081030` 已成为当前 family-hybrid 主线最好候选，但核心瓶颈已转为“如何恢复 timely warning”。
-          - [ ] 下一步优先做一轮“`curve/bond-spread pair + USDJPY semantics + 20d threshold role`”落地审计：
-            1. 把 `curve inversion / fed funds / USDJPY level / USDJPY 20d change / jpy carry proxy / rate_shock family context`
-               逐列对齐到训练样本、feature engineering、threshold selection 与单调约束配置；
-            2. 输出哪些约束已经在训练层落实，哪些还停留在文档结论；
-            3. 对仍未落实的项给出最小代码改动入口。
+          - [x] 已补一轮“`curve/bond-spread pair + USDJPY semantics + 20d threshold role`”落地审计：
+            1. 已新增 `scripts/formal-candidate-semantics-audit.ps1` / `just formal-candidate-semantics-audit`，
+               会把 `curve inversion / fed funds / USDJPY level / USDJPY 20d change /
+               jpy carry proxy / rate_shock family context` 逐列对齐到
+               bundle 权重、family overlay audit 与 `20d threshold diagnostics`；
+            2. 它会直接区分哪些约束已经是 `training_guardrail`
+               （当前入口主要在 `apps/worker/src/model/constraints.rs` 与
+               `apps/worker/src/probability/threshold/decision/{selection,regime}.rs`），
+               哪些仍是 `doc_only` 结论；
+            3. 已用 `034053 -> 064930` 旧坏分支完成验证：脚本能直接指出
+               `curve tail negative suppression`、`USDJPY base-level 下压`
+               与 `USDJPY external interaction` 放大这几类问题；
+            4. 当前仍未自动化落实的主项已经被缩到两类：
+               `USDJPY 20d change` 的语义迁移，以及
+               `BAA spread` 不应变成新 suppressor；
+               其最小代码入口已在脚本输出中明确标为
+               `crates/domain/src/probability_bundle/features.rs` /
+               `apps/worker/src/model/constraints.rs`。
           - [ ] 下一步最高优先级改成“恢复 timely warning / actionable lead time”：
             1. 以 `081030` 为新的 family-hybrid 主线基线，不再继续围绕 `034053` 做主线决策；
             2. 直接审计为什么 `60d` 仍是 `separated_but_below_runtime_floor`；
