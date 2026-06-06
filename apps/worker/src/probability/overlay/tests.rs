@@ -58,11 +58,88 @@ fn overlay_row(
     }
 }
 
+fn overlay_row_with_features(
+    day_index: i64,
+    scenario_id: Option<&str>,
+    scenario_family: Option<&str>,
+    features: BTreeMap<String, f64>,
+    label_20d: u8,
+    regime_20d: crate::ProbabilityTrainingRegime,
+) -> crate::ProbabilityTrainingRow {
+    crate::ProbabilityTrainingRow {
+        as_of_date: NaiveDate::from_ymd_opt(2000, 1, 1)
+            .unwrap()
+            .checked_add_signed(chrono::Duration::days(day_index))
+            .unwrap(),
+        market_scope: "financial_system".to_string(),
+        release_id: None,
+        probability_mode: Some("formal_bundle_v1".to_string()),
+        freshness_status: Some("a".to_string()),
+        time_to_risk_bucket: None,
+        split_name: None,
+        features,
+        primary_scenario_id: scenario_id.map(str::to_string),
+        scenario_family: scenario_family.map(str::to_string),
+        scenario_training_role: scenario_family.map(|_| "mandatory".to_string()),
+        days_to_primary_crisis_start: None,
+        primary_scenario_supports_5d: true,
+        primary_scenario_supports_20d: true,
+        primary_scenario_supports_60d: true,
+        label_5d: 0,
+        label_20d,
+        label_60d: 0,
+        regime_5d: crate::ProbabilityTrainingRegime::Normal,
+        regime_20d,
+        regime_60d: crate::ProbabilityTrainingRegime::Normal,
+        action_label_5d: 0,
+        action_label_20d: 0,
+        action_label_60d: 0,
+        prepare_episode_label: 0,
+        hedge_episode_label: 0,
+        defend_episode_label: 0,
+        primary_action_level: None,
+        action_episode_id: None,
+        action_episode_phase: "outside".to_string(),
+        protected_action_window: false,
+    }
+}
+
 fn systemic_credit_spec() -> FamilyOverlayAuditSpec {
     family_overlay_audit_specs()
         .into_iter()
         .find(|spec| spec.family_id == "systemic_credit")
         .expect("systemic credit spec exists")
+}
+
+fn mixed_systemic_spec() -> FamilyOverlayAuditSpec {
+    family_overlay_audit_specs()
+        .into_iter()
+        .find(|spec| spec.family_id == "mixed_systemic")
+        .expect("mixed systemic spec exists")
+}
+
+fn mixed_systemic_features(active: bool) -> BTreeMap<String, f64> {
+    let mut features = BTreeMap::new();
+    if active {
+        features.insert("overall_score".to_string(), 72.0);
+        features.insert("trigger_score".to_string(), 64.0);
+        features.insert("external_dimension_score".to_string(), 58.0);
+        features.insert("us_vix_level".to_string(), 28.0);
+        features.insert("us_baa_10y_spread_level".to_string(), 3.2);
+        features.insert("us_curve_10y2y_level".to_string(), -0.6);
+        features.insert("us_nfci_level".to_string(), 0.6);
+        features.insert("us_usdjpy_change_20d".to_string(), 4.5);
+    } else {
+        features.insert("overall_score".to_string(), 58.0);
+        features.insert("trigger_score".to_string(), 52.0);
+        features.insert("external_dimension_score".to_string(), 50.0);
+        features.insert("us_vix_level".to_string(), 22.0);
+        features.insert("us_baa_10y_spread_level".to_string(), 1.0);
+        features.insert("us_curve_10y2y_level".to_string(), 0.4);
+        features.insert("us_nfci_level".to_string(), 0.0);
+        features.insert("us_usdjpy_change_20d".to_string(), 1.0);
+    }
+    features
 }
 
 #[test]
@@ -314,4 +391,119 @@ fn family_overlay_split_balanced_fallback_recovers_sparse_topology() {
     assert!(split.evaluation_rows.iter().any(|row| {
         row.label_for_horizon(crate::ProbabilityTargetLabelMode::ForwardCrisis, 20) > 0.0
     }));
+}
+
+#[test]
+fn mixed_systemic_audit_counts_gate_active_rows_with_chronic_pressure_proxy() {
+    let spec = mixed_systemic_spec();
+    let train_rows = vec![
+        overlay_row_with_features(
+            0,
+            Some("dotcom_a"),
+            Some("mixed_systemic_stress"),
+            mixed_systemic_features(true),
+            1,
+            crate::ProbabilityTrainingRegime::PositiveWindow,
+        ),
+        overlay_row_with_features(
+            1,
+            Some("dotcom_a"),
+            Some("mixed_systemic_stress"),
+            mixed_systemic_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::PreWarningBuffer,
+        ),
+        overlay_row_with_features(
+            2,
+            Some("dotcom_a"),
+            Some("mixed_systemic_stress"),
+            mixed_systemic_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::Normal,
+        ),
+        overlay_row_with_features(
+            3,
+            Some("dotcom_a"),
+            Some("mixed_systemic_stress"),
+            mixed_systemic_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::Normal,
+        ),
+        overlay_row_with_features(
+            4,
+            Some("dotcom_a"),
+            Some("mixed_systemic_stress"),
+            mixed_systemic_features(false),
+            0,
+            crate::ProbabilityTrainingRegime::Normal,
+        ),
+    ];
+    let calibration_rows = vec![
+        overlay_row_with_features(
+            40,
+            Some("funding_2011"),
+            Some("mixed_systemic_stress"),
+            mixed_systemic_features(true),
+            1,
+            crate::ProbabilityTrainingRegime::PositiveWindow,
+        ),
+        overlay_row_with_features(
+            41,
+            Some("funding_2011"),
+            Some("mixed_systemic_stress"),
+            mixed_systemic_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::PreWarningBuffer,
+        ),
+        overlay_row_with_features(
+            42,
+            Some("funding_2011"),
+            Some("mixed_systemic_stress"),
+            mixed_systemic_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::Normal,
+        ),
+    ];
+    let evaluation_rows = vec![
+        overlay_row_with_features(
+            80,
+            Some("funding_2011"),
+            Some("mixed_systemic_stress"),
+            mixed_systemic_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::PreWarningBuffer,
+        ),
+        overlay_row_with_features(
+            81,
+            Some("funding_2011"),
+            Some("mixed_systemic_stress"),
+            mixed_systemic_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::Normal,
+        ),
+    ];
+
+    let audits = super::build_family_overlay_audits(
+        &train_rows,
+        &calibration_rows,
+        &evaluation_rows,
+        &["family_proxy__mixed_systemic".to_string()],
+        20,
+        crate::ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    let audit = audits
+        .into_iter()
+        .find(|audit| audit.family_id == spec.family_id)
+        .expect("mixed systemic audit exists");
+
+    assert_eq!(audit.scenario_count, 2);
+    assert_eq!(audit.positive_label_count, 2);
+    assert_eq!(audit.early_warning_row_count, 3);
+    assert_eq!(audit.train_row_count, 5);
+    assert_eq!(audit.calibration_row_count, 3);
+    assert_eq!(audit.evaluation_row_count, 2);
+    assert_eq!(audit.train_gate_active_row_count, 4);
+    assert_eq!(audit.calibration_gate_active_row_count, 3);
+    assert_eq!(audit.evaluation_gate_active_row_count, 2);
+    assert!(family_overlay_has_minimum_support(&audit, &spec));
 }

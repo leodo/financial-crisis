@@ -88,6 +88,7 @@ fn derived_feature_resolver_handles_interactions_and_tail_features() {
 #[test]
 fn derived_feature_resolver_handles_family_conditional_features() {
     let mut features = BTreeMap::new();
+    features.insert(FEATURE_OVERALL_SCORE.to_string(), 78.0);
     features.insert(FEATURE_STRUCTURAL_SCORE.to_string(), 80.0);
     features.insert(FEATURE_TRIGGER_SCORE.to_string(), 70.0);
     features.insert(FEATURE_EXTERNAL_DIMENSION_SCORE.to_string(), 65.0);
@@ -102,6 +103,8 @@ fn derived_feature_resolver_handles_family_conditional_features() {
 
     let systemic =
         resolve_probability_feature_value("family_proxy__systemic_credit", &features).unwrap();
+    let mixed =
+        resolve_probability_feature_value("family_proxy__mixed_systemic", &features).unwrap();
     let carry = resolve_probability_feature_value("family_proxy__jpy_carry", &features).unwrap();
     let carry_context = resolve_probability_feature_value(
         "family_context__jpy_carry__external_dimension_score",
@@ -110,6 +113,7 @@ fn derived_feature_resolver_handles_family_conditional_features() {
     .unwrap();
 
     assert!(systemic > 0.70 && systemic <= 1.0);
+    assert!(mixed > 0.70 && mixed <= 1.0);
     assert!(carry > 0.35 && carry <= 1.0);
     assert!((carry_context - carry * 65.0).abs() < 1e-9);
 }
@@ -125,6 +129,24 @@ fn jpy_carry_proxy_requires_change_or_external_confirmation() {
     let carry = resolve_probability_feature_value("family_proxy__jpy_carry", &features).unwrap();
 
     assert!(carry < 0.20);
+}
+
+#[test]
+fn mixed_systemic_proxy_requires_chronic_pressure_anchor() {
+    let mut features = BTreeMap::new();
+    features.insert(FEATURE_OVERALL_SCORE.to_string(), 78.0);
+    features.insert(FEATURE_TRIGGER_SCORE.to_string(), 74.0);
+    features.insert(FEATURE_EXTERNAL_DIMENSION_SCORE.to_string(), 70.0);
+    features.insert(FEATURE_US_VIX_LEVEL.to_string(), 34.0);
+    features.insert(FEATURE_US_BAA_10Y_SPREAD_LEVEL.to_string(), 1.1);
+    features.insert(FEATURE_US_NFCI_LEVEL.to_string(), 0.0);
+    features.insert(FEATURE_US_CURVE_10Y2Y_LEVEL.to_string(), 0.6);
+    features.insert(FEATURE_US_USDJPY_CHANGE_20D.to_string(), 0.5);
+
+    let mixed =
+        resolve_probability_feature_value("family_proxy__mixed_systemic", &features).unwrap();
+
+    assert!(mixed < 0.20);
 }
 
 #[test]

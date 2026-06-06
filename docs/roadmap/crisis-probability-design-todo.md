@@ -534,6 +534,8 @@
             2. 再处理 `2023-02-03 ~ 2023-02-05`、`2023-02-14`、`2023-07-13` 等剩余 `20d` 误报点；
             3. 只有在不牺牲上述连续性的前提下，才允许小幅回调 `20d threshold`。
          - [ ] 对 `mixed_systemic` 先重做 proxy 定义；当前 `gate_active_total=0`，继续训练 overlay 没有有效样本基础。
+           - [x] 已把 proxy 改成“信用利差 / 曲线 / NFCI”作为慢性压力锚点，`trigger / VIX / external` 只做确认，并把 overlay gate 从 `0.50` 收到 `0.38`。
+           - [ ] 还需要用真实 formal overlay 审计复核 `2000 / 2011` 是否已形成足够的 gate-active rows。
          - [ ] 把 `jpy_carry` 继续维持为 proxy-only family，先补 protected / proxy rows，再决定是否进入正式 overlay 训练。
          - [x] 复核当前 active release 是否仍停在 review fail 的 family candidate；review 结束后已恢复 `us_formal_interaction_tail_extmix10_20260602T061401`。
 3. Raw PIT history replay 闭环

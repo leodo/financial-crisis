@@ -241,6 +241,11 @@ family_overlays == []
 1. 针对 `60d` 审计为什么 runtime replay 会从“正例反向”切换成“cooldown_bleed”，并区分到底是 base head、overlay，还是 calibration / floor 在主导；
 2. 既然“关闭 60d overlay”也没有改变 review 结论，而“继续加大 60d 权重/惩罚”又明显变差，下一步应直接审计 `60d interaction_tail + episode-native target + runtime threshold policy` 的耦合问题，而不是继续盲调权重；
 3. 对 `mixed_systemic` 先重做 proxy 定义（当前 `gate_active_total=0`，继续训练没有意义）；
+   - `2026-06-06` 已把 proxy 从“overall/trigger/external/VIX”泛化分数改成
+     “credit spread / curve inversion / NFCI”作为慢性压力锚点，`trigger / VIX / external`
+     只做确认，同时把 overlay gate 从 `0.50` 下调到 `0.38`；
+   - 下一步不再继续拍脑袋调权重，而是直接用真实 formal overlay audit 复核
+     `2000 / 2011` 是否已经出现足够的 gate-active rows。
 4. 对 `jpy_carry` 单独补 family proxy / protected stress 样本后再决定是否进入正式 overlay 训练；
 5. 继续保留 `just formal-train-family-overlay` / `just formal-train-family-hybrid` 作为主复跑入口，避免后续实验再次退回手工拼 dataset key。
 

@@ -190,12 +190,31 @@ fn resolve_family_proxy_value(family: &str, features: &BTreeMap<String, f64>) ->
                 + 0.20 * scaled_tail_pos(features, FEATURE_US_NFCI_LEVEL, 0.25, 1.5)?
                 + 0.20 * scaled_tail_pos(features, FEATURE_STRUCTURAL_SCORE, 52.0, 28.0)?,
         ),
-        "mixed_systemic" => Some(
-            0.30 * scaled_tail_pos(features, FEATURE_OVERALL_SCORE, 55.0, 35.0)?
-                + 0.30 * scaled_tail_pos(features, FEATURE_TRIGGER_SCORE, 50.0, 35.0)?
-                + 0.20 * scaled_tail_pos(features, FEATURE_EXTERNAL_DIMENSION_SCORE, 50.0, 35.0)?
-                + 0.20 * scaled_tail_pos(features, FEATURE_US_VIX_LEVEL, 24.0, 20.0)?,
-        ),
+        "mixed_systemic" => {
+            let trigger_tail = scaled_tail_pos(features, FEATURE_TRIGGER_SCORE, 42.0, 28.0)?;
+            let overall_tail = scaled_tail_pos(features, FEATURE_OVERALL_SCORE, 48.0, 30.0)?;
+            let external_tail =
+                scaled_tail_pos(features, FEATURE_EXTERNAL_DIMENSION_SCORE, 45.0, 30.0)?;
+            let vix_tail = scaled_tail_pos(features, FEATURE_US_VIX_LEVEL, 20.0, 18.0)?;
+            let credit_tail = scaled_tail_pos(features, FEATURE_US_BAA_10Y_SPREAD_LEVEL, 1.4, 2.0)?;
+            let curve_tail = scaled_tail_neg(features, FEATURE_US_CURVE_10Y2Y_LEVEL, 0.15, 1.6)?;
+            let nfci_tail = scaled_tail_pos(features, FEATURE_US_NFCI_LEVEL, 0.10, 0.9)?;
+            let usdjpy_change_tail =
+                scaled_tail_abs(features, FEATURE_US_USDJPY_CHANGE_20D, 2.5, 6.0)?;
+            let chronic_pressure = credit_tail.max(curve_tail).max(nfci_tail);
+            let external_confirmation = external_tail.max(usdjpy_change_tail);
+            let risk_confirmation = trigger_tail.max(vix_tail).max(external_confirmation);
+            let chronic_confirmation = chronic_pressure * (0.30 + 0.70 * risk_confirmation);
+            let broad_context = overall_tail * (0.25 + 0.75 * chronic_pressure);
+            Some(
+                (0.50 * chronic_confirmation
+                    + 0.20 * chronic_pressure
+                    + 0.15 * broad_context
+                    + 0.10 * trigger_tail * chronic_pressure
+                    + 0.05 * external_confirmation * chronic_pressure)
+                    .clamp(0.0, 1.0),
+            )
+        }
         "rate_shock" => Some(
             0.35 * scaled_tail_pos(features, FEATURE_US_FED_FUNDS_LEVEL, 4.0, 3.0)?
                 + 0.35 * scaled_tail_neg(features, FEATURE_US_CURVE_10Y2Y_LEVEL, 0.0, 2.0)?
