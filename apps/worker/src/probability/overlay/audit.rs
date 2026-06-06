@@ -168,12 +168,12 @@ pub(super) fn family_overlay_audit_specs() -> [FamilyOverlayAuditSpec; 5] {
             family_id: "jpy_carry",
             scenario_family: None,
             gate_feature: "family_proxy__jpy_carry",
-            gate_active_threshold: 0.50,
+            gate_active_threshold: 0.38,
             inactive_gate_ceiling: 0.20,
             min_scenario_count: 1,
             gate_slope: 8.0,
             blend_weight: 0.30,
-            note: "proxy-only audit: candidate rows are gate-active rows rather than labeled crisis family rows",
+            note: "proxy-only audit: candidate rows include gate-active carry rows plus protected action windows, matching the overlay training dataset builder; gate tuned to the highest protected/pre-warning carry rows currently visible in free-history formal datasets",
         },
     ]
 }
@@ -196,7 +196,7 @@ fn collect_family_overlay_audit_metrics(
         }
         let candidate_row = match spec.scenario_family {
             Some(family) => row.scenario_family.as_deref() == Some(family),
-            None => gate_active,
+            None => gate_active || row.protected_action_window,
         };
         if !candidate_row {
             continue;

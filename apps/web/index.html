@@ -5,9 +5,81 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>金融危机预警系统</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #f3f6f7;
+        color: #1c2730;
+        font-family:
+          "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+      }
+
+      .startup-shell {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+
+      .startup-card {
+        width: min(560px, 100%);
+        background: #ffffff;
+        border: 1px solid #dbe4e9;
+        border-radius: 12px;
+        padding: 20px 22px;
+        box-shadow: 0 16px 36px rgba(17, 36, 48, 0.08);
+      }
+
+      .startup-card strong {
+        display: block;
+        font-size: 17px;
+        margin-bottom: 8px;
+      }
+
+      .startup-card p {
+        margin: 0 0 12px;
+        font-size: 14px;
+        line-height: 1.7;
+        color: #5f6f79;
+      }
+
+      .startup-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: #245261;
+        background: #eef5f7;
+        border-radius: 999px;
+        padding: 7px 12px;
+      }
+
+      .startup-status::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #245261;
+        box-shadow: 0 0 0 5px rgba(36, 82, 97, 0.12);
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="startup-shell">
+        <div class="startup-card">
+          <strong>金融危机预警系统正在启动</strong>
+          <p>
+            页面已经打开，前端正在连接本地评估服务并读取当前视图数据。首次启动、
+            刚刷新 SQLite，或 API 刚热重启时，这一步会有几秒等待。
+          </p>
+          <div class="startup-status">正在连接本地服务并准备面板</div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

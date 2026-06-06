@@ -155,7 +155,9 @@ family_overlays == []
 
 - 某些 family 只覆盖 `train + eval`，几乎没有 `calibration`；
 - 某些 family 只落在 `train + calibration`，没有 `evaluation`；
-- `jpy_carry` 在当前 formal main 数据集里仍缺少足够 proxy-only / protected-action rows。
+- `jpy_carry` 这条线的真实卡点后来被拆清了：不是“完全没有样本”，而是
+  `proxy-only audit`、overlay dataset 去重和 gate 阈值三层口径叠在一起，导致
+  有意义的 protected/pre-warning carry rows 在训练前就被弱化掉了。
 
 随后把 `ext_stress / ext_acute` 与 formal main 组合后，候选 `us_formal_family_conditional_20260603T114855` 与后续脚本复跑产物 `us_formal_family_conditional_20260603T121703` 都稳定复现了同一结构：
 
@@ -247,6 +249,21 @@ family_overlays == []
    - 下一步不再继续拍脑袋调权重，而是直接用真实 formal overlay audit 复核
      `2000 / 2011` 是否已经出现足够的 gate-active rows。
 4. 对 `jpy_carry` 单独补 family proxy / protected stress 样本后再决定是否进入正式 overlay 训练；
+   - `2026-06-06` 已把这条线继续前推到“真实可训练”：
+     1. `proxy-only audit` 现在把 `protected_action_window` 和 gate-active carry rows
+        一起视为候选支持，和 overlay dataset builder 保持同一口径；
+     2. overlay dataset builder 在 formal main / ext_stress / ext_acute 叠加时，
+        不再简单 `dedup` 掉重复 identity 行，而会合并并保留更强的
+        `label / regime / protected_action_window`；
+     3. 基于真实 free-history formal dataset 分布，`jpy_carry` 的 gate 从 `0.50`
+        下调到 `0.38`。这是数据驱动的，而不是拍脑袋调参：当前 protected /
+        pre-warning carry rows 的 proxy 最高约 `0.389`，旧 gate 在数据上根本不可能点亮；
+     4. 候选 `us_formal_family_hybrid_20260606T104037` 已证明 `jpy_carry`
+        真实进入 `5d/20d` overlay：`configured=5`，并且 fast review
+        `guard_passed=true`，`actionable_precision 75.2% -> 75.8%`，
+        没有引入新的 bundle-level probability guard regression。
+   - 因此这条 TODO 的状态已经从“先补样本、还没训起来”推进到
+     “已经能训起来，下一步转向 scenario-level attribution audit”。
 5. 继续保留 `just formal-train-family-overlay` / `just formal-train-family-hybrid` 作为主复跑入口，避免后续实验再次退回手工拼 dataset key。
 
 随后我又验证了一轮“只在 API runtime 对 `prepare_p60d` 做软收敛”的假设：把 candidate `us_formal_family_hybrid_20260603T144814` 的 `prepare_p60d` 从 `66.1%` 压到 `61.0%`，希望用更宽的 `60d` 动作门槛恢复提前量。结果是：

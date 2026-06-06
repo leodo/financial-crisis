@@ -6,7 +6,7 @@ use super::{
     audit::{
         family_overlay_audit_specs, family_overlay_has_minimum_support, FamilyOverlayAuditSpec,
     },
-    split::split_family_overlay_dataset_rows,
+    split::{build_family_overlay_dataset_rows, split_family_overlay_dataset_rows},
 };
 
 fn overlay_row(
@@ -138,6 +138,22 @@ fn mixed_systemic_features(active: bool) -> BTreeMap<String, f64> {
         features.insert("us_curve_10y2y_level".to_string(), 0.4);
         features.insert("us_nfci_level".to_string(), 0.0);
         features.insert("us_usdjpy_change_20d".to_string(), 1.0);
+    }
+    features
+}
+
+fn jpy_carry_features(active: bool) -> BTreeMap<String, f64> {
+    let mut features = BTreeMap::new();
+    if active {
+        features.insert("us_usdjpy_level".to_string(), 158.0);
+        features.insert("us_usdjpy_change_20d".to_string(), 10.0);
+        features.insert("us_fed_funds_level".to_string(), 5.0);
+        features.insert("external_dimension_score".to_string(), 84.0);
+    } else {
+        features.insert("us_usdjpy_level".to_string(), 132.0);
+        features.insert("us_usdjpy_change_20d".to_string(), 1.0);
+        features.insert("us_fed_funds_level".to_string(), 3.0);
+        features.insert("external_dimension_score".to_string(), 42.0);
     }
     features
 }
@@ -506,4 +522,185 @@ fn mixed_systemic_audit_counts_gate_active_rows_with_chronic_pressure_proxy() {
     assert_eq!(audit.calibration_gate_active_row_count, 3);
     assert_eq!(audit.evaluation_gate_active_row_count, 2);
     assert!(family_overlay_has_minimum_support(&audit, &spec));
+}
+
+#[test]
+fn jpy_carry_proxy_only_audit_counts_protected_rows_as_candidate_support() {
+    let spec = family_overlay_audit_specs()
+        .into_iter()
+        .find(|spec| spec.family_id == "jpy_carry")
+        .expect("jpy carry spec exists");
+
+    let mut protected_positive = overlay_row_with_features(
+        0,
+        Some("stress_a"),
+        Some("mixed_systemic_stress"),
+        jpy_carry_features(true),
+        1,
+        crate::ProbabilityTrainingRegime::PositiveWindow,
+    );
+    protected_positive.protected_action_window = true;
+
+    let mut protected_prewarn = overlay_row_with_features(
+        1,
+        Some("stress_a"),
+        Some("mixed_systemic_stress"),
+        jpy_carry_features(false),
+        0,
+        crate::ProbabilityTrainingRegime::PreWarningBuffer,
+    );
+    protected_prewarn.protected_action_window = true;
+
+    let mut protected_eval = overlay_row_with_features(
+        40,
+        Some("stress_b"),
+        Some("mixed_systemic_stress"),
+        jpy_carry_features(false),
+        0,
+        crate::ProbabilityTrainingRegime::PreWarningBuffer,
+    );
+    protected_eval.protected_action_window = true;
+
+    let train_rows = vec![
+        protected_positive.clone(),
+        protected_prewarn.clone(),
+        overlay_row_with_features(
+            2,
+            None,
+            None,
+            jpy_carry_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::Normal,
+        ),
+        overlay_row_with_features(
+            3,
+            None,
+            None,
+            jpy_carry_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::Normal,
+        ),
+        overlay_row_with_features(
+            4,
+            None,
+            None,
+            jpy_carry_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::Normal,
+        ),
+        overlay_row_with_features(
+            5,
+            None,
+            None,
+            jpy_carry_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::Normal,
+        ),
+    ];
+    let calibration_rows = vec![
+        {
+            let mut row = overlay_row_with_features(
+                20,
+                Some("stress_mid"),
+                Some("mixed_systemic_stress"),
+                jpy_carry_features(false),
+                0,
+                crate::ProbabilityTrainingRegime::PreWarningBuffer,
+            );
+            row.protected_action_window = true;
+            row
+        },
+        overlay_row_with_features(
+            21,
+            None,
+            None,
+            jpy_carry_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::Normal,
+        ),
+        overlay_row_with_features(
+            22,
+            None,
+            None,
+            jpy_carry_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::Normal,
+        ),
+    ];
+    let evaluation_rows = vec![
+        protected_eval.clone(),
+        overlay_row_with_features(
+            41,
+            None,
+            None,
+            jpy_carry_features(true),
+            0,
+            crate::ProbabilityTrainingRegime::Normal,
+        ),
+    ];
+
+    let audits = super::build_family_overlay_audits(
+        &train_rows,
+        &calibration_rows,
+        &evaluation_rows,
+        &["family_proxy__jpy_carry".to_string()],
+        20,
+        crate::ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    let audit = audits
+        .into_iter()
+        .find(|audit| audit.family_id == spec.family_id)
+        .expect("jpy carry audit exists");
+
+    assert_eq!(audit.train_row_count, 6);
+    assert_eq!(audit.calibration_row_count, 3);
+    assert_eq!(audit.evaluation_row_count, 2);
+    assert_eq!(audit.protected_action_window_count, 4);
+    assert_eq!(audit.positive_label_count, 1);
+    assert_eq!(audit.early_warning_row_count, 3);
+    assert!(audit.train_gate_active_row_count >= 4);
+    assert!(audit.calibration_gate_active_row_count >= 2);
+    assert!(audit.evaluation_gate_active_row_count >= 1);
+    assert!(family_overlay_has_minimum_support(&audit, &spec));
+}
+
+#[test]
+fn jpy_carry_dataset_builder_merges_duplicate_rows_without_losing_stronger_labels() {
+    let spec = family_overlay_audit_specs()
+        .into_iter()
+        .find(|spec| spec.family_id == "jpy_carry")
+        .expect("jpy carry spec exists");
+
+    let base_row = overlay_row_with_features(
+        0,
+        Some("stress_a"),
+        Some("mixed_systemic_stress"),
+        jpy_carry_features(true),
+        0,
+        crate::ProbabilityTrainingRegime::Normal,
+    );
+    let mut extension_row = base_row.clone();
+    extension_row.label_20d = 1;
+    extension_row.regime_20d = crate::ProbabilityTrainingRegime::PositiveWindow;
+    extension_row.protected_action_window = true;
+    extension_row.scenario_training_role = Some("extension".to_string());
+
+    let dataset_rows = build_family_overlay_dataset_rows(
+        &[base_row],
+        &[extension_row],
+        &[],
+        &spec,
+        20,
+        crate::ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert_eq!(dataset_rows.len(), 1);
+    let merged = &dataset_rows[0];
+    assert_eq!(merged.label_20d, 1);
+    assert_eq!(
+        merged.regime_20d,
+        crate::ProbabilityTrainingRegime::PositiveWindow
+    );
+    assert!(merged.protected_action_window);
+    assert_eq!(merged.scenario_training_role.as_deref(), Some("mandatory"));
 }

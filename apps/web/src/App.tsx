@@ -276,10 +276,11 @@ export default function App() {
                 <Activity size={18} />
               </div>
               <div className="loading-state-copy">
-                <strong>正在加载{activeNavItem.label}</strong>
+                <strong>{activeNavItem.label}已启动，正在读取数据</strong>
                 <p>
                   当前视图需要 {requiredKeys.length} 组数据，已就绪 {readyCount} 组。
-                  首次启动本地服务、刚刷新 SQLite，或者 API 刚完成热重启时，首屏会有短暂等待。
+                  首次启动本地服务、刚刷新 SQLite，或者 API 刚完成热重启时，
+                  页面会先显示这个启动面板，再进入完整视图。
                 </p>
               </div>
             </div>
@@ -302,8 +303,8 @@ export default function App() {
             </div>
             <small className="loading-state-footer">
               {pendingLabels.length > 0
-                ? `仍在等待：${pendingLabels.join("、")}。如果超过 10 秒仍未进入页面，先执行 just status，再点右上角刷新。`
-                : "正在拼装当前视图。"}
+                ? `仍在等待：${pendingLabels.join("、")}。如果超过 10 秒仍未进入完整页面，先执行 just status，再点右上角刷新。`
+                : "页面已经启动，正在拼装当前视图。"}
             </small>
           </section>
         )}

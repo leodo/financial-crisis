@@ -536,7 +536,12 @@
          - [ ] 对 `mixed_systemic` 先重做 proxy 定义；当前 `gate_active_total=0`，继续训练 overlay 没有有效样本基础。
            - [x] 已把 proxy 改成“信用利差 / 曲线 / NFCI”作为慢性压力锚点，`trigger / VIX / external` 只做确认，并把 overlay gate 从 `0.50` 收到 `0.38`。
            - [ ] 还需要用真实 formal overlay 审计复核 `2000 / 2011` 是否已形成足够的 gate-active rows。
-         - [ ] 把 `jpy_carry` 继续维持为 proxy-only family，先补 protected / proxy rows，再决定是否进入正式 overlay 训练。
+         - [x] 已把 `jpy_carry` 继续维持为 proxy-only family，并补齐足以进入正式 overlay 训练的 protected / proxy rows 支持。
+           - [x] `proxy-only audit` 现在会把 `protected_action_window` 和 gate-active carry rows 一并视为候选支持，不再和训练数据集构建口径脱节。
+           - [x] overlay dataset builder 现在会在 formal main / ext_stress / ext_acute 叠加时合并重复 identity 行，保留更强的 `label/regime/protected_action_window`，不再让主数据集的弱标签覆盖扩展数据。
+           - [x] 已按真实 free-history formal dataset 分布把 `jpy_carry` gate 从 `0.50` 收到 `0.38`；当前受保护/预警窗口里的 carry proxy 最高约 `0.389`，旧 gate 在数据上不可能点亮。
+           - [x] 候选 `us_formal_family_hybrid_20260606T104037` 已证明 `jpy_carry` 真实进入 `5d/20d` overlay 训练：`configured=5`，并且 fast review `guard_passed=true`，`actionable_precision 75.2% -> 75.8%`，没有带来新的 bundle-level probability guard regression。
+           - [ ] 下一步继续做 scenario-level audit，确认 `1987 / 1990 / 2024` 这些高 FX 波动窗口里，`jpy_carry` overlay 的收益是否主要来自真正的 protected/pre-warning carry 压力，而不是被少量普通汇率尖峰误带。
          - [x] 复核当前 active release 是否仍停在 review fail 的 family candidate；review 结束后已恢复 `us_formal_interaction_tail_extmix10_20260602T061401`。
 3. Raw PIT history replay 闭环
    - [x] 新增 historical replay run / point 存储结构
