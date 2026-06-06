@@ -152,6 +152,13 @@ formal-candidate-feature-audit baseline_release_id candidate_release_id:
 formal-candidate-semantics-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-semantics-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 对比 baseline / candidate 的 strict release-review 工件，专门审计 timely warning / actionable lead time。
+# 会把 60d runtime separation、L2 但无 L3 的历史样本、Focus Scenarios 的 runtime block mix、
+# Historical Audit workstreams/actions 统一摊开，直接回答“为什么看见了风险却没形成可执行提前量”。
+# 用法：`just formal-candidate-leadtime-audit us_formal_family_hybrid_20260604T081030 us_formal_family_hybrid_20260605T202246`
+formal-candidate-leadtime-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-leadtime-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
 # 标准候选筛选入口：先跑三段窗口 compare，再跑 20d 特征/阈值审计，最后补一轮语义审计。
 # 适合 family-hybrid 主线的新候选第一轮筛查；只有这一步结论足够好，才继续跑 `release-review-fast`。
 # 用法：`just formal-candidate-screen us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`

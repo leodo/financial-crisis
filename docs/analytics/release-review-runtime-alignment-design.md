@@ -354,3 +354,32 @@ vs
 - `candidate_regression` 直接进入 candidate 判退 / 重训 / 回滚改动路径；
 - `both_baseline_and_candidate` 直接进入晋升前置 blocker 路径；
 - `baseline_shared_weakness` 直接进入 formal main 主线研究修复路径。
+
+## 8. Repeatable Audit Entry
+
+The release-review alignment work now has a fixed offline entrypoint:
+
+- `scripts/formal-candidate-leadtime-audit.ps1`
+- `just formal-candidate-leadtime-audit <baseline> <candidate>`
+
+This audit is intentionally narrower than the full release-review report. It exists to answer, in one pass:
+
+1. whether `timely_warning_rate`, `strict_actionable_point_count`, and
+   `runtime_floor_hit_count` moved together or diverged;
+2. whether `60d` is still `separated_but_below_runtime_floor`, or has already crossed into
+   `usable_early_warning_separation` without converting into higher `timely_warning_rate`;
+3. which real-history scenarios still have `L2 lead time` but no `L3 actionable`;
+4. whether the dominant blocker is still `review_gate_gap`,
+   `posture_bucket_normal`, or another runtime block family;
+5. which `Historical Audit Workstreams / Actions` remain active for the candidate.
+
+After this entrypoint exists, the expected workflow is:
+
+1. run `just formal-candidate-leadtime-audit ...`;
+2. decide whether the current bottleneck is mainly review/runtime mapping,
+   posture continuity, or false-positive spillover;
+3. only then choose whether to edit training constraints, threshold policy, or
+   runtime posture logic.
+
+That keeps future work anchored to evidence instead of ad hoc reading of large
+`release-review` JSON files.

@@ -431,11 +431,18 @@
                其最小代码入口已在脚本输出中明确标为
                `crates/domain/src/probability_bundle/features.rs` /
                `apps/worker/src/model/constraints.rs`。
-          - [ ] 下一步最高优先级改成“恢复 timely warning / actionable lead time”：
+          - [~] 下一步最高优先级改成“恢复 timely warning / actionable lead time”：
             1. 以 `081030` 为新的 family-hybrid 主线基线，不再继续围绕 `034053` 做主线决策；
-            2. 直接审计为什么 `60d` 仍是 `separated_but_below_runtime_floor`；
-            3. 直接审计为什么 `2000-2001 / 1990-1993` 只有 `L2` 提前量，却始终无法进入 `L3 actionable`；
-            4. 训练、threshold policy、runtime posture 后续都以“提前一周以上可执行预警”作为首要目标，而不是继续优先压短误报。
+            2. [x] 已新增固定离线入口 `scripts/formal-candidate-leadtime-audit.ps1` /
+               `just formal-candidate-leadtime-audit <baseline> <candidate>`，
+               可以直接复盘 `60d` runtime separation、`L2` 但无 `L3` 的历史样本、
+               `Focus Scenarios` 的 runtime block mix，以及 `Historical Audit Actions`；
+            3. [ ] 继续基于这条审计链直接解释为什么 `60d` 仍是
+               `separated_but_below_runtime_floor` 或为什么虽然已过 runtime floor，
+               仍没有转成更高的 timely warning；
+            4. [ ] 继续基于这条审计链解释为什么 `2000-2001 / 1990-1993`
+               只有 `L2` 提前量，却始终无法进入 `L3 actionable`；
+            5. 训练、threshold policy、runtime posture 后续都以“提前一周以上可执行预警”作为首要目标，而不是继续优先压短误报。
           - [x] 已确认 `081030` 之后的主瓶颈不是“继续压 20d 误报”，而是
             `strict review gate` 与 runtime floor 的口径失配，加上
             `1990-1993 / 2000-2001` 的 posture continuity failure；

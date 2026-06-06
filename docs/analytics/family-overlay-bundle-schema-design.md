@@ -717,5 +717,32 @@ family_overlays == []
    `20d` 短误报压缩；
 3. 只有在这两条证据链补齐后，才继续决定是否需要新的 threshold / calibration / training 形态。
 
+### 15.5 2026-06-06 补充：已新增可重复的 lead-time 审计入口
+
+为了不再靠人工翻 `release-review` JSON，这条主线现在已经有固定离线入口：
+
+- `scripts/formal-candidate-leadtime-audit.ps1`
+- `just formal-candidate-leadtime-audit <baseline> <candidate>`
+
+这条审计会直接把下列问题按固定格式摊开：
+
+1. `timely_warning_rate / strict_actionable_point_count / runtime_floor_hit_count /
+   actionable_precision` 是否同步改善；
+2. `5d / 20d / 60d` 各 horizon 的 `runtime separation diagnosis`、
+   `floor gap` 和 `threshold hit rate`；
+3. 哪些历史场景已经有 `L2 lead time`，但仍没有 `L3 actionable`；
+4. `Focus Scenarios` 里的 `runtime block mix` 是否仍以
+   `review_gate_gap`、`posture_bucket_normal` 为主；
+5. `Historical Audit Workstreams / Actions` 当前是否已经把问题收敛到
+   `strict review vs runtime mapping` 或 `posture continuity`。
+
+这样后续就不该再用“看起来 60d 已经有分离”这种口头判断推进，而应先跑这条脚本，确认：
+
+- `60d` 到底还是 `separated_but_below_runtime_floor`；
+- 还是已经穿过 runtime floor，但仍被 `strict gate` / `posture continuity`
+  挡住；
+- 以及 `1990-1993 / 2000-2001` 这类场景现在到底卡在 review gate，
+  还是卡在 `prepare/months` 连续性。
+
 相关设计与后续字段约束已单独沉淀在
 [release-review-runtime-alignment-design.md](release-review-runtime-alignment-design.md)。
