@@ -75,6 +75,7 @@ pub(crate) fn summarize_release_review_historical_audit_priorities(
                 primary_workstream: primary_workstream.clone(),
                 suggested_review: release_review_suggested_historical_audit(
                     definition,
+                    scenario,
                     &primary_workstream,
                 )
                 .to_string(),

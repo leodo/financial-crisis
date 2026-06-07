@@ -666,6 +666,9 @@
        - [x] 已清理 `scenario_focus` 的 candidate failure mode 语义噪声：对于 `timely_to_timely` 且 `candidate_first_l3_date <= baseline_first_l3_date`、`candidate_actionable_point_count >= baseline_actionable_point_count` 的场景，不再继续打 `candidate_primary_failure_mode`。
          - `2026-06-08` 实测：`us_regional_banks_2023` 现在保留 `baseline_primary_failure_mode = posture_continuity_failure`，但 `candidate_primary_failure_mode = null`，更符合当前 review 结论。
          - 这一步只收紧了 review 解释层，不改变 runtime block counts / continuity facets / actionable counts，本质上是避免把 baseline 既有短板继续误挂到 candidate 头上。
+       - [x] 已把 `residual release-review audit` 进一步拆成更像“pre-warning signal gap”还是“弱连续性信号”的解释层。
+         - `2026-06-08` 实测：`1987 / 1998 / 2000-2001 / 2011` 这 4 个 `baseline_shared_weakness` 样本现在会直接提示“窗口里几乎没有 non-normal、runtime floor 或 actionable evidence”，优先回到训练样本 / feature coverage / label window；`2022` 则会提示“已经出现 non-normal 或零星 runtime floor，但没有形成可执行 pre-warning”，优先复核 feature separation、months/prepare continuity 与阈值前置量。
+         - 这一步仍然不改变 release review 的 go/no-go 结果，只是把 residual bucket 从“人工猜”收紧成可执行的下一轮排障方向。
      - [x] 已对齐 `release activate` 的 `operational guard` 与 `release review` 的 `go/no-go`
        - 现在 `release activate --reload-api` 会读取最新相关 `release review` 产物：
          1. 若目标 release 已在最新正式 review 中被判为失败 candidate，则直接阻止激活；

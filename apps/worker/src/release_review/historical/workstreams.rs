@@ -281,9 +281,10 @@ pub(crate) fn release_review_historical_audit_takeaways(
             }
             _ => {
                 takeaways.push(format!(
-                    "{} 个历史样本仍落在 residual release-review audit，涉及 {}。需要继续回到 block mix 与 continuity facets 做逐点复核。",
+                    "{} 个历史样本仍落在 residual release-review audit，涉及 {}。{}",
                     row.scenario_count,
-                    format_runtime_category_list(&row.scenarios)
+                    format_runtime_category_list(&row.scenarios),
+                    row.suggested_review,
                 ));
             }
         }
