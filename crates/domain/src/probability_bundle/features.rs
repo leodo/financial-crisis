@@ -256,9 +256,7 @@ fn scaled_tail_pos(
     let value = resolve_probability_feature_value(feature_name, features)?;
     let threshold = normalize_score_threshold(feature_name, value, threshold);
     let scale = normalize_score_scale(feature_name, value, scale);
-    Some(
-        ((value - threshold) / scale.max(1e-6)).clamp(0.0, 1.0),
-    )
+    Some(((value - threshold) / scale.max(1e-6)).clamp(0.0, 1.0))
 }
 
 fn scaled_tail_neg(
@@ -270,9 +268,7 @@ fn scaled_tail_neg(
     let value = resolve_probability_feature_value(feature_name, features)?;
     let threshold = normalize_score_threshold(feature_name, value, threshold);
     let scale = normalize_score_scale(feature_name, value, scale);
-    Some(
-        ((threshold - value) / scale.max(1e-6)).clamp(0.0, 1.0),
-    )
+    Some(((threshold - value) / scale.max(1e-6)).clamp(0.0, 1.0))
 }
 
 fn scaled_tail_abs(
@@ -284,9 +280,7 @@ fn scaled_tail_abs(
     let value = resolve_probability_feature_value(feature_name, features)?;
     let threshold = normalize_score_threshold(feature_name, value, threshold);
     let scale = normalize_score_scale(feature_name, value, scale);
-    Some(
-        ((value.abs() - threshold) / scale.max(1e-6)).clamp(0.0, 1.0),
-    )
+    Some(((value.abs() - threshold) / scale.max(1e-6)).clamp(0.0, 1.0))
 }
 
 fn normalize_score_threshold(feature_name: &str, feature_value: f64, threshold: f64) -> f64 {
@@ -301,9 +295,7 @@ fn normalize_score_threshold(feature_name: &str, feature_value: f64, threshold: 
 }
 
 fn normalize_score_scale(feature_name: &str, feature_value: f64, scale: f64) -> f64 {
-    if uses_normalized_score_units(feature_name)
-        && feature_value.abs() <= 1.0
-        && scale.abs() > 1.0
+    if uses_normalized_score_units(feature_name) && feature_value.abs() <= 1.0 && scale.abs() > 1.0
     {
         scale / 100.0
     } else {

@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-04
+最后更新：2026-06-07
 
 ## 1. 问题
 
@@ -74,6 +74,51 @@ vs
 1. `1990-1993` 不是先卡在 strict review gate；
 2. 而是大多数 runtime 命中点从一开始就长期停在 `posture = normal / bucket = normal`；
 3. 这说明真正失败的是 posture continuity，而不是简单阈值不足。
+
+### 2.3 `2026-06-07` posture continuity 口径错位补充
+
+在把 formal main runtime 分类修正到 `feature_formal_v1_main_*` 全前缀之后，
+又复跑了 candidate `us_formal_family_hybrid_20260606T112926` 的
+`strict_rebuild` 全历史回放，确认还有一条更具体的 continuity 口径错位：
+
+- `build_assessment_snapshot(...)` 此前把 `prepare_reference_p60d` 取自
+  `60d horizon.final_probability`
+- 但 formal bundle runtime / 历史回放 / UI 真正展示和审计的是
+  `runtime_final_probability`
+- 当 `60d` 因 monotonic lift 被 runtime 抬高时，这两者可能明显不同
+
+首个直接证据来自 `1990-10-19`：
+
+- 修复前：
+  - `raw_p_60d = 0.498`
+  - `calibrated_p_60d = 0.802`
+  - `time_to_risk_bucket = months`
+  - `posture = normal`
+  - `posture_trigger_codes = []`
+- `probability_diagnostics_json` 显示：
+  - `60d final_probability = 0.498`
+  - `60d runtime_final_probability = 0.802`
+  - `monotonic_lift = 0.304`
+- 修复后：
+  - `posture = prepare`
+  - `posture_trigger_codes = [\"prepare_probability_plateau\"]`
+
+这说明此前并不是 runtime 根本没有看到 `prepare` 所需的长窗风险，而是
+posture continuity 在读取一份比 runtime 更低的 `60d` 参考值。
+
+同时，最新 `strict_rebuild` 也确认这不是全部问题都已解决：
+
+- `1998-09-03` 仍是 `raw_p_60d = calibrated_p_60d = 0.718`，但
+  `posture = normal`
+- `2007-08-01` 仍是 `calibrated_p_20d = 0.609 / calibrated_p_60d = 0.639`，但
+  `posture = normal`
+
+因此当前结论应更新为：
+
+1. `prepare_reference_p60d` 使用 `runtime_final_probability` 是必须修复的口径错误；
+2. 修复后已经消除了一类典型的 `months + normal` 假阴性；
+3. 剩余的 `1998 / 2007` 连续性失败，才是真正还需要继续往
+   `strict p20d gate / score confirmation / residual clauses` 下钻的部分。
 
 ## 3. 根因拆分
 

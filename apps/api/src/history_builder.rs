@@ -190,7 +190,8 @@ pub(crate) async fn load_sqlite_assessment_history(
         .into_iter()
         .collect::<Vec<_>>();
     if max_history_points > 0 && target_dates.len() > max_history_points {
-        target_dates = target_dates[target_dates.len().saturating_sub(max_history_points)..].to_vec();
+        target_dates =
+            target_dates[target_dates.len().saturating_sub(max_history_points)..].to_vec();
     }
     let target_dates = target_dates.into_iter().collect::<BTreeSet<_>>();
     let bundle_backed_history = uses_bundle_backed_history(serving_model);

@@ -45,6 +45,19 @@ const ACTION_PLAYBOOK_VERSION: &str = "action_playbook_v1_20260531";
 const PROBABILITY_MODE: &str = "heuristic_mvp";
 const RELEASE_STATUS: &str = "degraded";
 
+pub(crate) fn prepare_reference_p60d(trace: &ProbabilityComputationTrace) -> Option<f64> {
+    trace
+        .probability_diagnostics
+        .horizon_overlays
+        .iter()
+        .find(|horizon| horizon.horizon_days == 60)
+        .map(|horizon| {
+            horizon
+                .runtime_final_probability
+                .unwrap_or(horizon.final_probability)
+        })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn build_assessment_snapshot(
     data_mode: DataMode,
@@ -107,12 +120,7 @@ pub fn build_assessment_snapshot(
         .actionability_enabled
         .then_some(&actionability);
     let actionability_support = Some(&actionability);
-    let prepare_reference_p60d = probability_trace
-        .probability_diagnostics
-        .horizon_overlays
-        .iter()
-        .find(|horizon| horizon.horizon_days == 60)
-        .map(|horizon| horizon.final_probability);
+    let prepare_reference_p60d = prepare_reference_p60d(&probability_trace);
     let active_release = serving_model.map(|context| &context.release);
     let action_thresholds = probability_action_thresholds(serving_model);
     let time_to_risk_bucket = build_time_to_risk_bucket(

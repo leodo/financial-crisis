@@ -9,8 +9,7 @@ pub(super) use chrono::{NaiveDate, Utc};
 pub(super) use fc_domain::{
     ActionabilityBlock, DataQualitySummary, DataTrust, DecisionPosture, EventAssessment,
     EventConfirmationState, JpyCarrySnapshot, JpyCarryState, PostureGuidance, ProbabilityBlock,
-    QualityGrade, RiskLevel, RiskSnapshot, TimeToRiskBucket, UserRiskPreferences,
-    UserRiskProfile,
+    QualityGrade, RiskLevel, RiskSnapshot, TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
 };
 
 mod actionability;

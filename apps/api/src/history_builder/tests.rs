@@ -547,7 +547,9 @@ async fn strict_rebuild_bundle_release_bypasses_matching_replay_cache() {
         "strict rebuild should bypass matching replay cache and recompute from raw observations"
     );
     assert!(
-        history.iter().all(|point| point.posture_trigger_codes != vec!["cached_only".to_string()]),
+        history
+            .iter()
+            .all(|point| point.posture_trigger_codes != vec!["cached_only".to_string()]),
         "strict rebuild should not return cached replay-only trigger codes"
     );
 
