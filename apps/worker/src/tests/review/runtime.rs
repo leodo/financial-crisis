@@ -285,3 +285,48 @@ fn release_review_structured_signal_counts_accept_probability_plateau_clause_for
     assert_eq!(strict_actionable_point_count, 1);
     assert_eq!(runtime_floor_hit_count, 1);
 }
+
+#[test]
+fn release_review_structured_signal_counts_accept_relaxed_probability_plateau_clause() {
+    let plateau_date = NaiveDate::from_ymd_opt(2023, 2, 1).unwrap();
+    let backtests = vec![synthetic_backtest_summary_with_dates(
+        "scenario_probability_plateau_relaxed",
+        "Relaxed Probability Plateau",
+        Some(plateau_date),
+        Some(plateau_date),
+        Some(74),
+        Some(74),
+        0,
+    )];
+    let history = vec![runtime_history_point_with_state(
+        plateau_date,
+        44.4,
+        0.03,
+        0.50,
+        0.67,
+        DecisionPosture::Prepare,
+        TimeToRiskBucket::Months,
+        40.7,
+        &["prepare_probability_plateau"],
+    )];
+    let mut method = formal_main_audit_method_wire();
+    method.runtime_thresholds = Some(RuntimeThresholdDiagnosticsWire {
+        prepare_p60d: 0.568,
+        hedge_p20d: 0.282,
+        defend_p5d: 0.05,
+        severe_now_p20d: 0.564,
+        elevated_weeks_p60d: 0.909,
+        external_prepare_p20d: 0.197,
+        carry_prepare_p60d: 0.454,
+        downgrade_prepare_p60d: 0.426,
+        downgrade_hedge_p20d: 0.212,
+        downgrade_defend_p5d: 0.034,
+        history_runtime_policy_version: "runtime_history_test".to_string(),
+    });
+
+    let (strict_actionable_point_count, runtime_floor_hit_count) =
+        release_review_structured_signal_counts(&backtests, &history, &method);
+
+    assert_eq!(strict_actionable_point_count, 1);
+    assert_eq!(runtime_floor_hit_count, 1);
+}

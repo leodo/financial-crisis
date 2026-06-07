@@ -14,11 +14,18 @@ const PREPARE_CONTINUITY_P60D_FLOOR: f64 = 0.45;
 const PREPARE_CONTINUITY_STRUCTURAL_FLOOR: f64 = 60.0;
 const PREPARE_CONTINUITY_ACTIONABILITY_FLOOR: f64 = 0.18;
 const PREPARE_PROBABILITY_PLATEAU_P60D_FLOOR: f64 = 0.70;
+const PREPARE_PROBABILITY_PLATEAU_RELAXED_P20D_BUFFER: f64 = 0.10;
+const PREPARE_PROBABILITY_PLATEAU_RELAXED_P20D_FLOOR_MIN: f64 = 0.45;
+const PREPARE_PROBABILITY_PLATEAU_RELAXED_P60D_FLOOR: f64 = 0.65;
 const PREPARE_PROBABILITY_PLATEAU_OVERALL_FLOOR: f64 = 42.0;
 const PREPARE_PROBABILITY_PLATEAU_STRUCTURAL_FLOOR: f64 = 47.0;
 const PREPARE_PROBABILITY_PLATEAU_TRIGGER_FLOOR: f64 = 40.0;
 const PREPARE_PROBABILITY_PLATEAU_EXTERNAL_FLOOR: f64 = 42.0;
 const PREPARE_PROBABILITY_PLATEAU_BREADTH_FLOOR: f64 = 36.0;
+const PREPARE_PROBABILITY_PLATEAU_RELAXED_STRUCTURAL_FLOOR: f64 = 44.0;
+const PREPARE_PROBABILITY_PLATEAU_RELAXED_TRIGGER_FLOOR: f64 = 36.0;
+const PREPARE_PROBABILITY_PLATEAU_RELAXED_EXTERNAL_FLOOR: f64 = 40.0;
+const PREPARE_PROBABILITY_PLATEAU_RELAXED_BREADTH_FLOOR: f64 = 34.0;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct PostureClauseDiagnostics {
@@ -103,15 +110,28 @@ pub(super) fn prepare_probability_plateau_signal(
     thresholds: ProbabilityActionThresholds,
 ) -> bool {
     let prepare_p60d = prepare_reference_p60d.unwrap_or(probabilities.p_60d);
+    let plateau_p20d_floor = thresholds.prepare_plateau_p20d();
     let plateau_context_ready = structural_score >= PREPARE_PROBABILITY_PLATEAU_STRUCTURAL_FLOOR
         && (trigger_score >= PREPARE_PROBABILITY_PLATEAU_TRIGGER_FLOOR
             || external_shock_score >= PREPARE_PROBABILITY_PLATEAU_EXTERNAL_FLOOR
             || breadth_score >= PREPARE_PROBABILITY_PLATEAU_BREADTH_FLOOR);
+    let relaxed_plateau_p20d_floor = (plateau_p20d_floor
+        + PREPARE_PROBABILITY_PLATEAU_RELAXED_P20D_BUFFER)
+        .max(PREPARE_PROBABILITY_PLATEAU_RELAXED_P20D_FLOOR_MIN);
+    let relaxed_plateau_context_ready = structural_score
+        >= PREPARE_PROBABILITY_PLATEAU_RELAXED_STRUCTURAL_FLOOR
+        && (trigger_score >= PREPARE_PROBABILITY_PLATEAU_RELAXED_TRIGGER_FLOOR
+            || external_shock_score >= PREPARE_PROBABILITY_PLATEAU_RELAXED_EXTERNAL_FLOOR
+            || breadth_score >= PREPARE_PROBABILITY_PLATEAU_RELAXED_BREADTH_FLOOR);
 
-    overall_score >= PREPARE_PROBABILITY_PLATEAU_OVERALL_FLOOR
-        && probabilities.p_20d >= thresholds.prepare_plateau_p20d()
+    (overall_score >= PREPARE_PROBABILITY_PLATEAU_OVERALL_FLOOR
+        && probabilities.p_20d >= plateau_p20d_floor
         && prepare_p60d >= PREPARE_PROBABILITY_PLATEAU_P60D_FLOOR
-        && plateau_context_ready
+        && plateau_context_ready)
+        || (overall_score >= PREPARE_PROBABILITY_PLATEAU_OVERALL_FLOOR
+            && probabilities.p_20d >= relaxed_plateau_p20d_floor
+            && prepare_p60d >= PREPARE_PROBABILITY_PLATEAU_RELAXED_P60D_FLOOR
+            && relaxed_plateau_context_ready)
 }
 
 #[allow(clippy::too_many_arguments)]

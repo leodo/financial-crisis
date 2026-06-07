@@ -279,6 +279,36 @@ fn actionable_warning_point_rejects_weak_probability_plateau_clause_for_formal_m
 }
 
 #[test]
+fn actionable_warning_point_accepts_relaxed_probability_plateau_clause_with_runtime_thresholds() {
+    let point = fc_domain::AssessmentHistoryPoint {
+        as_of_date: NaiveDate::from_ymd_opt(1998, 5, 28).unwrap(),
+        overall_score: 44.4,
+        p_5d: 0.03,
+        p_20d: 0.50,
+        p_60d: 0.67,
+        raw_p_5d: Some(0.02),
+        raw_p_20d: Some(0.48),
+        raw_p_60d: Some(0.65),
+        posture: DecisionPosture::Prepare,
+        time_to_risk_bucket: TimeToRiskBucket::Months,
+        external_shock_score: 40.7,
+        posture_trigger_codes: vec!["prepare_probability_plateau".to_string()],
+        posture_blocker_codes: Vec::new(),
+    };
+
+    assert!(!is_actionable_warning_point(&point, false));
+    assert!(is_actionable_warning_point_with_thresholds(
+        &point,
+        false,
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.568,
+            hedge_p20d: 0.282,
+            defend_p5d: 0.05,
+        }
+    ));
+}
+
+#[test]
 fn actionable_warning_point_accepts_formal_main_relaxed_strict_p60d_mapping() {
     let point = fc_domain::AssessmentHistoryPoint {
         as_of_date: NaiveDate::from_ymd_opt(2007, 3, 1).unwrap(),

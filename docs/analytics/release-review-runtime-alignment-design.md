@@ -689,3 +689,37 @@ That changes the implementation order:
    `posture` falls back to `normal` after plateau states;
 3. only after those two are cleaner, revisit residual `review_l3_gate_not_satisfied`
    points such as `2000-2001` and `2023`.
+
+## 12. 2026-06-07 Relaxed Plateau Continuity Rerun
+
+One more narrow continuity patch was added after the closure above:
+
+- runtime posture can now keep `prepare_probability_plateau` alive for a very
+  small subset of dates where `p20d/p60d` are already extreme, but the
+  structural / external context sits just below the original plateau guard;
+- the backtest / rolling-audit / worker strict-review mirror now accepts the
+  same relaxed plateau shape, instead of leaving runtime and review out of sync.
+
+This was intentionally not a broad threshold drop. It only targets the
+“high-probability plateau already visible, but continuity still falls back to
+normal” pattern.
+
+After rerunning the real strict rebuild review for:
+
+- baseline `us_formal_family_hybrid_20260605T202246`
+- candidate `us_formal_family_hybrid_20260606T112926`
+
+the observed result was:
+
+1. `strict_actionable_point_count` improved from `163` to `167`;
+2. `runtime_floor_hit_count` stayed at `351`;
+3. `timely_warning_rate` still stayed at `40.0%`;
+4. the dominant blocker did **not** move away from shared
+   `posture_continuity_failure` on `1987 / 1990-1993 / 1998`.
+
+So this patch helped point-level conversion, but not enough to clear the real
+promotion blocker. The next highest-value work remains:
+
+1. sustained `prepare/months` continuity for `1987 / 1990-1993 / 1998`;
+2. strict gate cleanup for `2000-2001 / 2022`;
+3. only then another candidate retrain / rereview loop.

@@ -537,6 +537,64 @@ fn posture_guidance_emits_prepare_probability_plateau_for_long_window_high_proba
 }
 
 #[test]
+fn posture_guidance_emits_prepare_probability_plateau_for_relaxed_extreme_context() {
+    let snapshot = RiskSnapshot {
+        as_of_date: NaiveDate::from_ymd_opt(1987, 10, 8).unwrap(),
+        entity_id: "us".to_string(),
+        market_scope: "financial_system".to_string(),
+        overall_score: 42.4,
+        overall_level: RiskLevel::Stress,
+        structural_score: 44.5,
+        trigger_score: 35.8,
+        level_reason: "test".to_string(),
+        dimensions: Vec::new(),
+        top_contributors: Vec::new(),
+        data_quality_summary: DataQualitySummary {
+            overall_score: 90.0,
+            grade: QualityGrade::A,
+            stale_indicator_count: 0,
+            low_quality_indicator_count: 0,
+            prototype_source_count: 0,
+            blocked_indicator_count: 0,
+        },
+        generated_at: Utc::now(),
+        method_version: "test".to_string(),
+    };
+    let probabilities = ProbabilityBlock {
+        p_5d: 0.03,
+        p_20d: 0.689,
+        p_60d: 0.852,
+    };
+    let posture = build_posture_guidance(
+        &snapshot,
+        &probabilities,
+        Some(0.852),
+        None,
+        None,
+        0.52,
+        &test_data_trust(QualityGrade::A),
+        40.7,
+        34.0,
+        &[],
+        &quiet_jpy_carry(20.0),
+        &quiet_event_assessment(20.0),
+        &neutral_preferences(),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.12,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.05,
+        },
+    );
+
+    assert_eq!(posture.posture, DecisionPosture::Prepare);
+    assert_eq!(
+        posture.trigger_codes,
+        vec!["prepare_probability_plateau".to_string()]
+    );
+    assert!(posture.blocker_codes.is_empty());
+}
+
+#[test]
 fn posture_guidance_uses_runtime_derived_plateau_p20d_floor() {
     let snapshot = RiskSnapshot {
         as_of_date: NaiveDate::from_ymd_opt(1998, 9, 3).unwrap(),
