@@ -25,6 +25,10 @@ const STRICT_PREPARE_PLATEAU_RELAXED_P60D_THRESHOLD: f64 = 0.65;
 const STRICT_PREPARE_PLATEAU_OVERALL_FLOOR: f64 = 42.0;
 const STRICT_PREPARE_PLATEAU_EXTERNAL_FLOOR: f64 = 32.0;
 const STRICT_PREPARE_PLATEAU_RELAXED_EXTERNAL_FLOOR: f64 = 40.0;
+const STRICT_HISTORY_HYSTERESIS_MONTHS_P20D_FLOOR: f64 = 0.35;
+const STRICT_HISTORY_HYSTERESIS_MONTHS_P60D_FLOOR: f64 = 0.65;
+const STRICT_HISTORY_HYSTERESIS_MONTHS_OVERALL_FLOOR: f64 = 43.0;
+const STRICT_HISTORY_HYSTERESIS_MONTHS_EXTERNAL_FLOOR: f64 = 39.0;
 
 pub(crate) fn is_actionable_warning_point(
     point: &AssessmentHistoryPoint,
@@ -75,6 +79,14 @@ pub(crate) fn is_actionable_warning_point(
             && point.p_20d >= strict_prepare_p20d_threshold
             && point.p_60d >= strict_prepare_p60d_threshold
             && point.external_shock_score >= 48.0;
+    let history_hysteresis_months_signal =
+        matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+            && has_history_hysteresis_trigger_code(point)
+            && point.p_20d >= STRICT_HISTORY_HYSTERESIS_MONTHS_P20D_FLOOR
+            && point.p_60d
+                >= strict_prepare_p60d_threshold.max(STRICT_HISTORY_HYSTERESIS_MONTHS_P60D_FLOOR)
+            && (point.overall_score >= STRICT_HISTORY_HYSTERESIS_MONTHS_OVERALL_FLOOR
+                || point.external_shock_score >= STRICT_HISTORY_HYSTERESIS_MONTHS_EXTERNAL_FLOOR);
 
     // Persisted historical snapshots still carry a transitional posture/bucket view:
     // probabilities are often floor-bound, while overall/external stress capture the
@@ -94,6 +106,7 @@ pub(crate) fn is_actionable_warning_point(
         || standard_probability_plateau_prepare_signal
         || relaxed_probability_plateau_prepare_signal
         || high_probability_months_signal
+        || history_hysteresis_months_signal
         || prepare_bridge_signal
         || months_bridge_signal
 }
@@ -180,6 +193,7 @@ fn has_strong_prepare_trigger_code(point: &AssessmentHistoryPoint) -> bool {
                 | "prepare_carry_structural"
                 | "prepare_external_structural"
                 | "prepare_continuity_bridge"
+                | "prepare_history_hysteresis"
                 | "prepare_probability_plateau"
         )
     })
@@ -190,4 +204,11 @@ fn has_probability_plateau_trigger_code(point: &AssessmentHistoryPoint) -> bool 
         .posture_trigger_codes
         .iter()
         .any(|code| code == "prepare_probability_plateau")
+}
+
+fn has_history_hysteresis_trigger_code(point: &AssessmentHistoryPoint) -> bool {
+    point
+        .posture_trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis")
 }

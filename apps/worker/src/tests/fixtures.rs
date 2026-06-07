@@ -147,6 +147,34 @@ pub(super) fn synthetic_backtest_summary_with_dates(
     summary
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) fn synthetic_backtest_summary_with_window(
+    scenario_id: &str,
+    name: &str,
+    crisis_start: NaiveDate,
+    crisis_end: NaiveDate,
+    first_l2_date: Option<NaiveDate>,
+    first_l3_date: Option<NaiveDate>,
+    lead_time_days: Option<i64>,
+    actionable_lead_time_days: Option<i64>,
+    false_positive_count: u32,
+) -> BacktestScenarioSummary {
+    let mut summary = synthetic_backtest_summary(
+        scenario_id,
+        name,
+        lead_time_days,
+        actionable_lead_time_days,
+        false_positive_count,
+    );
+    summary.crisis_start = crisis_start;
+    summary.crisis_end = crisis_end;
+    summary.first_l2_date = first_l2_date;
+    summary.first_l3_date = first_l3_date;
+    summary.history_start = Some(first_l2_date.or(first_l3_date).unwrap_or(crisis_start));
+    summary.history_end = Some(crisis_end);
+    summary
+}
+
 pub(super) fn runtime_history_point(
     as_of_date: NaiveDate,
     raw_probability: f64,

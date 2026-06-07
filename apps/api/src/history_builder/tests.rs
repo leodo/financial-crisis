@@ -1,11 +1,18 @@
 use chrono::{NaiveDate, Utc};
 use fc_domain::{
-    HistoricalAssessmentPointRecord, HistoricalReplayRunRecord, ModelReleaseManifest,
-    ModelReleaseRecord, PredictionSnapshotRecord, ProbabilityBundle, ProbabilityDiagnostics,
+    AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot, BacktestPerformanceSummary,
+    BacktestRollingAudit, DataMode, DataQualitySummary, DataTrust, DecisionPosture,
+    EventAssessment, EventConfirmationState, HistoricalAssessmentPointRecord,
+    HistoricalReplayRunRecord, JpyCarrySnapshot, JpyCarryState, ModelReleaseManifest,
+    ModelReleaseRecord, PositionGuidance, PositionGuidanceGovernance, PostureGuidance,
+    PredictionSnapshotRecord, ProbabilityBlock, ProbabilityBundle, ProbabilityDiagnostics,
+    QualityGrade, RuntimeMetadata, UserRiskPreferences, UserRiskProfile,
 };
 use fc_storage::SqliteStore;
 
-use super::{load_sqlite_assessment_history, AssessmentHistoryBuildMode};
+use super::{
+    load_sqlite_assessment_history, AssessmentHistoryBuildMode, HistoricalPrepareHysteresisState,
+};
 use crate::{
     assessment::ServingModelContext,
     demo::{load_user_preferences, FORMAL_MAIN_FEATURE_SET_VERSION, FORMAL_MAIN_LABEL_VERSION},
@@ -17,6 +24,215 @@ async fn in_memory_store() -> SqliteStore {
     let store = SqliteStore::connect_url("sqlite::memory:").await.unwrap();
     store.migrate().await.unwrap();
     store
+}
+
+fn history_test_preferences() -> UserRiskPreferences {
+    UserRiskPreferences {
+        profile: UserRiskProfile::Neutral,
+        cash_floor_pct: 15.0,
+        max_equity_cap_pct: 70.0,
+        max_leverage_pct: 100.0,
+        option_overlay_preference_pct: 5.0,
+        allow_aggressive_reentry: false,
+        note: "test".to_string(),
+    }
+}
+
+fn history_test_data_trust() -> DataTrust {
+    DataTrust {
+        coverage_score: 0.98,
+        core_feature_coverage: 1.0,
+        trigger_feature_coverage: 0.95,
+        external_feature_coverage: 0.95,
+        quality_grade: QualityGrade::A,
+        data_quality_summary: DataQualitySummary {
+            overall_score: 91.0,
+            grade: QualityGrade::A,
+            stale_indicator_count: 0,
+            low_quality_indicator_count: 0,
+            prototype_source_count: 0,
+            blocked_indicator_count: 0,
+        },
+        warnings: Vec::new(),
+    }
+}
+
+fn history_test_jpy_carry(funding_pressure_score: f64) -> JpyCarrySnapshot {
+    JpyCarrySnapshot {
+        state: JpyCarryState::Quiet,
+        score: 10.0,
+        usdjpy_level: Some(150.0),
+        jp_call_rate: Some(0.25),
+        us_short_rate: Some(4.0),
+        us_jp_short_rate_diff: Some(3.75),
+        change_5d: Some(0.2),
+        change_20d: Some(1.0),
+        realized_vol_20d: Some(0.01),
+        funding_pressure_score,
+        vix_coupling_score: 15.0,
+        credit_coupling_score: 15.0,
+        reason: "test".to_string(),
+    }
+}
+
+fn history_test_event_assessment() -> EventAssessment {
+    EventAssessment {
+        state: EventConfirmationState::Quiet,
+        confirmation_score: 0.0,
+        recent_event_count: 0,
+        summary: "test".to_string(),
+        confirmed_signals: Vec::new(),
+        pending_gaps: Vec::new(),
+        recent_events: Vec::new(),
+    }
+}
+
+fn history_test_position_guidance() -> PositionGuidance {
+    PositionGuidance {
+        action_playbook_version: "test".to_string(),
+        execution_urgency: "test".to_string(),
+        confidence_gate: "test".to_string(),
+        target_equity_exposure_pct: 50.0,
+        target_cash_pct: 20.0,
+        hedge_ratio_pct: 10.0,
+        leverage_cap_pct: 50.0,
+        option_overlay_pct: 5.0,
+        action_summary: "test".to_string(),
+        actions: Vec::new(),
+        forbidden_actions: Vec::new(),
+        reentry_conditions: Vec::new(),
+        guardrails: Vec::new(),
+        capital_preservation_overlay_enabled: false,
+        governance: PositionGuidanceGovernance::default(),
+    }
+}
+
+fn history_test_backtest_summary() -> BacktestPerformanceSummary {
+    BacktestPerformanceSummary {
+        scenario_count: 0,
+        real_scenario_count: 0,
+        fallback_scenario_count: 0,
+        structural_warning_rate: 0.0,
+        timely_warning_rate: 0.0,
+        missed_rate: 0.0,
+        avg_structural_lead_time_days: None,
+        avg_lead_time_days: None,
+        median_lead_time_days: None,
+        total_false_positive_count: 0,
+        history_start: None,
+        history_end: None,
+        rolling_audit: BacktestRollingAudit {
+            history_point_count: 0,
+            actionable_signal_count: 0,
+            pre_crisis_signal_count: 0,
+            in_crisis_signal_count: 0,
+            stress_window_signal_count: 0,
+            false_positive_signal_count: 0,
+            false_positive_episode_count: 0,
+            longest_false_positive_episode_days: 0,
+            actionable_precision: 0.0,
+            classified_episodes: Vec::new(),
+            summary: "test".to_string(),
+        },
+        summary: "test".to_string(),
+    }
+}
+
+fn history_test_posture_guidance(
+    posture: DecisionPosture,
+    trigger_codes: &[&str],
+) -> PostureGuidance {
+    PostureGuidance {
+        posture,
+        summary: "test".to_string(),
+        reasons: Vec::new(),
+        upgrade_condition: "test".to_string(),
+        downgrade_condition: "test".to_string(),
+        trigger_codes: trigger_codes
+            .iter()
+            .map(|code| (*code).to_string())
+            .collect(),
+        blocker_codes: Vec::new(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn history_test_assessment(
+    posture: DecisionPosture,
+    time_to_risk_bucket: fc_domain::TimeToRiskBucket,
+    p_20d: f64,
+    p_60d: f64,
+    action_prepare: f64,
+    overall_score: f64,
+    structural_score: f64,
+    trigger_score: f64,
+    external_shock_score: f64,
+    funding_pressure_score: f64,
+) -> AssessmentSnapshot {
+    let as_of_date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+    AssessmentSnapshot {
+        as_of_date,
+        entity_id: "us".to_string(),
+        market_scope: "financial_system".to_string(),
+        probabilities: ProbabilityBlock {
+            p_5d: 0.01,
+            p_20d,
+            p_60d,
+        },
+        actionability: fc_domain::ActionabilityBlock {
+            prepare: action_prepare,
+            hedge: 0.0,
+            defend: 0.0,
+        },
+        probability_diagnostics: ProbabilityDiagnostics::default(),
+        time_to_risk_bucket,
+        posture,
+        conviction_score: 0.6,
+        scores: AssessmentScores {
+            overall_score,
+            structural_score,
+            trigger_score,
+            external_shock_score,
+        },
+        summary: "test".to_string(),
+        posture_reason: "test".to_string(),
+        top_risk_drivers: Vec::new(),
+        top_relief_drivers: Vec::new(),
+        historical_analogs: Vec::new(),
+        data_trust: history_test_data_trust(),
+        jpy_carry: history_test_jpy_carry(funding_pressure_score),
+        position_guidance: history_test_position_guidance(),
+        runtime: RuntimeMetadata {
+            data_mode: DataMode::Sqlite,
+            generated_at: Utc::now(),
+            requested_as_of_date: as_of_date,
+            latest_observation_at: Some(as_of_date),
+            latest_observation_lag_days: Some(0),
+            demo_mode: false,
+            stale_warning: None,
+        },
+        key_indicators: Vec::new(),
+        event_assessment: history_test_event_assessment(),
+        backtest_summary: history_test_backtest_summary(),
+        user_preferences: history_test_preferences(),
+        method: AssessmentMethodVersions {
+            score_method_version: "test".to_string(),
+            prob_model_version: "test".to_string(),
+            calibration_version: "test".to_string(),
+            actionability_model_version: None,
+            actionability_calibration_version: None,
+            feature_set_version: "test".to_string(),
+            label_version: "test".to_string(),
+            posture_policy_version: "test".to_string(),
+            action_playbook_version: "test".to_string(),
+            fusion_policy_version: None,
+            actionability_enabled: true,
+            probability_mode: "test".to_string(),
+            release_status: "healthy".to_string(),
+            release_id: Some("test-release".to_string()),
+            point_in_time_mode: "best_effort".to_string(),
+        },
+    }
 }
 
 fn formal_serving_model_context() -> ServingModelContext {
@@ -69,6 +285,411 @@ fn formal_serving_model_context() -> ServingModelContext {
         runtime_probability_mode: "formal_bundle_v1".to_string(),
         runtime_release_status: "healthy".to_string(),
     }
+}
+
+#[test]
+fn history_prepare_hysteresis_promotes_supportive_normal_point_after_prepare_anchor() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.63,
+        0.79,
+        0.22,
+        56.0,
+        52.0,
+        36.0,
+        44.0,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.58,
+        0.74,
+        0.16,
+        50.0,
+        47.0,
+        35.0,
+        42.0,
+        30.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Prepare);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Months
+    );
+    assert_eq!(guidance.posture, DecisionPosture::Prepare);
+    assert!(guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+    assert!(state.active);
+}
+
+#[test]
+fn history_prepare_hysteresis_expires_after_support_breaks() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.63,
+        0.79,
+        0.22,
+        56.0,
+        52.0,
+        36.0,
+        44.0,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.08,
+        0.20,
+        0.02,
+        34.0,
+        40.0,
+        20.0,
+        18.0,
+        18.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Normal);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Normal
+    );
+    assert!(!guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+    assert!(!state.active);
+}
+
+#[test]
+fn history_prepare_hysteresis_requires_prepare_anchor_trigger_code() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.63,
+        0.79,
+        0.22,
+        56.0,
+        52.0,
+        36.0,
+        44.0,
+        30.0,
+    );
+    let mut anchor_guidance = history_test_posture_guidance(DecisionPosture::Prepare, &[]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(!state.active);
+
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.58,
+        0.74,
+        0.16,
+        50.0,
+        47.0,
+        35.0,
+        42.0,
+        30.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Normal);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Normal
+    );
+    assert!(!guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+}
+
+#[test]
+fn history_prepare_hysteresis_does_not_rescue_moderate_probability_drift() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.63,
+        0.79,
+        0.22,
+        56.0,
+        52.0,
+        36.0,
+        44.0,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.28,
+        0.52,
+        0.18,
+        48.0,
+        46.0,
+        34.0,
+        42.0,
+        30.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Normal);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Normal
+    );
+    assert!(!guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+    assert!(!state.active);
+}
+
+#[test]
+fn history_prepare_hysteresis_rescues_extreme_carry_after_anchor() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.75,
+        0.89,
+        0.22,
+        43.3,
+        48.8,
+        36.7,
+        44.3,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.733,
+        0.763,
+        0.06,
+        35.5,
+        36.7,
+        34.0,
+        44.5,
+        30.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Prepare);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Months
+    );
+    assert_eq!(guidance.posture, DecisionPosture::Prepare);
+    assert!(guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+    assert!(state.active);
+}
+
+#[test]
+fn history_prepare_hysteresis_extreme_carry_does_not_create_new_anchor() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.733,
+        0.763,
+        0.06,
+        35.5,
+        36.7,
+        34.0,
+        44.5,
+        30.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Normal);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Normal
+    );
+    assert!(!guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+    assert!(!state.active);
+}
+
+#[test]
+fn history_prepare_hysteresis_extreme_carry_still_requires_external_support() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.75,
+        0.89,
+        0.22,
+        43.3,
+        48.8,
+        36.7,
+        44.3,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.733,
+        0.763,
+        0.06,
+        35.5,
+        36.7,
+        34.0,
+        41.9,
+        30.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Normal);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Normal
+    );
+    assert!(!guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+}
+
+#[test]
+fn history_prepare_hysteresis_rescues_structural_carry_after_anchor() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.63,
+        0.79,
+        0.22,
+        56.0,
+        52.0,
+        36.0,
+        44.0,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.37,
+        0.658,
+        0.24,
+        43.9,
+        63.1,
+        20.6,
+        37.0,
+        30.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Prepare);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Months
+    );
+    assert_eq!(guidance.posture, DecisionPosture::Prepare);
+    assert!(guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+    assert!(state.active);
+}
+
+#[test]
+fn history_prepare_hysteresis_structural_carry_requires_low_trigger_context() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.63,
+        0.79,
+        0.22,
+        56.0,
+        52.0,
+        36.0,
+        44.0,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.37,
+        0.658,
+        0.24,
+        43.9,
+        63.1,
+        32.0,
+        37.0,
+        30.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Normal);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Normal
+    );
+    assert!(!guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
 }
 
 fn persisted_snapshot(

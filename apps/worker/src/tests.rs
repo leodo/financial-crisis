@@ -61,7 +61,8 @@ use super::{
 use fixtures::{
     formal_main_audit_method_wire, forward_crisis_row, observation, runtime_history_point,
     runtime_history_point_with_state, synthetic_backtest_summary,
-    synthetic_backtest_summary_with_dates, synthetic_runtime_scenarios, test_release_with_bundle,
+    synthetic_backtest_summary_with_dates, synthetic_backtest_summary_with_window,
+    synthetic_runtime_scenarios, test_release_with_bundle,
 };
 
 mod options;

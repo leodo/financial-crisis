@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-04
+最后更新：2026-06-07
 
 ## 1. 目的
 
@@ -623,18 +623,35 @@
        - [x] 已把 `prepare_probability_plateau` 的 `p20d` 从硬编码 `0.45` 改成 runtime 派生门槛；`2026-06-07 strict_rebuild` 下 `1998-09-03` 已从 `months + normal` 恢复为 `prepare + prepare_probability_plateau`
        - [x] 已补一条更窄的 `relaxed probability plateau` continuity 路径，并同步对齐 backtest / worker strict review 的 plateau 识别：
          1. 只放宽“`p20d/p60d` 已极高、但结构/外部上下文略弱”的 plateau 日期；
-         2. `2026-06-07` 重新跑正式 `strict_rebuild release review` 后，`strict_actionable_point_count` 已从 `163` 抬到 `167`；
-         3. 但 `timely_warning_rate` 仍停在 `40.0%`，说明这条修复只补到部分点位，主阻塞仍是 continuity，而不是单个 plateau 门槛。
+         2. `2026-06-07` 重新跑正式 `strict_rebuild release review` 后，`strict_actionable_point_count` 已从 `161` 抬到 `173`；
+         3. `1987-09-01..03` 与 `1990-07-16..19` 已恢复为 `prepare/months + prepare_history_hysteresis`，说明点位 continuity 修复已经生效；
+         4. 但 `timely_warning_rate` 仍停在 `40.0%`，说明这条修复只补到部分点位，主阻塞仍是 continuity，而不是单个 plateau 门槛。
+       - [x] 已把 worker / API strict actionable mirror 收窄到只接受 `prepare_history_hysteresis` 的 months 点，避免把弱 `prepare_p60d_structural` / plateau 点误记成 actionable
+         1. `2026-06-07` default `release review` 复核后，`strict_actionable_point_count` 进一步从 `173` 抬到 `185`；
+         2. `runtime_floor_hit_count` 维持 `327 -> 351`，`actionable_precision` 维持 `52.8% -> 67.7%`，`longest_false_positive_episode_days` 维持 `15 -> 13`；
+         3. 说明 mirror 已对齐，但主阻塞仍不是 point-level strict conversion，而是 scenario-level continuity。
        - [ ] 但 `2026-06-07` 正式 `release review` 仍把 `1987 / 1990-1993 / 1998` 记为 scenario-level `posture_continuity_failure`，说明点位修复已生效，但整段 `3/5 sustained` 连续性还没完全恢复
       - [ ] 最后清 `residual_review_l3_failure`，确认剩余阻塞不是 gate/continuity 遗留
    - [ ] 重跑 release review / rolling audit / runtime regime audit
      - [x] 已重跑 baseline `us_formal_family_hybrid_20260605T202246` vs candidate `us_formal_family_hybrid_20260606T112926` 的正式 `strict_rebuild release review`
        - `timely_warning_rate 40.0% -> 40.0%`
-       - `strict_actionable_point_count 158 -> 167`
+       - `strict_actionable_point_count 161 -> 173`
        - `runtime_floor_hit_count 327 -> 351`
-       - `actionable_precision 54.7% -> 69.7%`
-       - `longest_false_positive_episode_days 14 -> 11`
+       - `actionable_precision 52.8% -> 67.7%`
+       - `longest_false_positive_episode_days 15 -> 13`
        - `guard_passed=false`，当前主阻塞仍是 `1987 / 1990-1993 / 1998` 的 scenario-level `posture_continuity_failure`，以及 `2000-2001 / 2022` 的 `strict_gate_mismatch`
+     - [x] 已重跑 baseline `us_formal_family_hybrid_20260605T202246` vs candidate `us_formal_family_hybrid_20260606T112926` 的 `default release review`
+       - `timely_warning_rate 40.0% -> 40.0%`
+       - `strict_actionable_point_count 173 -> 185`
+       - `runtime_floor_hit_count 327 -> 351`
+       - `actionable_precision 52.8% -> 67.7%`
+       - `longest_false_positive_episode_days 15 -> 13`
+       - `guard_passed=false`，当前默认 review 也确认 point-level strict conversion 已改善，但主阻塞仍是 `1987 / 1990-1993 / 1998` 的 continuity 与 `2000-2001 / 2022` 的 gate mismatch
+     - [ ] 对齐 `release activate` 的 `operational guard` 与 `release review` 的 `go/no-go`
+       - 当前尝试把默认激活版切回 baseline `us_formal_family_hybrid_20260605T202246` 时，系统因为
+         `actionable_precision 70.1% -> 46.3%` 自动回滚到 candidate `us_formal_family_hybrid_20260606T112926`
+       - 这说明当前存在“full release review 判定 candidate 不应晋升，但 activation guard 仍偏向保留 candidate” 的治理冲突
+       - 下一步要明确默认线上版到底以哪套门禁优先级为准，并把激活/回滚行为固化到文档和代码
 
 ### 6.4 2026-06-02 扩展数据集实测结果
 

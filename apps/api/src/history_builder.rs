@@ -2,7 +2,8 @@ use std::collections::BTreeSet;
 
 use chrono::NaiveDate;
 use fc_domain::{
-    AlertEvent, BacktestWindowPoint, DataMode, Indicator, Observation, UserRiskPreferences,
+    AlertEvent, AssessmentSnapshot, BacktestWindowPoint, DataMode, DecisionPosture, Indicator,
+    Observation, PostureGuidance, TimeToRiskBucket, UserRiskPreferences,
 };
 use fc_scoring::ScoringEngine;
 use fc_storage::SqliteStore;
@@ -17,6 +18,121 @@ use crate::history_replay::{
     merge_historical_outputs, persist_historical_replay_output,
     prediction_snapshot_from_assessment, HistoricalAssessmentOutput,
 };
+
+const HISTORY_PREPARE_HYSTERESIS_PLATEAU_P20D_FLOOR: f64 = 0.45;
+const HISTORY_PREPARE_HYSTERESIS_PLATEAU_P60D_FLOOR: f64 = 0.65;
+const HISTORY_PREPARE_HYSTERESIS_LONG_WINDOW_P20D_FLOOR: f64 = 0.35;
+const HISTORY_PREPARE_HYSTERESIS_LONG_WINDOW_P60D_FLOOR: f64 = 0.80;
+const HISTORY_PREPARE_HYSTERESIS_OVERALL_FLOOR: f64 = 40.0;
+const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_FLOOR: f64 = 44.0;
+const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_P20D_FLOOR: f64 = 0.49;
+const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_P60D_FLOOR: f64 = 0.75;
+const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_STRUCTURAL_FLOOR: f64 = 36.0;
+const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_EXTERNAL_FLOOR: f64 = 44.0;
+const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_P20D_FLOOR: f64 = 0.35;
+const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_P60D_FLOOR: f64 = 0.65;
+const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_OVERALL_FLOOR: f64 = 43.5;
+const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_STRUCTURAL_FLOOR: f64 = 60.0;
+const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_TRIGGER_CEILING: f64 = 30.0;
+const HISTORY_PREPARE_HYSTERESIS_TRIGGER_CODE: &str = "prepare_history_hysteresis";
+
+#[derive(Debug, Clone, Copy, Default)]
+struct HistoricalPrepareHysteresisState {
+    active: bool,
+}
+
+impl HistoricalPrepareHysteresisState {
+    fn apply(
+        &mut self,
+        enabled: bool,
+        assessment: &mut AssessmentSnapshot,
+        posture_guidance: &mut PostureGuidance,
+    ) {
+        if !enabled {
+            self.active = false;
+            return;
+        }
+
+        let continuation_supported = history_prepare_hysteresis_supported(assessment)
+            || (self.active && history_prepare_hysteresis_extreme_carry_supported(assessment))
+            || (self.active && history_prepare_hysteresis_structural_carry_supported(assessment));
+        if self.active && continuation_supported {
+            if matches!(assessment.posture, DecisionPosture::Normal) {
+                assessment.posture = DecisionPosture::Prepare;
+                posture_guidance.posture = DecisionPosture::Prepare;
+            }
+            if matches!(assessment.time_to_risk_bucket, TimeToRiskBucket::Normal) {
+                assessment.time_to_risk_bucket = TimeToRiskBucket::Months;
+            }
+            if !matches!(assessment.posture, DecisionPosture::Normal)
+                && !posture_guidance
+                    .trigger_codes
+                    .iter()
+                    .any(|code| code == HISTORY_PREPARE_HYSTERESIS_TRIGGER_CODE)
+            {
+                posture_guidance
+                    .trigger_codes
+                    .push(HISTORY_PREPARE_HYSTERESIS_TRIGGER_CODE.to_string());
+            }
+        }
+
+        self.active = history_prepare_hysteresis_anchor(assessment, posture_guidance)
+            || (self.active && continuation_supported);
+    }
+}
+
+fn history_prepare_hysteresis_anchor(
+    assessment: &AssessmentSnapshot,
+    posture_guidance: &PostureGuidance,
+) -> bool {
+    matches!(assessment.posture, DecisionPosture::Prepare)
+        && !matches!(assessment.time_to_risk_bucket, TimeToRiskBucket::Normal)
+        && posture_guidance.trigger_codes.iter().any(|code| {
+            matches!(
+                code.as_str(),
+                "prepare_p60d_structural"
+                    | "prepare_structural_downgrade"
+                    | "prepare_carry_structural"
+                    | "prepare_external_structural"
+                    | "prepare_continuity_bridge"
+                    | "prepare_probability_plateau"
+                    | HISTORY_PREPARE_HYSTERESIS_TRIGGER_CODE
+            )
+        })
+}
+
+fn history_prepare_hysteresis_supported(assessment: &AssessmentSnapshot) -> bool {
+    let plateau_probability_support = assessment.probabilities.p_20d
+        >= HISTORY_PREPARE_HYSTERESIS_PLATEAU_P20D_FLOOR
+        && assessment.probabilities.p_60d >= HISTORY_PREPARE_HYSTERESIS_PLATEAU_P60D_FLOOR;
+    let long_window_probability_support = assessment.probabilities.p_20d
+        >= HISTORY_PREPARE_HYSTERESIS_LONG_WINDOW_P20D_FLOOR
+        && assessment.probabilities.p_60d >= HISTORY_PREPARE_HYSTERESIS_LONG_WINDOW_P60D_FLOOR;
+
+    assessment.scores.overall_score >= HISTORY_PREPARE_HYSTERESIS_OVERALL_FLOOR
+        && assessment.scores.structural_score >= HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_FLOOR
+        && (plateau_probability_support || long_window_probability_support)
+}
+
+fn history_prepare_hysteresis_extreme_carry_supported(assessment: &AssessmentSnapshot) -> bool {
+    assessment.probabilities.p_20d >= HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_P20D_FLOOR
+        && assessment.probabilities.p_60d >= HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_P60D_FLOOR
+        && assessment.scores.structural_score
+            >= HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_STRUCTURAL_FLOOR
+        && assessment.scores.external_shock_score
+            >= HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_EXTERNAL_FLOOR
+}
+
+fn history_prepare_hysteresis_structural_carry_supported(assessment: &AssessmentSnapshot) -> bool {
+    assessment.probabilities.p_20d >= HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_P20D_FLOOR
+        && assessment.probabilities.p_60d >= HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_P60D_FLOOR
+        && assessment.scores.overall_score
+            >= HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_OVERALL_FLOOR
+        && assessment.scores.structural_score
+            >= HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_STRUCTURAL_FLOOR
+        && assessment.scores.trigger_score
+            <= HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_TRIGGER_CEILING
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct HistoryQueryWindow {
@@ -81,6 +197,8 @@ fn build_assessment_history_for_dates(
     let mut history_points = Vec::with_capacity(dates.len());
     let mut prediction_snapshots = Vec::with_capacity(dates.len());
     let mut replay_point_drafts = Vec::with_capacity(dates.len());
+    let mut prepare_hysteresis = HistoricalPrepareHysteresisState::default();
+    let enable_history_hysteresis = serving_model.is_some();
     for as_of_date in dates.iter().copied() {
         let output = scoring.score(
             indicators,
@@ -107,6 +225,13 @@ fn build_assessment_history_for_dates(
             None,
             serving_model,
             user_preferences,
+        );
+        let mut assessment = assessment;
+        let mut posture_guidance = posture_guidance;
+        prepare_hysteresis.apply(
+            enable_history_hysteresis,
+            &mut assessment,
+            &mut posture_guidance,
         );
         history_points.push(assessment_history_point_from_assessment(
             &assessment,

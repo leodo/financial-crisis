@@ -164,7 +164,7 @@ pub(crate) fn history_runtime_policy_version(
     };
 
     format!(
-        "runtime_history_v4_20260606|class={release_class}|prepare={:.3}|hedge={:.3}|defend={:.3}",
+        "runtime_history_v7_20260607|class={release_class}|prepare={:.3}|hedge={:.3}|defend={:.3}",
         thresholds.prepare_p60d, thresholds.hedge_p20d, thresholds.defend_p5d
     )
 }
