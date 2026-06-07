@@ -117,6 +117,20 @@ pub(super) fn release_review_runtime_floor_hits(
     })
 }
 
+pub(super) fn release_review_is_weak_defend_only_runtime_floor(
+    point: &AssessmentHistoryPoint,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> bool {
+    release_review_runtime_floor_hits(point, thresholds).is_some_and(|hits| {
+        hits.defend
+            && !hits.hedge
+            && !hits.prepare
+            && matches!(point.posture, DecisionPosture::Normal)
+            && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
+            && point.posture_trigger_codes.is_empty()
+    })
+}
+
 pub(super) fn release_review_uses_transitional_actionable_bridge(
     method: &crate::AuditMethodResponseWire,
 ) -> bool {

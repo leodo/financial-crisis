@@ -513,7 +513,7 @@ fn release_review_focus_diagnostic_includes_runtime_floor_only_scenarios_without
 }
 
 #[test]
-fn release_review_focus_diagnostic_treats_defend_only_runtime_floor_as_posture_continuity() {
+fn release_review_focus_diagnostic_ignores_weak_defend_only_runtime_floor_blips() {
     let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
     let runtime_floor_date = NaiveDate::from_ymd_opt(2023, 2, 10).unwrap();
     let follow_up_date = NaiveDate::from_ymd_opt(2023, 2, 17).unwrap();
@@ -582,33 +582,12 @@ fn release_review_focus_diagnostic_treats_defend_only_runtime_floor_as_posture_c
     );
 
     assert_eq!(rows.len(), 1);
-    assert_eq!(
-        rows[0].baseline_primary_failure_mode.as_deref(),
-        Some("posture_continuity_failure")
-    );
-    assert_eq!(
-        rows[0].candidate_primary_failure_mode.as_deref(),
-        Some("posture_continuity_failure")
-    );
-    assert_eq!(rows[0].runtime_block_counts.len(), 1);
-    assert_eq!(
-        rows[0].runtime_block_counts[0].category,
-        "posture_bucket_normal"
-    );
-    assert_eq!(rows[0].runtime_block_counts[0].baseline_count, 2);
-    assert_eq!(rows[0].runtime_block_counts[0].candidate_count, 2);
-    assert!(rows[0]
-        .runtime_continuity_facet_counts
-        .iter()
-        .any(|facet| facet.category == "gate_gap:none"
-            && facet.baseline_count == 2
-            && facet.candidate_count == 2));
-    assert!(rows[0]
-        .baseline_first_runtime_floor_hit_without_l3_reason
-        .as_deref()
-        .is_some_and(|reason| reason.contains("posture/bucket stayed normal")));
-    assert!(rows[0]
-        .candidate_first_runtime_floor_hit_without_l3_reason
-        .as_deref()
-        .is_some_and(|reason| reason.contains("posture/bucket stayed normal")));
+    assert_eq!(rows[0].baseline_primary_failure_mode.as_deref(), None);
+    assert_eq!(rows[0].candidate_primary_failure_mode.as_deref(), None);
+    assert!(rows[0].runtime_block_counts.is_empty());
+    assert!(rows[0].runtime_continuity_facet_counts.is_empty());
+    assert_eq!(rows[0].baseline_first_runtime_floor_hit_without_l3_date, None);
+    assert_eq!(rows[0].candidate_first_runtime_floor_hit_without_l3_date, None);
+    assert_eq!(rows[0].baseline_first_runtime_floor_hit_without_l3_reason, None);
+    assert_eq!(rows[0].candidate_first_runtime_floor_hit_without_l3_reason, None);
 }

@@ -2,6 +2,7 @@ use fc_domain::{AssessmentHistoryPoint, DecisionPosture, TimeToRiskBucket};
 
 use super::super::signals::{
     release_review_has_strong_prepare_trigger_code, release_review_hits_runtime_floor,
+    release_review_is_weak_defend_only_runtime_floor,
     release_review_is_actionable_warning_point, release_review_strict_prepare_p20d_threshold,
     release_review_strict_prepare_p60d_threshold, release_review_runtime_floor_hits,
 };
@@ -13,6 +14,9 @@ pub(in super::super) fn release_review_actionable_diagnostic(
 ) -> String {
     if release_review_is_actionable_warning_point(point, use_transitional_bridge, thresholds) {
         return "actionable".to_string();
+    }
+    if release_review_is_weak_defend_only_runtime_floor(point, thresholds) {
+        return "weak defend-only runtime floor blip ignored for continuity audit".to_string();
     }
 
     let runtime_floor_hit = release_review_hits_runtime_floor(point, thresholds);
@@ -95,6 +99,7 @@ pub(in super::super) fn release_review_runtime_actionable_block_category(
 ) -> Option<&'static str> {
     if release_review_is_actionable_warning_point(point, use_transitional_bridge, thresholds)
         || !release_review_hits_runtime_floor(point, thresholds)
+        || release_review_is_weak_defend_only_runtime_floor(point, thresholds)
     {
         return None;
     }
