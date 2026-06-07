@@ -340,6 +340,7 @@
           - [x] 已新增 `research release formal-probability-compare` / `just formal-probability-compare`，可直接输出 baseline vs candidate 的逐日概率差、阈值命中差与 top feature contribution delta。
           - [x] 已对 baseline `us_formal_interaction_tail_extmix10_20260602T061401` 与 candidate `us_formal_family_hybrid_20260603T144814` 跑出 `2022-12-01 ~ 2023-03-15` 的 `us_regional_banks_2023` 概率拆解切片。
           - [x] 已确认 `60d overlay` 不是主因：candidate `60d` overlay 已关闭，baseline 也没有 overlay，但两版 `60d` 在该窗口都没有越过各自 decision threshold，只表现为持续偏高背景值。
+          - [x] 已定位并修复 API `formal_bundle_v1` runtime 的跨 horizon monotonic uplift：`20d/60d` 不再被 runtime 强行抬到短窗之上；同时把 replay cache key 升到 `runtime_history_v8_20260608`，避免 `default release review` 继续复用旧回放结果。最新 `us_formal_family_hybrid_20260606T112926` 默认 review 中，`60d` 的平均 runtime lift 已从 `+6.3pp` 收敛到 `-0.17pp`，`post_crisis_cooldown avg_probability 54.9% -> 43.9%`，说明 runtime distortion 已基本清掉，剩余 `cooldown_bleed` 更像 bundle 本体的高背景值问题。
           - [ ] 下一步把 `60d` 的高背景值继续下钻到 base feature / calibration / threshold selection，确认 cooldown bleed 的真正来源。
          - [x] 已补写 [regional-banks-2023-l3-repair-design.md](../analytics/regional-banks-2023-l3-repair-design.md)，把 `2023 regional banks` 的根因修复从“复盘结论”升级成可执行实验设计，明确诊断产物、允许改动边界、`3/5 sustained hits` 证据表与下一轮 Go/No-Go 条件。
          - [x] 以 `2023 美国区域银行危机` 为第一优先场景，逐日复盘 baseline vs family-hybrid 的 `p_60d / p_20d / posture trigger clause / actionable bridge`，并确认 `L3=70d` 丢失的直接原因是 candidate 没有形成 `actionable 3/5 sustained hits`，而不是单独缺少第一次 `60d` prepare 命中。
@@ -655,10 +656,13 @@
        - `timely_warning_rate 10.0% -> 10.0%`
        - `strict_actionable_point_count 63 -> 80`
        - `runtime_floor_hit_count 90 -> 91`
-       - `actionable_precision 46.4% -> 69.8%`
+       - `actionable_precision 46.4% -> 70.5%`
        - `longest_false_positive_episode_days 16 -> 13`
-       - `guard_passed=false`，但 candidate 的默认 review 主阻塞已不再是 `1990-1993` continuity，而是新增的 `2022 联储加息与久期冲击 / strict_gate_mismatch` 与 `2023 美国区域银行危机 / residual_review_l3_failure`
-       - 下一步应先专项复核 `2022` 的 `strict review gate vs runtime floor`：当前 candidate `runtime thresholds` 已降到 `prepare_p60d=56.8% / hedge_p20d=28.2%`，但 review 端仍会在 `p20d>=12%`、`p60d<45%` 或 `p20d<12%`、`p60d>=56.8%` 的点上记为 `review_gate_gap`
+       - `guard_passed=true`，说明在修掉 runtime monotonic uplift 并强制 replay cache 失效后，candidate 已通过当前默认 runtime/probability guard；默认 review 的剩余问题主要收敛到 `2023 美国区域银行危机 / residual_review_l3_failure`，以及 5 个 `baseline_shared_weakness` 的 residual release-review audit 样本。
+       - 下一步不再先修 `runtime monotonic gap` 或 `default review cache`；这些已闭环。后续优先级转成：
+         1. 继续下钻 `2023 美国区域银行危机` 的 `residual_review_l3_failure`；
+         2. 对 `1987 / 1998 / 2000-2001 / 2011 / 2022` 这 5 个 `baseline_shared_weakness` 样本做 residual review clause / continuity facet 逐点审计；
+         3. 只在确认剩余 `cooldown_bleed` 仍来自 bundle 本体后，再继续改 `60d` 训练目标与特征结构。
      - [x] 已对齐 `release activate` 的 `operational guard` 与 `release review` 的 `go/no-go`
        - 现在 `release activate --reload-api` 会读取最新相关 `release review` 产物：
          1. 若目标 release 已在最新正式 review 中被判为失败 candidate，则直接阻止激活；

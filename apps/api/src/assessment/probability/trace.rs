@@ -112,15 +112,22 @@ pub(super) fn build_probability_trace(
         p_60d: round3(raw_p_60d),
     };
 
+    let apply_runtime_monotonic_gap = serving_model.runtime_probability_mode != "formal_bundle_v1";
     let min_gap_5_to_20 = bundle.monotonic_min_gap_5d_to_20d.max(0.0);
     let min_gap_20_to_60 = bundle.monotonic_min_gap_20d_to_60d.max(0.0);
-    let calibrated_p_5d = calibrated_p_5d_raw;
-    let calibrated_p_20d = crate::assessment::clamp_probability(
-        calibrated_p_20d_raw.max((calibrated_p_5d + min_gap_5_to_20).min(0.98)),
-    );
-    let calibrated_p_60d = crate::assessment::clamp_probability(
-        calibrated_p_60d_raw.max((calibrated_p_20d + min_gap_20_to_60).min(0.99)),
-    );
+    let calibrated_p_5d = crate::assessment::clamp_probability(calibrated_p_5d_raw);
+    let calibrated_p_20d_pre_clamp = if apply_runtime_monotonic_gap {
+        calibrated_p_20d_raw.max((calibrated_p_5d + min_gap_5_to_20).min(0.98))
+    } else {
+        calibrated_p_20d_raw
+    };
+    let calibrated_p_20d = crate::assessment::clamp_probability(calibrated_p_20d_pre_clamp);
+    let calibrated_p_60d_pre_clamp = if apply_runtime_monotonic_gap {
+        calibrated_p_60d_raw.max((calibrated_p_20d + min_gap_20_to_60).min(0.99))
+    } else {
+        calibrated_p_60d_raw
+    };
+    let calibrated_p_60d = crate::assessment::clamp_probability(calibrated_p_60d_pre_clamp);
     let calibrated_probabilities = ProbabilityBlock {
         p_5d: round3(calibrated_p_5d),
         p_20d: round3(calibrated_p_20d),
@@ -149,20 +156,19 @@ pub(super) fn build_probability_trace(
                         _ => round3(score.final_probability),
                     }),
                     monotonic_lift: round3(match horizon.horizon_days {
-                        5 => calibrated_p_5d - score.final_probability,
-                        20 => calibrated_p_20d - score.final_probability,
-                        60 => calibrated_p_60d - score.final_probability,
+                        20 if apply_runtime_monotonic_gap => {
+                            (calibrated_p_20d_pre_clamp - calibrated_p_20d_raw).max(0.0)
+                        }
+                        60 if apply_runtime_monotonic_gap => {
+                            (calibrated_p_60d_pre_clamp - calibrated_p_60d_raw).max(0.0)
+                        }
                         _ => 0.0,
                     }),
                     configured_overlay_count: horizon.family_overlays.len() as u32,
                     contributions: score.overlay_contributions.clone(),
                     overlay_audits: horizon.family_overlay_audits.clone(),
                 };
-                (diagnostics.configured_overlay_count > 0
-                    || diagnostics.monotonic_lift.abs() > f64::EPSILON
-                    || !diagnostics.contributions.is_empty()
-                    || !diagnostics.overlay_audits.is_empty())
-                .then_some(diagnostics)
+                Some(diagnostics)
             })
             .collect(),
     };
