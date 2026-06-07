@@ -159,6 +159,12 @@ formal-candidate-semantics-audit baseline_release_id candidate_release_id:
 formal-candidate-leadtime-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-leadtime-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 对 `prewarning_signal_gap / weak_signal_continuity` 这类 residual workstream 直接拉 formal dataset slice，
+# 汇总样本覆盖、split、标签、episode 和 feature 覆盖，避免只知道“哪条线有问题”却不知道“数据证据长什么样”。
+# 用法：`just formal-candidate-workstream-audit us_formal_family_hybrid_20260605T202246 us_formal_family_hybrid_20260606T112926`
+formal-candidate-workstream-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-workstream-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
 # 标准候选筛选入口：先跑三段窗口 compare，再跑 20d 特征/阈值审计，最后补一轮语义审计。
 # 适合 family-hybrid 主线的新候选第一轮筛查；只有这一步结论足够好，才继续跑 `release-review-fast`。
 # 用法：`just formal-candidate-screen us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`

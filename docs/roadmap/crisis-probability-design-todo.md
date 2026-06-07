@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-07
+最后更新：2026-06-08
 
 ## 1. 目的
 
@@ -673,6 +673,12 @@
          - `prewarning_signal_gap`：当前 `1987 / 1998 / 2000-2001 / 2011` 会单独汇总到这条线，不再和 `2022` 混在一起。
          - `weak_signal_continuity`：当前 `2022` 会单独汇总到这条线，明确它已经有弱 pre-warning 痕迹，但没有形成可执行延续。
          - `2026-06-08` 实测：`historical audit workstream / attribution / actions / priorities / recommendation` 五条输出链都已经切到这两个新 key，最终 recommendation 也会直接点名 `weak signal continuity, pre-warning signal gap`，不再只给笼统的 baseline shortfall 结论。
+       - [x] 已新增 `just formal-candidate-workstream-audit`，把 residual workstream 直接落到 dataset evidence
+         - 当前入口会按场景自动选 `formal_v1_main_1990_daily / formal_v1_ext_stress_1990_daily / formal_v1_ext_acute_pre1990`，不再因为 `1987 / 1998` 不在 main dataset 就直接失败。
+         - `2026-06-08` 实测：baseline `us_formal_family_hybrid_20260605T202246` vs candidate `us_formal_family_hybrid_20260606T112926` 的默认 review 已成功导出 `artifacts/research/workstream-audit/us_formal_family_hybrid_20260605T202246-vs-us_formal_family_hybrid_20260606T112926-default-workstream-audit.json`。
+         - 首轮证据显示：
+           1. `weak_signal_continuity / 2022` 在 main dataset 里有 `66` 个 evaluation rows、`prepare=48 / hedge=11`，但 `20d/60d` 正标签都是 `0`，说明主问题更像正标签/continuity 约束缺失，不是 coverage 缺口。
+           2. `prewarning_signal_gap` 的 `1987 / 1998 / 2000-2001 / 2011` 已分别落到 acute/stress 扩展数据集，合计 `343` 行，`20d` 正标签 `80`、`60d` 正标签 `240`，平均 coverage `0.9665`，说明这些 residual 样本已经具备可训练证据，下一步应直接回到 feature separation / gate / release slice 对比，而不是继续停留在“可能没数据”的猜测层。
      - [x] 已对齐 `release activate` 的 `operational guard` 与 `release review` 的 `go/no-go`
        - 现在 `release activate --reload-api` 会读取最新相关 `release review` 产物：
          1. 若目标 release 已在最新正式 review 中被判为失败 candidate，则直接阻止激活；
