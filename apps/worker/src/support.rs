@@ -218,6 +218,14 @@ pub(crate) fn format_optional_pct(value: Option<f64>) -> String {
     value.map(format_pct).unwrap_or_else(|| "—".to_string())
 }
 
+pub(crate) fn format_score(value: f64) -> String {
+    format!("{value:.1}")
+}
+
+pub(crate) fn format_optional_score(value: Option<f64>) -> String {
+    value.map(format_score).unwrap_or_else(|| "—".to_string())
+}
+
 pub(crate) fn format_optional_date(value: Option<NaiveDate>) -> String {
     value
         .map(|date| date.to_string())

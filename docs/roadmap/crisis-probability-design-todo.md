@@ -679,6 +679,10 @@
          - 首轮证据显示：
            1. `weak_signal_continuity / 2022` 在 main dataset 里有 `66` 个 evaluation rows、`prepare=48 / hedge=11`，但 `20d/60d` 正标签都是 `0`，说明主问题更像正标签/continuity 约束缺失，不是 coverage 缺口。
            2. `prewarning_signal_gap` 的 `1987 / 1998 / 2000-2001 / 2011` 已分别落到 acute/stress 扩展数据集，合计 `343` 行，`20d` 正标签 `80`、`60d` 正标签 `240`，平均 coverage `0.9665`，说明这些 residual 样本已经具备可训练证据，下一步应直接回到 feature separation / gate / release slice 对比，而不是继续停留在“可能没数据”的猜测层。
+       - [x] 已把 `focus scenario` 点位证据补充到 `overall_score / external_shock_score`，并把 `prepare/weeks + plateau/history_hysteresis` 的 L3 漏接住情况单独归成 `score_confirmation_failure`
+         - `2026-06-08` 默认 review 产物现在会在 `scenario_focus.interesting_points` 和 Markdown 表格里直接带出 `Base/Cand overall`、`Base/Cand external`，不再只能看概率和 posture。
+         - 基于这组新字段，`2023 美国区域银行危机` 的早期窗口已可直接看出：candidate 在 `2022-12-08 ~ 2022-12-13` 已经进入 `prepare/weeks`，`p20d/p60d` 也明显抬升，并带有 `prepare_probability_plateau / prepare_history_hysteresis`，但 `overall_score` 只有 `51.8 ~ 52.6`，因此之前才会落进笼统的 `review_l3_gate_not_satisfied / residual_review_l3_failure`。
+         - 现在这类点位会被明确记成 `prepare_weeks_score_confirmation`，对应诊断文案是“prepare/weeks trigger setup stayed below strict score confirmation”，后续若要放宽 strict L3 准入，可以直接围绕这条 clause 做 targeted 实验，而不是继续在 residual 桶里盲改。
      - [x] 已对齐 `release activate` 的 `operational guard` 与 `release review` 的 `go/no-go`
        - 现在 `release activate --reload-api` 会读取最新相关 `release review` 产物：
          1. 若目标 release 已在最新正式 review 中被判为失败 candidate，则直接阻止激活；

@@ -830,3 +830,81 @@ fn release_review_focus_diagnostic_ignores_weak_defend_only_runtime_floor_blips(
         None
     );
 }
+
+#[test]
+fn release_review_focus_diagnostic_classifies_prepare_weeks_plateau_gap_as_score_confirmation() {
+    let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+    let crisis_end = NaiveDate::from_ymd_opt(2023, 3, 20).unwrap();
+    let runtime_floor_date = NaiveDate::from_ymd_opt(2023, 2, 1).unwrap();
+    let baseline = vec![synthetic_backtest_summary_with_window(
+        "scenario_prepare_weeks_plateau_gap",
+        "Prepare Weeks Plateau Gap",
+        crisis_start,
+        crisis_end,
+        None,
+        None,
+        None,
+        None,
+        0,
+    )];
+    let candidate = vec![synthetic_backtest_summary_with_window(
+        "scenario_prepare_weeks_plateau_gap",
+        "Prepare Weeks Plateau Gap",
+        crisis_start,
+        crisis_end,
+        Some(runtime_floor_date),
+        None,
+        Some(37),
+        None,
+        0,
+    )];
+    let baseline_history = vec![runtime_history_point_with_state(
+        runtime_floor_date,
+        45.0,
+        0.01,
+        0.08,
+        0.18,
+        DecisionPosture::Normal,
+        TimeToRiskBucket::Normal,
+        32.0,
+        &[],
+    )];
+    let candidate_history = vec![runtime_history_point_with_state(
+        runtime_floor_date,
+        52.4,
+        0.02,
+        0.46,
+        0.93,
+        DecisionPosture::Prepare,
+        TimeToRiskBucket::Weeks,
+        35.2,
+        &["prepare_probability_plateau", "prepare_history_hysteresis"],
+    )];
+    let method = formal_main_audit_method_wire();
+
+    let rows = build_release_review_scenario_focus_diagnostics(
+        &baseline,
+        &candidate,
+        &baseline_history,
+        &candidate_history,
+        &method,
+        &method,
+    );
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].candidate_primary_failure_mode.as_deref(),
+        Some("score_confirmation_failure")
+    );
+    assert!(rows[0].runtime_block_counts.iter().any(|count| {
+        count.category == "prepare_weeks_score_confirmation" && count.candidate_count > 0
+    }));
+    assert_eq!(
+        rows[0]
+            .candidate_first_runtime_floor_hit_without_l3_reason
+            .as_deref(),
+        Some(
+            "prepare/weeks trigger setup stayed below strict score confirmation (overall 52.4 < 53.0)"
+        )
+    );
+}

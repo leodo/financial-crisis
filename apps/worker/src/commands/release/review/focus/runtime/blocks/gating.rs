@@ -1,6 +1,7 @@
 use fc_domain::{AssessmentHistoryPoint, DecisionPosture, TimeToRiskBucket};
 
 use super::super::signals::{
+    release_review_has_prepare_weeks_score_confirmation_gap,
     release_review_has_strong_prepare_trigger_code, release_review_hits_runtime_floor,
     release_review_is_actionable_warning_point, release_review_is_weak_defend_only_runtime_floor,
     release_review_runtime_floor_hits, release_review_strict_prepare_p20d_threshold,
@@ -75,6 +76,13 @@ pub(in super::super) fn release_review_actionable_diagnostic(
         return "prepare setup lacked confirmation".to_string();
     }
 
+    if release_review_has_prepare_weeks_score_confirmation_gap(point, thresholds) {
+        return format!(
+            "prepare/weeks trigger setup stayed below strict score confirmation (overall {} < 53.0)",
+            point.overall_score
+        );
+    }
+
     if use_transitional_bridge
         && matches!(point.posture, DecisionPosture::Prepare)
         && point.overall_score < 58.0
@@ -134,6 +142,10 @@ pub(in super::super) fn release_review_runtime_actionable_block_category(
         && !release_review_has_strong_prepare_trigger_code(point)
     {
         return Some("prepare_score_confirmation");
+    }
+
+    if release_review_has_prepare_weeks_score_confirmation_gap(point, thresholds) {
+        return Some("prepare_weeks_score_confirmation");
     }
 
     if use_transitional_bridge

@@ -176,21 +176,25 @@ fn render_release_focus_scenario_markdown(
 
     let _ = writeln!(
         markdown,
-        "| Date | Base p_20d | Cand p_20d | Base p_60d | Cand p_60d | Base posture | Cand posture | Base bucket | Cand bucket | Base strict L3 | Cand strict L3 | Base runtime floor | Cand runtime floor | Base 5d hits | Cand 5d hits | Base sustained | Cand sustained | Base triggers | Cand triggers | Base block cat | Cand block cat | Base runtime block | Cand runtime block | Base diag | Cand diag |"
+        "| Date | Base p_20d | Cand p_20d | Base p_60d | Cand p_60d | Base overall | Cand overall | Base external | Cand external | Base posture | Cand posture | Base bucket | Cand bucket | Base strict L3 | Cand strict L3 | Base runtime floor | Cand runtime floor | Base 5d hits | Cand 5d hits | Base sustained | Cand sustained | Base triggers | Cand triggers | Base block cat | Cand block cat | Base runtime block | Cand runtime block | Base diag | Cand diag |"
     );
     let _ = writeln!(
         markdown,
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
     );
     for point in &scenario.interesting_points {
         let _ = writeln!(
             markdown,
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
             point.as_of_date,
             crate::format_optional_pct(point.baseline_p20d),
             crate::format_optional_pct(point.candidate_p20d),
             crate::format_optional_pct(point.baseline_p60d),
             crate::format_optional_pct(point.candidate_p60d),
+            crate::format_optional_score(point.baseline_overall_score),
+            crate::format_optional_score(point.candidate_overall_score),
+            crate::format_optional_score(point.baseline_external_shock_score),
+            crate::format_optional_score(point.candidate_external_shock_score),
             point.baseline_posture.as_deref().unwrap_or("—"),
             point.candidate_posture.as_deref().unwrap_or("—"),
             point.baseline_time_bucket.as_deref().unwrap_or("—"),
