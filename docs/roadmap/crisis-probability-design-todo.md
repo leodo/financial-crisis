@@ -548,6 +548,13 @@
                    - `1987` 仍是共享 `posture_continuity_failure`；
                    - `1990-1993 / 1998` 当前主阻塞已收敛到 `strict_gate_mismatch`，而且以 `p20d_only` 为主；
                    - `2000-2001 / 2023` 则更像 `residual_review_l3_failure`。
+            4.13 [x] formal-main runtime 分类已从“死锁 `20260531` 精确版本”改成前缀识别：
+                1. 已确认 active candidate `feature_formal_v1_main_20260606_gatefix`
+                   之前会被 API runtime 误判成 legacy/release 路径；
+                2. 误判后会把 runtime threshold、transition bridge、
+                   history runtime policy cache key 一起带回 legacy 口径；
+                3. 现已统一改成 `feature_formal_v1_main* + formal_label_v1_main`
+                   识别，live API 已恢复走 formal bundle runtime。
             5. 下一步不再把所有 missed / degraded 场景混成一个问题，而是按 blocker 排序：
                - 先专项复核 `strict p20d gate`，重点覆盖 `1990-1993 / 1998 / 2007-2009 / 2023`；
                - 再专项复核 `months_score_confirmation / posture continuity`，重点覆盖 `1987 / 1990-1993 / 1998`；

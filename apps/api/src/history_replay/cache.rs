@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::{
     assessment::{history_runtime_policy_version, ServingModelContext},
-    demo::{FORMAL_MAIN_FEATURE_SET_VERSION, FORMAL_MAIN_LABEL_VERSION},
+    demo::is_formal_main_feature_set,
 };
 
 use super::{
@@ -268,9 +268,10 @@ fn uses_bundle_backed_history(serving_model: Option<&ServingModelContext>) -> bo
 
 pub(crate) fn is_formal_main_release(serving_model: Option<&ServingModelContext>) -> bool {
     serving_model.is_some_and(|context| {
-        context.release.manifest.feature_set_version == FORMAL_MAIN_FEATURE_SET_VERSION
-            && context.release.manifest.label_version == FORMAL_MAIN_LABEL_VERSION
-            && context.probability_bundle.is_some()
+        is_formal_main_feature_set(
+            &context.release.manifest.feature_set_version,
+            &context.release.manifest.label_version,
+        ) && context.probability_bundle.is_some()
     })
 }
 

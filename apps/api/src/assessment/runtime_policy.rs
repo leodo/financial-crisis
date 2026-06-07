@@ -4,6 +4,7 @@ use fc_domain::{ModelReleaseRecord, ProbabilityBundle};
 use serde::Serialize;
 
 use super::round3;
+use crate::demo::is_formal_main_feature_set;
 
 const PREPARE_P60D_THRESHOLD: f64 = 0.35;
 const HEDGE_P20D_THRESHOLD: f64 = 0.30;
@@ -112,9 +113,10 @@ pub(crate) fn probability_action_thresholds(
     };
     let active_release = &serving_model.release;
 
-    if active_release.manifest.feature_set_version == "feature_formal_v1_main_20260531"
-        && active_release.manifest.label_version == "formal_label_v1_main"
-    {
+    if is_formal_main_feature_set(
+        &active_release.manifest.feature_set_version,
+        &active_release.manifest.label_version,
+    ) {
         if let Some(bundle) = serving_model.probability_bundle.as_ref() {
             ProbabilityActionThresholds {
                 prepare_p60d: bundle_horizon_threshold(
@@ -141,8 +143,10 @@ pub(crate) fn history_runtime_policy_version(
 ) -> String {
     let thresholds = probability_action_thresholds(serving_model);
     let release_class = if serving_model.is_some_and(|context| {
-        context.release.manifest.feature_set_version == "feature_formal_v1_main_20260531"
-            && context.release.manifest.label_version == "formal_label_v1_main"
+        is_formal_main_feature_set(
+            &context.release.manifest.feature_set_version,
+            &context.release.manifest.label_version,
+        )
     }) {
         "formal_main"
     } else if serving_model.is_some() {

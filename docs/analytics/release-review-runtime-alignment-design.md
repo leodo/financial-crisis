@@ -476,6 +476,38 @@ This audit is intentionally narrower than the full release-review report. It exi
 2. 再用 lead-time audit 确认 `1987 / 1990-1993` 是否从
    `posture_continuity_failure` 中真实退出，还是只改善了其中一部分点位。
 
+### 9.5 2026-06-07 补充：formal-main release 分类不能再死锁到 `20260531`
+
+本轮又确认了一条更基础的运行时问题：
+
+1. worker 默认训练/发布出来的 formal-main 新候选已经使用
+   `feature_formal_v1_main_20260606_gatefix` 一类的新版本号；
+2. 但 API runtime policy 与 history replay 里的 formal-main 识别，之前仍然只认
+   精确字符串 `feature_formal_v1_main_20260531`；
+3. 结果是新 formal candidate 虽然 `probability_mode=formal_bundle_v1`、
+   `label_version=formal_label_v1_main`，却被错误走进 legacy/release 路径：
+   - runtime threshold 回退到 legacy `prepare=35% / hedge=30% / defend=30%`
+   - `use_transitional_actionable_bridge` 也会误判为仍可使用过渡 bridge
+   - `history_runtime_policy_version` / replay cache key 也会掉到 `class=release`
+
+这会直接污染后续所有 `strict gate / runtime floor / posture continuity` 复盘，
+因为比较对象已经不是“当前 formal runtime”。
+
+因此本轮先修这条基础设施 bug：
+
+- formal-main feature set 识别改成前缀匹配 `feature_formal_v1_main*`
+- 保留 `formal_label_v1_main` 作为第二层约束
+- API runtime threshold、history cache / replay、transition bridge 统一用这套识别
+
+修完并重启本地 API 后，live `/api/assessment/current` 已重新识别当前 active release：
+
+- `feature_set_version=feature_formal_v1_main_20260606_gatefix`
+- `probability_mode=formal_bundle_v1`
+- posture upgrade condition 不再显示 legacy `0.35` 一类阈值，
+  而是重新回到 bundle/formal runtime 口径
+
+这意味着后续再审 `strict p20d gate` 时，终于是在正确的 formal-main runtime 前提下继续推进。
+
 After this entrypoint exists, the expected workflow is:
 
 1. run `just formal-candidate-leadtime-audit ...`;

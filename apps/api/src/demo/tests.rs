@@ -10,7 +10,7 @@ use super::{
     use_transitional_actionable_bridge, ServingModelContext, FORMAL_MAIN_FEATURE_SET_VERSION,
     FORMAL_MAIN_LABEL_VERSION,
 };
-use crate::assessment::ProbabilityActionThresholds;
+use crate::assessment::{runtime_threshold_diagnostics, ProbabilityActionThresholds};
 use crate::history_replay::{
     historical_output_from_prediction_snapshots, should_refresh_full_release_history,
 };
@@ -437,5 +437,21 @@ fn formal_main_method_version_carries_runtime_policy_cache_key() {
     let method_version = expected_prediction_snapshot_method_version(Some(&serving_model));
 
     assert!(method_version.contains("runtime_policy="));
+    assert!(method_version.contains("class=formal_main"));
+}
+
+#[test]
+fn formal_main_detection_accepts_versioned_feature_set_variants() {
+    let mut serving_model = formal_serving_model_context();
+    serving_model.release.manifest.feature_set_version =
+        "feature_formal_v1_main_20260607_posturefix".to_string();
+
+    let thresholds = runtime_threshold_diagnostics(Some(&serving_model));
+    let method_version = expected_prediction_snapshot_method_version(Some(&serving_model));
+
+    assert_eq!(thresholds.prepare_p60d, 0.12);
+    assert_eq!(thresholds.hedge_p20d, 0.07);
+    assert_eq!(thresholds.defend_p5d, 0.05);
+    assert!(!use_transitional_actionable_bridge(Some(&serving_model)));
     assert!(method_version.contains("class=formal_main"));
 }

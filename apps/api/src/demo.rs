@@ -30,8 +30,19 @@ pub(crate) use crate::history_replay::{
 };
 use crate::AppData;
 
-pub(crate) const FORMAL_MAIN_FEATURE_SET_VERSION: &str = "feature_formal_v1_main_20260531";
+pub(crate) const FORMAL_MAIN_FEATURE_SET_PREFIX: &str = "feature_formal_v1_main";
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) const FORMAL_MAIN_FEATURE_SET_VERSION: &str =
+    "feature_formal_v1_main_20260606_gatefix";
 pub(crate) const FORMAL_MAIN_LABEL_VERSION: &str = "formal_label_v1_main";
+
+pub(crate) fn is_formal_main_feature_set(
+    feature_set_version: &str,
+    label_version: &str,
+) -> bool {
+    label_version == FORMAL_MAIN_LABEL_VERSION
+        && feature_set_version.starts_with(FORMAL_MAIN_FEATURE_SET_PREFIX)
+}
 
 #[derive(Debug)]
 pub(crate) struct BuiltAppData {
