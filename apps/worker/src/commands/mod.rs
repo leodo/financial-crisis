@@ -101,7 +101,7 @@ fn print_help() {
       Print a stored model release as JSON.
 
   cargo run -p fc-worker -- research release activate --release-id ID [--market-scope SCOPE] [--reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
-      Mark a release active for the selected market scope and optionally reload the API runtime. Candidate/review-only releases are rejected here; only formally publishable release states can become active. With --reload-api, worker compares runtime backtest guardrails and auto-rolls back on clear regression unless --skip-operational-guard is set.
+      Mark a release active for the selected market scope and optionally reload the API runtime. Candidate/review-only releases are rejected here; only formally publishable release states can become active. With --reload-api, worker compares runtime backtest guardrails and auto-rolls back on clear regression unless --skip-operational-guard is set. If the latest relevant release review already marked the target as a failed candidate against the current active baseline, activation is blocked; if the current active release is that failed candidate, restoring its reviewed baseline is allowed without the runtime regression rollback loop.
 
   cargo run -p fc-worker -- research release rollback --to-release-id ID [--market-scope SCOPE] [--reload-api] [--api-reload-url URL] [--updated-by NAME]
       Roll back the selected market scope to an earlier formally eligible release and optionally reload the API runtime. Candidate/review-only releases are rejected here as rollback targets too.

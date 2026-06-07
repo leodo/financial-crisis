@@ -763,3 +763,37 @@ remains:
 1. sustained `prepare/months` continuity for `1987 / 1990-1993 / 1998`;
 2. strict gate cleanup for `2000-2001 / 2022`;
 3. only then another candidate retrain / rereview loop.
+
+### 12.3 Activation governance alignment
+
+One more operational conflict had to be closed after the reruns above:
+
+- full `release review` already said candidate
+  `us_formal_family_hybrid_20260606T112926` should not replace baseline
+  `us_formal_family_hybrid_20260605T202246`;
+- but `research release activate --reload-api` still compared only the live
+  rolling-audit snapshot and tried to keep the candidate active because its
+  short-form `actionable_precision` looked better at runtime.
+
+That created a real governance contradiction:
+
+1. formal review said “do not promote candidate”;
+2. activation guard still behaved as if the candidate should remain default.
+
+The activation path is now aligned to the latest relevant release-review
+artifact:
+
+- if the latest relevant formal review already marked the target release as a
+  failed candidate against the current active baseline, activation is blocked;
+- if the current active release is that failed candidate and the operator is
+  restoring its reviewed baseline, activation is allowed and the runtime
+  regression rollback loop is skipped.
+
+Validated runtime result on `2026-06-07`:
+
+1. restoring baseline `20260605T202246` from active candidate
+   `20260606T112926` now succeeds;
+2. trying to re-activate candidate `20260606T112926` is now rejected up front
+   with the strict-review failure reason;
+3. runtime `/api/assessment/method` now remains on baseline
+   `us_formal_family_hybrid_20260605T202246`.

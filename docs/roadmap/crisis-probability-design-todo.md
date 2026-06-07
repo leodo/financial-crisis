@@ -647,11 +647,14 @@
        - `actionable_precision 52.8% -> 67.7%`
        - `longest_false_positive_episode_days 15 -> 13`
        - `guard_passed=false`，当前默认 review 也确认 point-level strict conversion 已改善，但主阻塞仍是 `1987 / 1990-1993 / 1998` 的 continuity 与 `2000-2001 / 2022` 的 gate mismatch
-     - [ ] 对齐 `release activate` 的 `operational guard` 与 `release review` 的 `go/no-go`
-       - 当前尝试把默认激活版切回 baseline `us_formal_family_hybrid_20260605T202246` 时，系统因为
-         `actionable_precision 70.1% -> 46.3%` 自动回滚到 candidate `us_formal_family_hybrid_20260606T112926`
-       - 这说明当前存在“full release review 判定 candidate 不应晋升，但 activation guard 仍偏向保留 candidate” 的治理冲突
-       - 下一步要明确默认线上版到底以哪套门禁优先级为准，并把激活/回滚行为固化到文档和代码
+     - [x] 已对齐 `release activate` 的 `operational guard` 与 `release review` 的 `go/no-go`
+       - 现在 `release activate --reload-api` 会读取最新相关 `release review` 产物：
+         1. 若目标 release 已在最新正式 review 中被判为失败 candidate，则直接阻止激活；
+         2. 若当前 active release 正是该失败 candidate，而目标是它的 reviewed baseline，则允许恢复 baseline，并跳过 runtime regression rollback loop。
+       - `2026-06-07` 实测：
+         1. baseline `us_formal_family_hybrid_20260605T202246` 已能从 active candidate `us_formal_family_hybrid_20260606T112926` 成功恢复；
+         2. candidate `us_formal_family_hybrid_20260606T112926` 现在会被激活链路直接拒绝；
+         3. 当前 API runtime 已回到 baseline `us_formal_family_hybrid_20260605T202246`。
 
 ### 6.4 2026-06-02 扩展数据集实测结果
 

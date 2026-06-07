@@ -1,6 +1,9 @@
+use std::{fs, path::Path as FsPath};
+
 use anyhow::{bail, Context};
-use chrono::Utc;
+use chrono::{DateTime, FixedOffset, Utc};
 use fc_domain::{ModelReleaseManifest, ModelReleaseRecord};
+use serde::Deserialize;
 
 use super::guardrails::{compare_operational_guardrails, print_operational_guardrail_summary};
 use super::options::{
@@ -159,8 +162,33 @@ pub(crate) async fn activate_release_with_runtime_guard(
     let previous_release_id = previous_active
         .as_ref()
         .map(|release| release.manifest.release_id.clone());
-    let should_check_guard =
-        reload_api && !skip_operational_guard && previous_release_id.as_deref() != Some(release_id);
+    let activation_review_gate = if reload_api && !skip_operational_guard {
+        resolve_release_activation_review_gate(
+            market_scope,
+            previous_release_id.as_deref(),
+            release_id,
+        )
+    } else {
+        None
+    };
+    if let Some(ReleaseActivationReviewGate::BlockCandidate { summary }) =
+        activation_review_gate.as_ref()
+    {
+        bail!(
+            "release {} cannot be activated because the latest {} release review at {} already marked it FAIL against baseline {}",
+            release_id,
+            summary.history_mode,
+            summary.reviewed_at,
+            summary.baseline_release_id
+        );
+    }
+    let should_check_guard = reload_api
+        && !skip_operational_guard
+        && previous_release_id.as_deref() != Some(release_id)
+        && !matches!(
+            activation_review_gate.as_ref(),
+            Some(ReleaseActivationReviewGate::AllowBaselineRestore { .. })
+        );
     let baseline_assessment = if should_check_guard {
         Some(crate::fetch_assessment_snapshot_for_guard(api_reload_url).await?)
     } else {
@@ -187,6 +215,19 @@ pub(crate) async fn activate_release_with_runtime_guard(
         );
         crate::reload_api_runtime(api_reload_url).await?;
         println!("Reloaded API runtime via {api_reload_url}.");
+    }
+
+    if let Some(ReleaseActivationReviewGate::AllowBaselineRestore { summary }) =
+        activation_review_gate.as_ref()
+    {
+        println!(
+            "Skipping runtime regression comparison because the latest {} release review at {} already marked current active {} as FAIL against baseline {}.",
+            summary.history_mode,
+            summary.reviewed_at,
+            summary.candidate_release_id,
+            summary.baseline_release_id
+        );
+        return Ok(activated);
     }
 
     if let Some(baseline_assessment) = baseline_assessment {
@@ -285,6 +326,164 @@ fn release_state_label(manifest: &ModelReleaseManifest) -> String {
     format!("{}/{}", manifest.status, manifest.serving_status)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ReleaseActivationReviewGate {
+    BlockCandidate {
+        summary: RelevantReleaseReviewSummary,
+    },
+    AllowBaselineRestore {
+        summary: RelevantReleaseReviewSummary,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RelevantReleaseReviewSummary {
+    reviewed_at: String,
+    history_mode: String,
+    baseline_release_id: String,
+    candidate_release_id: String,
+    overall_guard_passed: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ReleaseReviewArtifactReleaseRef {
+    release_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ReleaseReviewArtifactWire {
+    reviewed_at: String,
+    market_scope: String,
+    history_mode: String,
+    baseline_release: ReleaseReviewArtifactReleaseRef,
+    candidate_release: ReleaseReviewArtifactReleaseRef,
+    overall_guard_passed: bool,
+}
+
+fn resolve_release_activation_review_gate(
+    market_scope: &str,
+    previous_release_id: Option<&str>,
+    target_release_id: &str,
+) -> Option<ReleaseActivationReviewGate> {
+    let previous_release_id = previous_release_id?;
+    if previous_release_id == target_release_id {
+        return None;
+    }
+    let summary = load_latest_relevant_release_review_summary(
+        market_scope,
+        previous_release_id,
+        target_release_id,
+    )?;
+    if summary.overall_guard_passed {
+        return None;
+    }
+    resolve_release_activation_review_gate_for_summary(
+        previous_release_id,
+        target_release_id,
+        summary,
+    )
+}
+
+fn resolve_release_activation_review_gate_for_summary(
+    previous_release_id: &str,
+    target_release_id: &str,
+    summary: RelevantReleaseReviewSummary,
+) -> Option<ReleaseActivationReviewGate> {
+    if summary.baseline_release_id == previous_release_id
+        && summary.candidate_release_id == target_release_id
+    {
+        return Some(ReleaseActivationReviewGate::BlockCandidate { summary });
+    }
+    if summary.baseline_release_id == target_release_id
+        && summary.candidate_release_id == previous_release_id
+    {
+        return Some(ReleaseActivationReviewGate::AllowBaselineRestore { summary });
+    }
+    None
+}
+
+fn load_latest_relevant_release_review_summary(
+    market_scope: &str,
+    first_release_id: &str,
+    second_release_id: &str,
+) -> Option<RelevantReleaseReviewSummary> {
+    let directories = [
+        FsPath::new("artifacts/research/release-review"),
+        FsPath::new("reports/release-review"),
+    ];
+    load_latest_relevant_release_review_summary_from_dirs(
+        market_scope,
+        first_release_id,
+        second_release_id,
+        &directories,
+    )
+}
+
+fn load_latest_relevant_release_review_summary_from_dirs(
+    market_scope: &str,
+    first_release_id: &str,
+    second_release_id: &str,
+    directories: &[&FsPath],
+) -> Option<RelevantReleaseReviewSummary> {
+    let mut candidates = Vec::<(
+        u8,
+        Option<DateTime<FixedOffset>>,
+        RelevantReleaseReviewSummary,
+    )>::new();
+    for directory in directories {
+        let Ok(entries) = fs::read_dir(directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(body) = fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(wire) = serde_json::from_str::<ReleaseReviewArtifactWire>(&body) else {
+                continue;
+            };
+            if wire.market_scope != market_scope {
+                continue;
+            }
+            let matches_pair = (wire.baseline_release.release_id == first_release_id
+                && wire.candidate_release.release_id == second_release_id)
+                || (wire.baseline_release.release_id == second_release_id
+                    && wire.candidate_release.release_id == first_release_id);
+            if !matches_pair {
+                continue;
+            }
+            let history_mode_priority = if wire.history_mode == "strict_rebuild" {
+                1
+            } else {
+                0
+            };
+            candidates.push((
+                history_mode_priority,
+                DateTime::parse_from_rfc3339(&wire.reviewed_at).ok(),
+                RelevantReleaseReviewSummary {
+                    reviewed_at: wire.reviewed_at,
+                    history_mode: wire.history_mode,
+                    baseline_release_id: wire.baseline_release.release_id,
+                    candidate_release_id: wire.candidate_release.release_id,
+                    overall_guard_passed: wire.overall_guard_passed,
+                },
+            ));
+        }
+    }
+
+    candidates.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| right.1.cmp(&left.1))
+            .then_with(|| right.2.reviewed_at.cmp(&left.2.reviewed_at))
+    });
+    candidates.into_iter().next().map(|(_, _, summary)| summary)
+}
+
 async fn resolve_release_market_scope(
     store: &fc_storage::SqliteStore,
     release_id: &str,
@@ -302,10 +501,17 @@ async fn resolve_release_market_scope(
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use chrono::Utc;
     use fc_domain::{ModelReleaseManifest, ModelReleaseRecord};
 
-    use super::{ensure_release_activation_eligible, ensure_release_publish_eligible};
+    use super::{
+        ensure_release_activation_eligible, ensure_release_publish_eligible,
+        load_latest_relevant_release_review_summary_from_dirs,
+        resolve_release_activation_review_gate_for_summary, ReleaseActivationReviewGate,
+        RelevantReleaseReviewSummary,
+    };
 
     fn manifest(status: &str, serving_status: &str) -> ModelReleaseManifest {
         ModelReleaseManifest {
@@ -386,5 +592,100 @@ mod tests {
     #[test]
     fn approved_healthy_release_can_publish_formally() {
         ensure_release_publish_eligible(&manifest("approved", "healthy"), false).unwrap();
+    }
+
+    #[test]
+    fn release_review_loader_prefers_strict_rebuild_over_newer_default() {
+        let root = temp_test_dir("release-review-loader");
+        std::fs::write(
+            root.join("strict.json"),
+            r#"{
+  "reviewed_at": "2026-06-07T08:00:00+00:00",
+  "market_scope": "financial_system",
+  "history_mode": "strict_rebuild",
+  "baseline_release": { "release_id": "baseline" },
+  "candidate_release": { "release_id": "candidate" },
+  "overall_guard_passed": false
+}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("default.json"),
+            r#"{
+  "reviewed_at": "2026-06-07T09:00:00+00:00",
+  "market_scope": "financial_system",
+  "history_mode": "default",
+  "baseline_release": { "release_id": "baseline" },
+  "candidate_release": { "release_id": "candidate" },
+  "overall_guard_passed": true
+}"#,
+        )
+        .unwrap();
+
+        let dirs = [root.as_path()];
+        let summary = load_latest_relevant_release_review_summary_from_dirs(
+            "financial_system",
+            "baseline",
+            "candidate",
+            &dirs,
+        )
+        .unwrap();
+
+        assert_eq!(summary.history_mode, "strict_rebuild");
+        assert!(!summary.overall_guard_passed);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn failed_review_blocks_candidate_activation() {
+        let gate = resolve_release_activation_review_gate_for_summary(
+            "baseline",
+            "candidate",
+            RelevantReleaseReviewSummary {
+                reviewed_at: "2026-06-07T08:00:00+00:00".to_string(),
+                history_mode: "strict_rebuild".to_string(),
+                baseline_release_id: "baseline".to_string(),
+                candidate_release_id: "candidate".to_string(),
+                overall_guard_passed: false,
+            },
+        );
+
+        assert!(matches!(
+            gate,
+            Some(ReleaseActivationReviewGate::BlockCandidate { .. })
+        ));
+    }
+
+    #[test]
+    fn failed_review_allows_restoring_baseline_from_rejected_candidate() {
+        let gate = resolve_release_activation_review_gate_for_summary(
+            "candidate",
+            "baseline",
+            RelevantReleaseReviewSummary {
+                reviewed_at: "2026-06-07T08:00:00+00:00".to_string(),
+                history_mode: "strict_rebuild".to_string(),
+                baseline_release_id: "baseline".to_string(),
+                candidate_release_id: "candidate".to_string(),
+                overall_guard_passed: false,
+            },
+        );
+
+        assert!(matches!(
+            gate,
+            Some(ReleaseActivationReviewGate::AllowBaselineRestore { .. })
+        ));
+    }
+
+    fn temp_test_dir(prefix: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "fc-worker-{prefix}-{}",
+            Utc::now()
+                .timestamp_nanos_opt()
+                .unwrap_or_default()
+                .unsigned_abs()
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        path
     }
 }
