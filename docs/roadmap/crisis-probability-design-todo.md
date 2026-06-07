@@ -620,9 +620,17 @@
      - [ ] 再修 `months_score_confirmation / posture continuity`，避免高 `p20d/p60d` 长期停在 `normal`
        - [x] 已修正 `prepare_reference_p60d` 误读 `60d final_probability` 的口径错位；`2026-06-07 strict_rebuild` 下 `1990-10-19` 已从 `normal` 恢复为 `prepare + prepare_probability_plateau`
        - [x] 已去掉 `prepare_continuity_bridge` 对独立 conviction gate 的额外依赖；`2026-06-07 strict_rebuild` 下 `2007-08-01` 已从 `months + normal` 恢复为 `prepare + prepare_continuity_bridge`
-       - [ ] 剩余 continuity / gate 主故障已收敛到 `1998-09-03`（`20d=0.393 / 60d=0.718`）这类 `months + normal` 样本，更像 `p20d gate / plateau floor` 过严
-     - [ ] 最后清 `residual_review_l3_failure`，确认剩余阻塞不是 gate/continuity 遗留
+       - [x] 已把 `prepare_probability_plateau` 的 `p20d` 从硬编码 `0.45` 改成 runtime 派生门槛；`2026-06-07 strict_rebuild` 下 `1998-09-03` 已从 `months + normal` 恢复为 `prepare + prepare_probability_plateau`
+       - [ ] 但 `2026-06-07` 正式 `release review` 仍把 `1987 / 1990-1993 / 1998` 记为 scenario-level `posture_continuity_failure`，说明点位修复已生效，但整段 `3/5 sustained` 连续性还没完全恢复
+      - [ ] 最后清 `residual_review_l3_failure`，确认剩余阻塞不是 gate/continuity 遗留
    - [ ] 重跑 release review / rolling audit / runtime regime audit
+     - [x] 已重跑 baseline `us_formal_family_hybrid_20260605T202246` vs candidate `us_formal_family_hybrid_20260606T112926` 的正式 `strict_rebuild release review`
+       - `timely_warning_rate 40.0% -> 40.0%`
+       - `strict_actionable_point_count 158 -> 163`
+       - `runtime_floor_hit_count 327 -> 351`
+       - `actionable_precision 54.7% -> 69.7%`
+       - `longest_false_positive_episode_days 14 -> 11`
+       - `guard_passed=false`，当前主阻塞已收敛到 `2022 联储加息与久期冲击` 的 `strict_gate_mismatch`，以及 `1987 / 1990-1993 / 1998` 的 scenario-level `posture_continuity_failure`
 
 ### 6.4 2026-06-02 扩展数据集实测结果
 

@@ -120,8 +120,13 @@ posture continuity 在读取一份比 runtime 更低的 `60d` 参考值。
 2. 修复后已经消除了一类典型的 `months + normal` 假阴性；
 3. 后续又确认 `prepare_continuity_bridge` 也要和 `months` bucket 对齐，不能继续被
    独立 conviction gate 压回 `normal`；
-4. 现在还剩下的主故障已经收敛为 `1998-09-03` 这类更像
-   `strict p20d gate / plateau p20d floor` 的样本。
+4. 后续又把 `prepare_probability_plateau` 的 `p20d` 从硬编码 `0.45` 调整为
+   runtime 派生门槛；在 `2026-06-07 strict_rebuild` 下，
+   `1998-09-03` 也已从 `prepare/months` 缺口恢复为
+   `prepare + prepare_probability_plateau`。
+5. 但正式 `release review` 仍显示 `1987 / 1990-1993 / 1998` 属于
+   scenario-level `posture_continuity_failure`，说明当前修复主要解决了
+   关键点位口径错位，还没有完全恢复整段 `3/5 sustained` 提前量连续性。
 
 ## 3. 根因拆分
 

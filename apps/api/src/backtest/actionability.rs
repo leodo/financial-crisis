@@ -15,7 +15,6 @@ const LEGACY_STRICT_PREPARE_P60D_THRESHOLD: f64 = 0.45;
 const STRICT_PREPARE_P60D_THRESHOLD_BUFFER: f64 = 0.04;
 const STRICT_PREPARE_P60D_THRESHOLD_LIFT: f64 = 1.10;
 const STRICT_PREPARE_P60D_THRESHOLD_MIN: f64 = 0.25;
-const STRICT_PREPARE_PLATEAU_P20D_THRESHOLD: f64 = 0.45;
 const STRICT_PREPARE_PLATEAU_P60D_THRESHOLD: f64 = 0.70;
 const STRICT_PREPARE_PLATEAU_OVERALL_FLOOR: f64 = 42.0;
 const STRICT_PREPARE_PLATEAU_EXTERNAL_FLOOR: f64 = 32.0;
@@ -48,7 +47,7 @@ pub(crate) fn is_actionable_warning_point(
                 && has_strong_prepare_trigger_code(point)));
     let probability_plateau_prepare_signal = matches!(point.posture, DecisionPosture::Prepare)
         && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
-        && point.p_20d >= STRICT_PREPARE_PLATEAU_P20D_THRESHOLD
+        && point.p_20d >= 0.45
         && point.p_60d >= strict_prepare_p60d_threshold.max(STRICT_PREPARE_PLATEAU_P60D_THRESHOLD)
         && point.overall_score >= STRICT_PREPARE_PLATEAU_OVERALL_FLOOR
         && point.external_shock_score >= STRICT_PREPARE_PLATEAU_EXTERNAL_FLOOR

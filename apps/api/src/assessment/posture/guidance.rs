@@ -85,6 +85,7 @@ pub(in super::super) fn build_time_to_risk_bucket(
         trigger_score,
         external_shock_score,
         breadth_score,
+        thresholds,
     );
 
     if (probabilities.p_5d >= thresholds.defend_p5d

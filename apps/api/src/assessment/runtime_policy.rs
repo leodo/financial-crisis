@@ -15,6 +15,9 @@ const FORMAL_MAIN_DEFEND_P5D_THRESHOLD: f64 = 0.03;
 const FORMAL_MAIN_RUNTIME_PREPARE_P60D_FLOOR: f64 = 0.12;
 const FORMAL_MAIN_RUNTIME_HEDGE_P20D_FLOOR: f64 = 0.06;
 const FORMAL_MAIN_RUNTIME_DEFEND_P5D_FLOOR: f64 = 0.05;
+const PREPARE_PLATEAU_P20D_BUFFER: f64 = 0.10;
+const PREPARE_PLATEAU_P20D_MIN: f64 = 0.35;
+const PREPARE_PLATEAU_P20D_MAX: f64 = 0.45;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ProbabilityActionThresholds {
@@ -94,6 +97,11 @@ impl ProbabilityActionThresholds {
 
     pub(crate) fn downgrade_hedge_p20d(self) -> f64 {
         (self.hedge_p20d * 0.75).max(0.04)
+    }
+
+    pub(crate) fn prepare_plateau_p20d(self) -> f64 {
+        (self.hedge_p20d + PREPARE_PLATEAU_P20D_BUFFER)
+            .clamp(PREPARE_PLATEAU_P20D_MIN, PREPARE_PLATEAU_P20D_MAX)
     }
 
     pub(crate) fn downgrade_defend_p5d(self) -> f64 {

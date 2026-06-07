@@ -510,7 +510,7 @@ fn assessment_snapshot_uses_runtime_final_p60d_for_prepare_plateau() {
         overall_score: 55.0,
         overall_level: RiskLevel::Stress,
         structural_score: 57.0,
-        trigger_score: 36.0,
+        trigger_score: 42.0,
         level_reason: "test".to_string(),
         dimensions: vec![
             DimensionScore {
@@ -525,7 +525,7 @@ fn assessment_snapshot_uses_runtime_final_p60d_for_prepare_plateau() {
             DimensionScore {
                 dimension: RiskDimension::MarketStress,
                 label: "trigger".to_string(),
-                score: 36.0,
+                score: 42.0,
                 level: RiskLevel::Watch,
                 change_30d: None,
                 quality_score: 1.0,
