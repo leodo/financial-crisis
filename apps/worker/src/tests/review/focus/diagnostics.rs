@@ -511,3 +511,104 @@ fn release_review_focus_diagnostic_includes_runtime_floor_only_scenarios_without
         Some(runtime_floor_date)
     );
 }
+
+#[test]
+fn release_review_focus_diagnostic_treats_defend_only_runtime_floor_as_posture_continuity() {
+    let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+    let runtime_floor_date = NaiveDate::from_ymd_opt(2023, 2, 10).unwrap();
+    let follow_up_date = NaiveDate::from_ymd_opt(2023, 2, 17).unwrap();
+    let baseline = vec![synthetic_backtest_summary_with_dates(
+        "scenario_defend_floor_only",
+        "Defend Floor Only",
+        None,
+        None,
+        None,
+        None,
+        0,
+    )];
+    let candidate = baseline.clone();
+    let history = vec![
+        runtime_history_point_with_state(
+            runtime_floor_date,
+            41.0,
+            0.06,
+            0.072,
+            0.102,
+            DecisionPosture::Normal,
+            TimeToRiskBucket::Normal,
+            32.0,
+            &[],
+        ),
+        runtime_history_point_with_state(
+            follow_up_date,
+            42.0,
+            0.055,
+            0.074,
+            0.104,
+            DecisionPosture::Normal,
+            TimeToRiskBucket::Normal,
+            33.0,
+            &[],
+        ),
+        runtime_history_point_with_state(
+            crisis_start,
+            54.0,
+            0.03,
+            0.18,
+            0.22,
+            DecisionPosture::Normal,
+            TimeToRiskBucket::Normal,
+            36.0,
+            &[],
+        ),
+    ];
+    let mut method = formal_main_audit_method_wire();
+    method.runtime_thresholds = Some(RuntimeThresholdDiagnosticsWire {
+        prepare_p60d: 0.568,
+        hedge_p20d: 0.282,
+        defend_p5d: 0.05,
+        severe_now_p20d: 0.564,
+        elevated_weeks_p60d: 0.909,
+        external_prepare_p20d: 0.197,
+        carry_prepare_p60d: 0.454,
+        downgrade_prepare_p60d: 0.426,
+        downgrade_hedge_p20d: 0.212,
+        downgrade_defend_p5d: 0.034,
+        history_runtime_policy_version: "runtime_history_test".to_string(),
+    });
+
+    let rows = build_release_review_scenario_focus_diagnostics(
+        &baseline, &candidate, &history, &history, &method, &method,
+    );
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].baseline_primary_failure_mode.as_deref(),
+        Some("posture_continuity_failure")
+    );
+    assert_eq!(
+        rows[0].candidate_primary_failure_mode.as_deref(),
+        Some("posture_continuity_failure")
+    );
+    assert_eq!(rows[0].runtime_block_counts.len(), 1);
+    assert_eq!(
+        rows[0].runtime_block_counts[0].category,
+        "posture_bucket_normal"
+    );
+    assert_eq!(rows[0].runtime_block_counts[0].baseline_count, 2);
+    assert_eq!(rows[0].runtime_block_counts[0].candidate_count, 2);
+    assert!(rows[0]
+        .runtime_continuity_facet_counts
+        .iter()
+        .any(|facet| facet.category == "gate_gap:none"
+            && facet.baseline_count == 2
+            && facet.candidate_count == 2));
+    assert!(rows[0]
+        .baseline_first_runtime_floor_hit_without_l3_reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("posture/bucket stayed normal")));
+    assert!(rows[0]
+        .candidate_first_runtime_floor_hit_without_l3_reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("posture/bucket stayed normal")));
+}

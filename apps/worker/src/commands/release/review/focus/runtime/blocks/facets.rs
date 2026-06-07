@@ -1,8 +1,8 @@
 use fc_domain::{AssessmentHistoryPoint, DecisionPosture, TimeToRiskBucket};
 
 use super::super::signals::{
-    release_review_has_strong_prepare_trigger_code, release_review_strict_prepare_p20d_threshold,
-    release_review_strict_prepare_p60d_threshold,
+    release_review_has_strong_prepare_trigger_code, release_review_runtime_floor_hits,
+    release_review_strict_prepare_p20d_threshold, release_review_strict_prepare_p60d_threshold,
 };
 use super::gating::release_review_runtime_actionable_block_category;
 
@@ -32,6 +32,11 @@ fn release_review_runtime_gate_gap_facet(
     point: &AssessmentHistoryPoint,
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> &'static str {
+    let defend_only_runtime_floor_hit = release_review_runtime_floor_hits(point, thresholds)
+        .is_some_and(|hits| hits.defend && !hits.hedge && !hits.prepare);
+    if defend_only_runtime_floor_hit {
+        return "none";
+    }
     let strict_prepare_p20d_threshold = release_review_strict_prepare_p20d_threshold(thresholds);
     let strict_prepare_p60d_threshold = release_review_strict_prepare_p60d_threshold(thresholds);
     match (

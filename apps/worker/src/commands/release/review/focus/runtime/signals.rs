@@ -29,6 +29,13 @@ const STRICT_HISTORY_HYSTERESIS_MONTHS_P60D_FLOOR: f64 = 0.65;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_OVERALL_FLOOR: f64 = 43.0;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_EXTERNAL_FLOOR: f64 = 39.0;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct ReleaseReviewRuntimeFloorHits {
+    pub(super) prepare: bool,
+    pub(super) hedge: bool,
+    pub(super) defend: bool,
+}
+
 pub(crate) fn release_review_structured_signal_counts(
     backtests: &[BacktestScenarioSummary],
     history: &[AssessmentHistoryPoint],
@@ -93,12 +100,21 @@ pub(super) fn release_review_hits_runtime_floor(
     point: &AssessmentHistoryPoint,
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> bool {
-    let Some(thresholds) = thresholds else {
-        return false;
-    };
-    point.p_60d >= thresholds.prepare_p60d
-        || point.p_20d >= thresholds.hedge_p20d
-        || point.p_5d >= thresholds.defend_p5d
+    release_review_runtime_floor_hits(point, thresholds).is_some_and(|hits| {
+        hits.prepare || hits.hedge || hits.defend
+    })
+}
+
+pub(super) fn release_review_runtime_floor_hits(
+    point: &AssessmentHistoryPoint,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> Option<ReleaseReviewRuntimeFloorHits> {
+    let thresholds = thresholds?;
+    Some(ReleaseReviewRuntimeFloorHits {
+        prepare: point.p_60d >= thresholds.prepare_p60d,
+        hedge: point.p_20d >= thresholds.hedge_p20d,
+        defend: point.p_5d >= thresholds.defend_p5d,
+    })
 }
 
 pub(super) fn release_review_uses_transitional_actionable_bridge(
