@@ -541,14 +541,17 @@
                    `time_to_risk_bucket` 推到 `months`；
                 3. backtest `is_actionable_warning_point` 与 worker strict review
                    已同步识别这条 trigger code，避免 runtime 升级后 review 仍按旧 continuity 口径漏掉。
-            4.12 [ ] 还需要补真实历史证据闭环：
-                1. 重新跑 candidate 的 `strict_rebuild release review`；
-                2. 再用 `formal-candidate-leadtime-audit` 确认
-                   `1987 / 1990-1993` 是否从 `posture_continuity_failure`
-                   真实退出，还是只改善了部分点位。
-            5. 下一步不再把两类 missed 场景混成一个问题：
-               - 对 `2000-2001` 先专项复核 strict gate 与 runtime floor 的映射；
-               - 对 `1990-1993` 先专项复核为什么高 `p20d/p60d` 长期无法推动 `prepare/months` 连续成立。
+            4.12 [x] 真实历史证据闭环已补第一轮：
+                1. 已重新跑完 candidate 的 `strict_rebuild release review`；
+                2. 已修复 `just formal-candidate-leadtime-audit` 的脚本编码损坏并恢复可执行；
+                3. lead-time audit 已确认：
+                   - `1987` 仍是共享 `posture_continuity_failure`；
+                   - `1990-1993 / 1998` 当前主阻塞已收敛到 `strict_gate_mismatch`，而且以 `p20d_only` 为主；
+                   - `2000-2001 / 2023` 则更像 `residual_review_l3_failure`。
+            5. 下一步不再把所有 missed / degraded 场景混成一个问题，而是按 blocker 排序：
+               - 先专项复核 `strict p20d gate`，重点覆盖 `1990-1993 / 1998 / 2007-2009 / 2023`；
+               - 再专项复核 `months_score_confirmation / posture continuity`，重点覆盖 `1987 / 1990-1993 / 1998`；
+               - 最后复核 `residual_review_l3_failure`，重点覆盖 `2000-2001 / 2023`。
           - [ ] 下一步以 `034053` 为保护基线继续收口剩余短误报，但约束顺序必须固定：
             1. 先守住 `regional_banks` 的 `20d hits / positive_window hit rate / positive_window_avg_probability`；
             2. 再处理 `2023-02-03 ~ 2023-02-05`、`2023-02-14`、`2023-07-13` 等剩余 `20d` 误报点；
@@ -606,6 +609,9 @@
      - 已完成全历史重建：`formal_v1_main_1990_daily:20260606Tfullhistorygatefix`
      - 实测范围已从旧版 `1998-01-05 -> 2026-05-31` 恢复为 `1990-01-02 -> 2026-05-31`，行数 `13296`
    - [ ] 重训 candidate release（下一轮重点不再是压误报，而是恢复可执行提前量）
+     - [ ] 先修 `strict p20d gate` 与 runtime floor 的映射，避免 `p20d_only` 长期压住 `L3` 转化
+     - [ ] 再修 `months_score_confirmation / posture continuity`，避免高 `p20d/p60d` 长期停在 `normal`
+     - [ ] 最后清 `residual_review_l3_failure`，确认剩余阻塞不是 gate/continuity 遗留
    - [ ] 重跑 release review / rolling audit / runtime regime audit
 
 ### 6.4 2026-06-02 扩展数据集实测结果

@@ -560,3 +560,47 @@ So release review recommendation text can now separate:
 - “this candidate regressed and should be rejected/retrained”;
 - from “this candidate still cannot be promoted, but it exposed the next
   blocker rather than simply getting worse”.
+
+## 11. 2026-06-07 Strict Rebuild + Lead-Time Audit Closure
+
+After the attribution correction landed, the next missing piece was not another
+threshold guess. It was evidence:
+
+1. rerun the real `strict_rebuild release review`;
+2. rerun the fixed `formal-candidate-leadtime-audit`;
+3. confirm which blocker now dominates by scenario.
+
+That loop is now closed for:
+
+- baseline `us_formal_family_hybrid_20260605T202246`
+- candidate `us_formal_family_hybrid_20260606T112926`
+
+Observed result:
+
+1. `strict_rebuild release review` finished end to end and restored the original
+   active release correctly;
+2. `formal-candidate-leadtime-audit` initially failed for a trivial reason:
+   the PowerShell script had a corrupted placeholder string and could not parse;
+   that script bug has now been repaired;
+3. the repaired lead-time audit confirms the current blocker order more clearly
+   than the long Markdown report alone:
+   - `1987` still sits in shared `posture_continuity_failure`;
+   - `1990-1993` and `1998` are now primarily `strict_gate_mismatch`, with
+     `p20d_only` dominating their gate-gap counts;
+   - `2000-2001` and `2023` are now better described as
+     `residual_review_l3_failure`;
+   - `60d` top-line diagnosis on the candidate is now `cooldown_bleed`, so the
+     remaining work is no longer “just recover more runtime hits”.
+
+In plain terms, the candidate is no longer mainly failing because the runtime
+never sees risk. It is failing because the review/actionable conversion stack
+is still too brittle after runtime hits already exist.
+
+That changes the implementation order:
+
+1. fix the strict `p20d` review gate first, especially for `prepare/months`
+   states that already crossed the runtime floor via `p60d`;
+2. then fix `months_score_confirmation / posture continuity`, especially where
+   `posture` falls back to `normal` after plateau states;
+3. only after those two are cleaner, revisit residual `review_l3_gate_not_satisfied`
+   points such as `2000-2001` and `2023`.

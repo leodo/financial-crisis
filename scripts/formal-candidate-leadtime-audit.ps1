@@ -345,8 +345,8 @@ function Get-LeadtimeTakeaways {
         $candidatePoints = [string]$strictWorkstream.candidate_gate_gap_points
         if ($baselinePoints -or $candidatePoints) {
             $message = 'historical workstream strict_review_vs_runtime_mapping point counts: baseline [{0}] candidate [{1}].' -f `
-                ($(if ($baselinePoints) { $baselinePoints } else { "—" })), `
-                ($(if ($candidatePoints) { $candidatePoints } else { "—" }))
+                ($(if ($baselinePoints) { $baselinePoints } else { "-" })), `
+                ($(if ($candidatePoints) { $candidatePoints } else { "-" }))
             Add-Takeaway -List $takeaways -Text $message
         }
         $candidateP20Matches = [regex]::Matches($candidatePoints, 'p20d_only=(\d+)')
