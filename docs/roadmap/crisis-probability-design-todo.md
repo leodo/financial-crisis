@@ -669,6 +669,10 @@
        - [x] 已把 `residual release-review audit` 进一步拆成更像“pre-warning signal gap”还是“弱连续性信号”的解释层。
          - `2026-06-08` 实测：`1987 / 1998 / 2000-2001 / 2011` 这 4 个 `baseline_shared_weakness` 样本现在会直接提示“窗口里几乎没有 non-normal、runtime floor 或 actionable evidence”，优先回到训练样本 / feature coverage / label window；`2022` 则会提示“已经出现 non-normal 或零星 runtime floor，但没有形成可执行 pre-warning”，优先复核 feature separation、months/prepare continuity 与阈值前置量。
          - 这一步仍然不改变 release review 的 go/no-go 结果，只是把 residual bucket 从“人工猜”收紧成可执行的下一轮排障方向。
+       - [x] 已把上面的 residual 解释层正式升级成独立 `historical audit workstream`
+         - `prewarning_signal_gap`：当前 `1987 / 1998 / 2000-2001 / 2011` 会单独汇总到这条线，不再和 `2022` 混在一起。
+         - `weak_signal_continuity`：当前 `2022` 会单独汇总到这条线，明确它已经有弱 pre-warning 痕迹，但没有形成可执行延续。
+         - `2026-06-08` 实测：`historical audit workstream / attribution / actions / priorities / recommendation` 五条输出链都已经切到这两个新 key，最终 recommendation 也会直接点名 `weak signal continuity, pre-warning signal gap`，不再只给笼统的 baseline shortfall 结论。
      - [x] 已对齐 `release activate` 的 `operational guard` 与 `release review` 的 `go/no-go`
        - 现在 `release activate --reload-api` 会读取最新相关 `release review` 产物：
          1. 若目标 release 已在最新正式 review 中被判为失败 candidate，则直接阻止激活；

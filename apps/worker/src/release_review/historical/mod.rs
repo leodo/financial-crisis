@@ -82,13 +82,7 @@ fn release_review_historical_audit_attribution_explanation(
     scenario_count: u32,
     scenarios: &[String],
 ) -> String {
-    let workstream_label = match workstream {
-        "strict_review_vs_runtime_mapping" => "strict gate vs runtime floor",
-        "posture_continuity" => "posture continuity",
-        "score_confirmation" => "score confirmation",
-        "transitional_bridge" => "transitional bridge",
-        _ => "residual release-review audit",
-    };
+    let workstream_label = release_review_workstream_label(workstream);
     let scenario_text = super::format_runtime_category_list(scenarios);
     match attribution {
         "both_baseline_and_candidate" => format!(
@@ -114,13 +108,7 @@ fn release_review_historical_audit_action_recommendation(
     attribution: &str,
     scenario_count: u32,
 ) -> String {
-    let workstream_label = match workstream {
-        "strict_review_vs_runtime_mapping" => "strict gate vs runtime floor",
-        "posture_continuity" => "posture continuity",
-        "score_confirmation" => "score confirmation",
-        "transitional_bridge" => "transitional bridge",
-        _ => "residual release-review audit",
-    };
+    let workstream_label = release_review_workstream_label(workstream);
     match attribution {
         "candidate_regression" => format!(
             "{scenario_count} 个样本显示 candidate 在 {workstream_label} 上新增退化。当前更合适的动作是先判定该候选不具备晋升条件，回到训练 / 阈值 / policy 改动复核。"
@@ -141,7 +129,18 @@ fn release_review_historical_audit_action_recommendation(
 }
 
 fn release_review_failure_mode_matches_workstream(failure_mode: &str, workstream: &str) -> bool {
-    failure_mode != "—" && release_review_workstream_for_failure_mode(failure_mode) == workstream
+    if failure_mode == "—" {
+        return false;
+    }
+    let mapped = release_review_workstream_for_failure_mode(failure_mode);
+    mapped == workstream
+        || (mapped == "residual_release_review_audit"
+            && matches!(
+                workstream,
+                "prewarning_signal_gap"
+                    | "weak_signal_continuity"
+                    | "residual_release_review_audit"
+            ))
 }
 
 fn release_review_candidate_revealed_next_blocker(
@@ -176,14 +175,20 @@ fn release_review_warning_state_rank(state: &str) -> i8 {
 }
 
 fn release_review_primary_workstream(
+    focus: &ReleaseReviewScenarioFocusDiagnostic,
     baseline_failure_mode: Option<&str>,
     candidate_failure_mode: Option<&str>,
 ) -> &'static str {
-    release_review_workstream_for_failure_mode(
+    let mapped = release_review_workstream_for_failure_mode(
         candidate_failure_mode
             .or(baseline_failure_mode)
             .unwrap_or_default(),
-    )
+    );
+    if mapped == "residual_release_review_audit" {
+        release_review_residual_primary_workstream(focus)
+    } else {
+        mapped
+    }
 }
 
 fn release_review_gate_gap_profile_for_scenario(
@@ -260,13 +265,26 @@ fn release_review_historical_workstream_priority(workstream: &str) -> u8 {
         "posture_continuity" => 1,
         "score_confirmation" => 2,
         "transitional_bridge" => 3,
-        _ => 4,
+        "weak_signal_continuity" => 4,
+        "prewarning_signal_gap" => 5,
+        _ => 6,
+    }
+}
+
+fn release_review_workstream_label(workstream: &str) -> &'static str {
+    match workstream {
+        "strict_review_vs_runtime_mapping" => "strict gate vs runtime floor",
+        "posture_continuity" => "posture continuity",
+        "score_confirmation" => "score confirmation",
+        "transitional_bridge" => "transitional bridge",
+        "prewarning_signal_gap" => "pre-warning signal gap",
+        "weak_signal_continuity" => "weak signal continuity",
+        _ => "residual release-review audit",
     }
 }
 
 fn release_review_suggested_historical_audit(
     scenario: &CrisisScenarioDefinition,
-    focus: &ReleaseReviewScenarioFocusDiagnostic,
     primary_workstream: &str,
 ) -> &'static str {
     match primary_workstream {
@@ -282,14 +300,10 @@ fn release_review_suggested_historical_audit(
         "transitional_bridge" => {
             "复核 prepare/months bridge 的启用条件，确认 bridge 只是在过渡模型中失效，还是正式策略本身就缺少连续触发。"
         }
-        "residual_release_review_audit"
-            if release_review_is_prewarning_signal_gap(focus) =>
-        {
+        "prewarning_signal_gap" => {
             "当前更像 pre-warning signal gap：窗口里几乎没有 non-normal、runtime floor 或 actionable evidence，先回到训练样本、特征覆盖与标签窗口本身，确认为什么连可诊断 blocker 都没有形成。"
         }
-        "residual_release_review_audit"
-            if release_review_is_non_normal_without_actionable_followthrough(focus) =>
-        {
+        "weak_signal_continuity" => {
             "当前更像弱连续性信号：窗口里已经出现 non-normal 或零星 runtime floor 提示，但还没形成可执行 pre-warning，先复核 feature separation、months/prepare continuity 与阈值前置量。"
         }
         _ if scenario.family == CrisisScenarioFamily::MixedSystemicStress => {
@@ -336,6 +350,18 @@ fn release_review_is_non_normal_without_actionable_followthrough(
             || scenario.candidate_first_non_normal_date.is_some()
             || scenario.baseline_runtime_floor_hit_point_count > 0
             || scenario.candidate_runtime_floor_hit_point_count > 0)
+}
+
+fn release_review_residual_primary_workstream(
+    scenario: &ReleaseReviewScenarioFocusDiagnostic,
+) -> &'static str {
+    if release_review_is_prewarning_signal_gap(scenario) {
+        "prewarning_signal_gap"
+    } else if release_review_is_non_normal_without_actionable_followthrough(scenario) {
+        "weak_signal_continuity"
+    } else {
+        "residual_release_review_audit"
+    }
 }
 
 fn release_review_scenario_family_name(family: CrisisScenarioFamily) -> &'static str {

@@ -266,17 +266,14 @@ fn release_review_historical_audit_priorities_refine_residual_signal_gap_reviews
         .iter()
         .find(|row| row.scenario_id == "us_dotcom_unwind_2000")
         .expect("dotcom priority");
-    assert_eq!(dotcom.primary_workstream, "residual_release_review_audit");
+    assert_eq!(dotcom.primary_workstream, "prewarning_signal_gap");
     assert!(dotcom.suggested_review.contains("pre-warning signal gap"));
 
     let rate_shock = summary
         .iter()
         .find(|row| row.scenario_id == "us_rate_shock_2022")
         .expect("rate shock priority");
-    assert_eq!(
-        rate_shock.primary_workstream,
-        "residual_release_review_audit"
-    );
+    assert_eq!(rate_shock.primary_workstream, "weak_signal_continuity");
     assert!(rate_shock.suggested_review.contains("弱连续性信号"));
 }
 
@@ -830,25 +827,39 @@ fn release_review_historical_audit_takeaways_prefer_point_count_signal_for_gate_
 
 #[test]
 fn release_review_historical_audit_takeaways_surface_residual_signal_gap_guidance() {
-    let rows = vec![ReleaseReviewHistoricalAuditWorkstreamSummary {
-        workstream: "residual_release_review_audit".to_string(),
-        scenario_count: 2,
-        protected_count: 1,
-        scenarios: vec![
-            "2000-2001 科网泡沫出清".to_string(),
-            "2022 联储加息与久期冲击".to_string(),
-        ],
-        scenario_families: vec!["mixed_systemic_stress".to_string()],
-        training_roles: vec!["candidate_optional".to_string(), "no_positive_main".to_string()],
-        baseline_gate_gap_profiles: Vec::new(),
-        candidate_gate_gap_profiles: Vec::new(),
-        gate_gap_point_counts: Vec::new(),
-        suggested_review: "当前更像 pre-warning signal gap：窗口里几乎没有 non-normal、runtime floor 或 actionable evidence，先回到训练样本、特征覆盖与标签窗口本身，确认为什么连可诊断 blocker 都没有形成。 / 当前更像弱连续性信号：窗口里已经出现 non-normal 或零星 runtime floor 提示，但还没形成可执行 pre-warning，先复核 feature separation、months/prepare continuity 与阈值前置量。".to_string(),
-    }];
+    let rows = vec![
+        ReleaseReviewHistoricalAuditWorkstreamSummary {
+            workstream: "prewarning_signal_gap".to_string(),
+            scenario_count: 1,
+            protected_count: 1,
+            scenarios: vec!["2000-2001 科网泡沫出清".to_string()],
+            scenario_families: vec!["mixed_systemic_stress".to_string()],
+            training_roles: vec!["candidate_optional".to_string()],
+            baseline_gate_gap_profiles: Vec::new(),
+            candidate_gate_gap_profiles: Vec::new(),
+            gate_gap_point_counts: Vec::new(),
+            suggested_review: "当前更像 pre-warning signal gap：窗口里几乎没有 non-normal、runtime floor 或 actionable evidence，先回到训练样本、特征覆盖与标签窗口本身，确认为什么连可诊断 blocker 都没有形成。".to_string(),
+        },
+        ReleaseReviewHistoricalAuditWorkstreamSummary {
+            workstream: "weak_signal_continuity".to_string(),
+            scenario_count: 1,
+            protected_count: 1,
+            scenarios: vec!["2022 联储加息与久期冲击".to_string()],
+            scenario_families: vec!["rate_shock_or_policy_dislocation".to_string()],
+            training_roles: vec!["no_positive_main".to_string()],
+            baseline_gate_gap_profiles: Vec::new(),
+            candidate_gate_gap_profiles: Vec::new(),
+            gate_gap_point_counts: Vec::new(),
+            suggested_review: "当前更像弱连续性信号：窗口里已经出现 non-normal 或零星 runtime floor 提示，但还没形成可执行 pre-warning，先复核 feature separation、months/prepare continuity 与阈值前置量。".to_string(),
+        },
+    ];
 
     let takeaways = release_review_historical_audit_takeaways(&rows);
-    assert_eq!(takeaways.len(), 1);
-    assert!(takeaways[0].contains("residual release-review audit"));
-    assert!(takeaways[0].contains("pre-warning signal gap"));
-    assert!(takeaways[0].contains("弱连续性信号"));
+    assert_eq!(takeaways.len(), 2);
+    assert!(takeaways
+        .iter()
+        .any(|row| row.contains("pre-warning signal") && row.contains("2000-2001 科网泡沫出清")));
+    assert!(takeaways
+        .iter()
+        .any(|row| row.contains("弱 pre-warning 信号") && row.contains("2022 联储加息与久期冲击")));
 }

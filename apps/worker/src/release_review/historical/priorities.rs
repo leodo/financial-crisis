@@ -40,6 +40,7 @@ pub(crate) fn summarize_release_review_historical_audit_priorities(
                 .clone()
                 .unwrap_or_else(|| "—".to_string());
             let primary_workstream = release_review_primary_workstream(
+                scenario,
                 scenario.baseline_primary_failure_mode.as_deref(),
                 scenario.candidate_primary_failure_mode.as_deref(),
             )
@@ -75,7 +76,6 @@ pub(crate) fn summarize_release_review_historical_audit_priorities(
                 primary_workstream: primary_workstream.clone(),
                 suggested_review: release_review_suggested_historical_audit(
                     definition,
-                    scenario,
                     &primary_workstream,
                 )
                 .to_string(),
