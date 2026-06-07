@@ -9,6 +9,8 @@ const ACTIONABLE_AUDIT_HORIZON_DEFEND_DAYS: i64 = 5;
 const ACTIONABLE_AUDIT_HORIZON_HEDGE_DAYS: i64 = 20;
 const ACTIONABLE_AUDIT_HORIZON_PREPARE_DAYS: i64 = 60;
 const LEGACY_STRICT_PREPARE_P20D_THRESHOLD: f64 = 0.18;
+const STRICT_PREPARE_P20D_THRESHOLD_RATIO: f64 = 0.60;
+const STRICT_PREPARE_P20D_THRESHOLD_MIN: f64 = 0.12;
 const LEGACY_STRICT_PREPARE_P60D_THRESHOLD: f64 = 0.45;
 const STRICT_PREPARE_P60D_THRESHOLD_BUFFER: f64 = 0.04;
 const STRICT_PREPARE_P60D_THRESHOLD_LIFT: f64 = 1.10;
@@ -79,8 +81,15 @@ pub(crate) fn is_actionable_warning_point(
         || months_bridge_signal
 }
 
-fn strict_prepare_p20d_threshold(_strict_thresholds: Option<ProbabilityActionThresholds>) -> f64 {
-    LEGACY_STRICT_PREPARE_P20D_THRESHOLD
+fn strict_prepare_p20d_threshold(strict_thresholds: Option<ProbabilityActionThresholds>) -> f64 {
+    strict_thresholds
+        .map(|thresholds| {
+            (thresholds.external_prepare_p20d() * STRICT_PREPARE_P20D_THRESHOLD_RATIO).clamp(
+                STRICT_PREPARE_P20D_THRESHOLD_MIN,
+                LEGACY_STRICT_PREPARE_P20D_THRESHOLD,
+            )
+        })
+        .unwrap_or(LEGACY_STRICT_PREPARE_P20D_THRESHOLD)
 }
 
 fn strict_prepare_p60d_threshold(strict_thresholds: Option<ProbabilityActionThresholds>) -> f64 {

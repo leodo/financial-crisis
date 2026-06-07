@@ -8,6 +8,8 @@ use fc_domain::{
 const RELEASE_REVIEW_SIGNAL_WINDOW: usize = 5;
 const RELEASE_REVIEW_SIGNAL_MIN_HITS: usize = 3;
 const LEGACY_STRICT_PREPARE_P20D_THRESHOLD: f64 = 0.18;
+const STRICT_PREPARE_P20D_THRESHOLD_RATIO: f64 = 0.60;
+const STRICT_PREPARE_P20D_THRESHOLD_MIN: f64 = 0.12;
 const LEGACY_STRICT_PREPARE_P60D_THRESHOLD: f64 = 0.45;
 const STRICT_PREPARE_P60D_THRESHOLD_BUFFER: f64 = 0.04;
 const STRICT_PREPARE_P60D_THRESHOLD_LIFT: f64 = 1.10;
@@ -101,9 +103,16 @@ pub(super) fn release_review_uses_transitional_actionable_bridge(
 }
 
 pub(super) fn release_review_strict_prepare_p20d_threshold(
-    _thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> f64 {
-    LEGACY_STRICT_PREPARE_P20D_THRESHOLD
+    thresholds
+        .map(|thresholds| {
+            (thresholds.external_prepare_p20d * STRICT_PREPARE_P20D_THRESHOLD_RATIO).clamp(
+                STRICT_PREPARE_P20D_THRESHOLD_MIN,
+                LEGACY_STRICT_PREPARE_P20D_THRESHOLD,
+            )
+        })
+        .unwrap_or(LEGACY_STRICT_PREPARE_P20D_THRESHOLD)
 }
 
 pub(super) fn release_review_strict_prepare_p60d_threshold(

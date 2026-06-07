@@ -309,6 +309,36 @@ fn actionable_warning_point_accepts_formal_main_relaxed_strict_p60d_mapping() {
 }
 
 #[test]
+fn actionable_warning_point_accepts_formal_main_relaxed_strict_p20d_mapping() {
+    let point = fc_domain::AssessmentHistoryPoint {
+        as_of_date: NaiveDate::from_ymd_opt(2007, 3, 1).unwrap(),
+        overall_score: 57.0,
+        p_5d: 0.02,
+        p_20d: 0.13,
+        p_60d: 0.48,
+        raw_p_5d: Some(0.02),
+        raw_p_20d: Some(0.12),
+        raw_p_60d: Some(0.46),
+        posture: DecisionPosture::Prepare,
+        time_to_risk_bucket: TimeToRiskBucket::Months,
+        external_shock_score: 45.0,
+        posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
+        posture_blocker_codes: Vec::new(),
+    };
+
+    assert!(!is_actionable_warning_point(&point, false));
+    assert!(is_actionable_warning_point_with_thresholds(
+        &point,
+        false,
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.12,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.05,
+        }
+    ));
+}
+
+#[test]
 fn rolling_audit_counts_catalog_protected_windows_as_stress() {
     let stress_windows = load_protected_stress_window_catalog();
     let history = vec![history_point(

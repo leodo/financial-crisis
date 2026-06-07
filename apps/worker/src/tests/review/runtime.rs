@@ -57,6 +57,39 @@ fn release_review_structured_signal_counts_distinguish_strict_and_runtime_hits()
 }
 
 #[test]
+fn release_review_structured_signal_counts_accept_relaxed_strict_p20d_mapping() {
+    let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+    let backtests = vec![synthetic_backtest_summary_with_dates(
+        "scenario_prepare",
+        "Prepare Window",
+        Some(NaiveDate::from_ymd_opt(2023, 2, 20).unwrap()),
+        Some(NaiveDate::from_ymd_opt(2023, 2, 20).unwrap()),
+        Some(18),
+        Some(18),
+        1,
+    )];
+    let history = vec![runtime_history_point_with_state(
+        NaiveDate::from_ymd_opt(2023, 2, 20).unwrap(),
+        57.0,
+        0.02,
+        0.13,
+        0.48,
+        DecisionPosture::Prepare,
+        TimeToRiskBucket::Months,
+        45.0,
+        &["prepare_p60d_structural"],
+    )];
+    let method = formal_main_audit_method_wire();
+
+    let (strict_actionable_point_count, runtime_floor_hit_count) =
+        release_review_structured_signal_counts(&backtests, &history, &method);
+
+    assert_eq!(strict_actionable_point_count, 1);
+    assert_eq!(runtime_floor_hit_count, 1);
+    assert!(crisis_start > history[0].as_of_date);
+}
+
+#[test]
 fn release_review_runtime_separation_comparison_highlights_60d_floor_gap() {
     let baseline = ReleaseRuntimeReviewDiagnostics {
         release_id: "baseline".to_string(),
