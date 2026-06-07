@@ -28,17 +28,23 @@ const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_FLOOR: f64 = 44.0;
 const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_P20D_FLOOR: f64 = 0.49;
 const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_P60D_FLOOR: f64 = 0.75;
 const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_STRUCTURAL_FLOOR: f64 = 36.0;
-const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_EXTERNAL_FLOOR: f64 = 44.0;
-const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_P20D_FLOOR: f64 = 0.35;
+const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_EXTERNAL_FLOOR: f64 = 43.0;
+const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_P20D_FLOOR: f64 = 0.25;
 const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_P60D_FLOOR: f64 = 0.65;
 const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_OVERALL_FLOOR: f64 = 43.5;
-const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_STRUCTURAL_FLOOR: f64 = 60.0;
+const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_STRUCTURAL_FLOOR: f64 = 58.0;
 const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_TRIGGER_CEILING: f64 = 30.0;
+const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_DAYS: u8 = 1;
+const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_P60D_FLOOR: f64 = 0.75;
+const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_OVERALL_FLOOR: f64 = 42.0;
+const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_STRUCTURAL_FLOOR: f64 = 55.0;
+const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_TRIGGER_CEILING: f64 = 28.0;
 const HISTORY_PREPARE_HYSTERESIS_TRIGGER_CODE: &str = "prepare_history_hysteresis";
 
 #[derive(Debug, Clone, Copy, Default)]
 struct HistoricalPrepareHysteresisState {
     active: bool,
+    carry_grace_days_remaining: u8,
 }
 
 impl HistoricalPrepareHysteresisState {
@@ -50,13 +56,15 @@ impl HistoricalPrepareHysteresisState {
     ) {
         if !enabled {
             self.active = false;
+            self.carry_grace_days_remaining = 0;
             return;
         }
 
+        let was_active = self.active;
         let continuation_supported = history_prepare_hysteresis_supported(assessment)
-            || (self.active && history_prepare_hysteresis_extreme_carry_supported(assessment))
-            || (self.active && history_prepare_hysteresis_structural_carry_supported(assessment));
-        if self.active && continuation_supported {
+            || (was_active && history_prepare_hysteresis_extreme_carry_supported(assessment))
+            || (was_active && history_prepare_hysteresis_structural_carry_supported(assessment));
+        if was_active && continuation_supported {
             if matches!(assessment.posture, DecisionPosture::Normal) {
                 assessment.posture = DecisionPosture::Prepare;
                 posture_guidance.posture = DecisionPosture::Prepare;
@@ -76,8 +84,20 @@ impl HistoricalPrepareHysteresisState {
             }
         }
 
-        self.active = history_prepare_hysteresis_anchor(assessment, posture_guidance)
-            || (self.active && continuation_supported);
+        let anchored = history_prepare_hysteresis_anchor(assessment, posture_guidance);
+        let grace_supported = was_active
+            && !continuation_supported
+            && self.carry_grace_days_remaining > 0
+            && history_prepare_hysteresis_carry_grace_supported(assessment);
+
+        self.active = anchored || (was_active && continuation_supported) || grace_supported;
+        self.carry_grace_days_remaining = if anchored || (was_active && continuation_supported) {
+            HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_DAYS
+        } else if grace_supported {
+            self.carry_grace_days_remaining.saturating_sub(1)
+        } else {
+            0
+        };
     }
 }
 
@@ -132,6 +152,14 @@ fn history_prepare_hysteresis_structural_carry_supported(assessment: &Assessment
             >= HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_STRUCTURAL_FLOOR
         && assessment.scores.trigger_score
             <= HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_TRIGGER_CEILING
+}
+
+fn history_prepare_hysteresis_carry_grace_supported(assessment: &AssessmentSnapshot) -> bool {
+    assessment.probabilities.p_60d >= HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_P60D_FLOOR
+        && assessment.scores.overall_score >= HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_OVERALL_FLOOR
+        && assessment.scores.structural_score
+            >= HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_STRUCTURAL_FLOOR
+        && assessment.scores.trigger_score <= HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_TRIGGER_CEILING
 }
 
 #[derive(Debug, Clone, Copy)]

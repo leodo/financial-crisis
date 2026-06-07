@@ -630,6 +630,10 @@
          1. `2026-06-07` default `release review` 复核后，`strict_actionable_point_count` 进一步从 `173` 抬到 `185`；
          2. `runtime_floor_hit_count` 维持 `327 -> 351`，`actionable_precision` 维持 `52.8% -> 67.7%`，`longest_false_positive_episode_days` 维持 `15 -> 13`；
          3. 说明 mirror 已对齐，但主阻塞仍不是 point-level strict conversion，而是 scenario-level continuity。
+       - [x] 已继续把 `history_prepare_hysteresis` 修到 `structural carry + single-day carry grace`
+         1. 先把 `structural carry` 的 `structural_score floor` 下调到 `58.0`，补回 `1990-07-25` 这类 `p20d` 已回落但 `p60d / structural / overall` 仍高的 continuity 点；
+         2. 再补一条只保留 `1` 天状态、不主动升级姿态的 `carry grace`，允许 `1990-07-26` 这种 `p20d` 短暂塌陷但 `p60d=0.77 / overall=42.3 / structural=55.0` 仍高的冷却日不立刻清空 continuity state；
+         3. `2026-06-07` 重新跑 `strict_rebuild` 后，`1990-07-25` 与 `1990-07-27..29` 已恢复为 `prepare/months + prepare_history_hysteresis`，而 `1990-07-26` 仍保持 `normal/normal`，说明这条修复补的是 scenario continuity，不是把本应冷却的一天硬拉成高风险。
        - [ ] 但 `2026-06-07` 正式 `release review` 仍把 `1987 / 1990-1993 / 1998` 记为 scenario-level `posture_continuity_failure`，说明点位修复已生效，但整段 `3/5 sustained` 连续性还没完全恢复
       - [ ] 最后清 `residual_review_l3_failure`，确认剩余阻塞不是 gate/continuity 遗留
    - [ ] 重跑 release review / rolling audit / runtime regime audit
@@ -647,6 +651,14 @@
        - `actionable_precision 52.8% -> 67.7%`
        - `longest_false_positive_episode_days 15 -> 13`
        - `guard_passed=false`，当前默认 review 也确认 point-level strict conversion 已改善，但主阻塞仍是 `1987 / 1990-1993 / 1998` 的 continuity 与 `2000-2001 / 2022` 的 gate mismatch
+     - [x] 已在 continuity 修复后重跑 baseline `us_formal_family_hybrid_20260605T202246` vs candidate `us_formal_family_hybrid_20260606T112926` 的最新 `default release review`
+       - `timely_warning_rate 10.0% -> 10.0%`
+       - `strict_actionable_point_count 63 -> 80`
+       - `runtime_floor_hit_count 90 -> 91`
+       - `actionable_precision 46.4% -> 69.8%`
+       - `longest_false_positive_episode_days 16 -> 13`
+       - `guard_passed=false`，但 candidate 的默认 review 主阻塞已不再是 `1990-1993` continuity，而是新增的 `2022 联储加息与久期冲击 / strict_gate_mismatch` 与 `2023 美国区域银行危机 / residual_review_l3_failure`
+       - 下一步应先专项复核 `2022` 的 `strict review gate vs runtime floor`：当前 candidate `runtime thresholds` 已降到 `prepare_p60d=56.8% / hedge_p20d=28.2%`，但 review 端仍会在 `p20d>=12%`、`p60d<45%` 或 `p20d<12%`、`p60d>=56.8%` 的点上记为 `review_gate_gap`
      - [x] 已对齐 `release activate` 的 `operational guard` 与 `release review` 的 `go/no-go`
        - 现在 `release activate --reload-api` 会读取最新相关 `release review` 产物：
          1. 若目标 release 已在最新正式 review 中被判为失败 candidate，则直接阻止激活；

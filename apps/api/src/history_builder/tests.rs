@@ -599,6 +599,53 @@ fn history_prepare_hysteresis_extreme_carry_still_requires_external_support() {
 }
 
 #[test]
+fn history_prepare_hysteresis_extreme_carry_accepts_near_floor_external_support() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.75,
+        0.89,
+        0.22,
+        43.3,
+        48.8,
+        36.7,
+        44.3,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.725,
+        0.799,
+        0.06,
+        36.3,
+        36.1,
+        36.5,
+        43.3,
+        30.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Prepare);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Months
+    );
+    assert_eq!(guidance.posture, DecisionPosture::Prepare);
+    assert!(guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+}
+
+#[test]
 fn history_prepare_hysteresis_rescues_structural_carry_after_anchor() {
     let mut state = HistoricalPrepareHysteresisState::default();
     let mut anchor_assessment = history_test_assessment(
@@ -676,6 +723,345 @@ fn history_prepare_hysteresis_structural_carry_requires_low_trigger_context() {
         63.1,
         32.0,
         37.0,
+        30.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Normal);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Normal
+    );
+    assert!(!guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+}
+
+#[test]
+fn history_prepare_hysteresis_rescues_structural_carry_with_lower_p20d_after_anchor() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.63,
+        0.79,
+        0.22,
+        56.0,
+        52.0,
+        36.0,
+        44.0,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.26,
+        0.804,
+        0.18,
+        44.1,
+        60.4,
+        24.0,
+        35.3,
+        30.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Prepare);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Months
+    );
+    assert_eq!(guidance.posture, DecisionPosture::Prepare);
+    assert!(guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+}
+
+#[test]
+fn history_prepare_hysteresis_rescues_structural_carry_near_structural_floor() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.63,
+        0.79,
+        0.22,
+        56.0,
+        52.0,
+        36.0,
+        44.0,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.309,
+        0.804,
+        0.18,
+        44.0,
+        58.2,
+        26.6,
+        31.5,
+        30.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Prepare);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Months
+    );
+    assert_eq!(guidance.posture, DecisionPosture::Prepare);
+    assert!(guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+}
+
+#[test]
+fn history_prepare_hysteresis_structural_carry_still_requires_structural_floor() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.63,
+        0.79,
+        0.22,
+        56.0,
+        52.0,
+        36.0,
+        44.0,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.309,
+        0.804,
+        0.18,
+        44.0,
+        57.9,
+        26.6,
+        31.5,
+        30.0,
+    );
+    let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut assessment, &mut guidance);
+
+    assert_eq!(assessment.posture, DecisionPosture::Normal);
+    assert_eq!(
+        assessment.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Normal
+    );
+    assert!(!guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+}
+
+#[test]
+fn history_prepare_hysteresis_carry_grace_preserves_state_for_next_day_rescue() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.63,
+        0.79,
+        0.22,
+        56.0,
+        52.0,
+        36.0,
+        44.0,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut grace_day = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.075,
+        0.77,
+        0.18,
+        42.3,
+        55.0,
+        26.8,
+        27.4,
+        30.0,
+    );
+    let mut grace_guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut grace_day, &mut grace_guidance);
+
+    assert_eq!(grace_day.posture, DecisionPosture::Normal);
+    assert_eq!(
+        grace_day.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Normal
+    );
+    assert!(state.active);
+
+    let mut rescue_day = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.362,
+        0.85,
+        0.18,
+        44.6,
+        58.2,
+        28.0,
+        30.2,
+        30.0,
+    );
+    let mut rescue_guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut rescue_day, &mut rescue_guidance);
+
+    assert_eq!(rescue_day.posture, DecisionPosture::Prepare);
+    assert_eq!(
+        rescue_day.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Months
+    );
+    assert_eq!(rescue_guidance.posture, DecisionPosture::Prepare);
+    assert!(rescue_guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+}
+
+#[test]
+fn history_prepare_hysteresis_carry_grace_expires_after_one_day() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.63,
+        0.79,
+        0.22,
+        56.0,
+        52.0,
+        36.0,
+        44.0,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut first_grace_day = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.075,
+        0.77,
+        0.18,
+        42.3,
+        55.0,
+        26.8,
+        27.4,
+        30.0,
+    );
+    let mut first_grace_guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut first_grace_day, &mut first_grace_guidance);
+    assert!(state.active);
+
+    let mut second_grace_day = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.075,
+        0.77,
+        0.18,
+        42.3,
+        55.0,
+        26.8,
+        27.4,
+        30.0,
+    );
+    let mut second_grace_guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut second_grace_day, &mut second_grace_guidance);
+
+    assert_eq!(second_grace_day.posture, DecisionPosture::Normal);
+    assert_eq!(
+        second_grace_day.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Normal
+    );
+    assert!(!state.active);
+
+    let mut rescue_day = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.362,
+        0.85,
+        0.18,
+        44.6,
+        58.2,
+        28.0,
+        30.2,
+        30.0,
+    );
+    let mut rescue_guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
+    state.apply(true, &mut rescue_day, &mut rescue_guidance);
+
+    assert_eq!(rescue_day.posture, DecisionPosture::Normal);
+    assert_eq!(
+        rescue_day.time_to_risk_bucket,
+        fc_domain::TimeToRiskBucket::Normal
+    );
+    assert!(!rescue_guidance
+        .trigger_codes
+        .iter()
+        .any(|code| code == "prepare_history_hysteresis"));
+}
+
+#[test]
+fn history_prepare_hysteresis_structural_carry_still_requires_p20d_decay_floor() {
+    let mut state = HistoricalPrepareHysteresisState::default();
+    let mut anchor_assessment = history_test_assessment(
+        DecisionPosture::Prepare,
+        fc_domain::TimeToRiskBucket::Months,
+        0.63,
+        0.79,
+        0.22,
+        56.0,
+        52.0,
+        36.0,
+        44.0,
+        30.0,
+    );
+    let mut anchor_guidance =
+        history_test_posture_guidance(DecisionPosture::Prepare, &["prepare_probability_plateau"]);
+    state.apply(true, &mut anchor_assessment, &mut anchor_guidance);
+    assert!(state.active);
+
+    let mut assessment = history_test_assessment(
+        DecisionPosture::Normal,
+        fc_domain::TimeToRiskBucket::Normal,
+        0.24,
+        0.804,
+        0.18,
+        44.1,
+        60.4,
+        24.0,
+        35.3,
         30.0,
     );
     let mut guidance = history_test_posture_guidance(DecisionPosture::Normal, &[]);
