@@ -663,6 +663,9 @@
          1. 继续下钻 `2023 美国区域银行危机` 的 `residual_review_l3_failure`；
          2. 对 `1987 / 1998 / 2000-2001 / 2011 / 2022` 这 5 个 `baseline_shared_weakness` 样本做 residual review clause / continuity facet 逐点审计；
          3. 只在确认剩余 `cooldown_bleed` 仍来自 bundle 本体后，再继续改 `60d` 训练目标与特征结构。
+       - [x] 已清理 `scenario_focus` 的 candidate failure mode 语义噪声：对于 `timely_to_timely` 且 `candidate_first_l3_date <= baseline_first_l3_date`、`candidate_actionable_point_count >= baseline_actionable_point_count` 的场景，不再继续打 `candidate_primary_failure_mode`。
+         - `2026-06-08` 实测：`us_regional_banks_2023` 现在保留 `baseline_primary_failure_mode = posture_continuity_failure`，但 `candidate_primary_failure_mode = null`，更符合当前 review 结论。
+         - 这一步只收紧了 review 解释层，不改变 runtime block counts / continuity facets / actionable counts，本质上是避免把 baseline 既有短板继续误挂到 candidate 头上。
      - [x] 已对齐 `release activate` 的 `operational guard` 与 `release review` 的 `go/no-go`
        - 现在 `release activate --reload-api` 会读取最新相关 `release review` 产物：
          1. 若目标 release 已在最新正式 review 中被判为失败 candidate，则直接阻止激活；

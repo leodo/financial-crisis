@@ -72,18 +72,36 @@ pub(crate) fn build_release_review_scenario_focus_diagnostics(
                 candidate_runtime_thresholds,
             );
 
-            Some(build_focus_diagnostic(
+            let mut row = build_focus_diagnostic(
                 &prepared,
                 interesting_points,
                 baseline_use_transitional_bridge,
                 candidate_use_transitional_bridge,
                 baseline_runtime_thresholds,
                 candidate_runtime_thresholds,
-            ))
+            );
+            if suppress_candidate_primary_failure_mode(&row) {
+                row.candidate_primary_failure_mode = None;
+            }
+            Some(row)
         })
         .collect::<Vec<_>>();
     rows.sort_by(|left, right| left.scenario_id.cmp(&right.scenario_id));
     rows
+}
+
+fn suppress_candidate_primary_failure_mode(
+    row: &crate::ReleaseReviewScenarioFocusDiagnostic,
+) -> bool {
+    let candidate_not_worse_on_l3 = match (row.baseline_first_l3_date, row.candidate_first_l3_date)
+    {
+        (None, Some(_)) => true,
+        (Some(baseline_date), Some(candidate_date)) => candidate_date <= baseline_date,
+        _ => false,
+    };
+
+    candidate_not_worse_on_l3
+        && row.candidate_actionable_point_count >= row.baseline_actionable_point_count
 }
 
 fn prepared_scenario_requires_focus_review(prepared: &window::PreparedScenarioWindow<'_>) -> bool {

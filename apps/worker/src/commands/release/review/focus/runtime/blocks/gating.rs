@@ -2,9 +2,9 @@ use fc_domain::{AssessmentHistoryPoint, DecisionPosture, TimeToRiskBucket};
 
 use super::super::signals::{
     release_review_has_strong_prepare_trigger_code, release_review_hits_runtime_floor,
-    release_review_is_weak_defend_only_runtime_floor,
-    release_review_is_actionable_warning_point, release_review_strict_prepare_p20d_threshold,
-    release_review_strict_prepare_p60d_threshold, release_review_runtime_floor_hits,
+    release_review_is_actionable_warning_point, release_review_is_weak_defend_only_runtime_floor,
+    release_review_runtime_floor_hits, release_review_strict_prepare_p20d_threshold,
+    release_review_strict_prepare_p60d_threshold,
 };
 
 pub(in super::super) fn release_review_actionable_diagnostic(

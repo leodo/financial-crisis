@@ -100,9 +100,8 @@ pub(super) fn release_review_hits_runtime_floor(
     point: &AssessmentHistoryPoint,
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> bool {
-    release_review_runtime_floor_hits(point, thresholds).is_some_and(|hits| {
-        hits.prepare || hits.hedge || hits.defend
-    })
+    release_review_runtime_floor_hits(point, thresholds)
+        .is_some_and(|hits| hits.prepare || hits.hedge || hits.defend)
 }
 
 pub(super) fn release_review_runtime_floor_hits(

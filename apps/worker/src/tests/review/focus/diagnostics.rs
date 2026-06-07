@@ -513,6 +513,233 @@ fn release_review_focus_diagnostic_includes_runtime_floor_only_scenarios_without
 }
 
 #[test]
+fn release_review_focus_diagnostic_suppresses_candidate_failure_when_l3_is_not_worse() {
+    let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+    let candidate_first_l2 = NaiveDate::from_ymd_opt(2022, 12, 8).unwrap();
+    let candidate_first_l3 = NaiveDate::from_ymd_opt(2022, 12, 12).unwrap();
+    let baseline_first_l2 = NaiveDate::from_ymd_opt(2022, 12, 10).unwrap();
+    let baseline_first_l3 = NaiveDate::from_ymd_opt(2022, 12, 13).unwrap();
+    let follow_up_1 = NaiveDate::from_ymd_opt(2022, 12, 14).unwrap();
+    let follow_up_2 = NaiveDate::from_ymd_opt(2022, 12, 15).unwrap();
+    let follow_up_3 = NaiveDate::from_ymd_opt(2022, 12, 16).unwrap();
+
+    let baseline = vec![synthetic_backtest_summary_with_dates(
+        "scenario_timely_better_candidate",
+        "Timely Better Candidate",
+        Some(baseline_first_l2),
+        Some(baseline_first_l3),
+        Some(90),
+        Some(87),
+        0,
+    )];
+    let candidate = vec![synthetic_backtest_summary_with_dates(
+        "scenario_timely_better_candidate",
+        "Timely Better Candidate",
+        Some(candidate_first_l2),
+        Some(candidate_first_l3),
+        Some(92),
+        Some(88),
+        0,
+    )];
+
+    let baseline_history = vec![
+        runtime_history_point_with_state(
+            baseline_first_l2,
+            55.0,
+            0.02,
+            0.20,
+            0.80,
+            DecisionPosture::Normal,
+            TimeToRiskBucket::Weeks,
+            45.0,
+            &[],
+        ),
+        runtime_history_point_with_state(
+            baseline_first_l3,
+            55.0,
+            0.02,
+            0.30,
+            0.82,
+            DecisionPosture::Prepare,
+            TimeToRiskBucket::Weeks,
+            45.0,
+            &["prepare_probability_plateau"],
+        ),
+        runtime_history_point_with_state(
+            follow_up_1,
+            55.0,
+            0.02,
+            0.30,
+            0.82,
+            DecisionPosture::Prepare,
+            TimeToRiskBucket::Weeks,
+            45.0,
+            &["prepare_probability_plateau"],
+        ),
+        runtime_history_point_with_state(
+            follow_up_2,
+            55.0,
+            0.02,
+            0.30,
+            0.82,
+            DecisionPosture::Prepare,
+            TimeToRiskBucket::Weeks,
+            45.0,
+            &["prepare_probability_plateau"],
+        ),
+        runtime_history_point_with_state(
+            follow_up_3,
+            65.0,
+            0.08,
+            0.31,
+            0.52,
+            DecisionPosture::Hedge,
+            TimeToRiskBucket::Weeks,
+            50.0,
+            &["hedge_p20d_context"],
+        ),
+        runtime_history_point_with_state(
+            crisis_start,
+            65.0,
+            0.08,
+            0.31,
+            0.52,
+            DecisionPosture::Hedge,
+            TimeToRiskBucket::Weeks,
+            50.0,
+            &["hedge_p20d_context"],
+        ),
+    ];
+    let candidate_history = vec![
+        runtime_history_point_with_state(
+            candidate_first_l2,
+            55.0,
+            0.02,
+            0.20,
+            0.82,
+            DecisionPosture::Normal,
+            TimeToRiskBucket::Weeks,
+            45.0,
+            &[],
+        ),
+        runtime_history_point_with_state(
+            baseline_first_l2,
+            55.0,
+            0.02,
+            0.20,
+            0.82,
+            DecisionPosture::Normal,
+            TimeToRiskBucket::Weeks,
+            45.0,
+            &[],
+        ),
+        runtime_history_point_with_state(
+            baseline_first_l3,
+            55.0,
+            0.02,
+            0.20,
+            0.82,
+            DecisionPosture::Normal,
+            TimeToRiskBucket::Weeks,
+            45.0,
+            &[],
+        ),
+        runtime_history_point_with_state(
+            candidate_first_l3,
+            55.0,
+            0.02,
+            0.30,
+            0.82,
+            DecisionPosture::Prepare,
+            TimeToRiskBucket::Weeks,
+            45.0,
+            &["prepare_probability_plateau"],
+        ),
+        runtime_history_point_with_state(
+            follow_up_1,
+            55.0,
+            0.02,
+            0.30,
+            0.82,
+            DecisionPosture::Prepare,
+            TimeToRiskBucket::Weeks,
+            45.0,
+            &["prepare_probability_plateau"],
+        ),
+        runtime_history_point_with_state(
+            follow_up_2,
+            55.0,
+            0.02,
+            0.30,
+            0.82,
+            DecisionPosture::Prepare,
+            TimeToRiskBucket::Weeks,
+            45.0,
+            &["prepare_probability_plateau"],
+        ),
+        runtime_history_point_with_state(
+            follow_up_3,
+            65.0,
+            0.08,
+            0.31,
+            0.52,
+            DecisionPosture::Hedge,
+            TimeToRiskBucket::Weeks,
+            50.0,
+            &["hedge_p20d_context"],
+        ),
+        runtime_history_point_with_state(
+            crisis_start,
+            65.0,
+            0.08,
+            0.31,
+            0.52,
+            DecisionPosture::Hedge,
+            TimeToRiskBucket::Weeks,
+            50.0,
+            &["hedge_p20d_context"],
+        ),
+    ];
+    let method = formal_main_audit_method_wire();
+
+    let rows = build_release_review_scenario_focus_diagnostics(
+        &baseline,
+        &candidate,
+        &baseline_history,
+        &candidate_history,
+        &method,
+        &method,
+    );
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].outcome, "timely_to_timely");
+    assert_eq!(rows[0].baseline_first_l3_date, Some(baseline_first_l3));
+    assert_eq!(rows[0].candidate_first_l3_date, Some(candidate_first_l3));
+    assert_eq!(rows[0].baseline_actionable_point_count, 4);
+    assert_eq!(rows[0].candidate_actionable_point_count, 4);
+    assert_eq!(rows[0].baseline_runtime_floor_hit_point_count, 5);
+    assert_eq!(rows[0].candidate_runtime_floor_hit_point_count, 6);
+    assert_eq!(
+        rows[0].baseline_primary_failure_mode.as_deref(),
+        Some("residual_review_l3_failure")
+    );
+    assert_eq!(rows[0].candidate_primary_failure_mode.as_deref(), None);
+    assert!(rows[0].runtime_block_counts.iter().any(|count| {
+        count.category == "review_l3_gate_not_satisfied" && count.candidate_count > 0
+    }));
+    assert_eq!(
+        rows[0].candidate_first_runtime_floor_hit_without_l3_date,
+        Some(baseline_first_l2)
+    );
+    assert_eq!(
+        rows[0]
+            .candidate_first_runtime_floor_hit_without_l3_reason
+            .as_deref(),
+        Some("review L3 gate not satisfied")
+    );
+}
+
+#[test]
 fn release_review_focus_diagnostic_ignores_weak_defend_only_runtime_floor_blips() {
     let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
     let runtime_floor_date = NaiveDate::from_ymd_opt(2023, 2, 10).unwrap();
@@ -586,8 +813,20 @@ fn release_review_focus_diagnostic_ignores_weak_defend_only_runtime_floor_blips(
     assert_eq!(rows[0].candidate_primary_failure_mode.as_deref(), None);
     assert!(rows[0].runtime_block_counts.is_empty());
     assert!(rows[0].runtime_continuity_facet_counts.is_empty());
-    assert_eq!(rows[0].baseline_first_runtime_floor_hit_without_l3_date, None);
-    assert_eq!(rows[0].candidate_first_runtime_floor_hit_without_l3_date, None);
-    assert_eq!(rows[0].baseline_first_runtime_floor_hit_without_l3_reason, None);
-    assert_eq!(rows[0].candidate_first_runtime_floor_hit_without_l3_reason, None);
+    assert_eq!(
+        rows[0].baseline_first_runtime_floor_hit_without_l3_date,
+        None
+    );
+    assert_eq!(
+        rows[0].candidate_first_runtime_floor_hit_without_l3_date,
+        None
+    );
+    assert_eq!(
+        rows[0].baseline_first_runtime_floor_hit_without_l3_reason,
+        None
+    );
+    assert_eq!(
+        rows[0].candidate_first_runtime_floor_hit_without_l3_reason,
+        None
+    );
 }
