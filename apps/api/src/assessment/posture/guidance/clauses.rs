@@ -161,6 +161,15 @@ pub(super) fn build_posture_clause_diagnostics(
         breadth_score,
         event_assessment.confirmation_score,
     );
+    let prepare_continuity_bridge = prepare_continuity_bridge_signal(
+        probabilities,
+        prepare_reference_p60d,
+        actionability_support,
+        snapshot.structural_score,
+        snapshot.trigger_score,
+        external_shock_score,
+        breadth_score,
+    );
     let severe_carry = jpy_carry.score >= 70.0 && jpy_carry.funding_pressure_score >= 55.0;
     let stressed_carry = jpy_carry.score >= 58.0 && jpy_carry.funding_pressure_score >= 48.0;
 
@@ -267,17 +276,9 @@ pub(super) fn build_posture_clause_diagnostics(
         }) {
             prepare_trigger_codes.push("prepare_actionability");
         }
-        if prepare_continuity_bridge_signal(
-            probabilities,
-            prepare_reference_p60d,
-            actionability_support,
-            snapshot.structural_score,
-            snapshot.trigger_score,
-            external_shock_score,
-            breadth_score,
-        ) {
-            prepare_trigger_codes.push("prepare_continuity_bridge");
-        }
+    }
+    if prepare_continuity_bridge {
+        prepare_trigger_codes.push("prepare_continuity_bridge");
     }
     if prepare_probability_plateau_signal(
         probabilities,

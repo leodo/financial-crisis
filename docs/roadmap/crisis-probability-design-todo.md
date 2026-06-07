@@ -619,7 +619,8 @@
      - [ ] 先修 `strict p20d gate` 与 runtime floor 的映射，避免 `p20d_only` 长期压住 `L3` 转化
      - [ ] 再修 `months_score_confirmation / posture continuity`，避免高 `p20d/p60d` 长期停在 `normal`
        - [x] 已修正 `prepare_reference_p60d` 误读 `60d final_probability` 的口径错位；`2026-06-07 strict_rebuild` 下 `1990-10-19` 已从 `normal` 恢复为 `prepare + prepare_probability_plateau`
-       - [ ] 剩余 continuity 主故障仍在：`1998-09-03`（`60d=0.718`）与 `2007-08-01`（`20d=0.609 / 60d=0.639`）依然表现为 `months + normal`
+       - [x] 已去掉 `prepare_continuity_bridge` 对独立 conviction gate 的额外依赖；`2026-06-07 strict_rebuild` 下 `2007-08-01` 已从 `months + normal` 恢复为 `prepare + prepare_continuity_bridge`
+       - [ ] 剩余 continuity / gate 主故障已收敛到 `1998-09-03`（`20d=0.393 / 60d=0.718`）这类 `months + normal` 样本，更像 `p20d gate / plateau floor` 过严
      - [ ] 最后清 `residual_review_l3_failure`，确认剩余阻塞不是 gate/continuity 遗留
    - [ ] 重跑 release review / rolling audit / runtime regime audit
 

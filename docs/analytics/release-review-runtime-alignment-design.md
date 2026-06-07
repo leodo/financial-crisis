@@ -110,15 +110,18 @@ posture continuity 在读取一份比 runtime 更低的 `60d` 参考值。
 
 - `1998-09-03` 仍是 `raw_p_60d = calibrated_p_60d = 0.718`，但
   `posture = normal`
-- `2007-08-01` 仍是 `calibrated_p_20d = 0.609 / calibrated_p_60d = 0.639`，但
-  `posture = normal`
+- `2007-08-01` 在第二轮修复前也属于 `months + normal`，根因是
+  `prepare_continuity_bridge` 只会把 `time_to_risk_bucket` 推到 `months`，
+  但 `posture` 侧仍被 `conviction_score >= 0.54` 的额外门槛拦住
 
 因此当前结论应更新为：
 
 1. `prepare_reference_p60d` 使用 `runtime_final_probability` 是必须修复的口径错误；
 2. 修复后已经消除了一类典型的 `months + normal` 假阴性；
-3. 剩余的 `1998 / 2007` 连续性失败，才是真正还需要继续往
-   `strict p20d gate / score confirmation / residual clauses` 下钻的部分。
+3. 后续又确认 `prepare_continuity_bridge` 也要和 `months` bucket 对齐，不能继续被
+   独立 conviction gate 压回 `normal`；
+4. 现在还剩下的主故障已经收敛为 `1998-09-03` 这类更像
+   `strict p20d gate / plateau p20d floor` 的样本。
 
 ## 3. 根因拆分
 
