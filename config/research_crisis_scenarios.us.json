@@ -185,6 +185,18 @@
       "default_horizon_roles": [20, 60],
       "training_role": "no_positive_main",
       "episode_template_id": "rate_shock_or_policy_dislocation",
+      "action_episode_overrides": {
+        "prepare": {
+          "primary_start": "2021-11-01",
+          "primary_end": "2022-02-28",
+          "late_validation_end": "2022-05-31"
+        },
+        "hedge": {
+          "primary_start": "2022-03-01",
+          "primary_end": "2022-06-16",
+          "late_validation_end": "2022-10-31"
+        }
+      },
       "protected_window": true,
       "protected_action_levels": ["prepare", "hedge"],
       "evidence_basis": "利率、政策和久期冲击主导，不应直接充当银行信用危机正例，但必须进入 posture 审计。"

@@ -251,3 +251,41 @@ fn formal_main_context_scenarios_include_protected_window_set() {
     assert!(context_ids.contains("us_funding_stress_2011"));
     assert!(context_ids.contains("us_rate_shock_2022"));
 }
+
+#[test]
+fn rate_shock_2022_override_keeps_protected_context_visible_beyond_crisis_start() {
+    let scenario_sets = crate::load_formal_dataset_scenario_sets(
+        crate::DEFAULT_FORMAL_SCENARIO_SET_VERSION,
+        crate::DEFAULT_FORMAL_LABEL_VERSION,
+    )
+    .unwrap();
+
+    let spring_snapshot = crate::derive_scenario_label_snapshot(
+        NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(),
+        &scenario_sets.positive_scenarios,
+        &scenario_sets.context_scenarios,
+    );
+    assert_eq!(
+        spring_snapshot.primary_scenario_id.as_deref(),
+        Some("us_rate_shock_2022")
+    );
+    assert_eq!(
+        spring_snapshot.primary_action_level.as_deref(),
+        Some("hedge")
+    );
+    assert!(spring_snapshot.protected_action_window);
+    assert_eq!(spring_snapshot.action_episode_phase, "primary");
+
+    let autumn_snapshot = crate::derive_scenario_label_snapshot(
+        NaiveDate::from_ymd_opt(2022, 9, 15).unwrap(),
+        &scenario_sets.positive_scenarios,
+        &scenario_sets.context_scenarios,
+    );
+    assert_eq!(
+        autumn_snapshot.primary_scenario_id.as_deref(),
+        Some("us_rate_shock_2022")
+    );
+    assert_eq!(autumn_snapshot.primary_action_level, None);
+    assert!(autumn_snapshot.protected_action_window);
+    assert_eq!(autumn_snapshot.action_episode_phase, "late_validation");
+}

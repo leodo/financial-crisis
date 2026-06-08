@@ -754,6 +754,9 @@
 当前剩余主线不再是“扩展历史样本有没有数据”，也不再是继续围绕旧 continuity/gate bucket 打 patch，而是：
 
 1. 先围绕 `2022 联储加息与久期冲击` 的 `weak_signal_continuity` 做 feature separation、`months/prepare` continuity 与阈值前置量专项审计；
+   - `2026-06-09` 已先补一层 scenario-definition 证据：给 `us_rate_shock_2022` 增加 `action_episode_overrides` 后，重建 `formal_v1_main_1990_daily:20260609Trateshockoverride` 的切片已从 `66` 行恢复到 `365` 行，区间覆盖 `2021-11-01 -> 2022-10-31`；
+   - 当前 expanded slice 的 `phase` 已变成 `primary=228 / late_validation=137`，且 `protected_action_window=365`，说明之前的弱连续性不只是模型冷，而是 `rate_shock` 默认 episode 模板把 2022 年大部分 protected stress 直接排除在 action episode 之外；
+   - 但同一 slice 的 `label_20d / label_60d` 仍然都是 `0`，说明接下来要解决的重点已经从“有没有上下文行”转成“这些 protected rows 在训练目标和 review 口径里如何发挥作用”。
 2. 再围绕 `1987 / 1998 / 2000-2001 / 2011` 的 `prewarning_signal_gap` 做训练样本、特征覆盖与标签窗口专项复盘，确认为什么连稳定的 non-normal / runtime floor 都没有形成；
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
