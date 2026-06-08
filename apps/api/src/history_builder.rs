@@ -388,7 +388,7 @@ async fn load_feature_snapshot_ids_for_history_range(
 
     let mut latest_by_date = std::collections::BTreeMap::<NaiveDate, FeatureSnapshotRecord>::new();
     for snapshot in snapshots {
-        if snapshot.entity_id != "us" || !target_dates.contains(&snapshot.as_of_date) {
+        if snapshot.entity_id != "us" {
             continue;
         }
         match latest_by_date.get(&snapshot.as_of_date) {
@@ -399,7 +399,7 @@ async fn load_feature_snapshot_ids_for_history_range(
         }
     }
 
-    Ok(latest_by_date
+    let effective_snapshot_ids = latest_by_date
         .into_iter()
         .map(|(date, snapshot)| {
             (
@@ -413,7 +413,20 @@ async fn load_feature_snapshot_ids_for_history_range(
                 ),
             )
         })
-        .collect())
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    let mut bound_snapshot_ids = std::collections::BTreeMap::new();
+    let mut current_snapshot_id = None::<String>;
+    for target_date in target_dates {
+        if let Some(snapshot_id) = effective_snapshot_ids.get(&target_date) {
+            current_snapshot_id = Some(snapshot_id.clone());
+        }
+        if let Some(snapshot_id) = current_snapshot_id.clone() {
+            bound_snapshot_ids.insert(target_date, snapshot_id);
+        }
+    }
+
+    Ok(bound_snapshot_ids)
 }
 
 fn feature_snapshot_id(

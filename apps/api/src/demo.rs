@@ -153,13 +153,16 @@ pub(crate) fn build_app_data_from_inputs(
         backtest_summary,
         ..assessment
     };
-    let current_history_point = assessment_history_point_from_assessment(
+    let mut current_history_point = assessment_history_point_from_assessment(
         &assessment,
         &posture_guidance,
         &probability_trace,
     );
     match assessment_history.last_mut() {
         Some(last) if last.as_of_date == current_history_point.as_of_date => {
+            current_history_point.replay_run_id = last.replay_run_id.clone();
+            current_history_point.feature_snapshot_id = last.feature_snapshot_id.clone();
+            current_history_point.history_source = last.history_source.clone();
             *last = current_history_point;
         }
         _ => assessment_history.push(current_history_point),

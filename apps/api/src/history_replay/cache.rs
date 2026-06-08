@@ -15,7 +15,7 @@ use super::{
     HistoricalReplayPointDraft,
 };
 
-const PREDICTION_SNAPSHOT_CACHE_VERSION: &str = "history_cache_v4_20260606";
+const PREDICTION_SNAPSHOT_CACHE_VERSION: &str = "history_cache_v5_20260608";
 
 pub(crate) async fn persist_historical_replay_output(
     store: &SqliteStore,

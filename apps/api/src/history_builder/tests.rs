@@ -1300,6 +1300,79 @@ async fn bundle_history_rebuild_binds_persisted_feature_snapshot_ids_when_availa
 }
 
 #[tokio::test]
+async fn bundle_history_rebuild_reuses_latest_prior_feature_snapshot_when_same_day_snapshot_is_missing(
+) {
+    let store = in_memory_store().await;
+    store.seed_fred_metadata().await.unwrap();
+    let as_of_date = NaiveDate::from_ymd_opt(2026, 5, 30).unwrap();
+    let indicators = demo_indicators();
+    for indicator in &indicators {
+        store.upsert_indicator(indicator).await.unwrap();
+    }
+    let observations = demo_observations(as_of_date);
+    store.insert_observations(&observations).await.unwrap();
+
+    let serving_model = formal_serving_model_context();
+    store
+        .upsert_model_release(&serving_model.release)
+        .await
+        .unwrap();
+
+    let target_dates = observations
+        .iter()
+        .filter(|observation| observation.entity_id == "us")
+        .map(|observation| observation.as_of_date)
+        .chain(std::iter::once(as_of_date))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let latest_date = *target_dates.last().unwrap();
+    let prior_date = target_dates[target_dates.len() - 2];
+    let feature_snapshots = target_dates[..target_dates.len() - 1]
+        .iter()
+        .copied()
+        .map(history_test_feature_snapshot)
+        .collect::<Vec<_>>();
+    store
+        .upsert_feature_snapshots(&feature_snapshots)
+        .await
+        .unwrap();
+
+    let history = load_sqlite_assessment_history(
+        &store,
+        &indicators,
+        &observations,
+        &[],
+        Some(&serving_model),
+        &load_user_preferences(),
+        as_of_date,
+        260,
+        AssessmentHistoryBuildMode::Default,
+    )
+    .await
+    .unwrap();
+
+    let latest_point = history
+        .iter()
+        .find(|point| point.as_of_date == latest_date)
+        .expect("latest history point");
+    let prior_point = history
+        .iter()
+        .find(|point| point.as_of_date == prior_date)
+        .expect("prior history point");
+
+    assert_eq!(
+        latest_point.history_source.as_deref(),
+        Some("raw_pit_feature_replay"),
+        "when same-day PIT snapshot is missing, history should still bind to the latest prior persisted PIT snapshot instead of falling back to raw rebuild"
+    );
+    assert_eq!(
+        latest_point.feature_snapshot_id, prior_point.feature_snapshot_id,
+        "latest date should reuse the most recent persisted PIT feature snapshot id"
+    );
+}
+
+#[tokio::test]
 async fn default_mode_heuristic_history_can_still_reuse_persisted_snapshots() {
     let store = in_memory_store().await;
     store.seed_fred_metadata().await.unwrap();
