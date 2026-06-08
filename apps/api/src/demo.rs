@@ -113,10 +113,12 @@ pub(crate) fn build_app_data_from_inputs(
         .unwrap_or(assessment_history.as_slice());
     let default_history_start = assessment_history.first().map(|point| point.as_of_date);
     let default_history_end = assessment_history.last().map(|point| point.as_of_date);
-    let scenario_backtest_history_start =
-        scenario_backtest_history.first().map(|point| point.as_of_date);
-    let scenario_backtest_history_end =
-        scenario_backtest_history.last().map(|point| point.as_of_date);
+    let scenario_backtest_history_start = scenario_backtest_history
+        .first()
+        .map(|point| point.as_of_date);
+    let scenario_backtest_history_end = scenario_backtest_history
+        .last()
+        .map(|point| point.as_of_date);
     let output = scoring.score(
         &indicators,
         &observations,

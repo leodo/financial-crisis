@@ -151,9 +151,9 @@ pub(crate) const DEFAULT_FORMAL_DATASET_ID: &str = "formal_v1_main_1990_daily";
 pub(crate) const DEFAULT_FORMAL_LABEL_VERSION: &str = "formal_label_v1_main";
 pub(crate) const DEFAULT_FORMAL_SCENARIO_SET_VERSION: &str = "scenario_v1_main";
 pub(crate) const DEFAULT_FORMAL_MAIN_CONTEXT_WINDOW_SET_ID: &str = "protected_stress_windows_v1";
-pub(crate) const FEATURE_SNAPSHOT_STATUS_READY: &str = "ready";
+pub(crate) const FEATURE_SNAPSHOT_STATUS_READY: &str = fc_domain::FEATURE_SNAPSHOT_STATUS_READY;
 pub(crate) const FEATURE_SNAPSHOT_STATUS_COVERAGE_OR_VISIBILITY_FAILED: &str =
-    "coverage_or_visibility_failed";
+    fc_domain::FEATURE_SNAPSHOT_STATUS_COVERAGE_OR_VISIBILITY_FAILED;
 
 pub async fn run_from_args(args: Vec<String>) -> anyhow::Result<()> {
     commands::run_from_args(args).await

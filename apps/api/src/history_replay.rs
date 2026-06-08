@@ -8,18 +8,15 @@ use fc_domain::{AssessmentHistoryPoint, ProbabilityDiagnostics};
 pub(crate) use cache::should_refresh_full_release_history;
 pub(crate) use cache::{
     expected_prediction_snapshot_method_version, historical_replay_source_watermark,
-    is_formal_main_release,
-    load_cached_historical_replay_output, persist_historical_replay_output,
+    is_formal_main_release, load_cached_historical_replay_output, persist_historical_replay_output,
 };
 pub(crate) use transform::{
     assessment_history_point_from_assessment, historical_output_from_prediction_snapshots,
-    historical_output_from_replay_points,
-    historical_replay_point_draft_from_assessment, merge_historical_outputs,
-    prediction_snapshot_from_assessment,
+    historical_output_from_replay_points, historical_replay_point_draft_from_assessment,
+    merge_historical_outputs, prediction_snapshot_from_assessment,
 };
 
-pub(crate) const HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE: &str =
-    "transitional_snapshot_bridge";
+pub(crate) const HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE: &str = "transitional_snapshot_bridge";
 pub(crate) const HISTORY_SOURCE_RAW_OBSERVATION_REBUILD: &str = "raw_observation_rebuild";
 pub(crate) const HISTORY_SOURCE_RAW_OBSERVATION_REPLAY: &str = "raw_observation_replay";
 pub(crate) const HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY: &str = "raw_pit_feature_replay";

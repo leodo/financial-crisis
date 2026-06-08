@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-01
+最后更新：2026-06-09
 
 已落地进展（2026-06-01）：
 
@@ -12,7 +12,9 @@
 - `historical replay run / point` 已落到 SQLite / domain store，strict/full rebuild 会把历史点级结果写入 replay store；
 - API 在命中同 `history_cache_key + date range + release_id` 的成功 replay run 时，已经会优先读取 replay points，而不是先退回旧 `prediction snapshots`；
 - API 默认历史路径对 `bundle-backed release` 也已改为 `replay-first`：若无可复用 replay cache，会直接基于原始观测全量重建并写回 replay store，而不是静默复用旧 `prediction snapshots`；
-- 但 `analytics_prediction_snapshots` 仍保留较大桥接职责，尚未完全退回到“运行审计 + 兼容视图”的次要角色。
+- API runtime 现在还能在“已有同口径 PIT snapshot，但缺失当天 exact snapshot”时直接按当天 `best_effort PIT` 可见性规则重建同日 `feature_snapshot`，不再把最后一个日期静默记成 prior-snapshot reuse；
+- 本地 SQLite production reload 已实测达到 `2000/2000 raw_pit_feature_replay`，说明默认历史轨迹与 research audit 都已经不再保留 `raw_pit_feature_reuse` 点；
+- `analytics_prediction_snapshots` 因此进一步退回到“当前运行审计 + 兼容视图”的次要角色，但训练/运行两侧的 PIT helper 仍有一部分重复逻辑，尚未完全收敛到共享层。
 
 ## 1. 目标
 

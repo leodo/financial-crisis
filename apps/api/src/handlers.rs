@@ -15,12 +15,12 @@ pub(crate) use research_audit::research_audit;
 
 use crate::{
     data_source::{AssessmentHistoryBuildMode, ServingRuntimePurpose},
+    history_builder::{select_assessment_history, select_backtest_timeline, HistoryQueryWindow},
     history_replay::{
         HISTORY_SOURCE_RAW_OBSERVATION_REBUILD, HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
         HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY, HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE,
         HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE,
     },
-    history_builder::{select_assessment_history, select_backtest_timeline, HistoryQueryWindow},
     AppState,
 };
 
@@ -87,41 +87,52 @@ pub(crate) fn summarize_history_provenance(
     let total_points = history.len();
     let feature_backed_points = history
         .iter()
-        .filter(|point| point.history_source.as_deref() == Some(HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY))
+        .filter(|point| {
+            point.history_source.as_deref() == Some(HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY)
+        })
         .count();
     let reused_feature_snapshot_points = history
         .iter()
-        .filter(|point| point.history_source.as_deref() == Some(HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE))
+        .filter(|point| {
+            point.history_source.as_deref() == Some(HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE)
+        })
         .count();
     let raw_observation_points = history
         .iter()
         .filter(|point| {
             matches!(
                 point.history_source.as_deref(),
-                Some(HISTORY_SOURCE_RAW_OBSERVATION_REPLAY | HISTORY_SOURCE_RAW_OBSERVATION_REBUILD)
+                Some(
+                    HISTORY_SOURCE_RAW_OBSERVATION_REPLAY | HISTORY_SOURCE_RAW_OBSERVATION_REBUILD
+                )
             )
         })
         .count();
     let snapshot_bridge_points = history
         .iter()
-        .filter(|point| point.history_source.as_deref() == Some(HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE))
+        .filter(|point| {
+            point.history_source.as_deref() == Some(HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE)
+        })
         .count();
-    let runtime_only_points = total_points
-        .saturating_sub(
-            feature_backed_points
-                + reused_feature_snapshot_points
-                + raw_observation_points
-                + snapshot_bridge_points,
-        );
+    let runtime_only_points = total_points.saturating_sub(
+        feature_backed_points
+            + reused_feature_snapshot_points
+            + raw_observation_points
+            + snapshot_bridge_points,
+    );
 
     let latest_feature_backed_date = history
         .iter()
-        .filter(|point| point.history_source.as_deref() == Some(HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY))
+        .filter(|point| {
+            point.history_source.as_deref() == Some(HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY)
+        })
         .map(|point| point.as_of_date)
         .max();
     let latest_reused_feature_snapshot_date = history
         .iter()
-        .filter(|point| point.history_source.as_deref() == Some(HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE))
+        .filter(|point| {
+            point.history_source.as_deref() == Some(HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE)
+        })
         .map(|point| point.as_of_date)
         .max();
     let latest_raw_observation_date = history
@@ -129,14 +140,18 @@ pub(crate) fn summarize_history_provenance(
         .filter(|point| {
             matches!(
                 point.history_source.as_deref(),
-                Some(HISTORY_SOURCE_RAW_OBSERVATION_REPLAY | HISTORY_SOURCE_RAW_OBSERVATION_REBUILD)
+                Some(
+                    HISTORY_SOURCE_RAW_OBSERVATION_REPLAY | HISTORY_SOURCE_RAW_OBSERVATION_REBUILD
+                )
             )
         })
         .map(|point| point.as_of_date)
         .max();
     let latest_snapshot_bridge_date = history
         .iter()
-        .filter(|point| point.history_source.as_deref() == Some(HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE))
+        .filter(|point| {
+            point.history_source.as_deref() == Some(HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE)
+        })
         .map(|point| point.as_of_date)
         .max();
     let latest_replay_run_id = history

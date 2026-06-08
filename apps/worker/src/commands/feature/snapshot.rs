@@ -1,18 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::bail;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{NaiveDate, Utc};
 use fc_domain::{
-    formal_observation_feature_value_from_history, observation_history_for_indicator_where,
-    FeatureSnapshotRecord, FormalObservationFeatureTransform, Frequency, Indicator, Observation,
-    RiskDimension, FORMAL_OBSERVATION_FEATURE_SPECS,
+    build_formal_observation_feature_map, formal_feature_snapshot_visibility_status,
+    FeatureSnapshotRecord, Frequency, Indicator, Observation, RiskDimension,
 };
 use fc_scoring::ScoringEngine;
 use fc_storage::SqliteStore;
 
-use super::coverage::{coverage_summary, find_dimension_score, has_main_dataset_core_features};
+use super::coverage::{coverage_summary, find_dimension_score};
 use super::options::{FeatureSnapshotBuildOptions, FeatureSnapshotListOptions, PointInTimeMode};
-use super::visibility::{observation_is_visible_for_date, observation_visible_at_for_mode};
+use super::visibility::observation_is_visible_for_date;
 
 pub(crate) async fn research_feature_snapshot_build(args: &[String]) -> anyhow::Result<()> {
     let options = FeatureSnapshotBuildOptions::parse(args)?;
@@ -229,16 +228,10 @@ pub(crate) fn build_formal_feature_snapshot_for_date(
         &options.market_scope,
         |observation| observation_is_visible_for_date(observation, as_of_date, point_in_time_mode),
     );
-    let mut features = BTreeMap::new();
-    let mut visible_candidates = Vec::new();
-
-    insert_formal_observation_features(
-        &mut features,
-        &mut visible_candidates,
-        observations,
-        as_of_date,
-        point_in_time_mode,
-    );
+    let observation_feature_map =
+        build_formal_observation_feature_map(observations, as_of_date, point_in_time_mode.as_str());
+    let latest_visible_at = observation_feature_map.latest_visible_at;
+    let mut features = observation_feature_map.features;
 
     features.insert(
         "overall_score".to_string(),
@@ -266,9 +259,8 @@ pub(crate) fn build_formal_feature_snapshot_for_date(
         external_feature_coverage,
         coverage_score,
     ) = coverage_summary(&output.indicator_risks, as_of_date);
-    let latest_visible_at = visible_candidates.into_iter().max();
     let visibility_status =
-        feature_snapshot_visibility_status(&features, coverage_score, latest_visible_at);
+        formal_feature_snapshot_visibility_status(&features, coverage_score, latest_visible_at);
 
     Ok(FeatureSnapshotRecord {
         as_of_date,
@@ -322,60 +314,4 @@ pub(crate) fn formal_feature_dates(
     }
     dates.sort();
     dates
-}
-
-fn observations_for_indicator<'a>(
-    observations: &'a [Observation],
-    indicator_id: &str,
-    as_of_date: NaiveDate,
-    point_in_time_mode: PointInTimeMode,
-) -> Vec<&'a Observation> {
-    observation_history_for_indicator_where(observations, indicator_id, as_of_date, |observation| {
-        observation_is_visible_for_date(observation, as_of_date, point_in_time_mode)
-    })
-}
-
-fn insert_formal_observation_features(
-    features: &mut BTreeMap<String, f64>,
-    visible_candidates: &mut Vec<DateTime<Utc>>,
-    observations: &[Observation],
-    as_of_date: NaiveDate,
-    point_in_time_mode: PointInTimeMode,
-) {
-    for spec in FORMAL_OBSERVATION_FEATURE_SPECS {
-        let history = observations_for_indicator(
-            observations,
-            spec.indicator_id,
-            as_of_date,
-            point_in_time_mode,
-        );
-        if let Some(value) = formal_observation_feature_value_from_history(&history, spec.transform)
-        {
-            features.insert(spec.feature_name.to_string(), crate::round6(value));
-        }
-        if matches!(spec.transform, FormalObservationFeatureTransform::Latest) {
-            if let Some(latest) = history.last() {
-                if let Some(visible_at) =
-                    observation_visible_at_for_mode(latest, point_in_time_mode)
-                {
-                    visible_candidates.push(visible_at);
-                }
-            }
-        }
-    }
-}
-
-fn feature_snapshot_visibility_status(
-    features: &BTreeMap<String, f64>,
-    coverage_score: f64,
-    latest_visible_at: Option<DateTime<Utc>>,
-) -> &'static str {
-    if latest_visible_at.is_none()
-        || coverage_score < 0.70
-        || !has_main_dataset_core_features(features)
-    {
-        crate::FEATURE_SNAPSHOT_STATUS_COVERAGE_OR_VISIBILITY_FAILED
-    } else {
-        crate::FEATURE_SNAPSHOT_STATUS_READY
-    }
 }

@@ -2,7 +2,9 @@ use std::{env, fs};
 
 use anyhow::Context;
 use chrono::{Duration, NaiveDate, Utc};
-use fc_domain::{AssessmentHistoryPoint, DataMode, ModelReleaseRecord, Observation, ProbabilityBundle};
+use fc_domain::{
+    AssessmentHistoryPoint, DataMode, ModelReleaseRecord, Observation, ProbabilityBundle,
+};
 use fc_storage::{PostgresStore, SqliteStore};
 
 use crate::{
@@ -855,9 +857,9 @@ mod tests {
         let replay_points = replay_dates
             .iter()
             .map(|date| {
-                let in_regional_bank_window =
-                    *date >= chrono::NaiveDate::from_ymd_opt(2023, 2, 15).unwrap()
-                        && *date <= chrono::NaiveDate::from_ymd_opt(2023, 3, 20).unwrap();
+                let in_regional_bank_window = *date
+                    >= chrono::NaiveDate::from_ymd_opt(2023, 2, 15).unwrap()
+                    && *date <= chrono::NaiveDate::from_ymd_opt(2023, 3, 20).unwrap();
                 let overall_score = if in_regional_bank_window { 78.0 } else { 52.0 };
                 let p_20d = if in_regional_bank_window { 0.36 } else { 0.08 };
                 let posture = if in_regional_bank_window {
@@ -896,11 +898,18 @@ mod tests {
         assert!(
             data.backtests
                 .iter()
-                .any(|scenario| scenario.signal_source == fc_domain::BacktestSignalSource::RealHistory),
+                .any(|scenario| scenario.signal_source
+                    == fc_domain::BacktestSignalSource::RealHistory),
             "scenario backtests should reuse persisted long replay history when it exists"
         );
-        assert_eq!(data.assessment.backtest_summary.history_start, Some(replay_from));
-        assert_eq!(data.assessment.backtest_summary.history_end, Some(replay_to));
+        assert_eq!(
+            data.assessment.backtest_summary.history_start,
+            Some(replay_from)
+        );
+        assert_eq!(
+            data.assessment.backtest_summary.history_end,
+            Some(replay_to)
+        );
         assert_eq!(
             data.assessment.backtest_summary.rolling_audit.history_start,
             Some(replay_from)
@@ -909,19 +918,17 @@ mod tests {
             data.assessment.backtest_summary.rolling_audit.history_end,
             Some(replay_to)
         );
-        assert!(
-            data.assessment
-                .backtest_summary
-                .coverage_scope_note
-                .contains("persisted replay 历史")
-        );
-        assert!(
-            data.assessment
-                .backtest_summary
-                .rolling_audit
-                .scope_note
-                .contains("persisted replay 历史")
-        );
+        assert!(data
+            .assessment
+            .backtest_summary
+            .coverage_scope_note
+            .contains("persisted replay 历史"));
+        assert!(data
+            .assessment
+            .backtest_summary
+            .rolling_audit
+            .scope_note
+            .contains("persisted replay 历史"));
 
         let _ = std::fs::remove_file(sqlite_path);
         let _ = std::fs::remove_file(bundle_path);
