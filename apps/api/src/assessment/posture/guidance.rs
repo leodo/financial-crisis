@@ -76,6 +76,7 @@ pub(in super::super) fn build_time_to_risk_bucket(
         trigger_score,
         external_shock_score,
         breadth_score,
+        thresholds,
     );
     let prepare_probability_plateau = prepare_probability_plateau_signal(
         probabilities,

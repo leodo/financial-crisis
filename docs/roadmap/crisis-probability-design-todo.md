@@ -647,6 +647,10 @@
          1. 先把 `structural carry` 的 `structural_score floor` 下调到 `58.0`，补回 `1990-07-25` 这类 `p20d` 已回落但 `p60d / structural / overall` 仍高的 continuity 点；
          2. 再补一条只保留 `1` 天状态、不主动升级姿态的 `carry grace`，允许 `1990-07-26` 这种 `p20d` 短暂塌陷但 `p60d=0.77 / overall=42.3 / structural=55.0` 仍高的冷却日不立刻清空 continuity state；
          3. `2026-06-07` 重新跑 `strict_rebuild` 后，`1990-07-25` 与 `1990-07-27..29` 已恢复为 `prepare/months + prepare_history_hysteresis`，而 `1990-07-26` 仍保持 `normal/normal`，说明这条修复补的是 scenario continuity，不是把本应冷却的一天硬拉成高风险。
+       - [x] 已把 `prepare_continuity_bridge` 的 `p20d/p60d` 从 legacy `18% / 45%` 硬门槛改成 runtime 派生 continuity floor
+         1. `p20d` 现在跟随 `hedge_p20d` 派生，`p60d` 跟随 `elevated_weeks_p60d` 派生，再限制在 legacy 上限之内；
+         2. formal-main 低阈值场景下，`0.13 / 0.23` 这类长窗压力点现在可以稳定进入 `prepare_continuity_bridge` 与 `months`，不再被旧硬门槛压回 `normal`；
+         3. 对 legacy / 高阈值路径仍保持原有上限，不把这次修复扩成无界放宽。
        - [ ] 但 `2026-06-07` 正式 `release review` 仍把 `1987 / 1990-1993 / 1998` 记为 scenario-level `posture_continuity_failure`，说明点位修复已生效，但整段 `3/5 sustained` 连续性还没完全恢复
       - [ ] 最后清 `residual_review_l3_failure`，确认剩余阻塞不是 gate/continuity 遗留
    - [ ] 重跑 release review / rolling audit / runtime regime audit

@@ -183,6 +183,41 @@ fn time_to_risk_bucket_uses_support_actionability_for_continuity_without_trigger
 }
 
 #[test]
+fn time_to_risk_bucket_uses_runtime_derived_prepare_continuity_floors() {
+    let bucket = build_time_to_risk_bucket(
+        &ProbabilityBlock {
+            p_5d: 0.004,
+            p_20d: 0.13,
+            p_60d: 0.22,
+        },
+        Some(0.23),
+        Some(&ActionabilityBlock {
+            prepare: 0.245,
+            hedge: 0.02,
+            defend: 0.0,
+        }),
+        Some(&ActionabilityBlock {
+            prepare: 0.245,
+            hedge: 0.02,
+            defend: 0.0,
+        }),
+        53.5,
+        62.6,
+        42.3,
+        39.0,
+        30.0,
+        &quiet_jpy_carry(20.0),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.12,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.05,
+        },
+    );
+
+    assert_eq!(bucket, TimeToRiskBucket::Months);
+}
+
+#[test]
 fn time_to_risk_bucket_promotes_months_for_probability_plateau_without_actionability_support() {
     let bucket = build_time_to_risk_bucket(
         &ProbabilityBlock {
