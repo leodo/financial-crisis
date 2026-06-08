@@ -14,6 +14,7 @@ pub mod probability_bundle;
 pub mod quality;
 pub mod risk;
 pub mod scenario_catalog;
+pub mod scenario_data_coverage;
 pub mod source;
 pub mod stress_window;
 
@@ -33,5 +34,6 @@ pub use probability_bundle::*;
 pub use quality::*;
 pub use risk::*;
 pub use scenario_catalog::*;
+pub use scenario_data_coverage::*;
 pub use source::*;
 pub use stress_window::*;

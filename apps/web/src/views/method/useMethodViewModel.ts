@@ -41,6 +41,12 @@ export function useMethodViewModel({
   );
   const protectedCatalogId = compactTechnicalId(method.protected_stress_window_catalog.catalog_id);
   const protectedCatalogSource = compactFileReference(method.protected_stress_window_catalog.source);
+  const scenarioCoverageCatalogId = compactTechnicalId(
+    method.scenario_data_coverage_catalog.catalog_id
+  );
+  const scenarioCoverageCatalogSource = compactFileReference(
+    method.scenario_data_coverage_catalog.source
+  );
   const actionModelVersion = assessment.method.actionability_model_version
     ? compactTechnicalId(assessment.method.actionability_model_version)
     : null;
@@ -200,6 +206,36 @@ export function useMethodViewModel({
       note: source.note,
       meta: `${source.count}`
     }));
+  const scenarioCoverageRecords = method.scenario_data_coverage_catalog.records;
+  const scenarioCoverageMetrics: MetricItem[] = [
+    {
+      label: "正式主训练",
+      value: `${scenarioCoverageRecords.filter((record) => record.usable_for_main_training).length}`
+    },
+    {
+      label: "扩展训练",
+      value: `${scenarioCoverageRecords.filter((record) => record.usable_for_extension_training).length}`
+    },
+    {
+      label: "受保护压力",
+      value: `${scenarioCoverageRecords.filter((record) => record.usable_for_protected_stress).length}`
+    },
+    {
+      label: "历史类比",
+      value: `${scenarioCoverageRecords.filter((record) => record.usable_for_historical_analog).length}`
+    }
+  ];
+  const scenarioCoverageRows = scenarioCoverageRecords.map((record) => ({
+    id: record.scenario_id,
+    scenarioLabel: record.scenario_label,
+    scenarioId: record.scenario_id,
+    roleSummary: record.recommended_role,
+    gradeSummary: `${record.coverage_grade} / ${record.point_in_time_mode}`,
+    sourceSummary: record.free_sources.join("、"),
+    statusSummary: record.current_status,
+    gapSummary:
+      record.blocking_gaps.length > 0 ? record.blocking_gaps.join("；") : "当前没有额外阻断缺口。"
+  }));
 
   const limitations = [
     methodContent.runtimeBoundarySummary,
@@ -223,6 +259,11 @@ export function useMethodViewModel({
     overlayHeadlineMetrics,
     overlayHorizonRows,
     overlayAuditRows,
+    scenarioCoverageMetrics,
+    scenarioCoverageRows,
+    scenarioCoverageCatalogId,
+    scenarioCoverageCatalogSource,
+    scenarioCoverageCatalogNote: humanizeMethodNote(method.scenario_data_coverage_catalog.note),
     historyProvenanceMetrics,
     historyProvenanceRows,
     historyProvenanceNote: historyProvenance.note,

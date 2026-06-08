@@ -40,6 +40,11 @@ export default function MethodView({
     overlayHeadlineMetrics,
     overlayHorizonRows,
     overlayAuditRows,
+    scenarioCoverageMetrics,
+    scenarioCoverageRows,
+    scenarioCoverageCatalogId,
+    scenarioCoverageCatalogSource,
+    scenarioCoverageCatalogNote,
     historyProvenanceMetrics,
     historyProvenanceRows,
     historyProvenanceNote,
@@ -155,6 +160,43 @@ export default function MethodView({
             ))}
           </ResponsiveTable>
         ) : null}
+      </section>
+
+      <section className="surface">
+        <SurfaceHeader title="历史场景数据覆盖" icon={History} />
+        <RuleBox label="怎么看">{methodContent.scenarioCoverageIntro}</RuleBox>
+        <MetricPairsGrid
+          pairs={[
+            ["覆盖版本", scenarioCoverageCatalogId.value],
+            ["市场范围", method.scenario_data_coverage_catalog.market_scope.toUpperCase()],
+            ["场景数量", `${method.scenario_data_coverage_catalog.records.length}`]
+          ]}
+        />
+        <MetricGrid items={scenarioCoverageMetrics} />
+        <RuleBox label="配置来源">
+          <span title={scenarioCoverageCatalogSource.hint}>
+            {scenarioCoverageCatalogSource.value}
+          </span>
+        </RuleBox>
+        <RuleBox label="目录说明">{scenarioCoverageCatalogNote}</RuleBox>
+        {method.scenario_data_coverage_catalog.warning ? (
+          <RuleBox label="配置告警">{method.scenario_data_coverage_catalog.warning}</RuleBox>
+        ) : null}
+        <ResponsiveTable
+          className="wide-table"
+          columns={["场景", "推荐角色", "覆盖 / PIT", "免费主源", "当前状态 / 主要缺口"]}
+          note={methodContent.scenarioCoverageTableNote}
+        >
+          {scenarioCoverageRows.map((row) => (
+            <tr key={row.id}>
+              <StackedTableCell title={row.scenarioLabel} details={row.scenarioId} />
+              <td>{row.roleSummary}</td>
+              <td>{row.gradeSummary}</td>
+              <td>{row.sourceSummary}</td>
+              <StackedTableCell title={row.statusSummary} details={row.gapSummary} />
+            </tr>
+          ))}
+        </ResponsiveTable>
       </section>
 
       <section className="surface">

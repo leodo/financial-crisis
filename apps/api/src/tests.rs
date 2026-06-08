@@ -348,6 +348,8 @@ async fn assessment_method_endpoint_returns_protected_stress_window_catalog() {
     assert!(json["history_provenance"]["sources"].is_array());
     assert!(json["protected_stress_window_catalog"]["catalog_id"].is_string());
     assert!(json["protected_stress_window_catalog"]["windows"].is_array());
+    assert!(json["scenario_data_coverage_catalog"]["catalog_id"].is_string());
+    assert!(json["scenario_data_coverage_catalog"]["records"].is_array());
     assert!(json["runtime_thresholds"]["prepare_p60d"].is_number());
     assert!(json["runtime_thresholds"]["hedge_p20d"].is_number());
     assert!(json["runtime_thresholds"]["defend_p5d"].is_number());

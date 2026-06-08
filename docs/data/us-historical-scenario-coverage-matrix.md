@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-01
+最后更新：2026-06-09
 
 ## 1. 目标
 
@@ -208,6 +208,11 @@ blocking_gaps_json
    - 范围已从旧版 `1998-01-05 -> 2026-05-31` 恢复为 `1990-01-02 -> 2026-05-31`；
    - `jp_rates_call_rate` 不再被当作 formal main 硬依赖，`STLFSI` 仅从 `1993-12-31` 起进入核心/触发硬覆盖；
    - 当前 formal main 的主问题已不再是历史覆盖起点，而是后续训练是否能恢复 timely warning 与 actionability。
+4. `scenario_data_coverage_v1`
+   - 已新增机器可读配置 `config/research_scenario_data_coverage.us.json`；
+   - API `/api/assessment/method` 已直接返回 `scenario_data_coverage_catalog`；
+   - 方法页现在可以把“推荐角色 / 覆盖等级 / PIT 口径 / 免费主源 / 主要缺口”直接展示给操作者；
+   - 后续训练、回测、类比和 UI 解释可以复用同一份场景覆盖口径，不再靠文档人工同步。
 
 后续编码顺序建议是：
 

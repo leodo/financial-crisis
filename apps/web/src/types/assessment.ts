@@ -313,10 +313,36 @@ export interface HistoryProvenanceSummary {
   sources: HistoryProvenanceSourceSummary[];
 }
 
+export interface ScenarioDataCoverageRecord {
+  scenario_id: string;
+  scenario_label: string;
+  recommended_role: string;
+  coverage_grade: string;
+  point_in_time_mode: string;
+  usable_for_main_training: boolean;
+  usable_for_extension_training: boolean;
+  usable_for_protected_stress: boolean;
+  usable_for_historical_analog: boolean;
+  free_sources: string[];
+  current_status: string;
+  blocking_gaps: string[];
+}
+
+export interface ScenarioDataCoverageCatalog {
+  catalog_id: string;
+  scenario_catalog_id: string;
+  market_scope: string;
+  note: string;
+  source: string;
+  warning: string | null;
+  records: ScenarioDataCoverageRecord[];
+}
+
 export interface AssessmentMethodResponse {
   method: AssessmentMethodVersions;
   note: string;
   history_provenance: HistoryProvenanceSummary;
   protected_stress_window_catalog: ProtectedStressWindowCatalog;
+  scenario_data_coverage_catalog: ScenarioDataCoverageCatalog;
   runtime_thresholds: RuntimeThresholdDiagnostics;
 }

@@ -384,6 +384,7 @@ pub async fn assessment_method(State(state): State<Arc<AppState>>) -> Json<serde
         "note": note,
         "history_provenance": history_provenance,
         "protected_stress_window_catalog": data.protected_stress_window_catalog,
+        "scenario_data_coverage_catalog": data.scenario_data_coverage_catalog,
         "runtime_thresholds": data.runtime_thresholds,
     }))
 }

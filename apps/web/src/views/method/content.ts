@@ -18,6 +18,10 @@ export const methodContent = {
     "当前 active release 还没有训练完成并挂载到线上 bundle 的 family overlay head；如果这里只看到审计元数据，说明研究侧已经开始统计 family 样本，但 runtime 仍主要由 base head 决定。",
   overlayTableNote:
     "先看 scenario 数和 split 行数，再看 gate active 行数，最后看 note，判断这个 family overlay 是否只是概念上的候选，还是已经具备真正训练条件。",
+  scenarioCoverageIntro:
+    "这张表回答的是每个历史样本到底能不能信、能用于主训练还是只能做扩展研究。先看推荐角色和覆盖等级，再看 PIT 口径、免费主源和主要缺口。",
+  scenarioCoverageTableNote:
+    "覆盖等级描述的是免费历史数据能把该样本还原到什么程度，不代表模型已经在这个样本上训练达标。",
   protectedCatalogTitle: "受保护压力窗口目录",
   runtimeBoundarySummary:
     "这个页面把危机概率、动作概率、风险时距和执行节奏拆开解释。历史回放会优先复用同口径缓存；如果缓存口径不匹配，系统才会回退到已落库快照或按原始观测重建。",

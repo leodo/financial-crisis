@@ -1,0 +1,238 @@
+{
+  "catalog_id": "scenario_data_coverage_v1",
+  "scenario_catalog_id": "scenario_v1_main",
+  "market_scope": "financial_system",
+  "note": "美国历史场景数据覆盖配置。它把主训练、扩展训练、受保护压力窗口和历史类比所依赖的免费数据覆盖显式写成同一份机器可读口径，避免不同模块各自维护一套场景可用性判断。",
+  "records": [
+    {
+      "scenario_id": "us_black_monday_1987",
+      "scenario_label": "1987 黑色星期一",
+      "recommended_role": "extension_training + historical_analog_only",
+      "coverage_grade": "C",
+      "point_in_time_mode": "best_effort",
+      "usable_for_main_training": false,
+      "usable_for_extension_training": true,
+      "usable_for_protected_stress": false,
+      "usable_for_historical_analog": true,
+      "free_sources": [
+        "DEXJPUS",
+        "DFF/FEDFUNDS",
+        "BAA10Y",
+        "UNRATE",
+        "INDPRO",
+        "HOUST",
+        "GS10/GS2",
+        "NFCI"
+      ],
+      "current_status": "可做急性冲击扩展包",
+      "blocking_gaps": [
+        "缺 VIX",
+        "无日频 Treasury 曲线",
+        "无 EDGAR 事件层"
+      ]
+    },
+    {
+      "scenario_id": "us_early_90s_banking_stress",
+      "scenario_label": "1990-1993 美国银行与衰退压力",
+      "recommended_role": "protected_stress + extension_training",
+      "coverage_grade": "B",
+      "point_in_time_mode": "best_effort",
+      "usable_for_main_training": false,
+      "usable_for_extension_training": true,
+      "usable_for_protected_stress": true,
+      "usable_for_historical_analog": true,
+      "free_sources": [
+        "VIXCLS",
+        "Treasury curve",
+        "BAA10Y",
+        "DFF",
+        "NFCI",
+        "UNRATE",
+        "INDPRO",
+        "HOUST",
+        "DEXJPUS"
+      ],
+      "current_status": "主面板可覆盖",
+      "blocking_gaps": [
+        "事件层弱",
+        "STLFSI 尚未覆盖这段早期年份"
+      ]
+    },
+    {
+      "scenario_id": "us_bond_massacre_1994",
+      "scenario_label": "1994 联储加息与债市暴跌",
+      "recommended_role": "protected_stress + extension_training",
+      "coverage_grade": "B",
+      "point_in_time_mode": "best_effort",
+      "usable_for_main_training": false,
+      "usable_for_extension_training": true,
+      "usable_for_protected_stress": true,
+      "usable_for_historical_analog": true,
+      "free_sources": [
+        "Treasury curve",
+        "BAA10Y",
+        "DFF",
+        "NFCI",
+        "UNRATE",
+        "INDPRO",
+        "HOUST",
+        "DEXJPUS"
+      ],
+      "current_status": "已可配置入目录",
+      "blocking_gaps": [
+        "需要明确 Orange County / rate shock 的 episode 模板",
+        "不宜直接当主危机正例"
+      ]
+    },
+    {
+      "scenario_id": "us_ltcm_1998",
+      "scenario_label": "1998 LTCM 与俄罗斯违约冲击",
+      "recommended_role": "extension_training",
+      "coverage_grade": "B",
+      "point_in_time_mode": "best_effort",
+      "usable_for_main_training": false,
+      "usable_for_extension_training": true,
+      "usable_for_protected_stress": false,
+      "usable_for_historical_analog": true,
+      "free_sources": [
+        "VIXCLS",
+        "Treasury curve",
+        "BAA10Y",
+        "DFF",
+        "NFCI",
+        "UNRATE",
+        "DEXJPUS"
+      ],
+      "current_status": "可作为急性扩展样本",
+      "blocking_gaps": [
+        "事件层仍弱",
+        "场景窗口需要与 5d/20d acute template 对齐"
+      ]
+    },
+    {
+      "scenario_id": "us_dotcom_unwind_2000",
+      "scenario_label": "2000-2001 科网泡沫出清",
+      "recommended_role": "protected_stress + extension_training",
+      "coverage_grade": "A-",
+      "point_in_time_mode": "best_effort",
+      "usable_for_main_training": false,
+      "usable_for_extension_training": true,
+      "usable_for_protected_stress": true,
+      "usable_for_historical_analog": true,
+      "free_sources": [
+        "VIXCLS",
+        "Treasury curve",
+        "BAA10Y",
+        "DFF",
+        "NFCI",
+        "STLFSI4",
+        "UNRATE",
+        "INDPRO",
+        "HOUST",
+        "DEXJPUS"
+      ],
+      "current_status": "数据覆盖已接近主面板标准",
+      "blocking_gaps": [
+        "不应直接混成银行危机主正例",
+        "需要 role/episode 约束"
+      ]
+    },
+    {
+      "scenario_id": "us_gfc_2008",
+      "scenario_label": "2007-2009 全球金融危机",
+      "recommended_role": "main_training",
+      "coverage_grade": "A",
+      "point_in_time_mode": "best_effort + partial strict",
+      "usable_for_main_training": true,
+      "usable_for_extension_training": false,
+      "usable_for_protected_stress": false,
+      "usable_for_historical_analog": true,
+      "free_sources": [
+        "主面板核心因子",
+        "SEC 事件层"
+      ],
+      "current_status": "已是正式主样本",
+      "blocking_gaps": [
+        "仍缺更完整 strict PIT",
+        "仍缺更多信用代理"
+      ]
+    },
+    {
+      "scenario_id": "us_funding_stress_2011",
+      "scenario_label": "2011 美欧融资压力",
+      "recommended_role": "protected_stress + extension_training",
+      "coverage_grade": "A-",
+      "point_in_time_mode": "best_effort + partial strict",
+      "usable_for_main_training": false,
+      "usable_for_extension_training": true,
+      "usable_for_protected_stress": true,
+      "usable_for_historical_analog": true,
+      "free_sources": [
+        "主面板核心因子",
+        "SEC 事件层"
+      ],
+      "current_status": "已适合 protected stress / extension",
+      "blocking_gaps": [
+        "需要明确定义何时允许 hedge",
+        "需要明确定义何时禁止 defend 主训练"
+      ]
+    },
+    {
+      "scenario_id": "us_covid_liquidity_2020",
+      "scenario_label": "2020 疫情流动性冲击",
+      "recommended_role": "main_training",
+      "coverage_grade": "A",
+      "point_in_time_mode": "best_effort + partial strict",
+      "usable_for_main_training": true,
+      "usable_for_extension_training": false,
+      "usable_for_protected_stress": false,
+      "usable_for_historical_analog": true,
+      "free_sources": [
+        "主面板核心因子",
+        "SEC 事件层"
+      ],
+      "current_status": "已是正式主样本",
+      "blocking_gaps": [
+        "仍需更严格 replay 审计验证"
+      ]
+    },
+    {
+      "scenario_id": "us_rate_shock_2022",
+      "scenario_label": "2022 联储加息与久期冲击",
+      "recommended_role": "protected_stress",
+      "coverage_grade": "A",
+      "point_in_time_mode": "best_effort + partial strict",
+      "usable_for_main_training": false,
+      "usable_for_extension_training": false,
+      "usable_for_protected_stress": true,
+      "usable_for_historical_analog": true,
+      "free_sources": [
+        "主面板核心因子",
+        "SEC 事件层"
+      ],
+      "current_status": "适合 posture / protected stress",
+      "blocking_gaps": [
+        "默认不作为主危机正例"
+      ]
+    },
+    {
+      "scenario_id": "us_regional_banks_2023",
+      "scenario_label": "2023 美国区域银行危机",
+      "recommended_role": "main_training",
+      "coverage_grade": "A",
+      "point_in_time_mode": "best_effort + partial strict",
+      "usable_for_main_training": true,
+      "usable_for_extension_training": false,
+      "usable_for_protected_stress": false,
+      "usable_for_historical_analog": true,
+      "free_sources": [
+        "主面板核心因子",
+        "SEC 事件层"
+      ],
+      "current_status": "已是正式主样本",
+      "blocking_gaps": [
+        "还需和 2008 一起支撑更稳的 action episode 评估"
+      ]
+    }
+  ]
+}
