@@ -157,6 +157,7 @@ fn test_assessment_snapshot(
             scenario_count: 1,
             real_scenario_count: 1,
             fallback_scenario_count: 0,
+            coverage_scope_note: "test coverage scope".to_string(),
             structural_warning_rate: 0.7,
             timely_warning_rate: 0.375,
             missed_rate: 0.625,

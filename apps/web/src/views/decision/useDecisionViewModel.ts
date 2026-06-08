@@ -14,6 +14,7 @@ import {
 } from "./charts";
 import {
   buildActionPlanMetrics,
+  buildBacktestCoverageScopeText,
   buildAnalogRows,
   buildBacktestHistoryCoverageText,
   buildBacktestSummaryMetrics,
@@ -172,6 +173,10 @@ export function useDecisionViewModel({
     () => buildBacktestHistoryCoverageText(assessment.backtest_summary),
     [assessment.backtest_summary]
   );
+  const backtestCoverageScopeText = useMemo(
+    () => buildBacktestCoverageScopeText(assessment.backtest_summary),
+    [assessment.backtest_summary]
+  );
   const rollingAuditMetrics = useMemo(
     () => buildRollingAuditMetrics(assessment),
     [assessment]
@@ -212,6 +217,7 @@ export function useDecisionViewModel({
     jpyCarryMetrics,
     backtestSummaryMetrics,
     backtestHistoryCoverageText,
+    backtestCoverageScopeText,
     rollingAuditMetrics,
     rollingAuditBoundaryText,
     rollingAuditEpisodes

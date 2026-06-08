@@ -14,6 +14,10 @@ import type {
   BacktestWindowPoint
 } from "../../types";
 import type { LineChartModel } from "../decision/charts";
+import {
+  buildBacktestCoverageScopeText,
+  buildBacktestHistoryCoverageText
+} from "../shared/backtestCopy";
 import { backtestsContent } from "./content";
 
 export function useBacktestsViewModel({
@@ -48,8 +52,8 @@ export function useBacktestsViewModel({
     ["平均结构提前量", formatNumber(assessment.backtest_summary.avg_structural_lead_time_days, "d")],
     ["平均动作提前量", formatNumber(assessment.backtest_summary.avg_lead_time_days, "d")],
     ["预警折返", formatNumber(assessment.backtest_summary.total_false_positive_count)],
-    ["真实样本", formatNumber(assessment.backtest_summary.real_scenario_count)],
-    ["模板样本", formatNumber(assessment.backtest_summary.fallback_scenario_count)]
+    ["本地覆盖场景", formatNumber(assessment.backtest_summary.real_scenario_count)],
+    ["模板参照场景", formatNumber(assessment.backtest_summary.fallback_scenario_count)]
   ] as Array<[string, string]>;
 
   const rollingMetrics = [
@@ -66,10 +70,8 @@ export function useBacktestsViewModel({
     ]
   ] as Array<[string, string]>;
 
-  const historyRange =
-    assessment.backtest_summary.history_start && assessment.backtest_summary.history_end
-      ? `${formatDate(assessment.backtest_summary.history_start)} - ${formatDate(assessment.backtest_summary.history_end)}`
-      : backtestsContent.noHistoryRange;
+  const historyRange = buildBacktestHistoryCoverageText(assessment.backtest_summary);
+  const coverageScopeText = buildBacktestCoverageScopeText(assessment.backtest_summary);
 
   const currentPosture = postureLabel(assessment.posture);
   const headlineMetrics = [
@@ -111,6 +113,7 @@ export function useBacktestsViewModel({
     summaryMetrics,
     rollingMetrics,
     historyRange,
+    coverageScopeText,
     currentPosture,
     scenarioRows,
     episodeRows

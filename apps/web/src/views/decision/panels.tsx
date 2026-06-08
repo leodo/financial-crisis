@@ -259,11 +259,13 @@ export function DecisionJpyCarryPanel({
 export function DecisionBacktestSummaryPanel({
   assessment,
   backtestSummaryMetrics,
-  historyCoverageText
+  historyCoverageText,
+  coverageScopeText
 }: {
   assessment: AssessmentSnapshot;
   backtestSummaryMetrics: MetricItem[];
   historyCoverageText: string;
+  coverageScopeText: string;
 }) {
   return (
     <section className="surface">
@@ -272,8 +274,9 @@ export function DecisionBacktestSummaryPanel({
         {humanizeNarrativeCopy(assessment.backtest_summary.summary)}
       </RuleBox>
       <MetricGrid items={backtestSummaryMetrics} />
+      <RuleBox label="口径区分">{humanizeNarrativeCopy(coverageScopeText)}</RuleBox>
       <div className="surface-grid">
-        <RuleBox label="历史覆盖">{historyCoverageText}</RuleBox>
+        <RuleBox label="默认运行历史窗口">{historyCoverageText}</RuleBox>
         <RuleBox label="当前组合约束">
           {`风险档位 ${assessment.user_preferences.profile === "neutral" ? "中性" : assessment.user_preferences.profile === "conservative" ? "保守" : "进取"}，现金底线 ${assessment.user_preferences.cash_floor_pct.toFixed(0)}%，风险资产上限 ${assessment.user_preferences.max_equity_cap_pct.toFixed(0)}%，杠杆上限 ${assessment.user_preferences.max_leverage_pct.toFixed(0)}%，期权保护偏好 ${assessment.user_preferences.option_overlay_preference_pct.toFixed(0)}%。`}
         </RuleBox>

@@ -98,8 +98,8 @@ export function dataModeLabel(mode: DataMode): string {
 
 export function backtestSignalSourceLabel(source: BacktestSignalSource): string {
   const labels: Record<BacktestSignalSource, string> = {
-    real_history: "真实历史",
-    fallback_template: "模板参考"
+    real_history: "本地窗口覆盖",
+    fallback_template: "模板参照"
   };
   return labels[source];
 }

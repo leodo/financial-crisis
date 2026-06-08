@@ -8,6 +8,10 @@ import {
 } from "../../format";
 import type { AssessmentMethodResponse, AssessmentSnapshot } from "../../types";
 import type { MetricItem } from "../shared/panelHelpers";
+import {
+  buildBacktestCoverageScopeText,
+  buildBacktestHistoryCoverageText
+} from "../shared/backtestCopy";
 import type { DecisionRollingAuditEpisodeRow } from "./builderTypes";
 import { describeRollingAuditBoundary } from "./logic";
 
@@ -37,11 +41,11 @@ export function buildBacktestSummaryMetrics(
       value: formatNumber(assessment.backtest_summary.total_false_positive_count)
     },
     {
-      label: "真实样本",
+      label: "本地覆盖场景",
       value: formatNumber(assessment.backtest_summary.real_scenario_count)
     },
     {
-      label: "模板样本",
+      label: "模板参照场景",
       value: formatNumber(assessment.backtest_summary.fallback_scenario_count)
     },
     {
@@ -51,13 +55,7 @@ export function buildBacktestSummaryMetrics(
   ];
 }
 
-export function buildBacktestHistoryCoverageText(
-  backtestSummary: AssessmentSnapshot["backtest_summary"]
-) {
-  return backtestSummary.history_start && backtestSummary.history_end
-    ? `${formatDate(backtestSummary.history_start)} - ${formatDate(backtestSummary.history_end)}`
-    : "当前没有可用历史区间。";
-}
+export { buildBacktestCoverageScopeText, buildBacktestHistoryCoverageText };
 
 export function buildRollingAuditMetrics(
   assessment: AssessmentSnapshot

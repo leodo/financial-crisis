@@ -14,6 +14,9 @@ pub(crate) fn build_backtest_summary(
             scenario_count: 0,
             real_scenario_count: 0,
             fallback_scenario_count: 0,
+            coverage_scope_note:
+                "这里的危机场景覆盖按当前默认运行历史窗口统计，不等于上面默认历史轨迹的 PIT 证据层。"
+                    .to_string(),
             structural_warning_rate: 0.0,
             timely_warning_rate: 0.0,
             missed_rate: 1.0,
@@ -80,9 +83,15 @@ pub(crate) fn build_backtest_summary(
         .iter()
         .filter_map(|scenario| scenario.history_end)
         .max();
+    let coverage_scope_note = match (history_start, history_end) {
+        (Some(start), Some(end)) => format!(
+            "这里的“本地覆盖场景 / 模板参照场景”按默认运行历史窗口 {start} 到 {end} 统计；它回答的是危机场景目录里有多少样本能直接落在这段本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。"
+        ),
+        _ => "这里的“本地覆盖场景 / 模板参照场景”按当前默认运行历史窗口统计；它回答的是危机场景目录里有多少样本能直接落在本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。".to_string(),
+    };
     let summary = if fallback_scenario_count > 0 {
         format!(
-            "当前回测共列出 {} 个危机样本，其中 {} 个来自本地真实历史，{} 个仍是模板参考；结构性抬升至少提前 7 天出现的比例约为 {:.0}%，可执行预警至少提前 7 天出现的比例约为 {:.0}%。",
+            "当前危机场景目录共 {} 个样本，其中 {} 个已被当前本地历史窗口直接覆盖，{} 个仍是模板参照；结构性抬升至少提前 7 天出现的比例约为 {:.0}%，可执行预警至少提前 7 天出现的比例约为 {:.0}%。",
             scenario_count,
             real_scenario_count,
             fallback_scenario_count,
@@ -102,6 +111,7 @@ pub(crate) fn build_backtest_summary(
         scenario_count,
         real_scenario_count,
         fallback_scenario_count,
+        coverage_scope_note,
         structural_warning_rate,
         timely_warning_rate,
         missed_rate,

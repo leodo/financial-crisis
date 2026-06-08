@@ -88,6 +88,7 @@ export default function DecisionView({
     jpyCarryMetrics,
     backtestSummaryMetrics,
     backtestHistoryCoverageText,
+    backtestCoverageScopeText,
     rollingAuditMetrics,
     rollingAuditBoundaryText,
     rollingAuditEpisodes
@@ -192,6 +193,7 @@ export default function DecisionView({
             assessment={assessment}
             backtestSummaryMetrics={backtestSummaryMetrics}
             historyCoverageText={backtestHistoryCoverageText}
+            coverageScopeText={backtestCoverageScopeText}
           />
         </div>
 

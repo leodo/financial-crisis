@@ -40,6 +40,7 @@ export interface BacktestPerformanceSummary {
   scenario_count: number;
   real_scenario_count: number;
   fallback_scenario_count: number;
+  coverage_scope_note: string;
   structural_warning_rate: number;
   timely_warning_rate: number;
   missed_rate: number;

@@ -133,6 +133,7 @@ fn history_test_backtest_summary() -> BacktestPerformanceSummary {
         scenario_count: 0,
         real_scenario_count: 0,
         fallback_scenario_count: 0,
+        coverage_scope_note: "test".to_string(),
         structural_warning_rate: 0.0,
         timely_warning_rate: 0.0,
         missed_rate: 0.0,

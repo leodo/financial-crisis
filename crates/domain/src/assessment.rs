@@ -304,6 +304,7 @@ pub struct BacktestPerformanceSummary {
     pub scenario_count: u32,
     pub real_scenario_count: u32,
     pub fallback_scenario_count: u32,
+    pub coverage_scope_note: String,
     pub structural_warning_rate: f64,
     pub timely_warning_rate: f64,
     pub missed_rate: f64,

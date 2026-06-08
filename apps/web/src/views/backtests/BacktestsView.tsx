@@ -33,6 +33,7 @@ export default function BacktestsView({
     summaryMetrics,
     rollingMetrics,
     historyRange,
+    coverageScopeText,
     currentPosture,
     scenarioRows,
     episodeRows
@@ -66,7 +67,8 @@ export default function BacktestsView({
           <SurfaceHeader title="回测摘要" icon={History} />
           <p className="body-copy">{humanizeNarrativeCopy(assessment.backtest_summary.summary)}</p>
           <MetricPairsGrid pairs={summaryMetrics} />
-          <RuleBox label="历史覆盖">{historyRange}</RuleBox>
+          <RuleBox label="口径区分">{humanizeNarrativeCopy(coverageScopeText)}</RuleBox>
+          <RuleBox label="默认运行历史窗口">{historyRange}</RuleBox>
         </section>
 
         <section className="surface">
