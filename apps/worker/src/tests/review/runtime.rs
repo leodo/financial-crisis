@@ -332,6 +332,55 @@ fn release_review_structured_signal_counts_accept_relaxed_probability_plateau_cl
 }
 
 #[test]
+fn release_review_structured_signal_counts_accept_weeks_trigger_dominant_clause() {
+    let plateau_date = NaiveDate::from_ymd_opt(2000, 1, 28).unwrap();
+    let crisis_start = NaiveDate::from_ymd_opt(2000, 3, 15).unwrap();
+    let crisis_end = NaiveDate::from_ymd_opt(2000, 3, 25).unwrap();
+    let backtests = vec![synthetic_backtest_summary_with_window(
+        "scenario_weeks_trigger_dominant",
+        "Weeks Trigger Dominant",
+        crisis_start,
+        crisis_end,
+        Some(plateau_date),
+        Some(plateau_date),
+        Some(47),
+        Some(47),
+        0,
+    )];
+    let history = vec![runtime_history_point_with_state(
+        plateau_date,
+        53.1,
+        0.01,
+        0.564,
+        0.315,
+        DecisionPosture::Normal,
+        TimeToRiskBucket::Weeks,
+        36.1,
+        &[],
+    )];
+    let mut method = formal_main_audit_method_wire();
+    method.runtime_thresholds = Some(RuntimeThresholdDiagnosticsWire {
+        prepare_p60d: 0.568,
+        hedge_p20d: 0.282,
+        defend_p5d: 0.05,
+        severe_now_p20d: 0.564,
+        elevated_weeks_p60d: 0.909,
+        external_prepare_p20d: 0.197,
+        carry_prepare_p60d: 0.454,
+        downgrade_prepare_p60d: 0.426,
+        downgrade_hedge_p20d: 0.212,
+        downgrade_defend_p5d: 0.034,
+        history_runtime_policy_version: "runtime_history_test".to_string(),
+    });
+
+    let (strict_actionable_point_count, runtime_floor_hit_count) =
+        release_review_structured_signal_counts(&backtests, &history, &method);
+
+    assert_eq!(strict_actionable_point_count, 1);
+    assert_eq!(runtime_floor_hit_count, 1);
+}
+
+#[test]
 fn release_review_structured_signal_counts_accept_history_hysteresis_months_clause() {
     let plateau_date = NaiveDate::from_ymd_opt(1990, 7, 17).unwrap();
     let crisis_start = NaiveDate::from_ymd_opt(1990, 9, 10).unwrap();

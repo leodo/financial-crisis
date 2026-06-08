@@ -26,6 +26,10 @@ const STRICT_PREPARE_PLATEAU_EXTERNAL_FLOOR: f64 = 32.0;
 const STRICT_PREPARE_PLATEAU_RELAXED_EXTERNAL_FLOOR: f64 = 40.0;
 const STRICT_PREPARE_WEEKS_TRIGGER_OVERALL_FLOOR: f64 = 51.5;
 const STRICT_PREPARE_WEEKS_TRIGGER_EXTERNAL_FLOOR: f64 = 33.0;
+const STRICT_WEEKS_TRIGGER_DOMINANT_P20D_FLOOR: f64 = 0.25;
+const STRICT_WEEKS_TRIGGER_DOMINANT_P20D_SPREAD_FLOOR: f64 = 0.15;
+const STRICT_WEEKS_TRIGGER_DOMINANT_OVERALL_FLOOR: f64 = 53.0;
+const STRICT_WEEKS_TRIGGER_DOMINANT_EXTERNAL_FLOOR: f64 = 35.0;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_P20D_FLOOR: f64 = 0.35;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_P60D_FLOOR: f64 = 0.65;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_OVERALL_FLOOR: f64 = 43.0;
@@ -239,6 +243,14 @@ pub(super) fn release_review_is_actionable_warning_point(
         && point.p_60d >= STRICT_PREPARE_PLATEAU_RELAXED_P60D_THRESHOLD
         && point.overall_score >= STRICT_PREPARE_PLATEAU_OVERALL_FLOOR
         && point.external_shock_score >= STRICT_PREPARE_PLATEAU_RELAXED_EXTERNAL_FLOOR;
+    let weeks_trigger_dominant_signal = thresholds.is_some()
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Weeks)
+        && point.p_20d
+            >= strict_prepare_p20d_threshold.max(STRICT_WEEKS_TRIGGER_DOMINANT_P20D_FLOOR)
+        && point.p_60d < strict_prepare_p60d_threshold
+        && (point.p_20d - point.p_60d) >= STRICT_WEEKS_TRIGGER_DOMINANT_P20D_SPREAD_FLOOR
+        && point.overall_score >= STRICT_WEEKS_TRIGGER_DOMINANT_OVERALL_FLOOR
+        && point.external_shock_score >= STRICT_WEEKS_TRIGGER_DOMINANT_EXTERNAL_FLOOR;
     let prepare_weeks_plateau_hysteresis_signal =
         release_review_is_actionable_prepare_weeks_plateau_hysteresis_signal(point, thresholds);
     let high_probability_months_signal =
@@ -280,6 +292,7 @@ pub(super) fn release_review_is_actionable_warning_point(
         || high_probability_prepare_signal
         || standard_probability_plateau_prepare_signal
         || relaxed_probability_plateau_prepare_signal
+        || weeks_trigger_dominant_signal
         || prepare_weeks_plateau_hysteresis_signal
         || high_probability_months_signal
         || history_hysteresis_months_signal
