@@ -67,6 +67,46 @@ struct ReleaseReviewArtifactActionSummary {
     recommendation: String,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct ReleaseReviewScenarioCoverageCatalogSummary {
+    catalog_id: String,
+    scenario_catalog_id: String,
+    market_scope: String,
+    source: String,
+    warning: Option<String>,
+    backtest_scenario_count: usize,
+    covered_backtest_scenario_count: usize,
+    focus_scenario_count: usize,
+    covered_focus_scenario_count: usize,
+    main_training_eligible_count: usize,
+    extension_training_eligible_count: usize,
+    protected_stress_eligible_count: usize,
+    historical_analog_eligible_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ReleaseReviewScenarioCoverageSummary {
+    scenario_id: String,
+    scenario_name: String,
+    scenario_family: String,
+    training_role: String,
+    protected_window: bool,
+    in_backtest_comparison: bool,
+    in_focus_review: bool,
+    recommended_role: String,
+    coverage_grade: String,
+    point_in_time_mode: String,
+    current_status: String,
+    #[serde(default)]
+    blocking_gaps: Vec<String>,
+    #[serde(default)]
+    free_sources: Vec<String>,
+    usable_for_main_training: bool,
+    usable_for_extension_training: bool,
+    usable_for_protected_stress: bool,
+    usable_for_historical_analog: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ReleaseReviewArtifactWire {
     reviewed_at: String,
@@ -82,6 +122,10 @@ struct ReleaseReviewArtifactWire {
     historical_audit_attribution: Vec<ReleaseReviewArtifactAttributionSummary>,
     #[serde(default)]
     historical_audit_actions: Vec<ReleaseReviewArtifactActionSummary>,
+    #[serde(default)]
+    scenario_coverage_catalog: ReleaseReviewScenarioCoverageCatalogSummary,
+    #[serde(default)]
+    scenario_coverages: Vec<ReleaseReviewScenarioCoverageSummary>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -97,6 +141,8 @@ struct ReleaseReviewArtifactSummary {
     recommendation: String,
     historical_audit_attribution: Vec<ReleaseReviewArtifactAttributionSummary>,
     historical_audit_actions: Vec<ReleaseReviewArtifactActionSummary>,
+    scenario_coverage_catalog: ReleaseReviewScenarioCoverageCatalogSummary,
+    scenario_coverages: Vec<ReleaseReviewScenarioCoverageSummary>,
 }
 
 fn load_latest_release_review_summary(
@@ -151,6 +197,8 @@ fn load_latest_release_review_summary(
                     recommendation: wire.recommendation,
                     historical_audit_attribution: wire.historical_audit_attribution,
                     historical_audit_actions: wire.historical_audit_actions,
+                    scenario_coverage_catalog: wire.scenario_coverage_catalog,
+                    scenario_coverages: wire.scenario_coverages,
                 },
             ));
         }
@@ -276,7 +324,7 @@ mod tests {
     use super::ReleaseReviewArtifactWire;
 
     #[test]
-    fn release_review_wire_allows_missing_historical_audit_fields() {
+    fn release_review_wire_allows_missing_optional_audit_fields() {
         let body = r#"
         {
           "reviewed_at": "2026-06-04T13:21:42.242886500+00:00",
@@ -295,5 +343,12 @@ mod tests {
             serde_json::from_str(body).expect("wire should deserialize");
         assert!(wire.historical_audit_attribution.is_empty());
         assert!(wire.historical_audit_actions.is_empty());
+        assert!(wire.scenario_coverages.is_empty());
+        assert_eq!(wire.scenario_coverage_catalog.catalog_id, "");
+        assert_eq!(
+            wire.scenario_coverage_catalog
+                .covered_backtest_scenario_count,
+            0
+        );
     }
 }

@@ -118,6 +118,52 @@ export function releaseReviewVerdictLabel(passed: boolean): string {
   return passed ? "通过当前 guard" : "存在 guard blocker";
 }
 
+const RELEASE_REVIEW_SCENARIO_FAMILY_LABELS: Record<string, string> = {
+  acute_market_liquidity_crash: "急性流动性冲击",
+  systemic_credit_banking_crisis: "系统性信用 / 银行危机",
+  mixed_systemic_stress: "混合系统压力",
+  rate_shock_or_policy_dislocation: "利率冲击 / 政策错位"
+};
+
+export function releaseReviewScenarioFamilyLabel(family: string): string {
+  return RELEASE_REVIEW_SCENARIO_FAMILY_LABELS[family] ?? family;
+}
+
+const RELEASE_REVIEW_SCENARIO_TRAINING_ROLE_LABELS: Record<string, string> = {
+  mandatory: "主训练强制样本",
+  candidate_optional: "候选可选样本",
+  extension_only: "仅扩展样本",
+  no_positive_main: "不作主危机正例"
+};
+
+export function releaseReviewScenarioTrainingRoleLabel(role: string): string {
+  return RELEASE_REVIEW_SCENARIO_TRAINING_ROLE_LABELS[role] ?? role;
+}
+
+const RELEASE_REVIEW_SCENARIO_ROLE_LABELS: Record<string, string> = {
+  main_training: "正式主训练",
+  extension_training: "扩展训练",
+  protected_stress: "受保护压力",
+  historical_analog_only: "仅历史类比"
+};
+
+export function releaseReviewScenarioRoleLabel(role: string): string {
+  return role
+    .split(" + ")
+    .map((part) => RELEASE_REVIEW_SCENARIO_ROLE_LABELS[part] ?? part)
+    .join(" + ");
+}
+
+const RELEASE_REVIEW_SCENARIO_COVERAGE_PIT_LABELS: Record<string, string> = {
+  strict: "严格 PIT",
+  best_effort: "过渡 PIT",
+  "best_effort + partial strict": "过渡 PIT + 局部严格回放"
+};
+
+export function releaseReviewScenarioCoveragePitLabel(mode: string): string {
+  return RELEASE_REVIEW_SCENARIO_COVERAGE_PIT_LABELS[mode] ?? mode;
+}
+
 const HISTORY_EVIDENCE_TIER_LABELS: Record<string, string> = {
   pit_feature_backed: "PIT 特征快照支撑",
   pit_feature_reuse_transitional: "PIT 沿用旧快照",

@@ -34,6 +34,9 @@ export default function AuditView({
     latestReleaseReview,
     latestReleaseReviewMetrics,
     latestReleaseReviewContextRows,
+    latestReleaseReviewCoverageSource,
+    latestReleaseReviewCoverageMetrics,
+    latestReleaseReviewCoverageRows,
     latestReleaseReviewActionRows,
     latestReleaseReviewAttributionRows,
     releaseRows,
@@ -92,8 +95,57 @@ export default function AuditView({
                     <RuleBox label="评审上下文">
                       <DetailRows items={latestReleaseReviewContextRows} compact />
                     </RuleBox>
+                    {latestReleaseReviewCoverageMetrics.length > 0 ? (
+                      <>
+                        <RuleBox label="场景覆盖说明">{auditContent.releaseReviewCoverageSummary}</RuleBox>
+                        <MetricGrid
+                          items={latestReleaseReviewCoverageMetrics}
+                          className="audit-review-metrics"
+                        />
+                        <RuleBox label="覆盖来源">
+                          <span title={latestReleaseReviewCoverageSource?.hint}>
+                            {latestReleaseReviewCoverageSource?.value ?? "未登记"}
+                          </span>
+                        </RuleBox>
+                        {latestReleaseReview.scenario_coverage_catalog.warning ? (
+                          <RuleBox label="配置告警">
+                            {latestReleaseReview.scenario_coverage_catalog.warning}
+                          </RuleBox>
+                        ) : null}
+                      </>
+                    ) : null}
                   </div>
                 </div>
+
+                {latestReleaseReviewCoverageRows.length > 0 ? (
+                  <ResponsiveTable
+                    className="wide-table xwide-table"
+                    columns={[
+                      "场景",
+                      "Family / 原始角色",
+                      "目录结论 / 可用范围",
+                      "覆盖 / 免费主源",
+                      "当前状态 / 主要缺口"
+                    ]}
+                    note={auditContent.releaseReviewCoverageTableNote}
+                  >
+                    {latestReleaseReviewCoverageRows.map((row) => (
+                      <tr key={row.id}>
+                        <StackedTableCell title={row.scenarioLabel} details={row.scenarioDetails} />
+                        <StackedTableCell
+                          title={row.familySummary}
+                          details={row.trainingRoleSummary}
+                        />
+                        <StackedTableCell
+                          title={row.coverageRoleSummary}
+                          details={row.allowedSummary}
+                        />
+                        <StackedTableCell title={row.gradeSummary} details={row.sourceSummary} />
+                        <StackedTableCell title={row.statusSummary} details={row.gapSummary} />
+                      </tr>
+                    ))}
+                  </ResponsiveTable>
+                ) : null}
 
                 {latestReleaseReviewActionRows.length > 0 ? (
                   <ResponsiveTable

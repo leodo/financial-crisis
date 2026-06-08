@@ -13,7 +13,11 @@ import {
   probabilityModeLabel,
   releaseReviewActionTypeLabel,
   releaseReviewAttributionLabel,
+  releaseReviewScenarioCoveragePitLabel,
+  releaseReviewScenarioFamilyLabel,
   releaseReviewHistoryModeLabel,
+  releaseReviewScenarioRoleLabel,
+  releaseReviewScenarioTrainingRoleLabel,
   releaseReviewVerdictLabel,
   releaseReviewWorkstreamLabel,
   releaseManifestStatusLabel,
@@ -238,6 +242,42 @@ export function useAuditViewModel({
       ]
     : [];
 
+  const latestReleaseReviewCoverageSource = latestReleaseReview
+    ? compactFileReference(latestReleaseReview.scenario_coverage_catalog.source)
+    : null;
+
+  const latestReleaseReviewCoverageMetrics: MetricItem[] =
+    latestReleaseReview && latestReleaseReview.scenario_coverages.length > 0
+      ? [
+          {
+            label: "覆盖目录",
+            value: latestReleaseReview.scenario_coverage_catalog.catalog_id || "未登记",
+            hint: latestReleaseReviewCoverageSource?.hint
+          },
+          {
+            label: "回测覆盖",
+            value: `${latestReleaseReview.scenario_coverage_catalog.covered_backtest_scenario_count}/${latestReleaseReview.scenario_coverage_catalog.backtest_scenario_count}`
+          },
+          {
+            label: "重点覆盖",
+            value: `${latestReleaseReview.scenario_coverage_catalog.covered_focus_scenario_count}/${latestReleaseReview.scenario_coverage_catalog.focus_scenario_count}`
+          },
+          {
+            label: "主训练可用",
+            value: `${latestReleaseReview.scenario_coverage_catalog.main_training_eligible_count}`
+          },
+          {
+            label: "扩展可用",
+            value: `${latestReleaseReview.scenario_coverage_catalog.extension_training_eligible_count}`
+          },
+          {
+            label: "受保护压力",
+            value: `${latestReleaseReview.scenario_coverage_catalog.protected_stress_eligible_count}`,
+            hint: `历史类比可用 ${latestReleaseReview.scenario_coverage_catalog.historical_analog_eligible_count} 个`
+          }
+        ]
+      : [];
+
   const latestReleaseReviewActionRows =
     latestReleaseReview?.historical_audit_actions.map((row, index) => ({
       id: `${row.workstream}-${row.action_type}-${index}`,
@@ -262,6 +302,54 @@ export function useAuditViewModel({
       ]
     })) ?? [];
 
+  const latestReleaseReviewCoverageRows =
+    latestReleaseReview?.scenario_coverages
+      .slice()
+      .sort((left, right) => {
+        return (
+          Number(right.in_focus_review) - Number(left.in_focus_review) ||
+          Number(right.in_backtest_comparison) - Number(left.in_backtest_comparison) ||
+          Number(right.usable_for_main_training) - Number(left.usable_for_main_training) ||
+          left.scenario_name.localeCompare(right.scenario_name, "zh-CN")
+        );
+      })
+      .map((row) => {
+        const allowedRoles = [
+          row.usable_for_main_training ? releaseReviewScenarioRoleLabel("main_training") : null,
+          row.usable_for_extension_training ? releaseReviewScenarioRoleLabel("extension_training") : null,
+          row.usable_for_protected_stress ? releaseReviewScenarioRoleLabel("protected_stress") : null,
+          row.usable_for_historical_analog ? releaseReviewScenarioRoleLabel("historical_analog_only") : null
+        ].filter((item): item is string => item !== null);
+        const scenarioTags = [
+          row.in_focus_review ? "重点复核" : null,
+          row.in_backtest_comparison ? "回测对比" : null,
+          row.protected_window ? "受保护窗口" : null
+        ].filter((item): item is string => item !== null);
+
+        return {
+          id: row.scenario_id,
+          scenarioLabel: row.scenario_name,
+          scenarioDetails: [
+            row.scenario_id,
+            scenarioTags.length > 0 ? scenarioTags.join(" / ") : null
+          ].filter((item): item is string => item !== null),
+          familySummary: releaseReviewScenarioFamilyLabel(row.scenario_family),
+          trainingRoleSummary: releaseReviewScenarioTrainingRoleLabel(row.training_role),
+          coverageRoleSummary: releaseReviewScenarioRoleLabel(row.recommended_role),
+          allowedSummary:
+            allowedRoles.length > 0
+              ? `可用: ${allowedRoles.join("、")}`
+              : "当前没有可用目录角色。",
+          gradeSummary: `${row.coverage_grade} / ${releaseReviewScenarioCoveragePitLabel(row.point_in_time_mode)}`,
+          sourceSummary: row.free_sources.length > 0 ? row.free_sources.join("、") : "未登记免费主源",
+          statusSummary: row.current_status,
+          gapSummary:
+            row.blocking_gaps.length > 0
+              ? row.blocking_gaps.join("；")
+              : "当前没有额外阻断缺口。"
+        };
+      }) ?? [];
+
   return {
     auditNote: audit.note ? humanizeAuditNote(audit.note) : auditContent.noteSummary,
     runtimeMetrics,
@@ -277,6 +365,9 @@ export function useAuditViewModel({
     latestReleaseReview,
     latestReleaseReviewMetrics,
     latestReleaseReviewContextRows,
+    latestReleaseReviewCoverageSource,
+    latestReleaseReviewCoverageMetrics,
+    latestReleaseReviewCoverageRows,
     latestReleaseReviewActionRows,
     latestReleaseReviewAttributionRows,
     releaseRows,

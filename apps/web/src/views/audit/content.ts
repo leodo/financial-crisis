@@ -15,8 +15,12 @@ export const auditContent = {
     "这块回答的是当前线上默认历史轨迹到底是 PIT feature-backed 正式证据，还是 raw observation 过渡口径，或仍残留旧 snapshot bridge。",
   releaseReviewSummary:
     "这里展示最近一次已落库的 release review。先看 guard 是否通过，再看 historical audit action 判断问题属于候选退化、主线共性短板，还是只需继续人工复核。",
+  releaseReviewCoverageSummary:
+    "这块回答的是：本次 review 涉及的历史场景到底能不能作为正式主训练、扩展训练、protected stress 或历史类比。不要把所有危机都当成同一类正例。",
   releaseReviewEmpty:
     "还没有找到可用的 release review 落库结果。通常说明这条链路尚未执行，或者当前 market scope 还没有写入 artifacts/research/release-review。",
+  releaseReviewCoverageTableNote:
+    "先看目录结论和可用范围，再看 grade / PIT / 免费主源，最后看主要缺口。重点复核场景和 protected window 会直接影响后续训练与 posture 规则约束。",
   releaseReviewActionTableNote:
     "先看 action type，再看它落在哪个 workstream，最后结合 recommendation 判断是该判退候选、先修 blocker，还是继续补主线研究。",
   releaseReviewAttributionTableNote:

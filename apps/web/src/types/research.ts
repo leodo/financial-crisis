@@ -129,6 +129,42 @@ export interface ReleaseReviewAuditActionSummary {
   recommendation: string;
 }
 
+export interface ReleaseReviewScenarioCoverageCatalogSummary {
+  catalog_id: string;
+  scenario_catalog_id: string;
+  market_scope: string;
+  source: string;
+  warning: string | null;
+  backtest_scenario_count: number;
+  covered_backtest_scenario_count: number;
+  focus_scenario_count: number;
+  covered_focus_scenario_count: number;
+  main_training_eligible_count: number;
+  extension_training_eligible_count: number;
+  protected_stress_eligible_count: number;
+  historical_analog_eligible_count: number;
+}
+
+export interface ReleaseReviewScenarioCoverageSummary {
+  scenario_id: string;
+  scenario_name: string;
+  scenario_family: string;
+  training_role: string;
+  protected_window: boolean;
+  in_backtest_comparison: boolean;
+  in_focus_review: boolean;
+  recommended_role: string;
+  coverage_grade: string;
+  point_in_time_mode: string;
+  current_status: string;
+  blocking_gaps: string[];
+  free_sources: string[];
+  usable_for_main_training: boolean;
+  usable_for_extension_training: boolean;
+  usable_for_protected_stress: boolean;
+  usable_for_historical_analog: boolean;
+}
+
 export interface ReleaseReviewArtifactSummary {
   reviewed_at: string;
   market_scope: string;
@@ -141,6 +177,8 @@ export interface ReleaseReviewArtifactSummary {
   recommendation: string;
   historical_audit_attribution: ReleaseReviewAuditAttributionSummary[];
   historical_audit_actions: ReleaseReviewAuditActionSummary[];
+  scenario_coverage_catalog: ReleaseReviewScenarioCoverageCatalogSummary;
+  scenario_coverages: ReleaseReviewScenarioCoverageSummary[];
 }
 
 export interface ResearchAuditResponse {
