@@ -418,6 +418,39 @@ fn actionable_warning_point_accepts_prepare_weeks_plateau_hysteresis_clause() {
 }
 
 #[test]
+fn actionable_warning_point_accepts_history_hysteresis_months_structural_carry_clause() {
+    let point = fc_domain::AssessmentHistoryPoint {
+        as_of_date: NaiveDate::from_ymd_opt(1990, 7, 27).unwrap(),
+        overall_score: 44.6,
+        p_5d: 0.02,
+        p_20d: 0.322,
+        p_60d: 0.85,
+        raw_p_5d: Some(0.02),
+        raw_p_20d: Some(0.30),
+        raw_p_60d: Some(0.84),
+        posture: DecisionPosture::Prepare,
+        time_to_risk_bucket: TimeToRiskBucket::Months,
+        external_shock_score: 30.2,
+        posture_trigger_codes: vec!["prepare_history_hysteresis".to_string()],
+        posture_blocker_codes: Vec::new(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: None,
+    };
+
+    assert!(!is_actionable_warning_point(&point, false));
+    assert!(is_actionable_warning_point_with_thresholds(
+        &point,
+        false,
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.568,
+            hedge_p20d: 0.282,
+            defend_p5d: 0.05,
+        }
+    ));
+}
+
+#[test]
 fn actionable_warning_point_accepts_formal_main_relaxed_strict_p60d_mapping() {
     let point = fc_domain::AssessmentHistoryPoint {
         as_of_date: NaiveDate::from_ymd_opt(2007, 3, 1).unwrap(),

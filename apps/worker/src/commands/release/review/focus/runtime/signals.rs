@@ -30,6 +30,10 @@ const STRICT_HISTORY_HYSTERESIS_MONTHS_P20D_FLOOR: f64 = 0.35;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_P60D_FLOOR: f64 = 0.65;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_OVERALL_FLOOR: f64 = 43.0;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_EXTERNAL_FLOOR: f64 = 39.0;
+const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P20D_FLOOR: f64 = 0.25;
+const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P60D_FLOOR: f64 = 0.80;
+const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_OVERALL_FLOOR: f64 = 43.5;
+const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_EXTERNAL_FLOOR: f64 = 30.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ReleaseReviewRuntimeFloorHits {
@@ -251,6 +255,17 @@ pub(super) fn release_review_is_actionable_warning_point(
                 >= strict_prepare_p60d_threshold.max(STRICT_HISTORY_HYSTERESIS_MONTHS_P60D_FLOOR)
             && (point.overall_score >= STRICT_HISTORY_HYSTERESIS_MONTHS_OVERALL_FLOOR
                 || point.external_shock_score >= STRICT_HISTORY_HYSTERESIS_MONTHS_EXTERNAL_FLOOR);
+    let history_hysteresis_months_structural_carry_signal = thresholds.is_some()
+        && matches!(point.posture, DecisionPosture::Prepare)
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && release_review_has_history_hysteresis_trigger_code(point)
+        && point.p_20d >= STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P20D_FLOOR
+        && point.p_60d
+            >= strict_prepare_p60d_threshold
+                .max(STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P60D_FLOOR)
+        && point.overall_score >= STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_OVERALL_FLOOR
+        && point.external_shock_score
+            >= STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_EXTERNAL_FLOOR;
 
     let prepare_bridge_signal = use_transitional_bridge
         && matches!(point.posture, DecisionPosture::Prepare)
@@ -268,6 +283,7 @@ pub(super) fn release_review_is_actionable_warning_point(
         || prepare_weeks_plateau_hysteresis_signal
         || high_probability_months_signal
         || history_hysteresis_months_signal
+        || history_hysteresis_months_structural_carry_signal
         || prepare_bridge_signal
         || months_bridge_signal
 }

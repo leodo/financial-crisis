@@ -368,6 +368,43 @@ fn release_review_structured_signal_counts_accept_history_hysteresis_months_clau
 }
 
 #[test]
+fn release_review_structured_signal_counts_accept_history_hysteresis_months_structural_carry_clause(
+) {
+    let plateau_date = NaiveDate::from_ymd_opt(1990, 7, 27).unwrap();
+    let crisis_start = NaiveDate::from_ymd_opt(1990, 9, 10).unwrap();
+    let crisis_end = NaiveDate::from_ymd_opt(1990, 9, 20).unwrap();
+    let backtests = vec![synthetic_backtest_summary_with_window(
+        "scenario_history_hysteresis_months_structural_carry",
+        "History Hysteresis Months Structural Carry",
+        crisis_start,
+        crisis_end,
+        Some(plateau_date),
+        Some(plateau_date),
+        Some(45),
+        Some(45),
+        0,
+    )];
+    let history = vec![runtime_history_point_with_state(
+        plateau_date,
+        44.6,
+        0.02,
+        0.322,
+        0.85,
+        DecisionPosture::Prepare,
+        TimeToRiskBucket::Months,
+        30.2,
+        &["prepare_history_hysteresis"],
+    )];
+    let method = formal_main_audit_method_wire();
+
+    let (strict_actionable_point_count, runtime_floor_hit_count) =
+        release_review_structured_signal_counts(&backtests, &history, &method);
+
+    assert_eq!(strict_actionable_point_count, 1);
+    assert_eq!(runtime_floor_hit_count, 1);
+}
+
+#[test]
 fn release_review_structured_signal_counts_accept_prepare_weeks_plateau_hysteresis_clause() {
     let plateau_date = NaiveDate::from_ymd_opt(2022, 12, 8).unwrap();
     let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 8).unwrap();

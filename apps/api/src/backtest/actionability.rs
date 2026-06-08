@@ -31,6 +31,10 @@ const STRICT_HISTORY_HYSTERESIS_MONTHS_P20D_FLOOR: f64 = 0.35;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_P60D_FLOOR: f64 = 0.65;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_OVERALL_FLOOR: f64 = 43.0;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_EXTERNAL_FLOOR: f64 = 39.0;
+const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P20D_FLOOR: f64 = 0.25;
+const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P60D_FLOOR: f64 = 0.80;
+const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_OVERALL_FLOOR: f64 = 43.5;
+const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_EXTERNAL_FLOOR: f64 = 30.0;
 
 pub(crate) fn is_actionable_warning_point(
     point: &AssessmentHistoryPoint,
@@ -91,6 +95,12 @@ pub(crate) fn is_actionable_warning_point(
                 >= strict_prepare_p60d_threshold.max(STRICT_HISTORY_HYSTERESIS_MONTHS_P60D_FLOOR)
             && (point.overall_score >= STRICT_HISTORY_HYSTERESIS_MONTHS_OVERALL_FLOOR
                 || point.external_shock_score >= STRICT_HISTORY_HYSTERESIS_MONTHS_EXTERNAL_FLOOR);
+    let history_hysteresis_months_structural_carry_signal =
+        is_actionable_history_hysteresis_months_structural_carry_signal(
+            point,
+            strict_thresholds,
+            strict_prepare_p60d_threshold,
+        );
 
     // Persisted historical snapshots still carry a transitional posture/bucket view:
     // probabilities are often floor-bound, while overall/external stress capture the
@@ -112,6 +122,7 @@ pub(crate) fn is_actionable_warning_point(
         || prepare_weeks_plateau_hysteresis_signal
         || high_probability_months_signal
         || history_hysteresis_months_signal
+        || history_hysteresis_months_structural_carry_signal
         || prepare_bridge_signal
         || months_bridge_signal
 }
@@ -177,6 +188,24 @@ fn is_actionable_prepare_weeks_plateau_hysteresis_signal(
         && point.p_60d >= STRICT_PREPARE_PLATEAU_RELAXED_P60D_THRESHOLD
         && point.overall_score >= STRICT_PREPARE_WEEKS_TRIGGER_OVERALL_FLOOR
         && point.external_shock_score >= STRICT_PREPARE_WEEKS_TRIGGER_EXTERNAL_FLOOR
+}
+
+fn is_actionable_history_hysteresis_months_structural_carry_signal(
+    point: &AssessmentHistoryPoint,
+    strict_thresholds: Option<ProbabilityActionThresholds>,
+    strict_prepare_p60d_threshold: f64,
+) -> bool {
+    strict_thresholds.is_some()
+        && matches!(point.posture, DecisionPosture::Prepare)
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && has_history_hysteresis_trigger_code(point)
+        && point.p_20d >= STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P20D_FLOOR
+        && point.p_60d
+            >= strict_prepare_p60d_threshold
+                .max(STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P60D_FLOOR)
+        && point.overall_score >= STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_OVERALL_FLOOR
+        && point.external_shock_score
+            >= STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_EXTERNAL_FLOOR
 }
 
 pub(crate) fn use_transitional_actionable_bridge(
