@@ -706,6 +706,9 @@
          - 这次没有去降通用 `prepare` score floor，只新增一条更窄的 strict actionable clause：要求 `prepare/weeks` 同时带 `prepare_probability_plateau + prepare_history_hysteresis`、`p20d/p60d` 达到 relaxed plateau 档位、且 `overall >= 51.5 / external >= 33.0`。
          - `2026-06-08` 实测：重新跑 baseline `us_formal_family_hybrid_20260605T202246` vs candidate `us_formal_family_hybrid_20260606T112926` 的 `default release review` 后，`strict_actionable_point_count 80 -> 84`，`timely_warning_rate 10.0% -> 10.0%`、`actionable_precision 70.5% -> 70.5%`、`longest_false_positive_episode_days 13 -> 13`，说明补到的是窄点位而不是泛化放宽。
          - `regional_banks` 的 `2022-12-09 ~ 2022-12-12` 已从 `prepare_weeks_score_confirmation` 转成 `actionable`；`2022-12-08 / 2022-12-13` 仍被保留为 score confirmation gap，`2023-05-04 ~ 2023-05-07` 仍未被放行，因为它们外部冲击上下文仍不足。
+         - [x] 已把同一条 `prepare/weeks + plateau + history_hysteresis` strict actionable clause 镜像回 API/backtest `is_actionable_warning_point`
+           - 避免 worker `release review` 已把这组点位记成 `actionable`，但 API `rolling audit / timeline / scenario backtest` 仍按旧逻辑漏掉。
+           - 已新增 API demo 回归测试，固定 `2022-12-09` 这类真实点位在无 thresholds 与 formal-main thresholds 下都能通过 strict actionable 判定。
      - [x] 已对齐 `release activate` 的 `operational guard` 与 `release review` 的 `go/no-go`
        - 现在 `release activate --reload-api` 会读取最新相关 `release review` 产物：
          1. 若目标 release 已在最新正式 review 中被判为失败 candidate，则直接阻止激活；
