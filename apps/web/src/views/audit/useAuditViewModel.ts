@@ -5,6 +5,8 @@ import {
   formatDateTime,
   formatPercent,
   freshnessLabel,
+  historyEvidenceTierLabel,
+  historySourceLabel,
   humanizeAuditNote,
   pointInTimeModeLabel,
   postureLabel,
@@ -26,7 +28,7 @@ import type {
   ResearchAuditResponse,
   TimeToRiskBucket
 } from "../../types";
-import type { MetricItem } from "../shared/panelHelpers";
+import type { DetailRowItem, MetricItem } from "../shared/panelHelpers";
 import { buildProbabilityOverlayViewModel } from "../shared/probabilityOverlay";
 import { auditContent } from "./content";
 
@@ -84,6 +86,37 @@ export function useAuditViewModel({
       hint: `${audit.snapshots.length} 条历史预测记录`
     }
   ];
+  const provenanceMetrics: MetricItem[] = [
+    {
+      label: "历史证据等级",
+      value: historyEvidenceTierLabel(audit.history_provenance.evidence_tier),
+      hint: audit.history_provenance.note
+    },
+    {
+      label: "PIT 快照支撑",
+      value: `${audit.history_provenance.feature_backed_points}/${audit.history_provenance.total_points}`
+    },
+    {
+      label: "原始观测过渡",
+      value: `${audit.history_provenance.raw_observation_points}`
+    },
+    {
+      label: "旧快照桥接",
+      value: `${audit.history_provenance.snapshot_bridge_points}`
+    }
+  ];
+  const provenanceRows: DetailRowItem[] = audit.history_provenance.sources
+    .filter((source) => source.count > 0)
+    .map((source) => ({
+      id: source.source_id,
+      title: historySourceLabel(source.source_id),
+      detail:
+        source.latest_as_of_date !== null
+          ? `共 ${source.count} 个点，最近日期 ${formatDate(source.latest_as_of_date)}`
+          : `共 ${source.count} 个点`,
+      note: source.note,
+      meta: `${source.count}`
+    }));
 
   const methodSummary = `当前运行的是 ${probabilityModeLabel(assessment.method.probability_mode)}，服务状态 ${releaseServingStatusLabel(assessment.method.release_status)}，对应版本 ${releaseIdLabel(assessment.method.release_id).value}。`;
   const {
@@ -229,6 +262,9 @@ export function useAuditViewModel({
     auditNote: audit.note ? humanizeAuditNote(audit.note) : auditContent.noteSummary,
     runtimeMetrics,
     summaryMetrics,
+    provenanceMetrics,
+    provenanceRows,
+    provenanceNote: audit.history_provenance.note,
     methodSummary,
     overlayHeadlineMetrics,
     overlayHorizonRows,

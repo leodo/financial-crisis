@@ -148,6 +148,9 @@ async fn research_audit_endpoint_returns_runtime_audit_shape() {
     assert!(json["storage_mode"].is_string());
     assert!(json["runtime_probability_mode"].is_string());
     assert!(json["runtime_release_status"].is_string());
+    assert!(json["history_provenance"]["evidence_tier"].is_string());
+    assert!(json["history_provenance"]["dominant_source"].is_string());
+    assert!(json["history_provenance"]["sources"].is_array());
     assert!(json["latest_replay_run_id"].is_null() || json["latest_replay_run_id"].is_string());
     assert!(
         json["latest_release_review"].is_null()

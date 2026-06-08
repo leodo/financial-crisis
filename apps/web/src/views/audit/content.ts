@@ -9,7 +9,10 @@ export const auditContent = {
   ] as Array<[string, string]>,
   noteSummary:
     "这页主要用来核对当前线上版本、release review、版本登记历史和历史预测快照是否一致；如果运行中的概率层和登记状态对不上，通常表示系统已经自动降级。",
-  summaryNote: "先看版本总量、当前/已批准、回放批次和快照覆盖，再进入下面的 release review 与版本明细。",
+  summaryNote:
+    "先看版本总量、当前/已批准、回放批次、快照覆盖和当前默认历史的证据层，再进入下面的 release review 与版本明细。",
+  provenanceNote:
+    "这块回答的是当前线上默认历史轨迹到底是 PIT feature-backed 正式证据，还是 raw observation 过渡口径，或仍残留旧 snapshot bridge。",
   releaseReviewSummary:
     "这里展示最近一次已落库的 release review。先看 guard 是否通过，再看 historical audit action 判断问题属于候选退化、主线共性短板，还是只需继续人工复核。",
   releaseReviewEmpty:

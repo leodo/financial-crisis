@@ -1,5 +1,6 @@
 import type {
   AssessmentMethodVersions,
+  HistoryProvenanceSummary,
   ProtectedStressWindowCatalog,
   RuntimeThresholdDiagnostics,
 } from "./assessment";
@@ -149,6 +150,7 @@ export interface ResearchAuditResponse {
   active_release_id: string | null;
   runtime_probability_mode: string;
   runtime_release_status: string;
+  history_provenance: HistoryProvenanceSummary;
   latest_snapshot_date: string | null;
   latest_replay_run_id: string | null;
   latest_release_review: ReleaseReviewArtifactSummary | null;

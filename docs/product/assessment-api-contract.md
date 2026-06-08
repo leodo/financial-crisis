@@ -670,13 +670,19 @@ GET /api/research/audit
 - `active_release_id`
 - `runtime_probability_mode`
 - `runtime_release_status`
+- `history_provenance`
 - `latest_snapshot_date`
+- `latest_replay_run_id`
+- `latest_release_review`
 - `note`
 - `releases[]`
+- `replay_runs[]`
 - `snapshots[]`
 
 用途：
 
 - 核对当前 API 实际在跑 `heuristic_mvp` 还是 `formal_bundle_v1`
+- 直接查看当前默认历史轨迹到底是 `PIT feature-backed` 正式证据、`raw observation` 过渡口径，还是仍残留旧 `snapshot bridge`
 - 查看本地 release registry 中有哪些 candidate / approved / active 版本
+- 查看最近一条 replay run 是否和当前 runtime / active release 对得上
 - 查看 `prediction snapshots` 是否跟 active release 对齐

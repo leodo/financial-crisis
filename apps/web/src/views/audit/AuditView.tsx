@@ -23,6 +23,9 @@ export default function AuditView({
     auditNote,
     runtimeMetrics,
     summaryMetrics,
+    provenanceMetrics,
+    provenanceRows,
+    provenanceNote,
     methodSummary,
     overlayHeadlineMetrics,
     overlayHorizonRows,
@@ -70,6 +73,9 @@ export default function AuditView({
             <SurfaceHeader title="审计摘要" icon={Database} />
             <MetricGrid items={summaryMetrics} />
             <p className="legend-note">{auditContent.summaryNote}</p>
+            <RuleBox label="历史证据层">{provenanceNote}</RuleBox>
+            <MetricGrid items={provenanceMetrics} />
+            {provenanceRows.length > 0 ? <DetailRows items={provenanceRows} compact /> : null}
           </section>
 
           <section className="surface">

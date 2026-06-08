@@ -34,28 +34,28 @@ pub struct ReloadQuery {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct HistoryProvenanceSourceSummary {
-    source_id: String,
-    count: usize,
-    latest_as_of_date: Option<NaiveDate>,
-    note: String,
+pub(crate) struct HistoryProvenanceSourceSummary {
+    pub(crate) source_id: String,
+    pub(crate) count: usize,
+    pub(crate) latest_as_of_date: Option<NaiveDate>,
+    pub(crate) note: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct HistoryProvenanceSummary {
-    evidence_tier: String,
-    dominant_source: String,
-    total_points: usize,
-    feature_backed_points: usize,
-    raw_observation_points: usize,
-    snapshot_bridge_points: usize,
-    runtime_only_points: usize,
-    latest_feature_backed_date: Option<NaiveDate>,
-    latest_raw_observation_date: Option<NaiveDate>,
-    latest_snapshot_bridge_date: Option<NaiveDate>,
-    latest_replay_run_id: Option<String>,
-    note: String,
-    sources: Vec<HistoryProvenanceSourceSummary>,
+pub(crate) struct HistoryProvenanceSummary {
+    pub(crate) evidence_tier: String,
+    pub(crate) dominant_source: String,
+    pub(crate) total_points: usize,
+    pub(crate) feature_backed_points: usize,
+    pub(crate) raw_observation_points: usize,
+    pub(crate) snapshot_bridge_points: usize,
+    pub(crate) runtime_only_points: usize,
+    pub(crate) latest_feature_backed_date: Option<NaiveDate>,
+    pub(crate) latest_raw_observation_date: Option<NaiveDate>,
+    pub(crate) latest_snapshot_bridge_date: Option<NaiveDate>,
+    pub(crate) latest_replay_run_id: Option<String>,
+    pub(crate) note: String,
+    pub(crate) sources: Vec<HistoryProvenanceSourceSummary>,
 }
 
 impl HistoryQuery {
@@ -74,7 +74,7 @@ fn parse_date(value: Option<String>) -> Result<Option<NaiveDate>, StatusCode> {
         .transpose()
 }
 
-fn summarize_history_provenance(
+pub(crate) fn summarize_history_provenance(
     history: &[fc_domain::AssessmentHistoryPoint],
 ) -> HistoryProvenanceSummary {
     let total_points = history.len();

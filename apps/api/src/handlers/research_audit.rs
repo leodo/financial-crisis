@@ -9,7 +9,7 @@ use chrono::{DateTime, FixedOffset, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::{data_source::AppDataSource, AppState};
+use crate::{data_source::AppDataSource, handlers::HistoryProvenanceSummary, AppState};
 use fc_storage::SqliteStore;
 
 #[derive(Debug, Default, Deserialize)]
@@ -29,6 +29,7 @@ struct ResearchAuditResponse {
     active_release_id: Option<String>,
     runtime_probability_mode: String,
     runtime_release_status: String,
+    history_provenance: HistoryProvenanceSummary,
     latest_snapshot_date: Option<NaiveDate>,
     latest_replay_run_id: Option<String>,
     latest_release_review: Option<ReleaseReviewArtifactSummary>,
@@ -223,6 +224,7 @@ pub(crate) async fn research_audit(
                 active_release_id: data.assessment.method.release_id.clone(),
                 runtime_probability_mode: data.assessment.method.probability_mode.clone(),
                 runtime_release_status: data.assessment.method.release_status.clone(),
+                history_provenance: super::summarize_history_provenance(&data.assessment_history),
                 latest_snapshot_date,
                 latest_replay_run_id,
                 latest_release_review,
@@ -239,6 +241,7 @@ pub(crate) async fn research_audit(
             active_release_id: data.assessment.method.release_id.clone(),
             runtime_probability_mode: data.assessment.method.probability_mode.clone(),
             runtime_release_status: data.assessment.method.release_status.clone(),
+            history_provenance: super::summarize_history_provenance(&data.assessment_history),
             latest_snapshot_date: None,
             latest_replay_run_id: None,
             latest_release_review: None,
@@ -254,6 +257,7 @@ pub(crate) async fn research_audit(
             active_release_id: data.assessment.method.release_id.clone(),
             runtime_probability_mode: data.assessment.method.probability_mode.clone(),
             runtime_release_status: data.assessment.method.release_status.clone(),
+            history_provenance: super::summarize_history_provenance(&data.assessment_history),
             latest_snapshot_date: None,
             latest_replay_run_id: None,
             latest_release_review: None,
