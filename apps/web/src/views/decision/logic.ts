@@ -3,7 +3,7 @@ import {
   probabilityModeLabel,
   releaseServingStatusLabel
 } from "../../format";
-import type { AssessmentSnapshot } from "../../types";
+import type { AssessmentMethodResponse, AssessmentSnapshot } from "../../types";
 
 export function describeProbabilityMode(method: AssessmentSnapshot["method"]) {
   if (method.probability_mode === "heuristic_mvp") {
@@ -37,16 +37,27 @@ export function describeReleaseHealth(status: string) {
   return releaseServingStatusLabel(status);
 }
 
-export function describeRollingAuditBoundary(method: AssessmentSnapshot["method"]) {
-  if (method.probability_mode.startsWith("formal_bundle") && method.point_in_time_mode !== "strict") {
-    return "当前长历史动作审计仍在兼容旧快照口径，因为历史快照里的正式概率常被校准下限压得很平。它更适合比较哪些阶段风险在升温、误报有没有收缩，还不能直接当成最终正式模型的命中率。";
-  }
-
-  if (method.probability_mode === "heuristic_mvp") {
+export function describeRollingAuditBoundary(method: AssessmentMethodResponse) {
+  if (method.method.probability_mode === "heuristic_mvp") {
     return "当前滚动审计主要用于解释启发式动作层在历史上的表现，不能把它当成正式概率模型命中率。";
   }
 
-  return "当前滚动审计可以帮助比较模型在不同历史阶段是否稳定，但仍要结合数据覆盖和历史可见点位一起解释。";
+  if (method.history_provenance.snapshot_bridge_points > 0) {
+    return `当前默认历史轨迹里仍有 ${method.history_provenance.snapshot_bridge_points}/${method.history_provenance.total_points} 个点来自旧 snapshot bridge。它更适合比较哪些阶段风险在升温、误报有没有收缩，还不能直接当成最终正式模型的命中率。`;
+  }
+
+  if (method.history_provenance.raw_observation_points > 0) {
+    return `当前默认历史轨迹已经避开旧 snapshot bridge，但仍有 ${method.history_provenance.raw_observation_points}/${method.history_provenance.total_points} 个点只是 raw observation 过渡口径。它已经比旧 bridge 更接近正式历史证据，但仍要结合 PIT 特征落库覆盖一起解释。`;
+  }
+
+  if (
+    method.history_provenance.feature_backed_points > 0 &&
+    method.history_provenance.feature_backed_points === method.history_provenance.total_points
+  ) {
+    return `当前默认历史轨迹 ${method.history_provenance.feature_backed_points}/${method.history_provenance.total_points} 个点都绑定到已落库 PIT feature snapshot，滚动审计已经进入 formal history 审计的正式证据层；后续重点应放在模型本体命中率和样本覆盖，而不是再把它当成旧 bridge 兼容结果。`;
+  }
+
+  return "当前滚动审计可以帮助比较模型在不同历史阶段是否稳定，但仍要结合数据覆盖、PIT 可见性和 release review 一起解释。";
 }
 
 export const RISK_SCORE_BANDS = [

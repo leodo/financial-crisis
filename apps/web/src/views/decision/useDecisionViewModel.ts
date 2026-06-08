@@ -177,8 +177,8 @@ export function useDecisionViewModel({
     [assessment]
   );
   const rollingAuditBoundaryText = useMemo(
-    () => buildRollingAuditBoundaryText(assessment.method),
-    [assessment.method]
+    () => buildRollingAuditBoundaryText(method),
+    [method]
   );
   const rollingAuditEpisodes = useMemo(
     () => buildRollingAuditEpisodes(assessment.backtest_summary.rolling_audit),

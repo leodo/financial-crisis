@@ -6,7 +6,7 @@ import {
   formatPercent,
   userProfileLabel
 } from "../../format";
-import type { AssessmentSnapshot } from "../../types";
+import type { AssessmentMethodResponse, AssessmentSnapshot } from "../../types";
 import type { MetricItem } from "../shared/panelHelpers";
 import type { DecisionRollingAuditEpisodeRow } from "./builderTypes";
 import { describeRollingAuditBoundary } from "./logic";
@@ -101,7 +101,7 @@ export function buildRollingAuditMetrics(
   ];
 }
 
-export function buildRollingAuditBoundaryText(method: AssessmentSnapshot["method"]) {
+export function buildRollingAuditBoundaryText(method: AssessmentMethodResponse) {
   return describeRollingAuditBoundary(method);
 }
 
