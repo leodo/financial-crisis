@@ -283,6 +283,7 @@
   - 基线对照证据；
   - 还是临时研究副产物。
 - [ ] 任何影响训练口径和运行口径的修改，都要检查共享函数是否已统一。
+  - 2026-06-09：已先收掉一组高风险重复实现：`probability bundle evaluation` 与 `release review runtime regime audit` 现在共用同一套 `classify_probability_regime_separation / lift_vs_baseline / early_warning_regime_name / gap_retention_ratio` helper，避免后续继续分别修改训练侧和复盘侧的 regime diagnosis。
 - [x] 任何新的仓位建议或动作规则，都不能绕开现有 `playbook`、`Go/No-Go` 和 “非自动交易指令”边界。
 - [x] 本地提交前统一运行 `just verify`，不要继续靠人工记忆零散执行 `fmt/test/lint/web-build`。
 - [x] CI 自动执行与本地一致的核心检查，不再只靠本地手工自觉。

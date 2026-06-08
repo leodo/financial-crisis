@@ -80,18 +80,18 @@ use output_paths::{
 #[cfg(test)]
 pub(crate) use probability::{
     adjust_probability_decision_threshold_for_regime_support,
-    build_probability_threshold_diagnostics, classify_probability_regime_separation,
-    probability_calibration_selection_rows, probability_decision_threshold_selection,
-    select_probability_calibration_strategy, select_probability_decision_threshold,
-    ProbabilityCalibrationSelection, ProbabilityThresholdDiagnosticsInput,
-    ProbabilityThresholdSelection,
+    build_probability_threshold_diagnostics, probability_calibration_selection_rows,
+    probability_decision_threshold_selection, select_probability_calibration_strategy,
+    select_probability_decision_threshold, ProbabilityCalibrationSelection,
+    ProbabilityThresholdDiagnosticsInput, ProbabilityThresholdSelection,
 };
 pub(crate) use probability::{
-    regime_positive_window_gap_floor, summarize_bundle_evaluation, train_horizon_bundle,
+    classify_probability_regime_separation, early_warning_regime_name, gap_retention_ratio,
+    lift_vs_baseline, summarize_bundle_evaluation, train_horizon_bundle,
 };
 pub(crate) use release_review::{
     build_release_review_scenario_coverage, build_release_runtime_review_diagnostics,
-    format_runtime_category_list, lift_vs_baseline, release_review_historical_audit_takeaways,
+    format_runtime_category_list, release_review_historical_audit_takeaways,
     release_review_runtime_separation_takeaways, render_release_review_markdown,
     summarize_release_review_failure_modes, summarize_release_review_historical_audit_actions,
     summarize_release_review_historical_audit_attribution,

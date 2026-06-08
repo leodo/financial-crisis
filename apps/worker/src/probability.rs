@@ -358,6 +358,28 @@ pub(crate) fn classify_probability_regime_separation(
     "mixed_or_unclear"
 }
 
+pub(crate) fn lift_vs_baseline(value: f64, baseline: f64) -> Option<f64> {
+    if baseline.abs() <= f64::EPSILON {
+        return None;
+    }
+    Some(crate::round6(value / baseline))
+}
+
+pub(crate) fn early_warning_regime_name(horizon_days: u32) -> &'static str {
+    match horizon_days {
+        5 => "positive_window",
+        20 | 60 => "pre_warning_buffer",
+        _ => "positive_window",
+    }
+}
+
+pub(crate) fn gap_retention_ratio(raw_gap: f64, calibrated_gap: f64) -> Option<f64> {
+    if raw_gap.abs() <= f64::EPSILON {
+        return None;
+    }
+    Some(crate::round6(calibrated_gap / raw_gap))
+}
+
 pub(crate) fn summarize_bundle_evaluation(
     horizons: &[ProbabilityHorizonBundle],
 ) -> ProbabilityBundleEvaluation {
