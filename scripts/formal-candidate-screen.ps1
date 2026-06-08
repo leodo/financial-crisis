@@ -272,11 +272,19 @@ Write-Host ""
 Write-Host "Tracked 20d weight deltas"
 $trackedRows | Format-Table -AutoSize
 Write-Host ""
-Write-Host "[4/4] Curve / USDJPY / threshold semantics audit"
+Write-Host "[4/5] Curve / USDJPY / threshold semantics audit"
 & (Join-Path $PSScriptRoot "formal-candidate-semantics-audit.ps1") `
     -BaselineReleaseId $BaselineReleaseId `
     -CandidateReleaseId $CandidateReleaseId `
     -HorizonDays 20
 if ($LASTEXITCODE -ne 0) {
     throw "formal-candidate-semantics-audit failed"
+}
+Write-Host ""
+Write-Host "[5/5] US history scenario-pack audit"
+& (Join-Path $PSScriptRoot "formal-candidate-scenario-pack-audit.ps1") `
+    -BaselineReleaseId $BaselineReleaseId `
+    -CandidateReleaseId $CandidateReleaseId
+if ($LASTEXITCODE -ne 0) {
+    throw "formal-candidate-scenario-pack-audit failed"
 }

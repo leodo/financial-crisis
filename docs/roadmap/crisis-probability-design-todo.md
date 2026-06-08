@@ -231,7 +231,13 @@
   - 2026-06-09：`research release review` 现已复用同一份 `scenario_data_coverage_v1`，把场景覆盖上下文接到 `Historical Audit` 和 `Focus Scenarios`：导出报告会直接显示 `Coverage role / Grade / PIT / Free sources / Blocking gaps`，避免训练 summary、历史审计和逐场景复盘继续用三套不同口径解释同一批历史样本。
   - 2026-06-09：`/api/research/audit` 与前端“发布审计”页也已接入同一份 release review 场景覆盖结果；现在可以直接在网页上看到 `回测覆盖 / 重点覆盖 / 主训练可用 / protected stress 可用` 汇总，以及逐场景的 `Family / 原始角色 / 目录结论 / Grade / PIT / 免费主源 / 主要缺口`，避免这部分解释只停留在 CLI/Markdown 工件里。
   - 2026-06-09：新增 `scripts/formal-candidate-scenario-pack-audit.ps1` 与 `just formal-candidate-scenario-pack-audit <baseline> <candidate>`，会按固定美国历史场景包自动选择 `main / ext_stress / ext_acute` dataset，串起 `formal-probability-compare + scenario coverage + release-review blocker`，把“免费数据是否覆盖、该用哪个 dataset、主要卡在 review gate 还是 posture continuity”一次性落成结构化 JSON，避免继续靠手工逐场景拼命令。
-  - 2026-06-09：首轮实跑 `112926 -> 173701` 已落出 `artifacts/research/spa/20260606T112926-vs-20260608T173701-default-scenario-pack-audit.json`；当前直接看到 `2022 / 2023` 主要仍卡在 `posture_continuity`，`1990-1993` 则出现 `candidate_probability_level_drop`，而 `1987 / 1994 / 2000 / 2008 / 2011 / 2020` 这轮还没有进入更明确的 focus blocker，需要继续结合更严格 review 或下一轮候选对比缩小范围。
+  - 2026-06-09：首轮实跑 `112926 -> 173701` 已落出 `artifacts/research/spa/20260606T112926-vs-20260608T173701-default-scenario-pack-audit.json`；当前已不再粗暴落成一堆 `no_review_focus_signal`，而是能直接区分：
+    `2022 / 2023 -> posture_continuity`，
+    `2008 / 2020 -> shared_missed_signal`，
+    `1994 / 2011 -> shared_no_signal`，
+    `1987 / 2000 -> stable_pass`，
+    `1990-1993 -> stable_pass_with_margin_erosion`。
+    这说明下一轮优先级可以更明确地落回 continuity、共享漏报和共享无信号，而不是继续手工解释每个场景。
 - [x] 把方法页和面板解释继续补强，让用户能看懂“危机先验”和“动作概率”不是同一个东西
 
 补充观察：

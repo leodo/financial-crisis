@@ -572,12 +572,54 @@ function Resolve-BlockerClass {
         return "review_gate_gap"
     }
 
+    $outcome = [string]$ReviewContext.outcome
+    $baselineLead = Round-Safe -Value $ReviewContext.baseline_lead_time_days -Digits 4
+    $candidateLead = Round-Safe -Value $ReviewContext.candidate_lead_time_days -Digits 4
+    $baselineActionableLead = Round-Safe -Value $ReviewContext.baseline_actionable_lead_time_days -Digits 4
+    $candidateActionableLead = Round-Safe -Value $ReviewContext.candidate_actionable_lead_time_days -Digits 4
     if ($mode) {
         return $mode
     }
 
     $retention = $CompareSummary.positive_window_retention_20d
     $delta20 = $CompareSummary.overall_avg_delta_p_20d
+    $candidateHit20 = Round-Safe -Value $CompareSummary.overall_candidate_hit_rate_20d -Digits 6
+    $baselineHit20 = Round-Safe -Value $CompareSummary.overall_baseline_hit_rate_20d -Digits 6
+
+    if ($outcome -eq "timely_to_timely") {
+        if (
+            ($null -ne $baselineLead -and $null -ne $candidateLead -and $candidateLead -lt $baselineLead) -or
+            ($null -ne $baselineActionableLead -and $null -ne $candidateActionableLead -and $candidateActionableLead -lt $baselineActionableLead)
+        ) {
+            return "candidate_regression"
+        }
+        if (
+            ($null -ne $retention -and $retention -lt 0.85) -or
+            ($null -ne $delta20 -and $delta20 -le -0.05)
+        ) {
+            return "stable_pass_with_margin_erosion"
+        }
+        return "stable_pass"
+    }
+
+    if ($outcome -eq "missed_to_missed") {
+        if (
+            ($null -ne $candidateHit20 -and $candidateHit20 -gt 0.0) -or
+            ($null -ne $baselineHit20 -and $baselineHit20 -gt 0.0)
+        ) {
+            return "shared_missed_signal"
+        }
+        return "shared_no_signal"
+    }
+
+    if ($outcome -like "missed_to_*") {
+        return "candidate_improvement"
+    }
+
+    if ($outcome -like "*_to_missed" -or $outcome -like "*_to_late") {
+        return "candidate_regression"
+    }
+
     if ($null -ne $retention -and $retention -lt 0.8) {
         return "candidate_probability_continuity_regression"
     }
@@ -608,6 +650,24 @@ function Build-Takeaway {
         }
         "residual_review_l3" {
             return "The main blocker is no longer floor or continuity; the remaining gap is the final strict L3 actionable conversion."
+        }
+        "stable_pass" {
+            return "The candidate preserves the effective warning outcome for this scenario; treat it as retained historical coverage, not an active blocker."
+        }
+        "stable_pass_with_margin_erosion" {
+            return "The candidate still preserves the warning outcome here, but probability margin or continuity slack is weaker than baseline; watch for future regression."
+        }
+        "shared_missed_signal" {
+            return "Both baseline and candidate still miss the scenario even though some runtime probability signal exists; this is a shared mainline blind spot."
+        }
+        "shared_no_signal" {
+            return "Both baseline and candidate miss this scenario with little usable signal; treat it as a shared data or labeling blind spot, not a candidate-specific failure."
+        }
+        "candidate_improvement" {
+            return "The candidate improves historical handling for this scenario relative to baseline; keep it as positive evidence but verify that false positives did not broaden elsewhere."
+        }
+        "candidate_regression" {
+            return "The candidate makes this scenario worse than baseline on timing or actionable lead time; inspect it before any promotion decision."
         }
         "candidate_probability_continuity_regression" {
             return "The candidate is materially weaker than baseline on positive-window 20d continuity; inspect training targets and threshold lift first."

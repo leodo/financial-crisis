@@ -453,6 +453,9 @@ The new `scenario-pack-audit` is broader and complements the lead-time audit:
    and release-review blocker labels into one JSON artifact;
 4. it exists to answer, in one pass, whether a scenario is blocked by
    free-data coverage, `review_gate_gap`, `posture_continuity`, or residual `L3` conversion.
+5. it now also distinguishes non-blocker states such as `stable_pass`,
+   `stable_pass_with_margin_erosion`, `shared_missed_signal`, and `shared_no_signal`,
+   so the output no longer collapses every non-focus case into one vague bucket.
 
 ## 9. 2026-06-06 当前结论
 
