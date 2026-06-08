@@ -78,6 +78,8 @@ export default function DecisionView({
     overallScoreText,
     scoreBandRows,
     dataTrustMetrics,
+    historyEvidenceMetrics,
+    historyEvidenceNote,
     postureThresholdMetrics,
     keyIndicatorRows,
     signalLayerRows,
@@ -182,6 +184,8 @@ export default function DecisionView({
             <SurfaceHeader title="可信度与数据缺口" icon={Database} />
             <MetricGrid items={dataTrustMetrics} />
             <BulletList items={assessment.data_trust.warnings} compact />
+            <RuleBox label="历史轨迹证据层">{historyEvidenceNote}</RuleBox>
+            <MetricGrid items={historyEvidenceMetrics} />
           </section>
 
           <DecisionBacktestSummaryPanel

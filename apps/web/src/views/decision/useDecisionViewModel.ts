@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { formatNumber } from "../../format";
+import { formatDate, formatNumber, historyEvidenceTierLabel } from "../../format";
 import type {
   AssessmentMethodResponse,
   AssessmentHistoryPoint,
@@ -115,6 +115,31 @@ export function useDecisionViewModel({
     [currentRiskBand.label]
   );
   const dataTrustMetrics = useMemo(() => buildDataTrustMetrics(assessment), [assessment]);
+  const historyEvidenceMetrics = useMemo(
+    () => [
+      {
+        label: "历史证据等级",
+        value: historyEvidenceTierLabel(method.history_provenance.evidence_tier),
+        hint: method.history_provenance.note
+      },
+      {
+        label: "PIT 快照支撑",
+        value: `${method.history_provenance.feature_backed_points}/${method.history_provenance.total_points}`
+      },
+      {
+        label: "旧快照桥接",
+        value: `${method.history_provenance.snapshot_bridge_points}`
+      }
+    ],
+    [method.history_provenance]
+  );
+  const historyEvidenceNote = useMemo(() => {
+    const latestFeatureBackedDate = method.history_provenance.latest_feature_backed_date;
+    if (latestFeatureBackedDate) {
+      return `${method.history_provenance.note} 最近一条 PIT 快照支撑点日期 ${formatDate(latestFeatureBackedDate)}。`;
+    }
+    return method.history_provenance.note;
+  }, [method.history_provenance]);
   const postureThresholdMetrics = useMemo(
     () => buildPostureThresholdMetrics(method),
     [method]
@@ -177,6 +202,8 @@ export function useDecisionViewModel({
     overallScoreText,
     scoreBandRows,
     dataTrustMetrics,
+    historyEvidenceMetrics,
+    historyEvidenceNote,
     postureThresholdMetrics,
     keyIndicatorRows,
     signalLayerRows,
