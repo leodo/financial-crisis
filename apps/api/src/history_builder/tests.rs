@@ -1379,8 +1379,8 @@ async fn bundle_history_rebuild_reuses_latest_prior_feature_snapshot_when_same_d
 
     assert_eq!(
         latest_point.history_source.as_deref(),
-        Some("raw_pit_feature_replay"),
-        "when same-day PIT snapshot is missing, history should still bind to the latest prior persisted PIT snapshot instead of falling back to raw rebuild"
+        Some("raw_pit_feature_reuse"),
+        "when same-day PIT snapshot is missing, history should mark the point as reusing the latest prior persisted PIT snapshot instead of overstating it as exact same-day PIT"
     );
     assert_eq!(
         latest_point.feature_snapshot_id, prior_point.feature_snapshot_id,

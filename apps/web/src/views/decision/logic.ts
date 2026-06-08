@@ -60,6 +60,10 @@ export function describeRollingAuditBoundary(
     return `当前默认历史轨迹已经避开旧 snapshot bridge，但仍有 ${method.history_provenance.raw_observation_points}/${method.history_provenance.total_points} 个点只是 raw observation 过渡口径。它已经比旧 bridge 更接近正式历史证据，但仍要结合 PIT 特征落库覆盖一起解释。`;
   }
 
+  if (method.history_provenance.reused_feature_snapshot_points > 0) {
+    return `当前默认历史轨迹里虽然已经有 ${method.history_provenance.feature_backed_points}/${method.history_provenance.total_points} 个点绑定到当天 PIT feature snapshot，但仍有 ${method.history_provenance.reused_feature_snapshot_points}/${method.history_provenance.total_points} 个点沿用了更早日期的 PIT snapshot。它已经明显强于 raw observation / bridge，但还不能当成完全精确的 raw PIT formal history。`;
+  }
+
   if (
     method.history_provenance.feature_backed_points > 0 &&
     method.history_provenance.feature_backed_points === method.history_provenance.total_points

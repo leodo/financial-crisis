@@ -168,8 +168,16 @@ export function useMethodViewModel({
       value: `${historyProvenance.feature_backed_points}/${historyProvenance.total_points || 0}`,
       hint:
         historyProvenance.latest_feature_backed_date !== null
-          ? `最近一条 PIT 快照支撑点日期：${formatDate(historyProvenance.latest_feature_backed_date)}`
+          ? `最近一条当天 PIT 快照支撑点日期：${formatDate(historyProvenance.latest_feature_backed_date)}`
           : "当前默认历史窗口里还没有 PIT 快照支撑点。"
+    },
+    {
+      label: "沿用旧 PIT",
+      value: `${historyProvenance.reused_feature_snapshot_points}`,
+      hint:
+        historyProvenance.latest_reused_feature_snapshot_date !== null
+          ? `最近一条沿用旧 PIT 的点日期：${formatDate(historyProvenance.latest_reused_feature_snapshot_date)}`
+          : "当前默认历史窗口里没有沿用旧 PIT 的点。"
     },
     {
       label: "旧快照桥接",

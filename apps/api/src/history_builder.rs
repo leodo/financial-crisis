@@ -17,7 +17,9 @@ use crate::history_replay::{
     assessment_history_point_from_assessment, historical_output_from_prediction_snapshots,
     historical_replay_point_draft_from_assessment, load_cached_historical_replay_output,
     merge_historical_outputs, persist_historical_replay_output,
-    prediction_snapshot_from_assessment, HistoricalAssessmentOutput,
+    pit_feature_history_source, prediction_snapshot_from_assessment,
+    HistoricalAssessmentOutput, HISTORY_SOURCE_RAW_OBSERVATION_REBUILD,
+    HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
 };
 
 const HISTORY_PREPARE_HYSTERESIS_PLATEAU_P20D_FLOOR: f64 = 0.45;
@@ -41,9 +43,6 @@ const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_OVERALL_FLOOR: f64 = 42.0;
 const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_STRUCTURAL_FLOOR: f64 = 55.0;
 const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_TRIGGER_CEILING: f64 = 28.0;
 const HISTORY_PREPARE_HYSTERESIS_TRIGGER_CODE: &str = "prepare_history_hysteresis";
-const HISTORY_SOURCE_RAW_OBSERVATION_REBUILD: &str = "raw_observation_rebuild";
-const HISTORY_SOURCE_RAW_OBSERVATION_REPLAY: &str = "raw_observation_replay";
-const HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY: &str = "raw_pit_feature_replay";
 
 #[derive(Debug, Clone, Copy, Default)]
 struct HistoricalPrepareHysteresisState {
@@ -324,11 +323,11 @@ async fn rebuild_full_release_history_from_raw(
         for point in &mut rebuilt.history_points {
             point.replay_run_id = Some(replay_run_id.clone());
             point.history_source = Some(
-                if point.feature_snapshot_id.is_some() {
-                    HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY
-                } else {
-                    HISTORY_SOURCE_RAW_OBSERVATION_REPLAY
-                }
+                pit_feature_history_source(
+                    point.feature_snapshot_id.as_deref(),
+                    point.as_of_date,
+                    HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
+                )
                 .to_string(),
             );
         }
@@ -367,11 +366,11 @@ async fn attach_feature_snapshot_context(
     for point in &mut output.history_points {
         point.feature_snapshot_id = snapshot_ids.get(&point.as_of_date).cloned();
         point.history_source = Some(
-            if point.feature_snapshot_id.is_some() {
-                HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY
-            } else {
-                HISTORY_SOURCE_RAW_OBSERVATION_REBUILD
-            }
+            pit_feature_history_source(
+                point.feature_snapshot_id.as_deref(),
+                point.as_of_date,
+                HISTORY_SOURCE_RAW_OBSERVATION_REBUILD,
+            )
             .to_string(),
         );
     }

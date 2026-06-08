@@ -340,6 +340,7 @@ async fn assessment_method_endpoint_returns_protected_stress_window_catalog() {
     assert!(json["history_provenance"]["dominant_source"].is_string());
     assert!(json["history_provenance"]["total_points"].is_number());
     assert!(json["history_provenance"]["feature_backed_points"].is_number());
+    assert!(json["history_provenance"]["reused_feature_snapshot_points"].is_number());
     assert!(json["history_provenance"]["raw_observation_points"].is_number());
     assert!(json["history_provenance"]["snapshot_bridge_points"].is_number());
     assert!(json["history_provenance"]["runtime_only_points"].is_number());

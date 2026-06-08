@@ -300,10 +300,12 @@ export interface HistoryProvenanceSummary {
   dominant_source: string;
   total_points: number;
   feature_backed_points: number;
+  reused_feature_snapshot_points: number;
   raw_observation_points: number;
   snapshot_bridge_points: number;
   runtime_only_points: number;
   latest_feature_backed_date: string | null;
+  latest_reused_feature_snapshot_date: string | null;
   latest_raw_observation_date: string | null;
   latest_snapshot_bridge_date: string | null;
   latest_replay_run_id: string | null;

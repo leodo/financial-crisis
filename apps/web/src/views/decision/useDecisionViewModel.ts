@@ -130,6 +130,10 @@ export function useDecisionViewModel({
         value: `${method.history_provenance.feature_backed_points}/${method.history_provenance.total_points}`
       },
       {
+        label: "沿用旧 PIT",
+        value: `${method.history_provenance.reused_feature_snapshot_points}`
+      },
+      {
         label: "旧快照桥接",
         value: `${method.history_provenance.snapshot_bridge_points}`
       }
@@ -138,8 +142,16 @@ export function useDecisionViewModel({
   );
   const historyEvidenceNote = useMemo(() => {
     const latestFeatureBackedDate = method.history_provenance.latest_feature_backed_date;
+    const latestReusedSnapshotDate =
+      method.history_provenance.latest_reused_feature_snapshot_date;
+    if (latestFeatureBackedDate && latestReusedSnapshotDate) {
+      return `${method.history_provenance.note} 最近一条当天 PIT 快照支撑点日期 ${formatDate(latestFeatureBackedDate)}，最近一条沿用旧 PIT 的点日期 ${formatDate(latestReusedSnapshotDate)}。`;
+    }
     if (latestFeatureBackedDate) {
-      return `${method.history_provenance.note} 最近一条 PIT 快照支撑点日期 ${formatDate(latestFeatureBackedDate)}。`;
+      return `${method.history_provenance.note} 最近一条当天 PIT 快照支撑点日期 ${formatDate(latestFeatureBackedDate)}。`;
+    }
+    if (latestReusedSnapshotDate) {
+      return `${method.history_provenance.note} 最近一条沿用旧 PIT 的点日期 ${formatDate(latestReusedSnapshotDate)}。`;
     }
     return method.history_provenance.note;
   }, [method.history_provenance]);

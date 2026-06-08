@@ -120,6 +120,7 @@ export function releaseReviewVerdictLabel(passed: boolean): string {
 
 const HISTORY_EVIDENCE_TIER_LABELS: Record<string, string> = {
   pit_feature_backed: "PIT 特征快照支撑",
+  pit_feature_reuse_transitional: "PIT 沿用旧快照",
   raw_observation_transitional: "原始观测过渡",
   snapshot_bridge_transitional: "旧快照桥接",
   runtime_only: "运行时即时构造"
@@ -131,6 +132,7 @@ export function historyEvidenceTierLabel(tier: string): string {
 
 const HISTORY_SOURCE_LABELS: Record<string, string> = {
   raw_pit_feature_replay: "PIT 特征快照重放",
+  raw_pit_feature_reuse: "沿用旧 PIT 快照",
   raw_observation_replay: "原始观测重放",
   raw_observation_rebuild: "原始观测即时重建",
   transitional_snapshot_bridge: "旧预测快照桥接",

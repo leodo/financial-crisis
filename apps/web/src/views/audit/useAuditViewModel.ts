@@ -97,6 +97,10 @@ export function useAuditViewModel({
       value: `${audit.history_provenance.feature_backed_points}/${audit.history_provenance.total_points}`
     },
     {
+      label: "沿用旧 PIT",
+      value: `${audit.history_provenance.reused_feature_snapshot_points}`
+    },
+    {
       label: "原始观测过渡",
       value: `${audit.history_provenance.raw_observation_points}`
     },

@@ -15,6 +15,11 @@ pub(crate) use research_audit::research_audit;
 
 use crate::{
     data_source::{AssessmentHistoryBuildMode, ServingRuntimePurpose},
+    history_replay::{
+        HISTORY_SOURCE_RAW_OBSERVATION_REBUILD, HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
+        HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY, HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE,
+        HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE,
+    },
     history_builder::{select_assessment_history, select_backtest_timeline, HistoryQueryWindow},
     AppState,
 };
@@ -47,10 +52,12 @@ pub(crate) struct HistoryProvenanceSummary {
     pub(crate) dominant_source: String,
     pub(crate) total_points: usize,
     pub(crate) feature_backed_points: usize,
+    pub(crate) reused_feature_snapshot_points: usize,
     pub(crate) raw_observation_points: usize,
     pub(crate) snapshot_bridge_points: usize,
     pub(crate) runtime_only_points: usize,
     pub(crate) latest_feature_backed_date: Option<NaiveDate>,
+    pub(crate) latest_reused_feature_snapshot_date: Option<NaiveDate>,
     pub(crate) latest_raw_observation_date: Option<NaiveDate>,
     pub(crate) latest_snapshot_bridge_date: Option<NaiveDate>,
     pub(crate) latest_replay_run_id: Option<String>,
@@ -80,27 +87,41 @@ pub(crate) fn summarize_history_provenance(
     let total_points = history.len();
     let feature_backed_points = history
         .iter()
-        .filter(|point| point.history_source.as_deref() == Some("raw_pit_feature_replay"))
+        .filter(|point| point.history_source.as_deref() == Some(HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY))
+        .count();
+    let reused_feature_snapshot_points = history
+        .iter()
+        .filter(|point| point.history_source.as_deref() == Some(HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE))
         .count();
     let raw_observation_points = history
         .iter()
         .filter(|point| {
             matches!(
                 point.history_source.as_deref(),
-                Some("raw_observation_replay" | "raw_observation_rebuild")
+                Some(HISTORY_SOURCE_RAW_OBSERVATION_REPLAY | HISTORY_SOURCE_RAW_OBSERVATION_REBUILD)
             )
         })
         .count();
     let snapshot_bridge_points = history
         .iter()
-        .filter(|point| point.history_source.as_deref() == Some("transitional_snapshot_bridge"))
+        .filter(|point| point.history_source.as_deref() == Some(HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE))
         .count();
     let runtime_only_points = total_points
-        .saturating_sub(feature_backed_points + raw_observation_points + snapshot_bridge_points);
+        .saturating_sub(
+            feature_backed_points
+                + reused_feature_snapshot_points
+                + raw_observation_points
+                + snapshot_bridge_points,
+        );
 
     let latest_feature_backed_date = history
         .iter()
-        .filter(|point| point.history_source.as_deref() == Some("raw_pit_feature_replay"))
+        .filter(|point| point.history_source.as_deref() == Some(HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY))
+        .map(|point| point.as_of_date)
+        .max();
+    let latest_reused_feature_snapshot_date = history
+        .iter()
+        .filter(|point| point.history_source.as_deref() == Some(HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE))
         .map(|point| point.as_of_date)
         .max();
     let latest_raw_observation_date = history
@@ -108,14 +129,14 @@ pub(crate) fn summarize_history_provenance(
         .filter(|point| {
             matches!(
                 point.history_source.as_deref(),
-                Some("raw_observation_replay" | "raw_observation_rebuild")
+                Some(HISTORY_SOURCE_RAW_OBSERVATION_REPLAY | HISTORY_SOURCE_RAW_OBSERVATION_REBUILD)
             )
         })
         .map(|point| point.as_of_date)
         .max();
     let latest_snapshot_bridge_date = history
         .iter()
-        .filter(|point| point.history_source.as_deref() == Some("transitional_snapshot_bridge"))
+        .filter(|point| point.history_source.as_deref() == Some(HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE))
         .map(|point| point.as_of_date)
         .max();
     let latest_replay_run_id = history
@@ -125,19 +146,23 @@ pub(crate) fn summarize_history_provenance(
 
     let sources = [
         (
-            "raw_pit_feature_replay",
+            HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY,
             "这类点已经绑定到已落库的 PIT feature snapshot，可作为 formal history 审计的正式证据层。",
         ),
         (
-            "raw_observation_replay",
+            HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE,
+            "这类点虽然绑定到了已落库的 PIT feature snapshot，但复用了更早日期的 snapshot，不是当天精确 PIT，仍属于 formal history 的过渡口径。",
+        ),
+        (
+            HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
             "这类点来自 historical replay store，但还没有对上已落库的 PIT feature snapshot，仍属于 raw observation 过渡口径。",
         ),
         (
-            "raw_observation_rebuild",
+            HISTORY_SOURCE_RAW_OBSERVATION_REBUILD,
             "这类点是运行时按原始观测即时重建的结果，说明当前默认历史还没有完全收口到 persisted replay / PIT snapshot。",
         ),
         (
-            "transitional_snapshot_bridge",
+            HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE,
             "这类点仍复用了旧 prediction snapshot bridge，只适合辅助观察，不应直接当成正式 Go/No-Go 历史证据。",
         ),
     ]
@@ -168,6 +193,8 @@ pub(crate) fn summarize_history_provenance(
         "snapshot_bridge_transitional"
     } else if raw_observation_points > 0 {
         "raw_observation_transitional"
+    } else if reused_feature_snapshot_points > 0 {
+        "pit_feature_reuse_transitional"
     } else if feature_backed_points > 0 {
         "pit_feature_backed"
     } else {
@@ -184,6 +211,10 @@ pub(crate) fn summarize_history_provenance(
         format!(
             "默认历史轨迹已经避开旧 snapshot bridge，但仍有 {raw_observation_points}/{total_points} 个点只是 raw observation 过渡口径，说明 replay 还没有完全绑定到 persisted PIT feature snapshot。"
         )
+    } else if reused_feature_snapshot_points > 0 {
+        format!(
+            "默认历史轨迹里已有 {feature_backed_points}/{total_points} 个点绑定到当天 PIT feature snapshot，但仍有 {reused_feature_snapshot_points}/{total_points} 个点沿用了更早日期的 PIT snapshot；它已经明显强于 raw observation / bridge，但还不是完全精确的 raw PIT formal history。"
+        )
     } else if feature_backed_points > 0 {
         format!(
             "默认历史轨迹当前 {feature_backed_points}/{total_points} 个点都绑定到已落库 PIT feature snapshot，可作为 formal history 审计的正式证据层。"
@@ -198,10 +229,12 @@ pub(crate) fn summarize_history_provenance(
         dominant_source,
         total_points,
         feature_backed_points,
+        reused_feature_snapshot_points,
         raw_observation_points,
         snapshot_bridge_points,
         runtime_only_points,
         latest_feature_backed_date,
+        latest_reused_feature_snapshot_date,
         latest_raw_observation_date,
         latest_snapshot_bridge_date,
         latest_replay_run_id,

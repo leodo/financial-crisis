@@ -11,14 +11,10 @@ use crate::assessment::{
 };
 
 use super::{
-    expected_prediction_snapshot_method_version, HistoricalAssessmentOutput,
-    HistoricalReplayPointDraft,
+    expected_prediction_snapshot_method_version, pit_feature_history_source,
+    HistoricalAssessmentOutput, HistoricalReplayPointDraft, HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
+    HISTORY_SOURCE_RAW_OBSERVATION_REBUILD, HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE,
 };
-
-const HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE: &str = "transitional_snapshot_bridge";
-const HISTORY_SOURCE_RAW_OBSERVATION_REBUILD: &str = "raw_observation_rebuild";
-const HISTORY_SOURCE_RAW_OBSERVATION_REPLAY: &str = "raw_observation_replay";
-const HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY: &str = "raw_pit_feature_replay";
 
 pub(crate) fn historical_output_from_replay_points(
     points: Vec<HistoricalAssessmentPointRecord>,
@@ -301,11 +297,11 @@ fn assessment_history_point_from_historical_replay_point(
         replay_run_id: Some(point.replay_run_id.clone()),
         feature_snapshot_id: point.feature_snapshot_id.clone(),
         history_source: Some(
-            if point.feature_snapshot_id.is_some() {
-                HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY
-            } else {
-                HISTORY_SOURCE_RAW_OBSERVATION_REPLAY
-            }
+            pit_feature_history_source(
+                point.feature_snapshot_id.as_deref(),
+                point.as_of_date,
+                HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
+            )
             .to_string(),
         ),
     }
