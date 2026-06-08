@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
 
-use chrono::NaiveDate;
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
 use fc_domain::{
+    formal_observation_feature_value_from_history, observation_history_for_indicator_where,
     AlertEvent, AssessmentSnapshot, BacktestWindowPoint, DataMode, DecisionPosture,
-    FeatureSnapshotRecord, Indicator, Observation, PostureGuidance, TimeToRiskBucket,
-    UserRiskPreferences,
+    FeatureSnapshotRecord, FormalObservationFeatureTransform, Frequency, Indicator, IndicatorRisk,
+    Observation, PostureGuidance, RiskDimension, TimeToRiskBucket, UserRiskPreferences,
+    FORMAL_OBSERVATION_FEATURE_SPECS,
 };
 use fc_scoring::ScoringEngine;
 use fc_storage::SqliteStore;
@@ -16,10 +18,9 @@ use crate::demo_seed::{build_alerts, select_recent_alerts_for_date};
 use crate::history_replay::{
     assessment_history_point_from_assessment, historical_output_from_prediction_snapshots,
     historical_replay_point_draft_from_assessment, load_cached_historical_replay_output,
-    merge_historical_outputs, persist_historical_replay_output,
-    pit_feature_history_source, prediction_snapshot_from_assessment,
-    HistoricalAssessmentOutput, HISTORY_SOURCE_RAW_OBSERVATION_REBUILD,
-    HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
+    merge_historical_outputs, persist_historical_replay_output, pit_feature_history_source,
+    prediction_snapshot_from_assessment, HistoricalAssessmentOutput,
+    HISTORY_SOURCE_RAW_OBSERVATION_REBUILD, HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
 };
 
 const HISTORY_PREPARE_HYSTERESIS_PLATEAU_P20D_FLOOR: f64 = 0.45;
@@ -43,6 +44,44 @@ const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_OVERALL_FLOOR: f64 = 42.0;
 const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_STRUCTURAL_FLOOR: f64 = 55.0;
 const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_TRIGGER_CEILING: f64 = 28.0;
 const HISTORY_PREPARE_HYSTERESIS_TRIGGER_CODE: &str = "prepare_history_hysteresis";
+const FEATURE_SNAPSHOT_STATUS_READY: &str = "ready";
+const FEATURE_SNAPSHOT_STATUS_COVERAGE_OR_VISIBILITY_FAILED: &str = "coverage_or_visibility_failed";
+const FORMAL_STLFSI_REQUIRED_FROM: (i32, u32, u32) = (1993, 12, 31);
+const FORMAL_CORE_INDICATORS_PRE_STLFSI: &[&str] = &[
+    "us_market_vix_close",
+    "us_rates_yield_curve_10y2y",
+    "us_credit_baa_10y_spread",
+    "us_liquidity_effr",
+    "us_liquidity_national_financial_conditions",
+    "us_macro_unemployment_rate",
+    "us_real_estate_housing_starts",
+];
+const FORMAL_CORE_INDICATORS_POST_STLFSI: &[&str] = &[
+    "us_market_vix_close",
+    "us_rates_yield_curve_10y2y",
+    "us_credit_baa_10y_spread",
+    "us_liquidity_effr",
+    "us_liquidity_national_financial_conditions",
+    "us_liquidity_financial_stress_stl",
+    "us_macro_unemployment_rate",
+    "us_real_estate_housing_starts",
+];
+const FORMAL_TRIGGER_INDICATORS_PRE_STLFSI: &[&str] = &[
+    "us_market_vix_close",
+    "us_rates_yield_curve_10y2y",
+    "us_credit_baa_10y_spread",
+    "us_liquidity_effr",
+    "us_liquidity_national_financial_conditions",
+];
+const FORMAL_TRIGGER_INDICATORS_POST_STLFSI: &[&str] = &[
+    "us_market_vix_close",
+    "us_rates_yield_curve_10y2y",
+    "us_credit_baa_10y_spread",
+    "us_liquidity_effr",
+    "us_liquidity_national_financial_conditions",
+    "us_liquidity_financial_stress_stl",
+];
+const FORMAL_EXTERNAL_INDICATORS: &[&str] = &["us_external_usdjpy_level"];
 
 #[derive(Debug, Clone, Copy, Default)]
 struct HistoricalPrepareHysteresisState {
@@ -311,7 +350,15 @@ async fn rebuild_full_release_history_from_raw(
         user_preferences,
         rebuild_dates,
     );
-    attach_feature_snapshot_context(store, serving_model, rebuild_dates, &mut rebuilt).await?;
+    attach_feature_snapshot_context(
+        store,
+        serving_model,
+        indicators,
+        observations,
+        rebuild_dates,
+        &mut rebuilt,
+    )
+    .await?;
     if persist_prediction_snapshots {
         store
             .upsert_prediction_snapshots(&rebuilt.prediction_snapshots)
@@ -338,6 +385,8 @@ async fn rebuild_full_release_history_from_raw(
 async fn attach_feature_snapshot_context(
     store: &SqliteStore,
     serving_model: Option<&ServingModelContext>,
+    indicators: &[Indicator],
+    observations: &[Observation],
     rebuild_dates: &[NaiveDate],
     output: &mut HistoricalAssessmentOutput,
 ) -> anyhow::Result<()> {
@@ -357,6 +406,8 @@ async fn attach_feature_snapshot_context(
     let snapshot_ids = load_feature_snapshot_ids_for_history_range(
         store,
         serving_model,
+        indicators,
+        observations,
         from_date,
         to_date,
         rebuild_dates,
@@ -385,6 +436,8 @@ async fn attach_feature_snapshot_context(
 async fn load_feature_snapshot_ids_for_history_range(
     store: &SqliteStore,
     serving_model: &ServingModelContext,
+    indicators: &[Indicator],
+    observations: &[Observation],
     from_date: NaiveDate,
     to_date: NaiveDate,
     rebuild_dates: &[NaiveDate],
@@ -411,6 +464,58 @@ async fn load_feature_snapshot_ids_for_history_range(
                 latest_by_date.insert(snapshot.as_of_date, snapshot);
             }
         }
+    }
+
+    let mut materialized_snapshots = Vec::new();
+    let mut rebuilt_snapshots = Vec::new();
+    let mut latest_snapshot = latest_by_date
+        .iter()
+        .next()
+        .map(|(_, snapshot)| snapshot.clone());
+    for target_date in target_dates.iter().copied() {
+        if let Some(snapshot) = latest_by_date.get(&target_date).cloned() {
+            latest_snapshot = Some(snapshot);
+            continue;
+        }
+
+        let Some(prior_snapshot) = latest_snapshot.as_ref() else {
+            continue;
+        };
+        if can_materialize_exact_carry_forward_snapshot(
+            prior_snapshot,
+            observations,
+            target_date,
+            &serving_model.release.manifest.point_in_time_mode,
+        ) {
+            let exact_snapshot = materialize_carry_forward_snapshot(prior_snapshot, target_date);
+            latest_by_date.insert(target_date, exact_snapshot.clone());
+            latest_snapshot = Some(exact_snapshot.clone());
+            materialized_snapshots.push(exact_snapshot);
+        }
+    }
+
+    if !materialized_snapshots.is_empty() {
+        store
+            .upsert_feature_snapshots(&materialized_snapshots)
+            .await?;
+    }
+
+    for target_date in target_dates.iter().copied() {
+        if latest_by_date.contains_key(&target_date) {
+            continue;
+        }
+        let exact_snapshot = build_exact_feature_snapshot_for_date(
+            indicators,
+            observations,
+            serving_model,
+            target_date,
+        )?;
+        latest_by_date.insert(target_date, exact_snapshot.clone());
+        rebuilt_snapshots.push(exact_snapshot);
+    }
+
+    if !rebuilt_snapshots.is_empty() {
+        store.upsert_feature_snapshots(&rebuilt_snapshots).await?;
     }
 
     let effective_snapshot_ids = latest_by_date
@@ -441,6 +546,406 @@ async fn load_feature_snapshot_ids_for_history_range(
     }
 
     Ok(bound_snapshot_ids)
+}
+
+fn build_exact_feature_snapshot_for_date(
+    indicators: &[Indicator],
+    observations: &[Observation],
+    serving_model: &ServingModelContext,
+    as_of_date: NaiveDate,
+) -> anyhow::Result<FeatureSnapshotRecord> {
+    let point_in_time_mode = serving_model.release.manifest.point_in_time_mode.as_str();
+    let scoring = ScoringEngine::default();
+    let scoring_output = scoring.score_with_observation_filter(
+        indicators,
+        observations,
+        as_of_date,
+        "us",
+        &serving_model.release.manifest.market_scope,
+        |observation| {
+            observation_is_visible_for_date_for_mode(observation, as_of_date, point_in_time_mode)
+        },
+    );
+    let mut features = std::collections::BTreeMap::new();
+    let mut visible_candidates = Vec::new();
+
+    insert_formal_observation_features(
+        &mut features,
+        &mut visible_candidates,
+        observations,
+        as_of_date,
+        point_in_time_mode,
+    );
+
+    features.insert(
+        "overall_score".to_string(),
+        round6((scoring_output.snapshot.overall_score / 100.0).clamp(0.0, 1.0)),
+    );
+    features.insert(
+        "structural_score".to_string(),
+        round6((scoring_output.snapshot.structural_score / 100.0).clamp(0.0, 1.0)),
+    );
+    features.insert(
+        "trigger_score".to_string(),
+        round6((scoring_output.snapshot.trigger_score / 100.0).clamp(0.0, 1.0)),
+    );
+    features.insert(
+        "external_dimension_score".to_string(),
+        round6(
+            (find_dimension_score(
+                &scoring_output.indicator_risks,
+                RiskDimension::ExternalSector,
+            ) / 100.0)
+                .clamp(0.0, 1.0),
+        ),
+    );
+
+    let (
+        core_feature_coverage,
+        trigger_feature_coverage,
+        external_feature_coverage,
+        coverage_score,
+    ) = coverage_summary(&scoring_output.indicator_risks, as_of_date);
+    let latest_visible_at = visible_candidates.into_iter().max();
+    let visibility_status =
+        feature_snapshot_visibility_status(&features, coverage_score, latest_visible_at);
+
+    Ok(FeatureSnapshotRecord {
+        as_of_date,
+        entity_id: "us".to_string(),
+        market_scope: serving_model.release.manifest.market_scope.clone(),
+        feature_set_version: serving_model.release.manifest.feature_set_version.clone(),
+        point_in_time_mode: serving_model.release.manifest.point_in_time_mode.clone(),
+        visibility_status: visibility_status.to_string(),
+        latest_visible_at,
+        coverage_score,
+        core_feature_coverage,
+        trigger_feature_coverage,
+        external_feature_coverage,
+        feature_count: features.len(),
+        features,
+        created_at: Utc::now(),
+    })
+}
+
+fn materialize_carry_forward_snapshot(
+    prior_snapshot: &FeatureSnapshotRecord,
+    as_of_date: NaiveDate,
+) -> FeatureSnapshotRecord {
+    let mut snapshot = prior_snapshot.clone();
+    snapshot.as_of_date = as_of_date;
+    snapshot.created_at = Utc::now();
+    snapshot
+}
+
+fn can_materialize_exact_carry_forward_snapshot(
+    prior_snapshot: &FeatureSnapshotRecord,
+    observations: &[Observation],
+    as_of_date: NaiveDate,
+    point_in_time_mode: &str,
+) -> bool {
+    if as_of_date <= prior_snapshot.as_of_date {
+        return false;
+    }
+    let Some(prior_latest_visible_at) = prior_snapshot.latest_visible_at else {
+        return false;
+    };
+
+    observations
+        .iter()
+        .filter_map(|observation| observation_visible_at_for_mode(observation, point_in_time_mode))
+        .all(|visible_at| {
+            visible_at <= prior_latest_visible_at || visible_at > assessment_cutoff_utc(as_of_date)
+        })
+}
+
+fn observation_is_visible_for_date_for_mode(
+    observation: &Observation,
+    as_of_date: NaiveDate,
+    point_in_time_mode: &str,
+) -> bool {
+    observation_visible_at_for_mode(observation, point_in_time_mode)
+        .map(|visible_at| visible_at <= assessment_cutoff_utc(as_of_date))
+        .unwrap_or(false)
+}
+
+fn insert_formal_observation_features(
+    features: &mut std::collections::BTreeMap<String, f64>,
+    visible_candidates: &mut Vec<DateTime<Utc>>,
+    observations: &[Observation],
+    as_of_date: NaiveDate,
+    point_in_time_mode: &str,
+) {
+    for spec in FORMAL_OBSERVATION_FEATURE_SPECS {
+        let history = observation_history_for_indicator_where(
+            observations,
+            spec.indicator_id,
+            as_of_date,
+            |observation| {
+                observation_is_visible_for_date_for_mode(
+                    observation,
+                    as_of_date,
+                    point_in_time_mode,
+                )
+            },
+        );
+        if let Some(value) = formal_observation_feature_value_from_history(&history, spec.transform)
+        {
+            features.insert(spec.feature_name.to_string(), round6(value));
+        }
+        if matches!(spec.transform, FormalObservationFeatureTransform::Latest) {
+            if let Some(latest) = history.last() {
+                if let Some(visible_at) =
+                    observation_visible_at_for_mode(latest, point_in_time_mode)
+                {
+                    visible_candidates.push(visible_at);
+                }
+            }
+        }
+    }
+}
+
+fn feature_snapshot_visibility_status(
+    features: &std::collections::BTreeMap<String, f64>,
+    coverage_score: f64,
+    latest_visible_at: Option<DateTime<Utc>>,
+) -> &'static str {
+    if latest_visible_at.is_none()
+        || coverage_score < 0.70
+        || !has_main_dataset_core_features(features)
+    {
+        FEATURE_SNAPSHOT_STATUS_COVERAGE_OR_VISIBILITY_FAILED
+    } else {
+        FEATURE_SNAPSHOT_STATUS_READY
+    }
+}
+
+fn coverage_summary(
+    indicator_risks: &[IndicatorRisk],
+    as_of_date: NaiveDate,
+) -> (f64, f64, f64, f64) {
+    let (core_total, core_present) =
+        coverage_by_indicator_ids(indicator_risks, formal_core_indicator_ids(as_of_date));
+    let (trigger_total, trigger_present) =
+        coverage_by_indicator_ids(indicator_risks, formal_trigger_indicator_ids(as_of_date));
+    let (external_total, external_present) =
+        coverage_by_indicator_ids(indicator_risks, FORMAL_EXTERNAL_INDICATORS);
+
+    let core_feature_coverage = ratio(core_present, core_total);
+    let trigger_feature_coverage = ratio(trigger_present, trigger_total);
+    let external_feature_coverage = ratio(external_present, external_total);
+    let coverage_score = round3(
+        (core_feature_coverage * 0.45
+            + trigger_feature_coverage * 0.35
+            + external_feature_coverage * 0.2)
+            .clamp(0.0, 1.0),
+    );
+    (
+        round3(core_feature_coverage),
+        round3(trigger_feature_coverage),
+        round3(external_feature_coverage),
+        coverage_score,
+    )
+}
+
+fn formal_core_indicator_ids(as_of_date: NaiveDate) -> &'static [&'static str] {
+    if as_of_date >= formal_stlfsi_required_from() {
+        FORMAL_CORE_INDICATORS_POST_STLFSI
+    } else {
+        FORMAL_CORE_INDICATORS_PRE_STLFSI
+    }
+}
+
+fn formal_trigger_indicator_ids(as_of_date: NaiveDate) -> &'static [&'static str] {
+    if as_of_date >= formal_stlfsi_required_from() {
+        FORMAL_TRIGGER_INDICATORS_POST_STLFSI
+    } else {
+        FORMAL_TRIGGER_INDICATORS_PRE_STLFSI
+    }
+}
+
+fn formal_stlfsi_required_from() -> NaiveDate {
+    NaiveDate::from_ymd_opt(
+        FORMAL_STLFSI_REQUIRED_FROM.0,
+        FORMAL_STLFSI_REQUIRED_FROM.1,
+        FORMAL_STLFSI_REQUIRED_FROM.2,
+    )
+    .expect("valid stlfsi activation date")
+}
+
+fn find_dimension_score(indicator_risks: &[IndicatorRisk], dimension: RiskDimension) -> f64 {
+    let scores = indicator_risks
+        .iter()
+        .filter(|risk| risk.indicator.dimension == dimension)
+        .filter(|risk| risk.latest_observation.is_some())
+        .map(|risk| risk.score)
+        .collect::<Vec<_>>();
+    if scores.is_empty() {
+        0.0
+    } else {
+        scores.iter().sum::<f64>() / scores.len() as f64
+    }
+}
+
+fn coverage_by_indicator_ids(
+    indicator_risks: &[IndicatorRisk],
+    indicator_ids: &[&str],
+) -> (usize, usize) {
+    indicator_risks
+        .iter()
+        .filter(|risk| indicator_ids.contains(&risk.indicator.indicator_id.as_str()))
+        .fold((0_usize, 0_usize), |(total, present), risk| {
+            (
+                total + 1,
+                present + usize::from(risk.latest_observation.is_some()),
+            )
+        })
+}
+
+fn ratio(present: usize, total: usize) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        present as f64 / total as f64
+    }
+}
+
+fn has_main_dataset_core_features(features: &std::collections::BTreeMap<String, f64>) -> bool {
+    [
+        "us_vix_level",
+        "us_curve_10y2y_level",
+        "us_baa_10y_spread_level",
+        "us_fed_funds_level",
+    ]
+    .into_iter()
+    .all(|feature| features.contains_key(feature))
+}
+
+fn round3(value: f64) -> f64 {
+    (value * 1_000.0).round() / 1_000.0
+}
+
+fn round6(value: f64) -> f64 {
+    (value * 1_000_000.0).round() / 1_000_000.0
+}
+
+fn observation_visible_at_for_mode(
+    observation: &Observation,
+    point_in_time_mode: &str,
+) -> Option<DateTime<Utc>> {
+    match point_in_time_mode {
+        "best_effort" => best_effort_visible_at(observation),
+        "strict" => strict_visible_at(observation),
+        _ => None,
+    }
+}
+
+fn best_effort_visible_at(observation: &Observation) -> Option<DateTime<Utc>> {
+    let anchor_date = observation.period_end.unwrap_or(observation.as_of_date);
+    match observation.source_id.as_str() {
+        "treasury" => Some(new_york_time_to_utc(anchor_date, 18, 0)),
+        "world_bank" => anchor_date
+            .checked_add_signed(Duration::days(270))
+            .map(|date| new_york_time_to_utc(date, 17, 30)),
+        "boj" => Some(tokyo_time_to_utc(anchor_date, 17, 0)),
+        "sec_edgar" => Some(
+            observation
+                .publication_time
+                .unwrap_or_else(|| new_york_time_to_utc(anchor_date, 18, 0)),
+        ),
+        "gdelt" => None,
+        "mock" => Some(
+            observation
+                .publication_time
+                .unwrap_or_else(|| new_york_time_to_utc(anchor_date, 17, 30)),
+        ),
+        _ => anchor_date
+            .checked_add_signed(Duration::days(default_visibility_lag_days(
+                observation.frequency,
+            )))
+            .map(|date| new_york_time_to_utc(date, 17, 30)),
+    }
+}
+
+fn strict_visible_at(observation: &Observation) -> Option<DateTime<Utc>> {
+    match observation.source_id.as_str() {
+        "sec_edgar" | "mock" => observation.publication_time,
+        _ => None,
+    }
+}
+
+fn default_visibility_lag_days(frequency: Frequency) -> i64 {
+    match frequency {
+        Frequency::Daily | Frequency::Event => 0,
+        Frequency::Weekly => 3,
+        Frequency::Monthly => 15,
+        Frequency::Quarterly => 45,
+        Frequency::Annual => 270,
+    }
+}
+
+fn assessment_cutoff_utc(as_of_date: NaiveDate) -> DateTime<Utc> {
+    new_york_time_to_utc(as_of_date, 17, 30)
+}
+
+fn new_york_time_to_utc(date: NaiveDate, hour: u32, minute: u32) -> DateTime<Utc> {
+    let utc_offset_hours = if is_new_york_dst(date) { 4 } else { 5 };
+    let local = date
+        .and_hms_opt(hour, minute, 0)
+        .expect("local wall-clock timestamp must be valid");
+    DateTime::<Utc>::from_naive_utc_and_offset(local + Duration::hours(utc_offset_hours), Utc)
+}
+
+fn tokyo_time_to_utc(date: NaiveDate, hour: u32, minute: u32) -> DateTime<Utc> {
+    let local = date
+        .and_hms_opt(hour, minute, 0)
+        .expect("tokyo wall-clock timestamp must be valid");
+    DateTime::<Utc>::from_naive_utc_and_offset(local - Duration::hours(9), Utc)
+}
+
+fn is_new_york_dst(date: NaiveDate) -> bool {
+    let year = date.year();
+    let (start, end) = if year >= 2007 {
+        (
+            nth_weekday_of_month(year, 3, Weekday::Sun, 2),
+            nth_weekday_of_month(year, 11, Weekday::Sun, 1),
+        )
+    } else {
+        (
+            nth_weekday_of_month(year, 4, Weekday::Sun, 1),
+            last_weekday_of_month(year, 10, Weekday::Sun),
+        )
+    };
+    date >= start && date < end
+}
+
+fn nth_weekday_of_month(year: i32, month: u32, weekday: Weekday, nth: u32) -> NaiveDate {
+    let first_day = NaiveDate::from_ymd_opt(year, month, 1).expect("valid calendar date");
+    let first_weekday_offset = (7 + weekday.num_days_from_monday() as i64
+        - first_day.weekday().num_days_from_monday() as i64)
+        % 7;
+    first_day
+        .checked_add_signed(Duration::days(
+            first_weekday_offset + 7 * i64::from(nth - 1),
+        ))
+        .expect("nth weekday must be representable")
+}
+
+fn last_weekday_of_month(year: i32, month: u32, weekday: Weekday) -> NaiveDate {
+    let next_month = if month == 12 {
+        NaiveDate::from_ymd_opt(year + 1, 1, 1).expect("valid calendar date")
+    } else {
+        NaiveDate::from_ymd_opt(year, month + 1, 1).expect("valid calendar date")
+    };
+    let last_day = next_month
+        .checked_sub_signed(Duration::days(1))
+        .expect("previous day must be valid");
+    let backward_offset = (7 + last_day.weekday().num_days_from_monday() as i64
+        - weekday.num_days_from_monday() as i64)
+        % 7;
+    last_day
+        .checked_sub_signed(Duration::days(backward_offset))
+        .expect("last weekday must be representable")
 }
 
 fn feature_snapshot_id(

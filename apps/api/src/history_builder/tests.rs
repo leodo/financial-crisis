@@ -1195,8 +1195,8 @@ async fn default_mode_bundle_release_rebuilds_full_history_when_replay_cache_is_
     assert!(
         history
             .iter()
-            .all(|point| point.history_source.as_deref() == Some("raw_observation_replay")),
-        "once raw rebuild points are persisted as a replay run, the returned history should already expose the stable raw observation replay source instead of a one-request-only rebuild marker"
+            .all(|point| point.history_source.as_deref() == Some("raw_pit_feature_replay")),
+        "once bundle history rebuild can persist exact same-day PIT snapshots, the returned history should already expose the stronger raw_pit_feature_replay source instead of stopping at raw observation replay"
     );
 
     let replay_runs = store
@@ -1316,8 +1316,7 @@ async fn bundle_history_rebuild_binds_persisted_feature_snapshot_ids_when_availa
 }
 
 #[tokio::test]
-async fn bundle_history_rebuild_reuses_latest_prior_feature_snapshot_when_same_day_snapshot_is_missing(
-) {
+async fn bundle_history_rebuild_materializes_exact_snapshot_when_no_new_visible_data_arrived() {
     let store = in_memory_store().await;
     store.seed_fred_metadata().await.unwrap();
     let as_of_date = NaiveDate::from_ymd_opt(2026, 5, 30).unwrap();
@@ -1379,16 +1378,117 @@ async fn bundle_history_rebuild_reuses_latest_prior_feature_snapshot_when_same_d
 
     assert_eq!(
         latest_point.history_source.as_deref(),
-        Some("raw_pit_feature_reuse"),
-        "when same-day PIT snapshot is missing, history should mark the point as reusing the latest prior persisted PIT snapshot instead of overstating it as exact same-day PIT"
+        Some("raw_pit_feature_replay"),
+        "when no new visible data arrived after the prior exact PIT snapshot, history should materialize an exact same-day PIT snapshot instead of leaving the point in reuse state"
     );
-    assert_eq!(
+    assert_ne!(
         latest_point.feature_snapshot_id, prior_point.feature_snapshot_id,
-        "latest date should reuse the most recent persisted PIT feature snapshot id"
+        "latest date should receive its own exact PIT snapshot id once carry-forward materialization is possible"
     );
     assert!(
         latest_point.replay_run_id.is_some(),
         "same-day point should keep the replay run id after raw rebuild metadata is persisted"
+    );
+
+    let latest_snapshots = store
+        .list_feature_snapshots_for_mode(
+            &serving_model.release.manifest.market_scope,
+            &serving_model.release.manifest.feature_set_version,
+            &serving_model.release.manifest.point_in_time_mode,
+            Some(latest_date),
+            Some(latest_date),
+        )
+        .await
+        .unwrap();
+    assert!(
+        latest_snapshots.iter().any(|snapshot| snapshot.as_of_date == latest_date),
+        "API should persist an exact same-day PIT feature snapshot when the prior snapshot can be carried forward without new visible data"
+    );
+}
+
+#[tokio::test]
+async fn bundle_history_rebuild_rebuilds_exact_snapshot_when_new_visible_data_arrived() {
+    let store = in_memory_store().await;
+    store.seed_fred_metadata().await.unwrap();
+    let as_of_date = NaiveDate::from_ymd_opt(2026, 5, 30).unwrap();
+    let indicators = demo_indicators();
+    for indicator in &indicators {
+        store.upsert_indicator(indicator).await.unwrap();
+    }
+    let observations = demo_observations(as_of_date);
+    store.insert_observations(&observations).await.unwrap();
+
+    let serving_model = formal_serving_model_context();
+    store
+        .upsert_model_release(&serving_model.release)
+        .await
+        .unwrap();
+
+    let target_dates = observations
+        .iter()
+        .filter(|observation| observation.entity_id == "us")
+        .map(|observation| observation.as_of_date)
+        .chain(std::iter::once(as_of_date))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let latest_date = *target_dates.last().unwrap();
+    let prior_date = target_dates[target_dates.len() - 3];
+    let mut prior_snapshot = history_test_feature_snapshot(prior_date);
+    prior_snapshot.latest_visible_at = prior_date
+        .and_hms_opt(22, 0, 0)
+        .map(|value| chrono::DateTime::<Utc>::from_naive_utc_and_offset(value, Utc));
+    store
+        .upsert_feature_snapshots(&[prior_snapshot.clone()])
+        .await
+        .unwrap();
+
+    let history = load_sqlite_assessment_history(
+        &store,
+        &indicators,
+        &observations,
+        &[],
+        Some(&serving_model),
+        &load_user_preferences(),
+        as_of_date,
+        260,
+        AssessmentHistoryBuildMode::Default,
+    )
+    .await
+    .unwrap();
+
+    let latest_point = history
+        .iter()
+        .find(|point| point.as_of_date == latest_date)
+        .expect("latest history point");
+    assert_eq!(
+        latest_point.history_source.as_deref(),
+        Some("raw_pit_feature_replay"),
+        "when newer observations became visible after the prior snapshot, API should rebuild a true same-day PIT feature snapshot instead of staying in reuse state"
+    );
+    let rebuilt_snapshot_id = format!(
+        "financial_system:us:{}:{}:best_effort",
+        latest_date, FORMAL_MAIN_FEATURE_SET_VERSION
+    );
+    assert_eq!(
+        latest_point.feature_snapshot_id.as_deref(),
+        Some(rebuilt_snapshot_id.as_str()),
+        "rebuilt mode should bind the latest point to the exact same-day PIT snapshot id"
+    );
+
+    let latest_snapshots = store
+        .list_feature_snapshots_for_mode(
+            &serving_model.release.manifest.market_scope,
+            &serving_model.release.manifest.feature_set_version,
+            &serving_model.release.manifest.point_in_time_mode,
+            Some(latest_date),
+            Some(latest_date),
+        )
+        .await
+        .unwrap();
+    assert!(
+        latest_snapshots.iter().any(|snapshot| snapshot.as_of_date == latest_date),
+        "API should persist the rebuilt same-day PIT feature snapshot after newer visible data arrives"
     );
 }
 
