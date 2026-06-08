@@ -1,8 +1,8 @@
 use std::fmt::Write;
 
 use crate::{
-    release_review::ReleaseReviewHistoricalAuditPriority, ReleaseReviewEnvelope,
-    ReleaseReviewScenarioFocusDiagnostic,
+    release_review::{ReleaseReviewHistoricalAuditPriority, ReleaseReviewScenarioCoverage},
+    ReleaseReviewEnvelope, ReleaseReviewScenarioFocusDiagnostic,
 };
 
 pub(super) fn render_release_focus_scenarios_markdown(
@@ -20,6 +20,7 @@ pub(super) fn render_release_focus_scenarios_markdown(
             markdown,
             scenario,
             historical_audit_priority_for_scenario(report, scenario.scenario_id.as_str()),
+            scenario_coverage_for_scenario(report, scenario.scenario_id.as_str()),
         );
     }
 }
@@ -30,6 +31,16 @@ fn historical_audit_priority_for_scenario<'a>(
 ) -> Option<&'a ReleaseReviewHistoricalAuditPriority> {
     report
         .historical_audit_priorities
+        .iter()
+        .find(|row| row.scenario_id == scenario_id)
+}
+
+fn scenario_coverage_for_scenario<'a>(
+    report: &'a ReleaseReviewEnvelope,
+    scenario_id: &str,
+) -> Option<&'a ReleaseReviewScenarioCoverage> {
+    report
+        .scenario_coverages
         .iter()
         .find(|row| row.scenario_id == scenario_id)
 }
@@ -50,6 +61,7 @@ fn render_release_focus_scenario_markdown(
     markdown: &mut String,
     scenario: &ReleaseReviewScenarioFocusDiagnostic,
     historical_priority: Option<&ReleaseReviewHistoricalAuditPriority>,
+    scenario_coverage: Option<&ReleaseReviewScenarioCoverage>,
 ) {
     let _ = writeln!(markdown, "### {} ({})", scenario.name, scenario.outcome);
     let _ = writeln!(markdown);
@@ -154,6 +166,31 @@ fn render_release_focus_scenario_markdown(
             priority.suggested_review
         );
     }
+    if let Some(coverage) = scenario_coverage {
+        let _ = writeln!(
+            markdown,
+            "- Coverage context: role={} | grade={} | PIT={} | allowed={} | status={}",
+            coverage.recommended_role,
+            coverage.coverage_grade,
+            coverage.point_in_time_mode,
+            format_allowed_roles(coverage),
+            coverage.current_status
+        );
+        if !coverage.blocking_gaps.is_empty() {
+            let _ = writeln!(
+                markdown,
+                "- Coverage gaps: {}",
+                coverage.blocking_gaps.join("; ")
+            );
+        }
+        if !coverage.free_sources.is_empty() {
+            let _ = writeln!(
+                markdown,
+                "- Free sources: {}",
+                coverage.free_sources.join(", ")
+            );
+        }
+    }
     let _ = writeln!(
         markdown,
         "- Dominant runtime block: baseline={} ({}) | candidate={} ({})",
@@ -189,6 +226,27 @@ fn render_release_focus_scenario_markdown(
                 block.candidate_count,
                 crate::format_signed_count_delta(block.delta)
             );
+        }
+    }
+
+    fn format_allowed_roles(coverage: &ReleaseReviewScenarioCoverage) -> String {
+        let mut roles = Vec::new();
+        if coverage.usable_for_main_training {
+            roles.push("main");
+        }
+        if coverage.usable_for_extension_training {
+            roles.push("ext");
+        }
+        if coverage.usable_for_protected_stress {
+            roles.push("protected");
+        }
+        if coverage.usable_for_historical_analog {
+            roles.push("analog");
+        }
+        if roles.is_empty() {
+            "—".to_string()
+        } else {
+            roles.join(", ")
         }
     }
     if !scenario.runtime_continuity_facet_counts.is_empty() {

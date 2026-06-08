@@ -90,27 +90,28 @@ pub(crate) use probability::{
     regime_positive_window_gap_floor, summarize_bundle_evaluation, train_horizon_bundle,
 };
 pub(crate) use release_review::{
-    build_release_runtime_review_diagnostics, format_runtime_category_list, lift_vs_baseline,
-    release_review_historical_audit_takeaways, release_review_runtime_separation_takeaways,
-    render_release_review_markdown, summarize_release_review_failure_modes,
-    summarize_release_review_historical_audit_actions,
+    build_release_review_scenario_coverage, build_release_runtime_review_diagnostics,
+    format_runtime_category_list, lift_vs_baseline, release_review_historical_audit_takeaways,
+    release_review_runtime_separation_takeaways, render_release_review_markdown,
+    summarize_release_review_failure_modes, summarize_release_review_historical_audit_actions,
     summarize_release_review_historical_audit_attribution,
     summarize_release_review_historical_audit_priorities,
     summarize_release_review_historical_audit_workstreams_with_focus,
     ReleaseActionabilityLevelReview, ReleaseActionabilityReview,
     ReleaseReviewBacktestScenarioComparison, ReleaseReviewComparisonSummary,
     ReleaseReviewCountMetric, ReleaseReviewEnvelope, ReleaseReviewHistoricalAuditActionSummary,
-    ReleaseReviewRuntimeBlockCount, ReleaseReviewRuntimeDominantCategories,
-    ReleaseReviewRuntimeSeparationComparison, ReleaseReviewScalarMetric,
-    ReleaseReviewScenarioFocusDiagnostic, ReleaseReviewScenarioPointComparison,
-    ReleaseRuntimeReviewDiagnostics, ReleaseRuntimeSeparationSummary,
+    ReleaseReviewHistoricalAuditPriority, ReleaseReviewRuntimeBlockCount,
+    ReleaseReviewRuntimeDominantCategories, ReleaseReviewRuntimeSeparationComparison,
+    ReleaseReviewScalarMetric, ReleaseReviewScenarioCoverage,
+    ReleaseReviewScenarioCoverageCatalogSummary, ReleaseReviewScenarioFocusDiagnostic,
+    ReleaseReviewScenarioPointComparison, ReleaseRuntimeReviewDiagnostics,
+    ReleaseRuntimeSeparationSummary,
 };
 #[cfg(test)]
 pub(crate) use release_review::{
     classify_regime_separation, summarize_release_review_historical_audit_workstreams,
     summarize_release_runtime_regime_probabilities, summarize_release_runtime_regime_separation,
-    ReleaseReviewHistoricalAuditAttributionSummary, ReleaseReviewHistoricalAuditPriority,
-    ReleaseReviewHistoricalAuditWorkstreamSummary,
+    ReleaseReviewHistoricalAuditAttributionSummary, ReleaseReviewHistoricalAuditWorkstreamSummary,
 };
 pub(crate) use reporting::write_formal_dataset_summary_report;
 pub(crate) use scenario::{

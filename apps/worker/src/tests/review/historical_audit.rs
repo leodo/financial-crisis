@@ -297,6 +297,11 @@ fn release_review_historical_audit_workstreams_group_priorities() {
             candidate_gate_gap_profile: Some("p20d_only".to_string()),
             primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
             suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
+            coverage_recommended_role: None,
+            coverage_grade: None,
+            coverage_point_in_time_mode: None,
+            coverage_current_status: None,
+            coverage_blocking_gaps: Vec::new(),
         },
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_early_90s_banking_stress".to_string(),
@@ -315,6 +320,11 @@ fn release_review_historical_audit_workstreams_group_priorities() {
             candidate_gate_gap_profile: None,
             primary_workstream: "posture_continuity".to_string(),
             suggested_review: "复核 prepare/months 连续性".to_string(),
+            coverage_recommended_role: None,
+            coverage_grade: None,
+            coverage_point_in_time_mode: None,
+            coverage_current_status: None,
+            coverage_blocking_gaps: Vec::new(),
         },
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_funding_stress_2011".to_string(),
@@ -333,6 +343,11 @@ fn release_review_historical_audit_workstreams_group_priorities() {
             candidate_gate_gap_profile: None,
             primary_workstream: "posture_continuity".to_string(),
             suggested_review: "复核 prepare/months 连续性".to_string(),
+            coverage_recommended_role: None,
+            coverage_grade: None,
+            coverage_point_in_time_mode: None,
+            coverage_current_status: None,
+            coverage_blocking_gaps: Vec::new(),
         },
     ]);
 
@@ -391,6 +406,11 @@ fn release_review_historical_audit_workstreams_with_focus_aggregate_gate_gap_poi
         candidate_gate_gap_profile: Some("p20d_only".to_string()),
         primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
         suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
+        coverage_recommended_role: None,
+        coverage_grade: None,
+        coverage_point_in_time_mode: None,
+        coverage_current_status: None,
+        coverage_blocking_gaps: Vec::new(),
     }];
     let scenarios = vec![ReleaseReviewScenarioFocusDiagnostic {
         scenario_id: "us_dotcom_unwind_2000".to_string(),
@@ -483,6 +503,11 @@ fn release_review_historical_audit_attribution_distinguishes_shared_and_regressi
             candidate_gate_gap_profile: Some("p20d_only".to_string()),
             primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
             suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
+            coverage_recommended_role: None,
+            coverage_grade: None,
+            coverage_point_in_time_mode: None,
+            coverage_current_status: None,
+            coverage_blocking_gaps: Vec::new(),
         },
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_early_90s_banking_stress".to_string(),
@@ -501,6 +526,11 @@ fn release_review_historical_audit_attribution_distinguishes_shared_and_regressi
             candidate_gate_gap_profile: None,
             primary_workstream: "posture_continuity".to_string(),
             suggested_review: "复核 prepare/months 连续性".to_string(),
+            coverage_recommended_role: None,
+            coverage_grade: None,
+            coverage_point_in_time_mode: None,
+            coverage_current_status: None,
+            coverage_blocking_gaps: Vec::new(),
         },
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_regional_banks_2023".to_string(),
@@ -519,6 +549,11 @@ fn release_review_historical_audit_attribution_distinguishes_shared_and_regressi
             candidate_gate_gap_profile: None,
             primary_workstream: "score_confirmation".to_string(),
             suggested_review: "复核 months/prepare 的 score confirmation".to_string(),
+            coverage_recommended_role: None,
+            coverage_grade: None,
+            coverage_point_in_time_mode: None,
+            coverage_current_status: None,
+            coverage_blocking_gaps: Vec::new(),
         },
     ]);
 
@@ -572,6 +607,11 @@ fn release_review_historical_audit_attribution_marks_revealed_next_blocker() {
             candidate_gate_gap_profile: Some("p20d_only".to_string()),
             primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
             suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
+            coverage_recommended_role: None,
+            coverage_grade: None,
+            coverage_point_in_time_mode: None,
+            coverage_current_status: None,
+            coverage_blocking_gaps: Vec::new(),
         },
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_dotcom_unwind_2000".to_string(),
@@ -590,6 +630,11 @@ fn release_review_historical_audit_attribution_marks_revealed_next_blocker() {
             candidate_gate_gap_profile: None,
             primary_workstream: "residual_release_review_audit".to_string(),
             suggested_review: "继续逐点复核 mixed_systemic_stress 的 runtime block mix".to_string(),
+            coverage_recommended_role: None,
+            coverage_grade: None,
+            coverage_point_in_time_mode: None,
+            coverage_current_status: None,
+            coverage_blocking_gaps: Vec::new(),
         },
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_regional_banks_2023".to_string(),
@@ -608,6 +653,11 @@ fn release_review_historical_audit_attribution_marks_revealed_next_blocker() {
             candidate_gate_gap_profile: Some("p20d_only".to_string()),
             primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
             suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
+            coverage_recommended_role: None,
+            coverage_grade: None,
+            coverage_point_in_time_mode: None,
+            coverage_current_status: None,
+            coverage_blocking_gaps: Vec::new(),
         },
     ]);
 
@@ -752,6 +802,11 @@ fn release_review_historical_audit_takeaways_explain_primary_workstreams() {
             candidate_gate_gap_profile: Some("p60d_only".to_string()),
             primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
             suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
+            coverage_recommended_role: None,
+            coverage_grade: None,
+            coverage_point_in_time_mode: None,
+            coverage_current_status: None,
+            coverage_blocking_gaps: Vec::new(),
         },
         ReleaseReviewHistoricalAuditPriority {
             scenario_id: "us_early_90s_banking_stress".to_string(),
@@ -770,6 +825,11 @@ fn release_review_historical_audit_takeaways_explain_primary_workstreams() {
             candidate_gate_gap_profile: None,
             primary_workstream: "posture_continuity".to_string(),
             suggested_review: "复核 prepare/months 连续性".to_string(),
+            coverage_recommended_role: None,
+            coverage_grade: None,
+            coverage_point_in_time_mode: None,
+            coverage_current_status: None,
+            coverage_blocking_gaps: Vec::new(),
         },
     ]);
     let rendered = release_review_historical_audit_takeaways(&takeaways);

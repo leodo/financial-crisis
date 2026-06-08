@@ -228,6 +228,7 @@
 - [ ] 扩展美国历史压力样本，尽量覆盖 `1987 / 1994 / 2000 / 2001 / 2008 / 2011 / 2020 / 2023` 中免费可回补的区间
   - 2026-06-09：已把场景覆盖矩阵落成机器可读配置 `config/research_scenario_data_coverage.us.json`，并接入 `/api/assessment/method` 与方法页；至少现在“哪些场景可做主训练 / 扩展训练 / protected stress / historical analog、当前缺什么免费数据”已经不再停留在文档口头说明。
   - 2026-06-09：worker 的 `research dataset summarize-main` 现已直接输出 coverage catalog、dataset intent、场景对齐计数，以及逐场景的 `coverage_grade / recommended_role / PIT 口径 / free_sources / blocking_gaps`；formal main 也已按 `main_training + protected_context` 正确识别 `2000 / 2011 / 2022` 这类 protected context，而不会被误判成“混入了不该进入主数据集的扩展样本”。
+  - 2026-06-09：`research release review` 现已复用同一份 `scenario_data_coverage_v1`，把场景覆盖上下文接到 `Historical Audit` 和 `Focus Scenarios`：导出报告会直接显示 `Coverage role / Grade / PIT / Free sources / Blocking gaps`，避免训练 summary、历史审计和逐场景复盘继续用三套不同口径解释同一批历史样本。
 - [x] 把方法页和面板解释继续补强，让用户能看懂“危机先验”和“动作概率”不是同一个东西
 
 补充观察：

@@ -240,6 +240,26 @@ pub(super) fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope
             );
         }
     }
+    if !report.scenario_coverages.is_empty() {
+        println!(
+            "Scenario coverage: catalog={} backtests={}/{} focus={}/{} eligible[main={} ext={} protected={} analog={}]",
+            report.scenario_coverage_catalog.catalog_id,
+            report.scenario_coverage_catalog.covered_backtest_scenario_count,
+            report.scenario_coverage_catalog.backtest_scenario_count,
+            report.scenario_coverage_catalog.covered_focus_scenario_count,
+            report.scenario_coverage_catalog.focus_scenario_count,
+            report.scenario_coverage_catalog.main_training_eligible_count,
+            report
+                .scenario_coverage_catalog
+                .extension_training_eligible_count,
+            report
+                .scenario_coverage_catalog
+                .protected_stress_eligible_count,
+            report
+                .scenario_coverage_catalog
+                .historical_analog_eligible_count
+        );
+    }
     if !report.historical_audit_attribution.is_empty() {
         println!("Historical audit attribution:");
         for row in &report.historical_audit_attribution {

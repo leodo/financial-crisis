@@ -201,8 +201,18 @@ async fn run_release_review(
         &baseline_runtime_snapshot.method,
         &candidate_runtime_snapshot.method,
     );
-    let historical_audit_priorities =
-        crate::summarize_release_review_historical_audit_priorities(&scenario_focus);
+    let (scenario_coverage_catalog, scenario_coverages) =
+        crate::build_release_review_scenario_coverage(
+            &build_release_review_backtest_scenario_comparisons(
+                &baseline_runtime_snapshot.backtests,
+                &candidate_runtime_snapshot.backtests,
+            ),
+            &scenario_focus,
+        );
+    let historical_audit_priorities = enrich_historical_audit_priorities_with_coverage(
+        crate::summarize_release_review_historical_audit_priorities(&scenario_focus),
+        &scenario_coverages,
+    );
     let historical_audit_attribution =
         crate::summarize_release_review_historical_audit_attribution(&historical_audit_priorities);
     let historical_audit_actions =
@@ -245,6 +255,8 @@ async fn run_release_review(
         candidate_runtime_review,
         baseline_actionability_review,
         candidate_actionability_review,
+        scenario_coverage_catalog,
+        scenario_coverages,
         scenario_focus,
         historical_audit_workstreams,
         historical_audit_priorities,
@@ -277,4 +289,28 @@ async fn run_release_review(
     summary::print_release_review_summary(&report);
 
     Ok(())
+}
+
+fn enrich_historical_audit_priorities_with_coverage(
+    priorities: Vec<crate::ReleaseReviewHistoricalAuditPriority>,
+    scenario_coverages: &[crate::ReleaseReviewScenarioCoverage],
+) -> Vec<crate::ReleaseReviewHistoricalAuditPriority> {
+    let coverage_by_id = scenario_coverages
+        .iter()
+        .map(|coverage| (coverage.scenario_id.as_str(), coverage))
+        .collect::<BTreeMap<_, _>>();
+
+    priorities
+        .into_iter()
+        .map(|mut priority| {
+            if let Some(coverage) = coverage_by_id.get(priority.scenario_id.as_str()).copied() {
+                priority.coverage_recommended_role = Some(coverage.recommended_role.clone());
+                priority.coverage_grade = Some(coverage.coverage_grade.clone());
+                priority.coverage_point_in_time_mode = Some(coverage.point_in_time_mode.clone());
+                priority.coverage_current_status = Some(coverage.current_status.clone());
+                priority.coverage_blocking_gaps = coverage.blocking_gaps.clone();
+            }
+            priority
+        })
+        .collect()
 }
