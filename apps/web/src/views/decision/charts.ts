@@ -104,10 +104,12 @@ function buildProbabilityTrendSourceNote(history: AssessmentHistoryPoint[]) {
   }
 
   const rawObservationCount = history.filter(
-    (point) => point.history_source === "raw_observation_rebuild"
+    (point) =>
+      point.history_source === "raw_observation_rebuild" ||
+      point.history_source === "raw_observation_replay"
   ).length;
   if (rawObservationCount > 0) {
-    return `这段轨迹已经避开旧 snapshot bridge，但其中 ${rawObservationCount}/${history.length} 个点还没有对上已落库的 PIT feature snapshot，当前仍属于 raw rebuild 过渡口径。`;
+    return `这段轨迹已经避开旧 snapshot bridge，但其中 ${rawObservationCount}/${history.length} 个点还没有对上已落库的 PIT feature snapshot，当前仍属于 raw observation 过渡口径。`;
   }
 
   return "";

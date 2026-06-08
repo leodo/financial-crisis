@@ -1191,8 +1191,8 @@ async fn default_mode_bundle_release_rebuilds_full_history_when_replay_cache_is_
     assert!(
         history
             .iter()
-            .all(|point| point.history_source.as_deref() == Some("raw_observation_rebuild")),
-        "without persisted feature snapshots, rebuilt bundle-backed history should stay explicitly marked as raw observation rebuild"
+            .all(|point| point.history_source.as_deref() == Some("raw_observation_replay")),
+        "once raw rebuild points are persisted as a replay run, the returned history should already expose the stable raw observation replay source instead of a one-request-only rebuild marker"
     );
 
     let replay_runs = store

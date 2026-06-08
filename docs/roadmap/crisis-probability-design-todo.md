@@ -604,7 +604,8 @@
      - 已完成一部分：`bundle-backed formal release` 的历史 raw rebuild 现在只写 `historical replay run / point`，不再把整段历史 assessment 反向回填到 `analytics_prediction_snapshots`
      - 已完成一部分：`assessment history` 点位现在会显式带 `history_source / replay_run_id / feature_snapshot_id`
        - `transitional_snapshot_bridge`：仍在走旧 `prediction snapshots`
-       - `raw_observation_rebuild`：已经避开旧 snapshot，但这段点位还没有对上已落库的 PIT feature snapshot
+       - `raw_observation_rebuild`：fresh rebuild 过程中的中间态，还没写回 replay run
+       - `raw_observation_replay`：已经避开旧 snapshot，也已经落成 replay run，但这段点位还没有对上已落库的 PIT feature snapshot
        - `raw_pit_feature_replay`：这段点位既来自 replay，又已经绑定到真实 `feature snapshot id`
      - 已完成一部分：`bundle-backed formal release` 的 raw rebuild 会优先去匹配已落库的 `feature snapshots`，命中后把真实 `feature_snapshot_id` 写回 replay point，而不是继续只拼一个“看起来像 snapshot id”的字符串
      - 已完成一部分：已把 replay cache 版本升到 `history_cache_v5_20260608`，并修掉同日尾点刷新时丢失 replay metadata 的问题；当前默认 `/api/assessment/history` 已回到 `260/260 raw_pit_feature_replay`，`2026-06-08` 也能复用最近一笔 `2026-05-31` 的 persisted `feature_snapshot_id`

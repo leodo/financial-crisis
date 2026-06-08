@@ -42,6 +42,7 @@ const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_STRUCTURAL_FLOOR: f64 = 55.0;
 const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_TRIGGER_CEILING: f64 = 28.0;
 const HISTORY_PREPARE_HYSTERESIS_TRIGGER_CODE: &str = "prepare_history_hysteresis";
 const HISTORY_SOURCE_RAW_OBSERVATION_REBUILD: &str = "raw_observation_rebuild";
+const HISTORY_SOURCE_RAW_OBSERVATION_REPLAY: &str = "raw_observation_replay";
 const HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY: &str = "raw_pit_feature_replay";
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -322,6 +323,14 @@ async fn rebuild_full_release_history_from_raw(
     {
         for point in &mut rebuilt.history_points {
             point.replay_run_id = Some(replay_run_id.clone());
+            point.history_source = Some(
+                if point.feature_snapshot_id.is_some() {
+                    HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY
+                } else {
+                    HISTORY_SOURCE_RAW_OBSERVATION_REPLAY
+                }
+                .to_string(),
+            );
         }
     }
     Ok(rebuilt)
