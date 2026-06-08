@@ -116,6 +116,19 @@ fn print_training_artifacts_summary(artifacts: &PipelineArtifacts, options: &Pip
                     crate::format_pct(early_evidence.avg_training_target),
                     early_evidence.avg_objective_weight,
                 );
+                if early_evidence.episode_native_objective_row_count > 0 {
+                    println!(
+                        "                   episode_native rows={}({}) protected_no_positive_main={}({}) target={} weight={}",
+                        early_evidence.episode_native_objective_row_count,
+                        crate::format_pct(early_evidence.episode_native_objective_row_rate),
+                        early_evidence.protected_no_positive_main_row_count,
+                        crate::format_pct(early_evidence.protected_no_positive_main_row_rate),
+                        crate::format_pct(
+                            early_evidence.protected_no_positive_main_avg_training_target
+                        ),
+                        early_evidence.protected_no_positive_main_avg_objective_weight,
+                    );
+                }
             }
         }
         let configured_overlay_ids = horizon

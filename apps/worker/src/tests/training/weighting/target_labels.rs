@@ -198,6 +198,31 @@ fn forward_crisis_60d_prepare_buffer_uses_episode_native_objective() {
         1.10
     );
 
+    let protected_no_positive_main = build_row(
+        1,
+        Some("no_positive_main"),
+        "rate_shock_or_policy_dislocation",
+        true,
+        Some(82),
+        true,
+    );
+    assert_eq!(
+        crate::probability_training_target_label(
+            &protected_no_positive_main,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis
+        ),
+        0.48
+    );
+    assert_eq!(
+        negative_sample_weight(
+            &protected_no_positive_main,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis
+        ),
+        0.95
+    );
+
     let outside_prepare = build_row(
         0,
         Some("mandatory"),
@@ -247,5 +272,59 @@ fn forward_crisis_60d_prepare_buffer_uses_episode_native_objective() {
             ProbabilityTargetLabelMode::ForwardCrisis
         ),
         0.26
+    );
+}
+
+#[test]
+fn forward_crisis_20d_protected_no_positive_main_hedge_buffer_uses_conservative_objective() {
+    let hedge_row = ProbabilityTrainingRow {
+        as_of_date: NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+        market_scope: "financial_system".to_string(),
+        release_id: None,
+        probability_mode: Some("formal_bundle_v1".to_string()),
+        freshness_status: Some("a".to_string()),
+        time_to_risk_bucket: Some("weeks".to_string()),
+        split_name: Some("train".to_string()),
+        features: BTreeMap::new(),
+        primary_scenario_id: Some("scenario".to_string()),
+        scenario_family: Some("rate_shock_or_policy_dislocation".to_string()),
+        scenario_training_role: Some("no_positive_main".to_string()),
+        days_to_primary_crisis_start: Some(40),
+        primary_scenario_supports_5d: false,
+        primary_scenario_supports_20d: true,
+        primary_scenario_supports_60d: true,
+        label_5d: 0,
+        label_20d: 0,
+        label_60d: 0,
+        regime_5d: ProbabilityTrainingRegime::Normal,
+        regime_20d: ProbabilityTrainingRegime::PreWarningBuffer,
+        regime_60d: ProbabilityTrainingRegime::PreWarningBuffer,
+        action_label_5d: 0,
+        action_label_20d: 1,
+        action_label_60d: 0,
+        prepare_episode_label: 0,
+        hedge_episode_label: 1,
+        defend_episode_label: 0,
+        primary_action_level: Some("hedge".to_string()),
+        action_episode_id: Some("scenario:hedge".to_string()),
+        action_episode_phase: "primary".to_string(),
+        protected_action_window: true,
+    };
+
+    assert_eq!(
+        crate::probability_training_target_label(
+            &hedge_row,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis
+        ),
+        0.34
+    );
+    assert_eq!(
+        negative_sample_weight(
+            &hedge_row,
+            20,
+            ProbabilityTargetLabelMode::ForwardCrisis
+        ),
+        0.90
     );
 }

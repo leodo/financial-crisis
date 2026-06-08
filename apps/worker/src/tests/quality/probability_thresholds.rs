@@ -317,6 +317,10 @@ fn regime_support_adjustment_lowers_60d_threshold_when_base_misses_prewarning_bu
     assert_eq!(prewarning_evidence.avg_hard_label, 0.0);
     assert_eq!(prewarning_evidence.avg_training_target, 0.26);
     assert_eq!(prewarning_evidence.avg_objective_weight, 0.6);
+    assert_eq!(prewarning_evidence.episode_native_objective_row_count, 0);
+    assert_eq!(prewarning_evidence.protected_no_positive_main_row_count, 0);
+    assert_eq!(prewarning_evidence.protected_no_positive_main_avg_training_target, 0.0);
+    assert_eq!(prewarning_evidence.protected_no_positive_main_avg_objective_weight, 0.0);
 }
 
 #[test]
@@ -399,4 +403,119 @@ fn threshold_selection_excludes_in_crisis_negatives_for_60d_forward_crisis() {
         .rows
         .iter()
         .all(|row| row.regime_60d != ProbabilityTrainingRegime::InCrisis));
+}
+
+#[test]
+fn calibration_regime_evidence_surfaces_protected_no_positive_main_episode_rows() {
+    let protected_hedge_row = ProbabilityTrainingRow {
+        as_of_date: NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(),
+        market_scope: "financial_system".to_string(),
+        release_id: None,
+        probability_mode: Some("formal_bundle_v1".to_string()),
+        freshness_status: Some("fresh".to_string()),
+        time_to_risk_bucket: Some("weeks".to_string()),
+        split_name: Some("calibration".to_string()),
+        features: BTreeMap::new(),
+        primary_scenario_id: Some("us_rate_shock_2022".to_string()),
+        scenario_family: Some("rate_shock_or_policy_dislocation".to_string()),
+        scenario_training_role: Some("no_positive_main".to_string()),
+        days_to_primary_crisis_start: Some(40),
+        primary_scenario_supports_5d: false,
+        primary_scenario_supports_20d: true,
+        primary_scenario_supports_60d: true,
+        label_5d: 0,
+        label_20d: 0,
+        label_60d: 0,
+        regime_5d: ProbabilityTrainingRegime::Normal,
+        regime_20d: ProbabilityTrainingRegime::PreWarningBuffer,
+        regime_60d: ProbabilityTrainingRegime::PreWarningBuffer,
+        action_label_5d: 0,
+        action_label_20d: 1,
+        action_label_60d: 0,
+        prepare_episode_label: 0,
+        hedge_episode_label: 1,
+        defend_episode_label: 0,
+        primary_action_level: Some("hedge".to_string()),
+        action_episode_id: Some("us_rate_shock_2022:hedge".to_string()),
+        action_episode_phase: "primary".to_string(),
+        protected_action_window: true,
+    };
+    let normal_row = ProbabilityTrainingRow {
+        as_of_date: NaiveDate::from_ymd_opt(2022, 4, 2).unwrap(),
+        market_scope: "financial_system".to_string(),
+        release_id: None,
+        probability_mode: Some("formal_bundle_v1".to_string()),
+        freshness_status: Some("fresh".to_string()),
+        time_to_risk_bucket: Some("weeks".to_string()),
+        split_name: Some("calibration".to_string()),
+        features: BTreeMap::new(),
+        primary_scenario_id: None,
+        scenario_family: None,
+        scenario_training_role: None,
+        days_to_primary_crisis_start: None,
+        primary_scenario_supports_5d: false,
+        primary_scenario_supports_20d: false,
+        primary_scenario_supports_60d: false,
+        label_5d: 0,
+        label_20d: 0,
+        label_60d: 0,
+        regime_5d: ProbabilityTrainingRegime::Normal,
+        regime_20d: ProbabilityTrainingRegime::Normal,
+        regime_60d: ProbabilityTrainingRegime::Normal,
+        action_label_5d: 0,
+        action_label_20d: 0,
+        action_label_60d: 0,
+        prepare_episode_label: 0,
+        hedge_episode_label: 0,
+        defend_episode_label: 0,
+        primary_action_level: None,
+        action_episode_id: None,
+        action_episode_phase: "outside".to_string(),
+        protected_action_window: false,
+    };
+    let rows = vec![protected_hedge_row, normal_row];
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    let probabilities = vec![0.33, 0.08];
+    let labels = rows
+        .iter()
+        .map(|row| row.label_20d as f64)
+        .collect::<Vec<_>>();
+    let calibration_selection = ProbabilityCalibrationSelection {
+        rows: row_refs.clone(),
+        eligible_row_count: row_refs.len(),
+        eligible_positive_count: 0,
+        eligible_negative_count: row_refs.len(),
+        used_full_split_fallback: false,
+    };
+    let threshold_selection = ProbabilityThresholdSelection {
+        rows: row_refs.clone(),
+        probabilities: probabilities.clone(),
+        labels: labels.clone(),
+        used_full_split_fallback: false,
+    };
+
+    let diagnostics =
+        build_probability_threshold_diagnostics(ProbabilityThresholdDiagnosticsInput {
+            full_calibration_rows: &rows,
+            calibration_selection: &calibration_selection,
+            threshold_selection: &threshold_selection,
+            horizon_days: 20,
+            label_mode: ProbabilityTargetLabelMode::ForwardCrisis,
+            base_threshold: 0.28,
+            final_threshold: 0.28,
+        });
+    let prewarning_evidence = diagnostics
+        .calibration_regime_evidence
+        .iter()
+        .find(|row| row.regime == "pre_warning_buffer")
+        .expect("pre-warning calibration evidence");
+
+    assert_eq!(prewarning_evidence.full_row_count, 1);
+    assert_eq!(prewarning_evidence.protected_action_window_count, 1);
+    assert_eq!(prewarning_evidence.episode_native_objective_row_count, 1);
+    assert_eq!(prewarning_evidence.protected_no_positive_main_row_count, 1);
+    assert_eq!(prewarning_evidence.avg_training_target, 0.34);
+    assert_eq!(prewarning_evidence.avg_objective_weight, 0.9);
+    assert_eq!(prewarning_evidence.protected_no_positive_main_avg_training_target, 0.34);
+    assert_eq!(prewarning_evidence.protected_no_positive_main_avg_objective_weight, 0.9);
 }

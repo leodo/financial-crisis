@@ -85,6 +85,10 @@ pub(super) struct ProbabilityCalibrationRegimeEvidenceBucket {
     training_target_sum: f64,
     objective_weight_sum: f64,
     protected_action_window_count: u32,
+    episode_native_objective_row_count: u32,
+    protected_no_positive_main_row_count: u32,
+    protected_no_positive_main_training_target_sum: f64,
+    protected_no_positive_main_objective_weight_sum: f64,
 }
 
 #[cfg(test)]

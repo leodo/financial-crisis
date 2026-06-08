@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-08
+最后更新：2026-06-09
 
 ## 1. 目的
 
@@ -757,6 +757,11 @@
    - `2026-06-09` 已先补一层 scenario-definition 证据：给 `us_rate_shock_2022` 增加 `action_episode_overrides` 后，重建 `formal_v1_main_1990_daily:20260609Trateshockoverride` 的切片已从 `66` 行恢复到 `365` 行，区间覆盖 `2021-11-01 -> 2022-10-31`；
    - 当前 expanded slice 的 `phase` 已变成 `primary=228 / late_validation=137`，且 `protected_action_window=365`，说明之前的弱连续性不只是模型冷，而是 `rate_shock` 默认 episode 模板把 2022 年大部分 protected stress 直接排除在 action episode 之外；
    - 但同一 slice 的 `label_20d / label_60d` 仍然都是 `0`，说明接下来要解决的重点已经从“有没有上下文行”转成“这些 protected rows 在训练目标和 review 口径里如何发挥作用”。
+   - `2026-06-09` 已继续把 `ForwardCrisis` episode-native 监督往前推进一小步：`no_positive_main + protected_action_window` 的 `prepare/60d` 与 `hedge/20d` 行，不再只吃 generic `pre_warning_buffer` 软标签，而是改成更保守的 episode-native soft target（`60d=0.48/0.95`，`20d=0.34/0.90`）；
+   - 这一步的目标不是把 `2022` 伪装成正式主正例，而是避免它继续被训练成普通冷负样本；对应单测已经补齐，但还没有完成基于新数据集/新目标的 retrain 与 release review。
+   - `2026-06-09` 已基于 `formal_v1_main_1990_daily:20260609Trateshockoverride` 重训一版 `family_hybrid` 候选：`us_formal_family_hybrid_20260608T173701`；默认 fast review 相对 baseline `us_formal_family_hybrid_20260606T112926` 的结果是 `guard_passed=true`、`actionable_precision 70.5% -> 73.1%`、`longest_false_positive_episode_days 13 -> 11`，说明这轮改动没有把 runtime 泛化放宽，反而让整体候选更收敛；
+   - 但同一轮 `us_rate_shock_2022` 的 formal probability compare 仍显示 `20d hits 48 -> 48`、`60d hits 22 -> 22`、`avg delta 20d overall = -0.009`，说明新增监督还不足以真正拉起 `2022` 的弱连续性；后续主线要从“有没有软目标”进一步收敛到 `feature separation / months-prepare continuity / threshold lead` 本身；
+   - 为了避免下一轮继续靠猜，threshold diagnostics 现在已经能单独暴露 `episode_native_objective_row_count` 与 `protected_no_positive_main_*` 指标，后续训练输出可直接看出这类行在 calibration evidence 里到底占了多少。
 2. 再围绕 `1987 / 1998 / 2000-2001 / 2011` 的 `prewarning_signal_gap` 做训练样本、特征覆盖与标签窗口专项复盘，确认为什么连稳定的 non-normal / runtime floor 都没有形成；
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
