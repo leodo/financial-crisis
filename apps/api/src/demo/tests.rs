@@ -194,6 +194,7 @@ fn build_app_data_preserves_existing_history_metadata_when_refreshing_same_day_p
         Some(formal_serving_model_context()),
         as_of_date,
         history,
+        None,
         load_user_preferences(),
     );
 

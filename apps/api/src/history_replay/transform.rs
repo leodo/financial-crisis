@@ -20,7 +20,7 @@ const HISTORY_SOURCE_RAW_OBSERVATION_REBUILD: &str = "raw_observation_rebuild";
 const HISTORY_SOURCE_RAW_OBSERVATION_REPLAY: &str = "raw_observation_replay";
 const HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY: &str = "raw_pit_feature_replay";
 
-pub(super) fn historical_output_from_replay_points(
+pub(crate) fn historical_output_from_replay_points(
     points: Vec<HistoricalAssessmentPointRecord>,
 ) -> HistoricalAssessmentOutput {
     let mut latest_by_date = BTreeMap::<chrono::NaiveDate, HistoricalAssessmentPointRecord>::new();

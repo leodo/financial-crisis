@@ -163,7 +163,7 @@ entity_id
     "scenario_count": 3,
     "real_scenario_count": 3,
     "fallback_scenario_count": 0,
-    "coverage_scope_note": "这里的“本地覆盖场景 / 模板参照场景”按默认运行历史窗口 2007-05-03 到 2026-05-31 统计；它回答的是危机场景目录里有多少样本能直接落在这段本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。",
+    "coverage_scope_note": "这里的“本地覆盖场景 / 模板参照场景”按场景回测历史窗口 2007-05-03 到 2026-05-31 统计；它回答的是危机场景目录里有多少样本能直接落在这段本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。",
     "structural_warning_rate": 0.667,
     "timely_warning_rate": 0.667,
     "missed_rate": 0.333,
@@ -501,8 +501,8 @@ summary
 
 - `lead_time_days`：结构性抬升提前量。
 - `actionable_lead_time_days`：可执行预警提前量。
-- `real_scenario_count` / `fallback_scenario_count`：统计的是“危机场景目录里有多少样本被当前默认运行历史窗口直接覆盖”，不是默认历史轨迹是否已经进入 PIT 正式证据层。
-- `coverage_scope_note`：把“默认运行历史窗口”与“危机场景目录覆盖”这两个口径拆开说明，避免把最近 260 个 PIT 点和更早危机场景样本混为一谈。
+- `real_scenario_count` / `fallback_scenario_count`：统计的是“危机场景目录里有多少样本被当前场景回测历史窗口直接覆盖”，不是默认历史轨迹是否已经进入 PIT 正式证据层。
+- `coverage_scope_note`：把“场景回测历史窗口”与“危机场景目录覆盖”这两个口径拆开说明，避免把最近 260 个 PIT 点和更早危机场景样本混为一谈。
 - `timely_warning_rate`：按可执行预警口径统计，不再把仅有结构性脆弱的样本算作动作级命中。
 - `total_false_positive_count` 仍表示场景内 `预警折返/动作信号回落次数`。
 - 真正的全样本滚动审计在 `rolling_audit` 中展示，并区分受保护压力窗口与纯误报。

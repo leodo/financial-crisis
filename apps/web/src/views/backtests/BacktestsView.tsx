@@ -68,7 +68,7 @@ export default function BacktestsView({
           <p className="body-copy">{humanizeNarrativeCopy(assessment.backtest_summary.summary)}</p>
           <MetricPairsGrid pairs={summaryMetrics} />
           <RuleBox label="口径区分">{humanizeNarrativeCopy(coverageScopeText)}</RuleBox>
-          <RuleBox label="默认运行历史窗口">{historyRange}</RuleBox>
+          <RuleBox label="场景回测历史窗口">{historyRange}</RuleBox>
         </section>
 
         <section className="surface">

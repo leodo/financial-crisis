@@ -15,7 +15,7 @@ pub(crate) fn build_backtest_summary(
             real_scenario_count: 0,
             fallback_scenario_count: 0,
             coverage_scope_note:
-                "这里的危机场景覆盖按当前默认运行历史窗口统计，不等于上面默认历史轨迹的 PIT 证据层。"
+                "这里的危机场景覆盖按当前场景回测历史窗口统计，不等于上面默认历史轨迹的 PIT 证据层。"
                     .to_string(),
             structural_warning_rate: 0.0,
             timely_warning_rate: 0.0,
@@ -85,9 +85,9 @@ pub(crate) fn build_backtest_summary(
         .max();
     let coverage_scope_note = match (history_start, history_end) {
         (Some(start), Some(end)) => format!(
-            "这里的“本地覆盖场景 / 模板参照场景”按默认运行历史窗口 {start} 到 {end} 统计；它回答的是危机场景目录里有多少样本能直接落在这段本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。"
+            "这里的“本地覆盖场景 / 模板参照场景”按场景回测历史窗口 {start} 到 {end} 统计；它回答的是危机场景目录里有多少样本能直接落在这段本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。"
         ),
-        _ => "这里的“本地覆盖场景 / 模板参照场景”按当前默认运行历史窗口统计；它回答的是危机场景目录里有多少样本能直接落在本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。".to_string(),
+        _ => "这里的“本地覆盖场景 / 模板参照场景”按当前场景回测历史窗口统计；它回答的是危机场景目录里有多少样本能直接落在本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。".to_string(),
     };
     let summary = if fallback_scenario_count > 0 {
         format!(
