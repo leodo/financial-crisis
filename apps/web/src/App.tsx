@@ -124,6 +124,8 @@ export default function App() {
   const viewError = firstQueryError(data, queryErrors, view);
   const hasViewError = viewError !== null && viewError !== undefined;
   const isViewLoading = !readyData && !viewError;
+  const showDecisionWarmup =
+    view === "decision" && Boolean(assessment.data) && !readyData && !viewError;
   const loadProgress = requiredKeys.map((key) => ({
     key,
     label: DATASET_LABELS[key],
@@ -269,7 +271,74 @@ export default function App() {
           />
         )}
 
-        {isViewLoading && (
+        {showDecisionWarmup && assessment.data && (
+          <section className="warmup-panel" aria-live="polite">
+            <div className="warmup-head">
+              <div className="loading-state-icon" aria-hidden="true">
+                <Activity size={18} />
+              </div>
+              <div className="warmup-copy">
+                <strong>评估快照已返回，决策面板继续补齐其余模块</strong>
+                <p>
+                  当前不是白屏或无数据，而是明细模块还在加载。先看总风险、危机先验和执行节奏，
+                  其余图表会继续补齐。
+                </p>
+              </div>
+            </div>
+            <div className="warmup-metric-grid">
+              <div className="warmup-metric">
+                <span>总风险强度</span>
+                <strong>{assessment.data.scores.overall_score.toFixed(1)}</strong>
+                <small>先看压力位置，不等于危机概率</small>
+              </div>
+              <div className="warmup-metric">
+                <span>危机先验</span>
+                <strong>
+                  {Math.round(assessment.data.probabilities.p_5d * 100)}% /
+                  {Math.round(assessment.data.probabilities.p_20d * 100)}% /
+                  {Math.round(assessment.data.probabilities.p_60d * 100)}%
+                </strong>
+                <small>5d / 20d / 60d</small>
+              </div>
+              <div className="warmup-metric">
+                <span>当前执行节奏</span>
+                <strong>{timeBucketLabel(assessment.data.time_to_risk_bucket)}</strong>
+                <small>{assessment.data.posture_reason}</small>
+              </div>
+              <div className="warmup-metric">
+                <span>最新关键观测</span>
+                <strong>{assessment.data.runtime.latest_observation_at ?? "—"}</strong>
+                <small>
+                  {assessment.data.runtime.stale_warning ?? "最新观测时间正常。"}
+                </small>
+              </div>
+            </div>
+            <div className="loading-state-grid">
+              {loadProgress.map((item) => (
+                <div
+                  key={item.key}
+                  className={
+                    item.ready
+                      ? "loading-chip ready"
+                      : item.error
+                        ? "loading-chip error"
+                        : "loading-chip pending"
+                  }
+                >
+                  <span>{item.label}</span>
+                  <strong>{item.ready ? "已就绪" : item.error ? "失败" : "加载中"}</strong>
+                </div>
+              ))}
+            </div>
+            <small className="loading-state-footer">
+              {pendingLabels.length > 0
+                ? `仍在等待：${pendingLabels.join("、")}。若超过 10 秒仍未进入完整面板，先执行 just status，再点右上角刷新。`
+                : "页面已经拿到全部模块，正在进入完整视图。"}
+            </small>
+          </section>
+        )}
+
+        {isViewLoading && !showDecisionWarmup && (
           <section className="loading-state-panel" aria-live="polite">
             <div className="loading-state-head">
               <div className="loading-state-icon" aria-hidden="true">

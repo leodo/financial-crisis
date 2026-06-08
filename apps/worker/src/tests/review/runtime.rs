@@ -366,3 +366,39 @@ fn release_review_structured_signal_counts_accept_history_hysteresis_months_clau
     assert_eq!(strict_actionable_point_count, 1);
     assert_eq!(runtime_floor_hit_count, 1);
 }
+
+#[test]
+fn release_review_structured_signal_counts_accept_prepare_weeks_plateau_hysteresis_clause() {
+    let plateau_date = NaiveDate::from_ymd_opt(2022, 12, 8).unwrap();
+    let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 8).unwrap();
+    let crisis_end = NaiveDate::from_ymd_opt(2023, 3, 18).unwrap();
+    let backtests = vec![synthetic_backtest_summary_with_window(
+        "scenario_prepare_weeks_plateau_hysteresis",
+        "Prepare Weeks Plateau Hysteresis",
+        crisis_start,
+        crisis_end,
+        Some(plateau_date),
+        Some(plateau_date),
+        Some(92),
+        Some(92),
+        0,
+    )];
+    let history = vec![runtime_history_point_with_state(
+        plateau_date,
+        51.8,
+        0.02,
+        0.456,
+        0.93,
+        DecisionPosture::Prepare,
+        TimeToRiskBucket::Weeks,
+        33.4,
+        &["prepare_probability_plateau", "prepare_history_hysteresis"],
+    )];
+    let method = formal_main_audit_method_wire();
+
+    let (strict_actionable_point_count, runtime_floor_hit_count) =
+        release_review_structured_signal_counts(&backtests, &history, &method);
+
+    assert_eq!(strict_actionable_point_count, 1);
+    assert_eq!(runtime_floor_hit_count, 1);
+}

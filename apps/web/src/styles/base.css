@@ -237,6 +237,71 @@ td span,
   gap: 14px;
 }
 
+.warmup-panel {
+  background: #ffffff;
+  border: 1px solid #dde4e9;
+  border-radius: 8px;
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.warmup-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.warmup-copy {
+  min-width: 0;
+}
+
+.warmup-copy strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.warmup-copy p {
+  margin: 0;
+  color: #62707b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.warmup-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.warmup-metric {
+  border: 1px solid #dde4e9;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfd;
+  display: grid;
+  gap: 6px;
+}
+
+.warmup-metric span {
+  color: #62707b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.warmup-metric strong {
+  color: #1c2730;
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.warmup-metric small {
+  color: #62707b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .loading-state-head {
   display: flex;
   align-items: flex-start;

@@ -871,13 +871,13 @@ fn release_review_focus_diagnostic_classifies_prepare_weeks_plateau_gap_as_score
     )];
     let candidate_history = vec![runtime_history_point_with_state(
         runtime_floor_date,
-        52.4,
+        51.2,
         0.02,
         0.46,
         0.93,
         DecisionPosture::Prepare,
         TimeToRiskBucket::Weeks,
-        35.2,
+        32.5,
         &["prepare_probability_plateau", "prepare_history_hysteresis"],
     )];
     let method = formal_main_audit_method_wire();
@@ -904,7 +904,7 @@ fn release_review_focus_diagnostic_classifies_prepare_weeks_plateau_gap_as_score
             .candidate_first_runtime_floor_hit_without_l3_reason
             .as_deref(),
         Some(
-            "prepare/weeks trigger setup stayed below strict score confirmation (overall 52.4 < 53.0)"
+            "prepare/weeks trigger setup stayed below strict score confirmation (overall 51.2 < 53.0)"
         )
     );
 }

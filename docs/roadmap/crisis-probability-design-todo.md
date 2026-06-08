@@ -683,6 +683,10 @@
          - `2026-06-08` 默认 review 产物现在会在 `scenario_focus.interesting_points` 和 Markdown 表格里直接带出 `Base/Cand overall`、`Base/Cand external`，不再只能看概率和 posture。
          - 基于这组新字段，`2023 美国区域银行危机` 的早期窗口已可直接看出：candidate 在 `2022-12-08 ~ 2022-12-13` 已经进入 `prepare/weeks`，`p20d/p60d` 也明显抬升，并带有 `prepare_probability_plateau / prepare_history_hysteresis`，但 `overall_score` 只有 `51.8 ~ 52.6`，因此之前才会落进笼统的 `review_l3_gate_not_satisfied / residual_review_l3_failure`。
          - 现在这类点位会被明确记成 `prepare_weeks_score_confirmation`，对应诊断文案是“prepare/weeks trigger setup stayed below strict score confirmation”，后续若要放宽 strict L3 准入，可以直接围绕这条 clause 做 targeted 实验，而不是继续在 residual 桶里盲改。
+       - [x] 已落一条更窄的 `prepare/weeks + plateau + history_hysteresis` strict L3 修复实验
+         - 这次没有去降通用 `prepare` score floor，只新增一条更窄的 strict actionable clause：要求 `prepare/weeks` 同时带 `prepare_probability_plateau + prepare_history_hysteresis`、`p20d/p60d` 达到 relaxed plateau 档位、且 `overall >= 51.5 / external >= 33.0`。
+         - `2026-06-08` 实测：重新跑 baseline `us_formal_family_hybrid_20260605T202246` vs candidate `us_formal_family_hybrid_20260606T112926` 的 `default release review` 后，`strict_actionable_point_count 80 -> 84`，`timely_warning_rate 10.0% -> 10.0%`、`actionable_precision 70.5% -> 70.5%`、`longest_false_positive_episode_days 13 -> 13`，说明补到的是窄点位而不是泛化放宽。
+         - `regional_banks` 的 `2022-12-09 ~ 2022-12-12` 已从 `prepare_weeks_score_confirmation` 转成 `actionable`；`2022-12-08 / 2022-12-13` 仍被保留为 score confirmation gap，`2023-05-04 ~ 2023-05-07` 仍未被放行，因为它们外部冲击上下文仍不足。
      - [x] 已对齐 `release activate` 的 `operational guard` 与 `release review` 的 `go/no-go`
        - 现在 `release activate --reload-api` 会读取最新相关 `release review` 产物：
          1. 若目标 release 已在最新正式 review 中被判为失败 candidate，则直接阻止激活；
