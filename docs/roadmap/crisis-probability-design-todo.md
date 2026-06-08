@@ -651,9 +651,16 @@
          1. `p20d` 现在跟随 `hedge_p20d` 派生，`p60d` 跟随 `elevated_weeks_p60d` 派生，再限制在 legacy 上限之内；
          2. formal-main 低阈值场景下，`0.13 / 0.23` 这类长窗压力点现在可以稳定进入 `prepare_continuity_bridge` 与 `months`，不再被旧硬门槛压回 `normal`；
          3. 对 legacy / 高阈值路径仍保持原有上限，不把这次修复扩成无界放宽。
-       - [ ] 但 `2026-06-07` 正式 `release review` 仍把 `1987 / 1990-1993 / 1998` 记为 scenario-level `posture_continuity_failure`，说明点位修复已生效，但整段 `3/5 sustained` 连续性还没完全恢复
-      - [ ] 最后清 `residual_review_l3_failure`，确认剩余阻塞不是 gate/continuity 遗留
-   - [ ] 重跑 release review / rolling audit / runtime regime audit
+       - [x] 已在 `2026-06-08` 正式 `strict_rebuild release review` 下确认：旧的 scenario-level continuity blocker 不再是当前 candidate 的主阻塞
+         1. 最新 strict artifact `artifacts/research/release-review/2026-06-08-us_formal_family_hybrid_20260605T202246-vs-us_formal_family_hybrid_20260606T112926-strict_rebuild-release-review.md` 已给出 `Verdict: PASS`；
+         2. `1987 / 1998 / 2000-2001 / 2011 / 2022` 在最新 strict/default review 中都已被重新压回 `baseline_shared_weakness` 的 `prewarning_signal_gap / weak_signal_continuity`，而不是继续作为当前 candidate 的 continuity / gate blocker；
+         3. 说明这轮 `history_hysteresis / strict gate / weeks-L3` 修复已经足够，后续不应继续围绕旧 continuity bucket 盲加 runtime patch。
+       - [x] 已清 `residual_review_l3_failure` 作为当前 candidate 的晋升阻塞
+        1. `2023 美国区域银行危机` 在 `2026-06-08` default review 中已不再给 candidate 挂 `candidate_primary_failure_mode`；
+        2. 最新 strict artifact 下 `2023` 的 `candidate L3 = 83d`，已优于 baseline 的 `71d`；
+        3. 当前剩余问题已经转成 baseline 主线研究项，而不是这版 candidate 的 Go/No-Go blocker。
+   - [x] 重跑 release review / rolling audit / runtime regime audit
+     - 以下 `2026-06-07` 条目保留为中间检查点；当前结论以 `2026-06-08` 的 strict/default review 和同日 rolling audit 为准。
      - [x] 已重跑 baseline `us_formal_family_hybrid_20260605T202246` vs candidate `us_formal_family_hybrid_20260606T112926` 的正式 `strict_rebuild release review`
        - `timely_warning_rate 40.0% -> 40.0%`
        - `strict_actionable_point_count 161 -> 173`
@@ -709,6 +716,18 @@
          - [x] 已把同一条 `prepare/weeks + plateau + history_hysteresis` strict actionable clause 镜像回 API/backtest `is_actionable_warning_point`
            - 避免 worker `release review` 已把这组点位记成 `actionable`，但 API `rolling audit / timeline / scenario backtest` 仍按旧逻辑漏掉。
            - 已新增 API demo 回归测试，固定 `2022-12-09` 这类真实点位在无 thresholds 与 formal-main thresholds 下都能通过 strict actionable 判定。
+     - [x] 已在 `2026-06-08` 再次重跑 baseline `us_formal_family_hybrid_20260605T202246` vs candidate `us_formal_family_hybrid_20260606T112926` 的正式 `strict_rebuild release review`
+       - `Verdict: PASS`
+       - `timely_warning_rate 40.0% -> 40.0%`
+       - `strict_actionable_point_count 165 -> 198`
+       - `runtime_floor_hit_count 327 -> 351`
+       - `actionable_precision 54.9% -> 67.5%`
+       - `longest_false_positive_episode_days 17 -> 17`
+       - 当前 strict 结论已经不再把 candidate 记成新的 continuity / strict-gate regression；剩余 workstream 只剩 `weak_signal_continuity (2022)` 与 `prewarning_signal_gap (1987 / 1998 / 2000-2001 / 2011)` 这两条 baseline 主线研究项。
+     - [x] 已在 `2026-06-09` 导出最新 rolling audit report
+       - `just audit-report` 已生成 `reports/rolling-audit/2026-06-08-rolling-audit.md` 与对应 JSON；
+       - 当前 active release=`us_formal_family_hybrid_20260606T112926`，`actionable_precision=67.5%`、`actionable_signal_count=603`、`pure_false_positive_count=96`、`longest_false_positive_episode=17d`；
+       - 这份报告已经把“当前线上运行口径”的历史误报/受保护压力窗口重新拉平，后续 priority 应以这份 rolling audit 为准，而不是继续引用 5 月底旧报告。
      - [x] 已对齐 `release activate` 的 `operational guard` 与 `release review` 的 `go/no-go`
        - 现在 `release activate --reload-api` 会读取最新相关 `release review` 产物：
          1. 若目标 release 已在最新正式 review 中被判为失败 candidate，则直接阻止激活；
@@ -716,7 +735,8 @@
        - `2026-06-07` 实测：
          1. baseline `us_formal_family_hybrid_20260605T202246` 已能从 active candidate `us_formal_family_hybrid_20260606T112926` 成功恢复；
          2. candidate `us_formal_family_hybrid_20260606T112926` 现在会被激活链路直接拒绝；
-         3. 当前 API runtime 已回到 baseline `us_formal_family_hybrid_20260605T202246`。
+         3. 回退链路已验证成功。
+       - `2026-06-08` strict review 再次通过后，当前 active runtime 已重新切回 `us_formal_family_hybrid_20260606T112926`。
 
 ### 6.4 2026-06-02 扩展数据集实测结果
 
@@ -731,14 +751,12 @@
   - 适合 protected stress、历史对照与扩展训练研究
   - 不作为正式主模型 go-no-go 的单独依据
 
-当前剩余主线不再是“扩展历史样本有没有数据”，而是：
+当前剩余主线不再是“扩展历史样本有没有数据”，也不再是继续围绕旧 continuity/gate bucket 打 patch，而是：
 
-1. 先补 `release review` 双口径审计，避免继续把 runtime 与 strict review 混成一个指标；
-2. 再专项修 `1990-1993 / 2000-2001` 的 posture continuity；
-3. 在此基础上重训 candidate release；
-4. 再处理剩余 runtime false-positive episode 收口；
-5. 重跑 release review / rolling audit / runtime regime audit；
-6. 继续把 raw PIT history 与 persisted snapshot 彻底解耦。
+1. 先围绕 `2022 联储加息与久期冲击` 的 `weak_signal_continuity` 做 feature separation、`months/prepare` continuity 与阈值前置量专项审计；
+2. 再围绕 `1987 / 1998 / 2000-2001 / 2011` 的 `prewarning_signal_gap` 做训练样本、特征覆盖与标签窗口专项复盘，确认为什么连稳定的 non-normal / runtime floor 都没有形成；
+3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
+4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 
 ### 6.5 2026-06-01 Episode-native 第一阶段代码已落地
 
