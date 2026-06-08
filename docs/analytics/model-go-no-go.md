@@ -505,7 +505,13 @@ No-Go for replacing transitional baseline
 - [ ] `candidate release` 的离线指标达标
 - [ ] `rolling audit` 未明显恶化
 - [ ] `rolling audit` 已不再依赖 persisted snapshot bridge
-- [ ] 前端方法页能解释当前 release 的数据模式、PIT 模式和局限
+- [x] 前端方法页能解释当前 release 的数据模式、PIT 模式和局限
+
+补充说明（2026-06-09）：
+
+- `/api/assessment/method` 已新增 `history_provenance`，直接暴露默认历史轨迹的 evidence tier、`raw_pit_feature_replay / raw_observation_* / transitional_snapshot_bridge` 点数、最近日期和最近 replay run；
+- 方法页已同步新增“历史轨迹证据来源”板块，可以直接看出当前历史轨迹是正式 PIT feature-backed 证据，还是 raw observation 过渡口径，或仍残留旧 snapshot bridge；
+- 因此“当前 release 的数据模式、PIT 模式和局限”已经不再只停留在文字提醒，而是有可核对的 provenance 统计支撑。
 
 ## 9. 人工审批要求
 

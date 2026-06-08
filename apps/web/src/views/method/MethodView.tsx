@@ -40,6 +40,10 @@ export default function MethodView({
     overlayHeadlineMetrics,
     overlayHorizonRows,
     overlayAuditRows,
+    historyProvenanceMetrics,
+    historyProvenanceRows,
+    historyProvenanceNote,
+    historyProvenanceReplayRunId,
     limitations,
     historyPolicyVersion,
     protectedCatalogId,
@@ -101,6 +105,22 @@ export default function MethodView({
             </div>
           </RuleBox>
         </section>
+      </section>
+
+      <section className="surface">
+        <SurfaceHeader title="历史轨迹证据来源" icon={History} />
+        <RuleBox label="怎么看">{historyProvenanceNote}</RuleBox>
+        <MetricGrid items={historyProvenanceMetrics} />
+        {historyProvenanceReplayRunId ? (
+          <RuleBox label="最近 replay run">
+            <span title={historyProvenanceReplayRunId}>{historyProvenanceReplayRunId}</span>
+          </RuleBox>
+        ) : null}
+        {historyProvenanceRows.length > 0 ? (
+          <DetailRows items={historyProvenanceRows} />
+        ) : (
+          <RuleBox label="当前状态">当前默认历史窗口里还没有可用 provenance 统计。</RuleBox>
+        )}
       </section>
 
       <section className="surface">

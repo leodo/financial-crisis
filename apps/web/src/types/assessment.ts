@@ -288,9 +288,33 @@ export interface RuntimeThresholdDiagnostics {
   history_runtime_policy_version: string;
 }
 
+export interface HistoryProvenanceSourceSummary {
+  source_id: string;
+  count: number;
+  latest_as_of_date: string | null;
+  note: string;
+}
+
+export interface HistoryProvenanceSummary {
+  evidence_tier: string;
+  dominant_source: string;
+  total_points: number;
+  feature_backed_points: number;
+  raw_observation_points: number;
+  snapshot_bridge_points: number;
+  runtime_only_points: number;
+  latest_feature_backed_date: string | null;
+  latest_raw_observation_date: string | null;
+  latest_snapshot_bridge_date: string | null;
+  latest_replay_run_id: string | null;
+  note: string;
+  sources: HistoryProvenanceSourceSummary[];
+}
+
 export interface AssessmentMethodResponse {
   method: AssessmentMethodVersions;
   note: string;
+  history_provenance: HistoryProvenanceSummary;
   protected_stress_window_catalog: ProtectedStressWindowCatalog;
   runtime_thresholds: RuntimeThresholdDiagnostics;
 }

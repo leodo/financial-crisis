@@ -6,7 +6,7 @@ use axum::{
     Json,
 };
 use chrono::NaiveDate;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 mod research_audit;
@@ -33,6 +33,31 @@ pub struct ReloadQuery {
     runtime_purpose: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct HistoryProvenanceSourceSummary {
+    source_id: String,
+    count: usize,
+    latest_as_of_date: Option<NaiveDate>,
+    note: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct HistoryProvenanceSummary {
+    evidence_tier: String,
+    dominant_source: String,
+    total_points: usize,
+    feature_backed_points: usize,
+    raw_observation_points: usize,
+    snapshot_bridge_points: usize,
+    runtime_only_points: usize,
+    latest_feature_backed_date: Option<NaiveDate>,
+    latest_raw_observation_date: Option<NaiveDate>,
+    latest_snapshot_bridge_date: Option<NaiveDate>,
+    latest_replay_run_id: Option<String>,
+    note: String,
+    sources: Vec<HistoryProvenanceSourceSummary>,
+}
+
 impl HistoryQuery {
     fn into_window(self, default_limit: usize) -> Result<HistoryQueryWindow, StatusCode> {
         Ok(HistoryQueryWindow {
@@ -47,6 +72,142 @@ fn parse_date(value: Option<String>) -> Result<Option<NaiveDate>, StatusCode> {
     value
         .map(|raw| NaiveDate::parse_from_str(&raw, "%Y-%m-%d").map_err(|_| StatusCode::BAD_REQUEST))
         .transpose()
+}
+
+fn summarize_history_provenance(
+    history: &[fc_domain::AssessmentHistoryPoint],
+) -> HistoryProvenanceSummary {
+    let total_points = history.len();
+    let feature_backed_points = history
+        .iter()
+        .filter(|point| point.history_source.as_deref() == Some("raw_pit_feature_replay"))
+        .count();
+    let raw_observation_points = history
+        .iter()
+        .filter(|point| {
+            matches!(
+                point.history_source.as_deref(),
+                Some("raw_observation_replay" | "raw_observation_rebuild")
+            )
+        })
+        .count();
+    let snapshot_bridge_points = history
+        .iter()
+        .filter(|point| point.history_source.as_deref() == Some("transitional_snapshot_bridge"))
+        .count();
+    let runtime_only_points = total_points
+        .saturating_sub(feature_backed_points + raw_observation_points + snapshot_bridge_points);
+
+    let latest_feature_backed_date = history
+        .iter()
+        .filter(|point| point.history_source.as_deref() == Some("raw_pit_feature_replay"))
+        .map(|point| point.as_of_date)
+        .max();
+    let latest_raw_observation_date = history
+        .iter()
+        .filter(|point| {
+            matches!(
+                point.history_source.as_deref(),
+                Some("raw_observation_replay" | "raw_observation_rebuild")
+            )
+        })
+        .map(|point| point.as_of_date)
+        .max();
+    let latest_snapshot_bridge_date = history
+        .iter()
+        .filter(|point| point.history_source.as_deref() == Some("transitional_snapshot_bridge"))
+        .map(|point| point.as_of_date)
+        .max();
+    let latest_replay_run_id = history
+        .iter()
+        .rev()
+        .find_map(|point| point.replay_run_id.clone());
+
+    let sources = [
+        (
+            "raw_pit_feature_replay",
+            "这类点已经绑定到已落库的 PIT feature snapshot，可作为 formal history 审计的正式证据层。",
+        ),
+        (
+            "raw_observation_replay",
+            "这类点来自 historical replay store，但还没有对上已落库的 PIT feature snapshot，仍属于 raw observation 过渡口径。",
+        ),
+        (
+            "raw_observation_rebuild",
+            "这类点是运行时按原始观测即时重建的结果，说明当前默认历史还没有完全收口到 persisted replay / PIT snapshot。",
+        ),
+        (
+            "transitional_snapshot_bridge",
+            "这类点仍复用了旧 prediction snapshot bridge，只适合辅助观察，不应直接当成正式 Go/No-Go 历史证据。",
+        ),
+    ]
+    .into_iter()
+    .map(|(source_id, note)| HistoryProvenanceSourceSummary {
+        source_id: source_id.to_string(),
+        count: history
+            .iter()
+            .filter(|point| point.history_source.as_deref() == Some(source_id))
+            .count(),
+        latest_as_of_date: history
+            .iter()
+            .filter(|point| point.history_source.as_deref() == Some(source_id))
+            .map(|point| point.as_of_date)
+            .max(),
+        note: note.to_string(),
+    })
+    .collect::<Vec<_>>();
+
+    let dominant_source = sources
+        .iter()
+        .max_by_key(|source| source.count)
+        .filter(|source| source.count > 0)
+        .map(|source| source.source_id.clone())
+        .unwrap_or_else(|| "runtime_only".to_string());
+
+    let evidence_tier = if snapshot_bridge_points > 0 {
+        "snapshot_bridge_transitional"
+    } else if raw_observation_points > 0 {
+        "raw_observation_transitional"
+    } else if feature_backed_points > 0 {
+        "pit_feature_backed"
+    } else {
+        "runtime_only"
+    };
+
+    let note = if total_points == 0 {
+        "当前默认历史窗口里还没有可用评估点，方法页无法判断 replay provenance。".to_string()
+    } else if snapshot_bridge_points > 0 {
+        format!(
+            "默认历史轨迹里仍有 {snapshot_bridge_points}/{total_points} 个点来自旧 prediction snapshot bridge，只适合辅助观察，不应直接当成 formal history 审计证据。"
+        )
+    } else if raw_observation_points > 0 {
+        format!(
+            "默认历史轨迹已经避开旧 snapshot bridge，但仍有 {raw_observation_points}/{total_points} 个点只是 raw observation 过渡口径，说明 replay 还没有完全绑定到 persisted PIT feature snapshot。"
+        )
+    } else if feature_backed_points > 0 {
+        format!(
+            "默认历史轨迹当前 {feature_backed_points}/{total_points} 个点都绑定到已落库 PIT feature snapshot，可作为 formal history 审计的正式证据层。"
+        )
+    } else {
+        "当前默认历史轨迹没有 bridge 或 replay provenance 标记，说明它仍主要是运行时即时构造结果。"
+            .to_string()
+    };
+
+    HistoryProvenanceSummary {
+        evidence_tier: evidence_tier.to_string(),
+        dominant_source,
+        total_points,
+        feature_backed_points,
+        raw_observation_points,
+        snapshot_bridge_points,
+        runtime_only_points,
+        latest_feature_backed_date,
+        latest_raw_observation_date,
+        latest_snapshot_bridge_date,
+        latest_replay_run_id,
+        note,
+        sources,
+    }
 }
 
 pub async fn health() -> Json<serde_json::Value> {
@@ -150,6 +311,7 @@ pub async fn assessment_posture(State(state): State<Arc<AppState>>) -> Json<serd
 pub async fn assessment_method(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let data = state.data().await;
     let method = &data.assessment.method;
+    let history_provenance = summarize_history_provenance(&data.assessment_history);
     let history_note = if matches!(
         data.assessment.runtime.data_mode,
         fc_domain::DataMode::Sqlite
@@ -172,6 +334,7 @@ pub async fn assessment_method(State(state): State<Arc<AppState>>) -> Json<serde
     Json(json!({
         "method": data.assessment.method,
         "note": note,
+        "history_provenance": history_provenance,
         "protected_stress_window_catalog": data.protected_stress_window_catalog,
         "runtime_thresholds": data.runtime_thresholds,
     }))

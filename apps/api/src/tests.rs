@@ -324,6 +324,15 @@ async fn assessment_method_endpoint_returns_protected_stress_window_catalog() {
     assert!(json["method"]["action_playbook_version"].is_string());
     assert!(json["method"]["point_in_time_mode"].is_string());
     assert!(json["note"].is_string());
+    assert!(json["history_provenance"]["evidence_tier"].is_string());
+    assert!(json["history_provenance"]["dominant_source"].is_string());
+    assert!(json["history_provenance"]["total_points"].is_number());
+    assert!(json["history_provenance"]["feature_backed_points"].is_number());
+    assert!(json["history_provenance"]["raw_observation_points"].is_number());
+    assert!(json["history_provenance"]["snapshot_bridge_points"].is_number());
+    assert!(json["history_provenance"]["runtime_only_points"].is_number());
+    assert!(json["history_provenance"]["note"].is_string());
+    assert!(json["history_provenance"]["sources"].is_array());
     assert!(json["protected_stress_window_catalog"]["catalog_id"].is_string());
     assert!(json["protected_stress_window_catalog"]["windows"].is_array());
     assert!(json["runtime_thresholds"]["prepare_p60d"].is_number());

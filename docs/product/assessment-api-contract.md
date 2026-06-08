@@ -53,7 +53,7 @@ entity_id
 
 ### 3.6 `GET /api/assessment/method`
 
-返回方法版本、说明，以及当前滚动审计使用的受保护压力窗口目录。
+返回方法版本、说明、默认历史轨迹的 provenance 摘要，以及当前滚动审计使用的受保护压力窗口目录。
 
 ### 3.7 `POST /api/system/reload`
 
@@ -251,6 +251,28 @@ entity_id
     "point_in_time_mode": "best_effort"
   },
   "note": "assessment 概率、风险强度和 posture 为不同层的输出；当前版本为启发式 MVP，不是校准后的正式危机概率模型。页面应优先检查 data_mode、关键指标日期和 stale warning，再解释当前数值。",
+  "history_provenance": {
+    "evidence_tier": "raw_observation_transitional",
+    "dominant_source": "raw_observation_replay",
+    "total_points": 180,
+    "feature_backed_points": 132,
+    "raw_observation_points": 48,
+    "snapshot_bridge_points": 0,
+    "runtime_only_points": 0,
+    "latest_feature_backed_date": "2026-05-28",
+    "latest_raw_observation_date": "2026-05-30",
+    "latest_snapshot_bridge_date": null,
+    "latest_replay_run_id": "replay:financial_system:20260609T101500Z",
+    "note": "默认历史轨迹已经避开旧 snapshot bridge，但仍有 48/180 个点只是 raw observation 过渡口径，说明 replay 还没有完全绑定到 persisted PIT feature snapshot。",
+    "sources": [
+      {
+        "source_id": "raw_pit_feature_replay",
+        "count": 132,
+        "latest_as_of_date": "2026-05-28",
+        "note": "这类点已经绑定到已落库的 PIT feature snapshot，可作为 formal history 审计的正式证据层。"
+      }
+    ]
+  },
   "protected_stress_window_catalog": {
     "catalog_id": "us_protected_stress_windows_v1",
     "market_scope": "us",
@@ -518,12 +540,42 @@ note
 ```text
 method
 note
+history_provenance
 protected_stress_window_catalog
+runtime_thresholds
 ```
 
 说明：
 
+- `history_provenance` 用于解释当前默认历史轨迹到底有多少点已经绑定到 PIT feature snapshot、还有多少点仍是 raw observation 过渡口径，或者是否还残留旧 prediction snapshot bridge；
 - `protected_stress_window_catalog` 用于解释滚动审计里哪些非危机动作区间被视为“可接受的系统压力防守”。
+
+### 5.15.1 HistoryProvenanceSummary
+
+```text
+evidence_tier
+dominant_source
+total_points
+feature_backed_points
+raw_observation_points
+snapshot_bridge_points
+runtime_only_points
+latest_feature_backed_date
+latest_raw_observation_date
+latest_snapshot_bridge_date
+latest_replay_run_id
+note
+sources[]
+```
+
+说明：
+
+- `evidence_tier` 当前取值包括：
+  - `pit_feature_backed`
+  - `raw_observation_transitional`
+  - `snapshot_bridge_transitional`
+  - `runtime_only`
+- `sources[]` 会进一步列出每种 `history_source` 的点数、最近日期和解释文案，供方法页和审计页说明“这条概率轨迹能不能当正式历史证据”。
 
 ### 5.16 ProtectedStressWindowCatalog
 

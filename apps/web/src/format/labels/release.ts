@@ -117,3 +117,26 @@ export function releaseReviewActionTypeLabel(actionType: string): string {
 export function releaseReviewVerdictLabel(passed: boolean): string {
   return passed ? "通过当前 guard" : "存在 guard blocker";
 }
+
+const HISTORY_EVIDENCE_TIER_LABELS: Record<string, string> = {
+  pit_feature_backed: "PIT 特征快照支撑",
+  raw_observation_transitional: "原始观测过渡",
+  snapshot_bridge_transitional: "旧快照桥接",
+  runtime_only: "运行时即时构造"
+};
+
+export function historyEvidenceTierLabel(tier: string): string {
+  return HISTORY_EVIDENCE_TIER_LABELS[tier] ?? tier;
+}
+
+const HISTORY_SOURCE_LABELS: Record<string, string> = {
+  raw_pit_feature_replay: "PIT 特征快照重放",
+  raw_observation_replay: "原始观测重放",
+  raw_observation_rebuild: "原始观测即时重建",
+  transitional_snapshot_bridge: "旧预测快照桥接",
+  runtime_only: "运行时即时构造"
+};
+
+export function historySourceLabel(source: string): string {
+  return HISTORY_SOURCE_LABELS[source] ?? source;
+}

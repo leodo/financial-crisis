@@ -2,7 +2,10 @@ import {
   compactFileReference,
   compactTechnicalId,
   describePostureClause,
+  formatDate,
   formatPercent,
+  historyEvidenceTierLabel,
+  historySourceLabel,
   humanizeMethodNote,
   methodVersionFieldLabel,
   pointInTimeModeLabel,
@@ -149,9 +152,50 @@ export function useMethodViewModel({
   const blockerClauses = posture.blocker_codes.map((code) => describePostureClause(code));
   const { overlayHeadlineMetrics, overlayHorizonRows, overlayAuditRows } =
     buildProbabilityOverlayViewModel(assessment);
+  const historyProvenance = method.history_provenance;
+  const historyProvenanceMetrics: MetricItem[] = [
+    {
+      label: "证据等级",
+      value: historyEvidenceTierLabel(historyProvenance.evidence_tier),
+      hint: historyProvenance.note
+    },
+    {
+      label: "历史轨迹点数",
+      value: `${historyProvenance.total_points}`
+    },
+    {
+      label: "PIT 快照支撑",
+      value: `${historyProvenance.feature_backed_points}/${historyProvenance.total_points || 0}`,
+      hint:
+        historyProvenance.latest_feature_backed_date !== null
+          ? `最近一条 PIT 快照支撑点日期：${formatDate(historyProvenance.latest_feature_backed_date)}`
+          : "当前默认历史窗口里还没有 PIT 快照支撑点。"
+    },
+    {
+      label: "旧快照桥接",
+      value: `${historyProvenance.snapshot_bridge_points}`,
+      hint:
+        historyProvenance.latest_snapshot_bridge_date !== null
+          ? `最近一条 bridge 点日期：${formatDate(historyProvenance.latest_snapshot_bridge_date)}`
+          : "当前默认历史窗口里没有 bridge 点。"
+    }
+  ];
+  const historyProvenanceRows: DetailRowItem[] = historyProvenance.sources
+    .filter((source) => source.count > 0)
+    .map((source) => ({
+      id: source.source_id,
+      title: historySourceLabel(source.source_id),
+      detail:
+        source.latest_as_of_date !== null
+          ? `共 ${source.count} 个点，最近日期 ${formatDate(source.latest_as_of_date)}`
+          : `共 ${source.count} 个点`,
+      note: source.note,
+      meta: `${source.count}`
+    }));
 
   const limitations = [
     methodContent.runtimeBoundarySummary,
+    historyProvenance.note,
     heuristicMode
       ? `当前概率模式是 ${probabilityModeLabel(assessment.method.probability_mode)}，${methodContent.limitationModeHeuristic}`
       : `当前概率模式是 ${probabilityModeLabel(assessment.method.probability_mode)}，${methodContent.limitationModeFormal}`,
@@ -171,6 +215,10 @@ export function useMethodViewModel({
     overlayHeadlineMetrics,
     overlayHorizonRows,
     overlayAuditRows,
+    historyProvenanceMetrics,
+    historyProvenanceRows,
+    historyProvenanceNote: historyProvenance.note,
+    historyProvenanceReplayRunId: historyProvenance.latest_replay_run_id,
     limitations,
     historyPolicyVersion,
     protectedCatalogId,
