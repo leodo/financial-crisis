@@ -52,7 +52,10 @@ pub(crate) fn build_rolling_backtest_audit(
 
     if filtered_history.is_empty() {
         return BacktestRollingAudit {
+            history_start: None,
+            history_end: None,
             history_point_count: 0,
+            scope_note: "当前尚未生成滚动审计历史窗口。".to_string(),
             actionable_signal_count: 0,
             pre_crisis_signal_count: 0,
             in_crisis_signal_count: 0,
@@ -187,7 +190,15 @@ pub(crate) fn build_rolling_backtest_audit(
     );
 
     BacktestRollingAudit {
+        history_start,
+        history_end,
         history_point_count: filtered_history.len() as u32,
+        scope_note: match (history_start, history_end) {
+            (Some(start), Some(end)) => format!(
+                "这里的滚动审计按滚动审计历史窗口 {start} 到 {end} 统计，用于观察动作规则在这段历史里的命中、受保护压力窗口和纯误报分布。"
+            ),
+            _ => "这里的滚动审计按当前滚动审计历史窗口统计，用于观察动作规则在这段历史里的命中、受保护压力窗口和纯误报分布。".to_string(),
+        },
         actionable_signal_count,
         pre_crisis_signal_count,
         in_crisis_signal_count,

@@ -107,6 +107,12 @@ pub(crate) fn build_app_data_from_inputs(
         .as_ref()
         .map(|context| context.history.as_slice())
         .unwrap_or(assessment_history.as_slice());
+    let rolling_audit_history = scenario_backtest_context
+        .as_ref()
+        .map(|context| context.history.as_slice())
+        .unwrap_or(assessment_history.as_slice());
+    let default_history_start = assessment_history.first().map(|point| point.as_of_date);
+    let default_history_end = assessment_history.last().map(|point| point.as_of_date);
     let scenario_backtest_history_start =
         scenario_backtest_history.first().map(|point| point.as_of_date);
     let scenario_backtest_history_end =
@@ -134,10 +140,10 @@ pub(crate) fn build_app_data_from_inputs(
                 use_transitional_bridge,
             )
         });
-    let rolling_audit = strict_thresholds
+    let mut rolling_audit = strict_thresholds
         .map(|thresholds| {
             build_rolling_backtest_audit_with_thresholds(
-                &assessment_history,
+                rolling_audit_history,
                 &protected_stress_window_catalog.windows,
                 use_transitional_bridge,
                 Some(thresholds),
@@ -145,11 +151,29 @@ pub(crate) fn build_app_data_from_inputs(
         })
         .unwrap_or_else(|| {
             build_rolling_backtest_audit(
-                &assessment_history,
+                rolling_audit_history,
                 &protected_stress_window_catalog.windows,
                 use_transitional_bridge,
             )
         });
+    rolling_audit.scope_note = match (
+        scenario_backtest_context.as_ref(),
+        rolling_audit.history_start,
+        rolling_audit.history_end,
+        default_history_start,
+        default_history_end,
+    ) {
+        (Some(_), Some(start), Some(end), Some(default_start), Some(default_end)) => format!(
+            "这里的滚动审计按滚动审计历史窗口 {start} 到 {end} 统计；当前已优先复用本地 SQLite 中更长的 persisted replay 历史，而不是只看默认运行窗口 {default_start} 到 {default_end}。它回答的是这套动作规则在更长历史里的命中/误报分布，不等于默认运行历史轨迹的 PIT 证据层说明。"
+        ),
+        (Some(_), Some(start), Some(end), _, _) => format!(
+            "这里的滚动审计按滚动审计历史窗口 {start} 到 {end} 统计；当前已优先复用本地 SQLite 中更长的 persisted replay 历史。它回答的是这套动作规则在更长历史里的命中/误报分布，不等于默认运行历史轨迹的 PIT 证据层说明。"
+        ),
+        (_, Some(start), Some(end), _, _) => format!(
+            "这里的滚动审计按滚动审计历史窗口 {start} 到 {end} 统计，用于观察当前运行口径下动作规则的命中、受保护压力窗口和纯误报分布。"
+        ),
+        _ => "这里的滚动审计按当前滚动审计历史窗口统计，用于观察动作规则的命中、受保护压力窗口和纯误报分布。".to_string(),
+    };
     let alerts = stored_alerts
         .map(|alerts| select_recent_alerts_for_date(&alerts, as_of_date))
         .unwrap_or_else(|| build_alerts(&output.snapshot));

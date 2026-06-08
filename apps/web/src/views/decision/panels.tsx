@@ -288,11 +288,15 @@ export function DecisionBacktestSummaryPanel({
 export function DecisionRollingAuditPanel({
   assessment,
   rollingAuditMetrics,
+  rollingAuditHistoryText,
+  rollingAuditScopeText,
   rollingAuditBoundaryText,
   rollingAuditEpisodes
 }: {
   assessment: AssessmentSnapshot;
   rollingAuditMetrics: MetricItem[];
+  rollingAuditHistoryText: string;
+  rollingAuditScopeText: string;
   rollingAuditBoundaryText: string;
   rollingAuditEpisodes: DecisionRollingAuditEpisodeRow[];
 }) {
@@ -303,6 +307,10 @@ export function DecisionRollingAuditPanel({
         {humanizeNarrativeCopy(assessment.backtest_summary.rolling_audit.summary)}
       </RuleBox>
       <MetricGrid items={rollingAuditMetrics} />
+      <div className="surface-grid">
+        <RuleBox label="滚动审计历史窗口">{rollingAuditHistoryText}</RuleBox>
+        <RuleBox label="口径区分">{humanizeNarrativeCopy(rollingAuditScopeText)}</RuleBox>
+      </div>
       <RuleBox label="统计口径">{decisionContent.panels.rollingAuditDefinition}</RuleBox>
       <RuleBox label="这组结果怎么用">{rollingAuditBoundaryText}</RuleBox>
       {rollingAuditEpisodes.length > 0 ? (

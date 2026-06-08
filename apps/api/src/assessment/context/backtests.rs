@@ -128,7 +128,10 @@ pub(crate) fn build_backtest_summary(
 
 fn empty_rolling_audit() -> BacktestRollingAudit {
     BacktestRollingAudit {
+        history_start: None,
+        history_end: None,
         history_point_count: 0,
+        scope_note: "当前尚未生成滚动审计历史窗口。".to_string(),
         actionable_signal_count: 0,
         pre_crisis_signal_count: 0,
         in_crisis_signal_count: 0,
@@ -138,6 +141,6 @@ fn empty_rolling_audit() -> BacktestRollingAudit {
         longest_false_positive_episode_days: 0,
         actionable_precision: 0.0,
         classified_episodes: Vec::new(),
-        summary: "当前尚未生成全历史滚动审计结果。".to_string(),
+        summary: "当前尚未生成滚动审计结果。".to_string(),
     }
 }

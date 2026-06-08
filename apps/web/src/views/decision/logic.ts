@@ -3,7 +3,10 @@ import {
   probabilityModeLabel,
   releaseServingStatusLabel
 } from "../../format";
-import type { AssessmentMethodResponse, AssessmentSnapshot } from "../../types";
+import type {
+  AssessmentMethodResponse,
+  AssessmentSnapshot
+} from "../../types";
 
 export function describeProbabilityMode(method: AssessmentSnapshot["method"]) {
   if (method.probability_mode === "heuristic_mvp") {
@@ -37,9 +40,16 @@ export function describeReleaseHealth(status: string) {
   return releaseServingStatusLabel(status);
 }
 
-export function describeRollingAuditBoundary(method: AssessmentMethodResponse) {
+export function describeRollingAuditBoundary(
+  method: AssessmentMethodResponse,
+  rollingAudit: AssessmentSnapshot["backtest_summary"]["rolling_audit"]
+) {
   if (method.method.probability_mode === "heuristic_mvp") {
     return "当前滚动审计主要用于解释启发式动作层在历史上的表现，不能把它当成正式概率模型命中率。";
+  }
+
+  if (rollingAudit.history_point_count > method.history_provenance.total_points) {
+    return `这组滚动审计当前复用了比默认运行历史更长的 replay 窗口（${rollingAudit.history_point_count} 点，对比默认 ${method.history_provenance.total_points} 点）。它更适合看长历史里的命中/误报分布；上面 method 区块里的 PIT 证据层说明只对应默认运行历史，不等于这组长历史已经全部进入 raw PIT 正式口径。`;
   }
 
   if (method.history_provenance.snapshot_bridge_points > 0) {

@@ -221,6 +221,7 @@
 - [x] 给 release review 增加 `runtime sanity guard`，避免 candidate 因为“和同样失效的 baseline 一样差”而被误判通过
 - [x] 让 `actionability` guard 从“基础拦截”升级到“分层级、分角色”的正式阈值
 - [ ] 把 formal history 审计链继续往 `raw point-in-time feature store` 收口，减少对 persisted snapshots 的过渡依赖
+  - 2026-06-09：场景回测与滚动审计已优先复用本地 SQLite 中更长的 persisted replay 历史，并在 API/UI 中显式拆开“场景回测历史窗口”“滚动审计历史窗口”和“默认运行历史轨迹”的口径；这解决了用户面板层的历史窗口混淆，但仍属于 persisted replay 过渡模型，不是最终的 raw PIT formal history。
 - [ ] 扩展美国历史压力样本，尽量覆盖 `1987 / 1994 / 2000 / 2001 / 2008 / 2011 / 2020 / 2023` 中免费可回补的区间
 - [x] 把方法页和面板解释继续补强，让用户能看懂“危机先验”和“动作概率”不是同一个东西
 

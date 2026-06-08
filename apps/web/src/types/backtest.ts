@@ -23,7 +23,10 @@ export interface BacktestRollingAuditEpisode {
 }
 
 export interface BacktestRollingAudit {
+  history_start: string | null;
+  history_end: string | null;
   history_point_count: number;
+  scope_note: string;
   actionable_signal_count: number;
   pre_crisis_signal_count: number;
   in_crisis_signal_count: number;

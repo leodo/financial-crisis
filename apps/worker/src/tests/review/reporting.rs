@@ -168,7 +168,10 @@ fn test_assessment_snapshot(
             history_start: Some(NaiveDate::from_ymd_opt(1990, 1, 1).unwrap()),
             history_end: Some(as_of_date),
             rolling_audit: BacktestRollingAudit {
+                history_start: Some(NaiveDate::from_ymd_opt(1990, 1, 1).unwrap()),
+                history_end: Some(as_of_date),
                 history_point_count: 260,
+                scope_note: "test rolling audit scope".to_string(),
                 actionable_signal_count: 12,
                 pre_crisis_signal_count: 6,
                 in_crisis_signal_count: 4,

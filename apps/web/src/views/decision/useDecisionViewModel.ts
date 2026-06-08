@@ -27,7 +27,9 @@ import {
   buildRiskHorizonActionMetrics,
   buildRollingAuditBoundaryText,
   buildRollingAuditEpisodes,
+  buildRollingAuditHistoryText,
   buildRollingAuditMetrics,
+  buildRollingAuditScopeText,
   buildRuntimeCards,
   buildRuntimeChipLabel,
   buildRuntimeNotice,
@@ -181,9 +183,17 @@ export function useDecisionViewModel({
     () => buildRollingAuditMetrics(assessment),
     [assessment]
   );
+  const rollingAuditHistoryText = useMemo(
+    () => buildRollingAuditHistoryText(assessment.backtest_summary.rolling_audit),
+    [assessment.backtest_summary.rolling_audit]
+  );
+  const rollingAuditScopeText = useMemo(
+    () => buildRollingAuditScopeText(assessment.backtest_summary.rolling_audit),
+    [assessment.backtest_summary.rolling_audit]
+  );
   const rollingAuditBoundaryText = useMemo(
-    () => buildRollingAuditBoundaryText(method),
-    [method]
+    () => buildRollingAuditBoundaryText(assessment, method),
+    [assessment, method]
   );
   const rollingAuditEpisodes = useMemo(
     () => buildRollingAuditEpisodes(assessment.backtest_summary.rolling_audit),
@@ -219,6 +229,8 @@ export function useDecisionViewModel({
     backtestHistoryCoverageText,
     backtestCoverageScopeText,
     rollingAuditMetrics,
+    rollingAuditHistoryText,
+    rollingAuditScopeText,
     rollingAuditBoundaryText,
     rollingAuditEpisodes
   };

@@ -34,6 +34,8 @@ export default function BacktestsView({
     rollingMetrics,
     historyRange,
     coverageScopeText,
+    rollingAuditHistoryRange,
+    rollingAuditScopeText,
     currentPosture,
     scenarioRows,
     episodeRows
@@ -77,6 +79,8 @@ export default function BacktestsView({
             {humanizeNarrativeCopy(assessment.backtest_summary.rolling_audit.summary)}
           </p>
           <MetricPairsGrid pairs={rollingMetrics} />
+          <RuleBox label="滚动审计历史窗口">{rollingAuditHistoryRange}</RuleBox>
+          <RuleBox label="口径区分">{humanizeNarrativeCopy(rollingAuditScopeText)}</RuleBox>
           <RuleBox label="审计口径">{backtestsContent.auditDefinition}</RuleBox>
           <RuleBox label="区间展示规则">{backtestsContent.episodeDisplayRule}</RuleBox>
         </section>
@@ -89,7 +93,7 @@ export default function BacktestsView({
       </section>
 
       <section className="surface">
-        <SurfaceHeader title="历史轨迹" icon={History} />
+        <SurfaceHeader title="当前运行历史轨迹" icon={History} />
         <SimpleLineChart model={chart} height={280} />
       </section>
 

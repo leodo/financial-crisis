@@ -286,7 +286,10 @@ pub struct BacktestRollingAuditEpisode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BacktestRollingAudit {
+    pub history_start: Option<NaiveDate>,
+    pub history_end: Option<NaiveDate>,
     pub history_point_count: u32,
+    pub scope_note: String,
     pub actionable_signal_count: u32,
     pub pre_crisis_signal_count: u32,
     pub in_crisis_signal_count: u32,

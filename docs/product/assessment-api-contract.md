@@ -174,7 +174,10 @@ entity_id
     "history_start": "2007-05-03",
     "history_end": "2026-05-31",
     "rolling_audit": {
+      "history_start": "1990-01-02",
+      "history_end": "2026-05-31",
       "history_point_count": 4971,
+      "scope_note": "这里的滚动审计按滚动审计历史窗口 1990-01-02 到 2026-05-31 统计；当前已优先复用本地 SQLite 中更长的 persisted replay 历史，而不是只看默认运行窗口 2025-09-15 到 2026-05-31。它回答的是这套动作规则在更长历史里的命中/误报分布，不等于默认运行历史轨迹的 PIT 证据层说明。",
       "actionable_signal_count": 464,
       "pre_crisis_signal_count": 9,
       "in_crisis_signal_count": 331,
@@ -201,7 +204,7 @@ entity_id
           "note": "未落入危机前 20 日窗口，也不在受保护压力窗口内。"
         }
       ],
-      "summary": "全历史滚动审计覆盖 2007-05-03 到 2026-05-31；动作级信号共 464 个评估点，其中危机前 9 个、危机中 331 个、受保护压力窗口 114 个、纯误报 10 个，形成 3 段纯误报区间，动作信号精度约为 92%。"
+      "summary": "全历史滚动审计覆盖 1990-01-02 到 2026-05-31；动作级信号共 464 个评估点，其中危机前 9 个、危机中 331 个、受保护压力窗口 114 个、纯误报 10 个，形成 3 段纯误报区间，动作信号精度约为 92%。"
     },
     "summary": "当前回测覆盖 3 个真实危机样本；结构性抬升至少提前 7 天出现的比例约为 67%，可执行预警至少提前 7 天出现的比例约为 67%。"
   },
@@ -505,12 +508,15 @@ summary
 - `coverage_scope_note`：把“场景回测历史窗口”与“危机场景目录覆盖”这两个口径拆开说明，避免把最近 260 个 PIT 点和更早危机场景样本混为一谈。
 - `timely_warning_rate`：按可执行预警口径统计，不再把仅有结构性脆弱的样本算作动作级命中。
 - `total_false_positive_count` 仍表示场景内 `预警折返/动作信号回落次数`。
-- 真正的全样本滚动审计在 `rolling_audit` 中展示，并区分受保护压力窗口与纯误报。
+- `rolling_audit` 现在拥有独立的历史窗口与口径说明，不再默认等同于上面的场景回测窗口或默认运行窗口。
 
 ### 5.13 BacktestRollingAudit
 
 ```text
+history_start
+history_end
 history_point_count
+scope_note
 actionable_signal_count
 pre_crisis_signal_count
 in_crisis_signal_count

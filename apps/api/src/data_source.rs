@@ -901,10 +901,25 @@ mod tests {
         );
         assert_eq!(data.assessment.backtest_summary.history_start, Some(replay_from));
         assert_eq!(data.assessment.backtest_summary.history_end, Some(replay_to));
+        assert_eq!(
+            data.assessment.backtest_summary.rolling_audit.history_start,
+            Some(replay_from)
+        );
+        assert_eq!(
+            data.assessment.backtest_summary.rolling_audit.history_end,
+            Some(replay_to)
+        );
         assert!(
             data.assessment
                 .backtest_summary
                 .coverage_scope_note
+                .contains("persisted replay 历史")
+        );
+        assert!(
+            data.assessment
+                .backtest_summary
+                .rolling_audit
+                .scope_note
                 .contains("persisted replay 历史")
         );
 

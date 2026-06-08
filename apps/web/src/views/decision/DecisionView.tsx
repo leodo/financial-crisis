@@ -90,6 +90,8 @@ export default function DecisionView({
     backtestHistoryCoverageText,
     backtestCoverageScopeText,
     rollingAuditMetrics,
+    rollingAuditHistoryText,
+    rollingAuditScopeText,
     rollingAuditBoundaryText,
     rollingAuditEpisodes
   } = useDecisionViewModel({
@@ -237,6 +239,8 @@ export default function DecisionView({
           <DecisionRollingAuditPanel
             assessment={assessment}
             rollingAuditMetrics={rollingAuditMetrics}
+            rollingAuditHistoryText={rollingAuditHistoryText}
+            rollingAuditScopeText={rollingAuditScopeText}
             rollingAuditBoundaryText={rollingAuditBoundaryText}
             rollingAuditEpisodes={rollingAuditEpisodes}
           />

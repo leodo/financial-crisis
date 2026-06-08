@@ -10,7 +10,9 @@ import type { AssessmentMethodResponse, AssessmentSnapshot } from "../../types";
 import type { MetricItem } from "../shared/panelHelpers";
 import {
   buildBacktestCoverageScopeText,
-  buildBacktestHistoryCoverageText
+  buildBacktestHistoryCoverageText,
+  buildRollingAuditHistoryText,
+  buildRollingAuditScopeText
 } from "../shared/backtestCopy";
 import type { DecisionRollingAuditEpisodeRow } from "./builderTypes";
 import { describeRollingAuditBoundary } from "./logic";
@@ -56,6 +58,7 @@ export function buildBacktestSummaryMetrics(
 }
 
 export { buildBacktestCoverageScopeText, buildBacktestHistoryCoverageText };
+export { buildRollingAuditHistoryText, buildRollingAuditScopeText };
 
 export function buildRollingAuditMetrics(
   assessment: AssessmentSnapshot
@@ -99,8 +102,11 @@ export function buildRollingAuditMetrics(
   ];
 }
 
-export function buildRollingAuditBoundaryText(method: AssessmentMethodResponse) {
-  return describeRollingAuditBoundary(method);
+export function buildRollingAuditBoundaryText(
+  assessment: AssessmentSnapshot,
+  method: AssessmentMethodResponse
+) {
+  return describeRollingAuditBoundary(method, assessment.backtest_summary.rolling_audit);
 }
 
 export function buildRollingAuditEpisodes(

@@ -105,6 +105,15 @@ async fn assessment_current_includes_runtime_freshness_and_supporting_blocks() {
     assert!(json["method"]["actionability_enabled"].is_boolean());
     assert!(json["backtest_summary"]["timely_warning_rate"].is_number());
     assert!(json["backtest_summary"]["rolling_audit"]["actionable_precision"].is_number());
+    assert!(
+        json["backtest_summary"]["rolling_audit"]["history_start"].is_null()
+            || json["backtest_summary"]["rolling_audit"]["history_start"].is_string()
+    );
+    assert!(
+        json["backtest_summary"]["rolling_audit"]["history_end"].is_null()
+            || json["backtest_summary"]["rolling_audit"]["history_end"].is_string()
+    );
+    assert!(json["backtest_summary"]["rolling_audit"]["scope_note"].is_string());
     assert!(json["backtest_summary"]["rolling_audit"]["classified_episodes"].is_array());
     assert!(json["backtest_summary"]["rolling_audit"]["summary"].is_string());
     assert!(json["user_preferences"]["profile"].is_string());

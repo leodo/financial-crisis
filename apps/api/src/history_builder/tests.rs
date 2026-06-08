@@ -144,7 +144,10 @@ fn history_test_backtest_summary() -> BacktestPerformanceSummary {
         history_start: None,
         history_end: None,
         rolling_audit: BacktestRollingAudit {
+            history_start: None,
+            history_end: None,
             history_point_count: 0,
+            scope_note: "test".to_string(),
             actionable_signal_count: 0,
             pre_crisis_signal_count: 0,
             in_crisis_signal_count: 0,

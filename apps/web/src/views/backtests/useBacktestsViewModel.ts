@@ -16,7 +16,9 @@ import type {
 import type { LineChartModel } from "../decision/charts";
 import {
   buildBacktestCoverageScopeText,
-  buildBacktestHistoryCoverageText
+  buildBacktestHistoryCoverageText,
+  buildRollingAuditHistoryText,
+  buildRollingAuditScopeText
 } from "../shared/backtestCopy";
 import { backtestsContent } from "./content";
 
@@ -72,6 +74,12 @@ export function useBacktestsViewModel({
 
   const historyRange = buildBacktestHistoryCoverageText(assessment.backtest_summary);
   const coverageScopeText = buildBacktestCoverageScopeText(assessment.backtest_summary);
+  const rollingAuditHistoryRange = buildRollingAuditHistoryText(
+    assessment.backtest_summary.rolling_audit
+  );
+  const rollingAuditScopeText = buildRollingAuditScopeText(
+    assessment.backtest_summary.rolling_audit
+  );
 
   const currentPosture = postureLabel(assessment.posture);
   const headlineMetrics = [
@@ -114,6 +122,8 @@ export function useBacktestsViewModel({
     rollingMetrics,
     historyRange,
     coverageScopeText,
+    rollingAuditHistoryRange,
+    rollingAuditScopeText,
     currentPosture,
     scenarioRows,
     episodeRows
