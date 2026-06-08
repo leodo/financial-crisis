@@ -466,6 +466,10 @@
                “已经 separated 但仍低于 runtime floor”、
                “cooldown bleed” 三类问题；
             3. 这样后续审计 `60d` 时，可以直接判断更像训练目标问题、阈值映射问题，还是 cooldown 背景值问题。
+          - [x] 已补 `release review` 报告层回归测试，锁定 `strict_rebuild` 产物必须持续携带
+            `History mode`、`Runtime Separation Comparison`、
+            `strict_actionable_point_count`、`runtime_floor_hit_count`，
+            避免后续 Markdown / 导出路径回退成只有自由文本或丢失双口径字段。
           - [~] 已开始专项审计 `1990-1993 / 2000-2001` 的 posture continuity：
             1. 逐日对齐 `p20d / p60d / posture / time_bucket / actionable bridge`；
             2. 已补 `runtime_actionable_block_category` 与场景级 `runtime block mix`，
