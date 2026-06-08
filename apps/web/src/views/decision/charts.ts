@@ -46,14 +46,15 @@ type ProbabilityTrendMode = "calibrated" | "raw";
 
 export function buildProbabilityTrendModel(history: AssessmentHistoryPoint[]) {
   const mode = selectProbabilityTrendMode(history);
-  const note =
+  const baseNote =
     mode === "raw"
       ? "当前发布版正式概率被校准下限压得很平，这里改为展示原始概率轨迹，用来看风险是在升温还是降温；上方当前评估卡片仍以正式概率为准。"
       : "这里展示的是发布版正式概率轨迹；若三条线长期贴平，通常表示当前仍在低风险区，或正式概率暂时受校准下限约束。";
+  const sourceNote = buildProbabilityTrendSourceNote(history);
 
   return {
     chart: buildProbabilityTrendChart(history, mode),
-    note
+    note: sourceNote ? `${baseNote} ${sourceNote}` : baseNote
   };
 }
 
@@ -88,6 +89,28 @@ function probabilitySpread(values: number[]) {
   }
 
   return Math.max(...values) - Math.min(...values);
+}
+
+function buildProbabilityTrendSourceNote(history: AssessmentHistoryPoint[]) {
+  if (history.length === 0) {
+    return "";
+  }
+
+  const bridgeCount = history.filter(
+    (point) => point.history_source === "transitional_snapshot_bridge"
+  ).length;
+  if (bridgeCount > 0) {
+    return `这段轨迹里有 ${bridgeCount}/${history.length} 个点仍来自过渡 snapshot bridge，只适合辅助观察，不应直接当成正式 Go/No-Go 历史证据。`;
+  }
+
+  const rawObservationCount = history.filter(
+    (point) => point.history_source === "raw_observation_rebuild"
+  ).length;
+  if (rawObservationCount > 0) {
+    return `这段轨迹已经避开旧 snapshot bridge，但其中 ${rawObservationCount}/${history.length} 个点还没有对上已落库的 PIT feature snapshot，当前仍属于 raw rebuild 过渡口径。`;
+  }
+
+  return "";
 }
 
 function probabilityValue(

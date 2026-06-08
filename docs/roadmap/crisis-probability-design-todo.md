@@ -602,6 +602,11 @@
      - 已完成一部分：API 默认历史路径对 `bundle-backed release` 已切到 `replay-first`，若无可复用 replay cache 会直接 raw rebuild 并落 replay run，不再静默复用旧 `prediction snapshots`
      - 已完成一部分：`bundle-backed formal release` 的 default history 路径也不再先读取 `prediction snapshots` 做缺口/新鲜度判断；现在 formal 历史只认 replay cache，缺 cache 就直接 raw rebuild
      - 已完成一部分：`bundle-backed formal release` 的历史 raw rebuild 现在只写 `historical replay run / point`，不再把整段历史 assessment 反向回填到 `analytics_prediction_snapshots`
+     - 已完成一部分：`assessment history` 点位现在会显式带 `history_source / replay_run_id / feature_snapshot_id`
+       - `transitional_snapshot_bridge`：仍在走旧 `prediction snapshots`
+       - `raw_observation_rebuild`：已经避开旧 snapshot，但这段点位还没有对上已落库的 PIT feature snapshot
+       - `raw_pit_feature_replay`：这段点位既来自 replay，又已经绑定到真实 `feature snapshot id`
+     - 已完成一部分：`bundle-backed formal release` 的 raw rebuild 会优先去匹配已落库的 `feature snapshots`，命中后把真实 `feature_snapshot_id` 写回 replay point，而不是继续只拼一个“看起来像 snapshot id”的字符串
      - 已完成一部分：`bootstrap-formal-release` 已拒绝 `--dataset-source snapshot`，正式发布命令层不再允许把过渡 snapshot 训练直接包装成 formal release
      - 已完成一部分：`research snapshot dataset` 与 `train-probability --dataset-source snapshot` 现在也会拒绝 `formal bundle release`；这条路径只保留给 heuristic/transitional research snapshots，legacy 无 manifest 的老快照也要求 `probability_mode=heuristic_mvp`
      - 已完成一部分：snapshot 过渡训练生成的 manifest 现在会标成 `candidate/shadow`；`release publish` 默认只接受 `approved/healthy` 正式 manifest，候选版必须显式 `--review-only` 才能入库，且 `release activate/publish --activate` 会拒绝直接激活 `candidate/*` 或 `*/shadow` release

@@ -2,8 +2,9 @@ use std::collections::BTreeSet;
 
 use chrono::NaiveDate;
 use fc_domain::{
-    AlertEvent, AssessmentSnapshot, BacktestWindowPoint, DataMode, DecisionPosture, Indicator,
-    Observation, PostureGuidance, TimeToRiskBucket, UserRiskPreferences,
+    AlertEvent, AssessmentSnapshot, BacktestWindowPoint, DataMode, DecisionPosture,
+    FeatureSnapshotRecord, Indicator, Observation, PostureGuidance, TimeToRiskBucket,
+    UserRiskPreferences,
 };
 use fc_scoring::ScoringEngine;
 use fc_storage::SqliteStore;
@@ -40,6 +41,8 @@ const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_OVERALL_FLOOR: f64 = 42.0;
 const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_STRUCTURAL_FLOOR: f64 = 55.0;
 const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_TRIGGER_CEILING: f64 = 28.0;
 const HISTORY_PREPARE_HYSTERESIS_TRIGGER_CODE: &str = "prepare_history_hysteresis";
+const HISTORY_SOURCE_RAW_OBSERVATION_REBUILD: &str = "raw_observation_rebuild";
+const HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY: &str = "raw_pit_feature_replay";
 
 #[derive(Debug, Clone, Copy, Default)]
 struct HistoricalPrepareHysteresisState {
@@ -298,7 +301,7 @@ async fn rebuild_full_release_history_from_raw(
     rebuild_dates: &[NaiveDate],
     persist_prediction_snapshots: bool,
 ) -> anyhow::Result<HistoricalAssessmentOutput> {
-    let rebuilt = build_assessment_history_for_dates(
+    let mut rebuilt = build_assessment_history_for_dates(
         DataMode::Sqlite,
         &ScoringEngine::default(),
         indicators,
@@ -308,6 +311,7 @@ async fn rebuild_full_release_history_from_raw(
         user_preferences,
         rebuild_dates,
     );
+    attach_feature_snapshot_context(store, serving_model, rebuild_dates, &mut rebuilt).await?;
     if persist_prediction_snapshots {
         store
             .upsert_prediction_snapshots(&rebuilt.prediction_snapshots)
@@ -315,6 +319,111 @@ async fn rebuild_full_release_history_from_raw(
     }
     persist_historical_replay_output(store, observations, serving_model, &rebuilt).await?;
     Ok(rebuilt)
+}
+
+async fn attach_feature_snapshot_context(
+    store: &SqliteStore,
+    serving_model: Option<&ServingModelContext>,
+    rebuild_dates: &[NaiveDate],
+    output: &mut HistoricalAssessmentOutput,
+) -> anyhow::Result<()> {
+    let Some(serving_model) = serving_model else {
+        return Ok(());
+    };
+    let Some(_) = serving_model.probability_bundle.as_ref() else {
+        return Ok(());
+    };
+    let Some(from_date) = rebuild_dates.first().copied() else {
+        return Ok(());
+    };
+    let Some(to_date) = rebuild_dates.last().copied() else {
+        return Ok(());
+    };
+
+    let snapshot_ids = load_feature_snapshot_ids_for_history_range(
+        store,
+        serving_model,
+        from_date,
+        to_date,
+        rebuild_dates,
+    )
+    .await?;
+
+    for point in &mut output.history_points {
+        point.feature_snapshot_id = snapshot_ids.get(&point.as_of_date).cloned();
+        point.history_source = Some(
+            if point.feature_snapshot_id.is_some() {
+                HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY
+            } else {
+                HISTORY_SOURCE_RAW_OBSERVATION_REBUILD
+            }
+            .to_string(),
+        );
+    }
+
+    for point in &mut output.replay_point_drafts {
+        point.feature_snapshot_id = snapshot_ids.get(&point.as_of_date).cloned();
+    }
+
+    Ok(())
+}
+
+async fn load_feature_snapshot_ids_for_history_range(
+    store: &SqliteStore,
+    serving_model: &ServingModelContext,
+    from_date: NaiveDate,
+    to_date: NaiveDate,
+    rebuild_dates: &[NaiveDate],
+) -> anyhow::Result<std::collections::BTreeMap<NaiveDate, String>> {
+    let target_dates = rebuild_dates.iter().copied().collect::<BTreeSet<_>>();
+    let snapshots = store
+        .list_feature_snapshots_for_mode(
+            &serving_model.release.manifest.market_scope,
+            &serving_model.release.manifest.feature_set_version,
+            &serving_model.release.manifest.point_in_time_mode,
+            Some(from_date),
+            Some(to_date),
+        )
+        .await?;
+
+    let mut latest_by_date = std::collections::BTreeMap::<NaiveDate, FeatureSnapshotRecord>::new();
+    for snapshot in snapshots {
+        if snapshot.entity_id != "us" || !target_dates.contains(&snapshot.as_of_date) {
+            continue;
+        }
+        match latest_by_date.get(&snapshot.as_of_date) {
+            Some(existing) if existing.created_at >= snapshot.created_at => {}
+            _ => {
+                latest_by_date.insert(snapshot.as_of_date, snapshot);
+            }
+        }
+    }
+
+    Ok(latest_by_date
+        .into_iter()
+        .map(|(date, snapshot)| {
+            (
+                date,
+                feature_snapshot_id(
+                    &snapshot.entity_id,
+                    &snapshot.market_scope,
+                    snapshot.as_of_date,
+                    &snapshot.feature_set_version,
+                    &snapshot.point_in_time_mode,
+                ),
+            )
+        })
+        .collect())
+}
+
+fn feature_snapshot_id(
+    entity_id: &str,
+    market_scope: &str,
+    as_of_date: NaiveDate,
+    feature_set_version: &str,
+    point_in_time_mode: &str,
+) -> String {
+    format!("{market_scope}:{entity_id}:{as_of_date}:{feature_set_version}:{point_in_time_mode}")
 }
 
 fn uses_bundle_backed_history(serving_model: Option<&ServingModelContext>) -> bool {

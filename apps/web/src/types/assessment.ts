@@ -242,6 +242,9 @@ export interface AssessmentHistoryPoint {
   external_shock_score: number;
   posture_trigger_codes: string[];
   posture_blocker_codes: string[];
+  replay_run_id?: string | null;
+  feature_snapshot_id?: string | null;
+  history_source?: string | null;
 }
 
 export interface PostureGuidance {

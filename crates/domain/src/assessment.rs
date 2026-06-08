@@ -377,4 +377,10 @@ pub struct AssessmentHistoryPoint {
     pub posture_trigger_codes: Vec<String>,
     #[serde(default)]
     pub posture_blocker_codes: Vec<String>,
+    #[serde(default)]
+    pub replay_run_id: Option<String>,
+    #[serde(default)]
+    pub feature_snapshot_id: Option<String>,
+    #[serde(default)]
+    pub history_source: Option<String>,
 }

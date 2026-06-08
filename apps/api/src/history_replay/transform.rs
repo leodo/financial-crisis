@@ -15,6 +15,11 @@ use super::{
     HistoricalReplayPointDraft,
 };
 
+const HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE: &str = "transitional_snapshot_bridge";
+const HISTORY_SOURCE_RAW_OBSERVATION_REBUILD: &str = "raw_observation_rebuild";
+const HISTORY_SOURCE_RAW_OBSERVATION_REPLAY: &str = "raw_observation_replay";
+const HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY: &str = "raw_pit_feature_replay";
+
 pub(super) fn historical_output_from_replay_points(
     points: Vec<HistoricalAssessmentPointRecord>,
 ) -> HistoricalAssessmentOutput {
@@ -247,6 +252,9 @@ pub(crate) fn assessment_history_point_from_assessment(
         external_shock_score: assessment.scores.external_shock_score,
         posture_trigger_codes: posture_guidance.trigger_codes.clone(),
         posture_blocker_codes: posture_guidance.blocker_codes.clone(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: Some(HISTORY_SOURCE_RAW_OBSERVATION_REBUILD.to_string()),
     }
 }
 
@@ -267,6 +275,9 @@ fn assessment_history_point_from_prediction_snapshot(
         external_shock_score: snapshot.external_shock_score,
         posture_trigger_codes: snapshot.posture_trigger_codes.clone(),
         posture_blocker_codes: snapshot.posture_blocker_codes.clone(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: Some(HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE.to_string()),
     }
 }
 
@@ -287,6 +298,16 @@ fn assessment_history_point_from_historical_replay_point(
         external_shock_score: point.external_shock_score,
         posture_trigger_codes: point.posture_trigger_codes.clone(),
         posture_blocker_codes: point.posture_blocker_codes.clone(),
+        replay_run_id: Some(point.replay_run_id.clone()),
+        feature_snapshot_id: point.feature_snapshot_id.clone(),
+        history_source: Some(
+            if point.feature_snapshot_id.is_some() {
+                HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY
+            } else {
+                HISTORY_SOURCE_RAW_OBSERVATION_REPLAY
+            }
+            .to_string(),
+        ),
     }
 }
 

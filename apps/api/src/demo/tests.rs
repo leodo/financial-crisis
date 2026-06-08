@@ -36,6 +36,9 @@ fn history_point(
         external_shock_score,
         posture_trigger_codes: Vec::new(),
         posture_blocker_codes: Vec::new(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: None,
     }
 }
 
@@ -153,6 +156,10 @@ fn prediction_history_filters_by_release_and_keeps_latest_daily_snapshot() {
         output.history_points[0].posture_trigger_codes,
         vec!["prepare_p60d_structural".to_string()]
     );
+    assert_eq!(
+        output.history_points[0].history_source.as_deref(),
+        Some("transitional_snapshot_bridge")
+    );
 }
 
 #[test]
@@ -210,6 +217,9 @@ fn actionable_warning_point_accepts_strong_prepare_clause_for_formal_main() {
         external_shock_score: 38.5,
         posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
         posture_blocker_codes: Vec::new(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: None,
     };
 
     assert!(is_actionable_warning_point(&point, false));
@@ -231,6 +241,9 @@ fn actionable_warning_point_accepts_probability_plateau_clause_for_formal_main()
         external_shock_score: 48.2,
         posture_trigger_codes: vec!["prepare_probability_plateau".to_string()],
         posture_blocker_codes: Vec::new(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: None,
     };
 
     assert!(is_actionable_warning_point(&point, false));
@@ -252,6 +265,9 @@ fn actionable_warning_point_rejects_weak_prepare_clause_for_formal_main() {
         external_shock_score: 38.5,
         posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
         posture_blocker_codes: Vec::new(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: None,
     };
 
     assert!(!is_actionable_warning_point(&point, false));
@@ -273,6 +289,9 @@ fn actionable_warning_point_rejects_weak_probability_plateau_clause_for_formal_m
         external_shock_score: 31.5,
         posture_trigger_codes: vec!["prepare_probability_plateau".to_string()],
         posture_blocker_codes: Vec::new(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: None,
     };
 
     assert!(!is_actionable_warning_point(&point, false));
@@ -294,6 +313,9 @@ fn actionable_warning_point_accepts_relaxed_probability_plateau_clause_with_runt
         external_shock_score: 40.7,
         posture_trigger_codes: vec!["prepare_probability_plateau".to_string()],
         posture_blocker_codes: Vec::new(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: None,
     };
 
     assert!(!is_actionable_warning_point(&point, false));
@@ -324,6 +346,9 @@ fn actionable_warning_point_accepts_formal_main_relaxed_strict_p60d_mapping() {
         external_shock_score: 49.0,
         posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
         posture_blocker_codes: Vec::new(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: None,
     };
 
     assert!(!is_actionable_warning_point(&point, false));
@@ -354,6 +379,9 @@ fn actionable_warning_point_accepts_formal_main_relaxed_strict_p20d_mapping() {
         external_shock_score: 45.0,
         posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
         posture_blocker_codes: Vec::new(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: None,
     };
 
     assert!(!is_actionable_warning_point(&point, false));
@@ -405,6 +433,9 @@ fn rolling_audit_counts_prepare_signal_within_sixty_days_as_pre_crisis() {
         external_shock_score: 49.0,
         posture_trigger_codes: vec!["prepare_p60d_structural".to_string()],
         posture_blocker_codes: Vec::new(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: None,
     }];
 
     let audit = build_rolling_backtest_audit(&history, &[], false);

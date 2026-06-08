@@ -1,12 +1,14 @@
+use std::collections::BTreeMap;
+
 use chrono::{NaiveDate, Utc};
 use fc_domain::{
     AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot, BacktestPerformanceSummary,
     BacktestRollingAudit, DataMode, DataQualitySummary, DataTrust, DecisionPosture,
-    EventAssessment, EventConfirmationState, HistoricalAssessmentPointRecord,
-    HistoricalReplayRunRecord, JpyCarrySnapshot, JpyCarryState, ModelReleaseManifest,
-    ModelReleaseRecord, PositionGuidance, PositionGuidanceGovernance, PostureGuidance,
-    PredictionSnapshotRecord, ProbabilityBlock, ProbabilityBundle, ProbabilityDiagnostics,
-    QualityGrade, RuntimeMetadata, UserRiskPreferences, UserRiskProfile,
+    EventAssessment, EventConfirmationState, FeatureSnapshotRecord,
+    HistoricalAssessmentPointRecord, HistoricalReplayRunRecord, JpyCarrySnapshot, JpyCarryState,
+    ModelReleaseManifest, ModelReleaseRecord, PositionGuidance, PositionGuidanceGovernance,
+    PostureGuidance, PredictionSnapshotRecord, ProbabilityBlock, ProbabilityBundle,
+    ProbabilityDiagnostics, QualityGrade, RuntimeMetadata, UserRiskPreferences, UserRiskProfile,
 };
 use fc_storage::SqliteStore;
 
@@ -84,6 +86,25 @@ fn history_test_event_assessment() -> EventAssessment {
         confirmed_signals: Vec::new(),
         pending_gaps: Vec::new(),
         recent_events: Vec::new(),
+    }
+}
+
+fn history_test_feature_snapshot(as_of_date: NaiveDate) -> FeatureSnapshotRecord {
+    FeatureSnapshotRecord {
+        as_of_date,
+        entity_id: "us".to_string(),
+        market_scope: "financial_system".to_string(),
+        feature_set_version: FORMAL_MAIN_FEATURE_SET_VERSION.to_string(),
+        point_in_time_mode: "best_effort".to_string(),
+        visibility_status: "ready".to_string(),
+        latest_visible_at: Some(Utc::now()),
+        coverage_score: 1.0,
+        core_feature_coverage: 1.0,
+        trigger_feature_coverage: 1.0,
+        external_feature_coverage: 1.0,
+        feature_count: 1,
+        features: BTreeMap::from([("placeholder".to_string(), 1.0)]),
+        created_at: Utc::now(),
     }
 }
 
@@ -1167,6 +1188,12 @@ async fn default_mode_bundle_release_rebuilds_full_history_when_replay_cache_is_
         history.iter().any(|point| point.p_20d != 0.99),
         "rebuilt history should not mirror the placeholder snapshot probabilities"
     );
+    assert!(
+        history
+            .iter()
+            .all(|point| point.history_source.as_deref() == Some("raw_observation_rebuild")),
+        "without persisted feature snapshots, rebuilt bundle-backed history should stay explicitly marked as raw observation rebuild"
+    );
 
     let replay_runs = store
         .list_historical_replay_runs(
@@ -1181,6 +1208,95 @@ async fn default_mode_bundle_release_rebuilds_full_history_when_replay_cache_is_
     assert_eq!(replay_runs.len(), 1);
     assert_eq!(replay_runs[0].point_count, target_dates.len());
     assert_eq!(replay_runs[0].status, "success");
+}
+
+#[tokio::test]
+async fn bundle_history_rebuild_binds_persisted_feature_snapshot_ids_when_available() {
+    let store = in_memory_store().await;
+    store.seed_fred_metadata().await.unwrap();
+    let as_of_date = NaiveDate::from_ymd_opt(2026, 5, 30).unwrap();
+    let indicators = demo_indicators();
+    for indicator in &indicators {
+        store.upsert_indicator(indicator).await.unwrap();
+    }
+    let observations = demo_observations(as_of_date);
+    store.insert_observations(&observations).await.unwrap();
+
+    let serving_model = formal_serving_model_context();
+    store
+        .upsert_model_release(&serving_model.release)
+        .await
+        .unwrap();
+    let release_id = serving_model.release.manifest.release_id.clone();
+
+    let target_dates = observations
+        .iter()
+        .filter(|observation| observation.entity_id == "us")
+        .map(|observation| observation.as_of_date)
+        .collect::<std::collections::BTreeSet<_>>();
+    let feature_snapshots = target_dates
+        .iter()
+        .copied()
+        .map(history_test_feature_snapshot)
+        .collect::<Vec<_>>();
+    store
+        .upsert_feature_snapshots(&feature_snapshots)
+        .await
+        .unwrap();
+
+    let history = load_sqlite_assessment_history(
+        &store,
+        &indicators,
+        &observations,
+        &[],
+        Some(&serving_model),
+        &load_user_preferences(),
+        as_of_date,
+        260,
+        AssessmentHistoryBuildMode::Default,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(history.len(), target_dates.len());
+    assert!(
+        history.iter().all(|point| point.feature_snapshot_id.is_some()),
+        "bundle-backed history should expose persisted PIT feature snapshot ids when matching snapshots exist"
+    );
+    assert!(
+        history
+            .iter()
+            .all(|point| point.history_source.as_deref() == Some("raw_pit_feature_replay")),
+        "history points backed by persisted feature snapshots should be marked as raw PIT feature replay"
+    );
+
+    let replay_runs = store
+        .list_historical_replay_runs(
+            Some("financial_system"),
+            Some(&release_id),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(replay_runs.len(), 1);
+
+    let replay_points = store
+        .list_historical_assessment_points(
+            Some(&replay_runs[0].replay_run_id),
+            Some("financial_system"),
+            Some(&release_id),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(replay_points.len(), target_dates.len());
+    assert!(replay_points
+        .iter()
+        .all(|point| point.feature_snapshot_id.is_some()));
 }
 
 #[tokio::test]
