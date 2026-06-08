@@ -80,6 +80,16 @@ pub(crate) fn render_formal_dataset_summary_markdown(
         "- Scenario set: {}",
         manifest.scenario_set_version
     );
+    let _ = writeln!(
+        markdown,
+        "- Coverage catalog: {}",
+        summary.coverage_catalog.catalog_id
+    );
+    let _ = writeln!(
+        markdown,
+        "- Dataset intent: {}",
+        summary.coverage_catalog.dataset_intent
+    );
     let _ = writeln!(markdown, "- PIT mode: {}", manifest.point_in_time_mode);
     let _ = writeln!(markdown, "- Rows: {}", manifest.row_count);
     let _ = writeln!(
@@ -94,6 +104,37 @@ pub(crate) fn render_formal_dataset_summary_markdown(
             .map(|value| value.to_string())
             .unwrap_or_else(|| "-".to_string())
     );
+    let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "## Scenario Data Coverage Alignment");
+    let _ = writeln!(markdown);
+    let _ = writeln!(
+        markdown,
+        "- Coverage source: {}",
+        summary.coverage_catalog.source
+    );
+    let _ = writeln!(
+        markdown,
+        "- Coverage market scope: {}",
+        summary.coverage_catalog.market_scope
+    );
+    let _ = writeln!(
+        markdown,
+        "- Scenario alignment: {}/{} scenarios match dataset intent {}",
+        summary.coverage_catalog.aligned_scenario_count,
+        summary.coverage_catalog.total_scenario_count,
+        summary.coverage_catalog.dataset_intent
+    );
+    let _ = writeln!(
+        markdown,
+        "- Eligibility mix: main={} extension={} protected={} analog={}",
+        summary.coverage_catalog.main_training_eligible_count,
+        summary.coverage_catalog.extension_training_eligible_count,
+        summary.coverage_catalog.protected_stress_eligible_count,
+        summary.coverage_catalog.historical_analog_eligible_count
+    );
+    if let Some(warning) = &summary.coverage_catalog.warning {
+        let _ = writeln!(markdown, "- Coverage warning: {}", warning);
+    }
     let _ = writeln!(markdown);
     let _ = writeln!(markdown, "## Split Summary");
     let _ = writeln!(markdown);
@@ -139,12 +180,54 @@ pub(crate) fn render_formal_dataset_summary_markdown(
     let _ = writeln!(markdown);
     let _ = writeln!(
         markdown,
-        "| Scenario | Label | Family | Role | Protected | Horizons | Template | Rows | Splits | Range |"
+        "| Scenario | Label | Family | Dataset Role | Coverage Role | Grade | Coverage PIT | Allowed | Status | Gaps | Rows | Splits | Range |"
     );
     let _ = writeln!(
         markdown,
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
     );
+    for scenario in &summary.scenario_summaries {
+        let allowed_roles = format_allowed_roles(
+            scenario.usable_for_main_training,
+            scenario.usable_for_extension_training,
+            scenario.usable_for_protected_stress,
+            scenario.usable_for_historical_analog,
+        );
+        let coverage_gaps = if scenario.coverage_blocking_gaps.is_empty() {
+            "-".to_string()
+        } else {
+            scenario.coverage_blocking_gaps.join("; ")
+        };
+        let _ = writeln!(
+            markdown,
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} -> {} |",
+            scenario.scenario_id,
+            scenario.label.as_deref().unwrap_or("-"),
+            scenario.family.as_deref().unwrap_or("-"),
+            scenario.training_role.as_deref().unwrap_or("-"),
+            scenario.coverage_recommended_role.as_deref().unwrap_or("-"),
+            scenario.coverage_grade.as_deref().unwrap_or("-"),
+            scenario
+                .coverage_point_in_time_mode
+                .as_deref()
+                .unwrap_or("-"),
+            allowed_roles,
+            scenario.coverage_current_status.as_deref().unwrap_or("-"),
+            coverage_gaps,
+            scenario.row_count,
+            scenario.split_count,
+            scenario.first_as_of_date,
+            scenario.last_as_of_date
+        );
+    }
+    let _ = writeln!(markdown);
+    let _ = writeln!(markdown, "## Scenario Episode Metadata");
+    let _ = writeln!(markdown);
+    let _ = writeln!(
+        markdown,
+        "| Scenario | Protected | Horizons | Template | Free Sources |"
+    );
+    let _ = writeln!(markdown, "| --- | --- | --- | --- | --- |");
     for scenario in &summary.scenario_summaries {
         let default_horizon_roles = if scenario.default_horizon_roles.is_empty() {
             "-".to_string()
@@ -156,23 +239,22 @@ pub(crate) fn render_formal_dataset_summary_markdown(
                 .collect::<Vec<_>>()
                 .join(", ")
         };
+        let free_sources = if scenario.coverage_free_sources.is_empty() {
+            "-".to_string()
+        } else {
+            scenario.coverage_free_sources.join(", ")
+        };
         let _ = writeln!(
             markdown,
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} -> {} |",
+            "| {} | {} | {} | {} | {} |",
             scenario.scenario_id,
-            scenario.label.as_deref().unwrap_or("-"),
-            scenario.family.as_deref().unwrap_or("-"),
-            scenario.training_role.as_deref().unwrap_or("-"),
             scenario
                 .protected_window
                 .map(|value| if value { "yes" } else { "no" })
                 .unwrap_or("-"),
             default_horizon_roles,
             scenario.episode_template_id.as_deref().unwrap_or("-"),
-            scenario.row_count,
-            scenario.split_count,
-            scenario.first_as_of_date,
-            scenario.last_as_of_date
+            free_sources
         );
     }
     let _ = writeln!(markdown);
@@ -210,11 +292,14 @@ pub(crate) fn render_formal_dataset_summary_markdown(
 
 pub(crate) fn print_formal_dataset_summary(summary: &FormalDatasetSummaryEnvelope) {
     println!(
-        "Formal dataset {} rows={} pit={} feature_set={}",
+        "Formal dataset {} rows={} pit={} feature_set={} coverage_catalog={} aligned={}/{}",
         summary.dataset_key,
         summary.dataset.manifest.row_count,
         summary.dataset.manifest.point_in_time_mode,
-        summary.dataset.manifest.feature_set_version
+        summary.dataset.manifest.feature_set_version,
+        summary.coverage_catalog.catalog_id,
+        summary.coverage_catalog.aligned_scenario_count,
+        summary.coverage_catalog.total_scenario_count
     );
     for split in &summary.split_summaries {
         println!(
@@ -241,6 +326,32 @@ pub(crate) fn print_formal_dataset_summary(summary: &FormalDatasetSummaryEnvelop
         );
     }
     println!("  recommendation {}", summary.recommendation);
+}
+
+fn format_allowed_roles(
+    usable_for_main_training: Option<bool>,
+    usable_for_extension_training: Option<bool>,
+    usable_for_protected_stress: Option<bool>,
+    usable_for_historical_analog: Option<bool>,
+) -> String {
+    let mut roles = Vec::new();
+    if usable_for_main_training == Some(true) {
+        roles.push("main");
+    }
+    if usable_for_extension_training == Some(true) {
+        roles.push("ext");
+    }
+    if usable_for_protected_stress == Some(true) {
+        roles.push("protected");
+    }
+    if usable_for_historical_analog == Some(true) {
+        roles.push("analog");
+    }
+    if roles.is_empty() {
+        "-".to_string()
+    } else {
+        roles.join(", ")
+    }
 }
 
 pub(crate) fn print_formal_dataset_slice_summary(export: &FormalDatasetSliceExport) {
