@@ -147,8 +147,7 @@ fn forward_crisis_prepare_prewarning_objective(
         return None;
     }
 
-    if let Some(objective) =
-        forward_crisis_protected_no_positive_main_objective(row, horizon_days)
+    if let Some(objective) = forward_crisis_protected_no_positive_main_objective(row, horizon_days)
     {
         return Some(objective);
     }
@@ -393,8 +392,7 @@ pub(crate) fn negative_sample_weight(
             }
         }
         ProbabilityTargetLabelMode::ForwardCrisis => {
-            if let Some(objective) = forward_crisis_episode_native_objective(row, horizon_days)
-            {
+            if let Some(objective) = forward_crisis_episode_native_objective(row, horizon_days) {
                 return objective.objective_weight;
             }
             if row.protected_action_window {

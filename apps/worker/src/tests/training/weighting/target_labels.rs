@@ -320,11 +320,7 @@ fn forward_crisis_20d_protected_no_positive_main_hedge_buffer_uses_conservative_
         0.34
     );
     assert_eq!(
-        negative_sample_weight(
-            &hedge_row,
-            20,
-            ProbabilityTargetLabelMode::ForwardCrisis
-        ),
+        negative_sample_weight(&hedge_row, 20, ProbabilityTargetLabelMode::ForwardCrisis),
         0.90
     );
 }

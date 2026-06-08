@@ -296,18 +296,14 @@ fn build_probability_calibration_regime_evidence(
                     bucket.protected_no_positive_main_row_count as f64,
                     row_count,
                 )),
-                protected_no_positive_main_avg_training_target: crate::round3(
-                    crate::safe_divide(
-                        bucket.protected_no_positive_main_training_target_sum,
-                        bucket.protected_no_positive_main_row_count as f64,
-                    ),
-                ),
-                protected_no_positive_main_avg_objective_weight: crate::round3(
-                    crate::safe_divide(
-                        bucket.protected_no_positive_main_objective_weight_sum,
-                        bucket.protected_no_positive_main_row_count as f64,
-                    ),
-                ),
+                protected_no_positive_main_avg_training_target: crate::round3(crate::safe_divide(
+                    bucket.protected_no_positive_main_training_target_sum,
+                    bucket.protected_no_positive_main_row_count as f64,
+                )),
+                protected_no_positive_main_avg_objective_weight: crate::round3(crate::safe_divide(
+                    bucket.protected_no_positive_main_objective_weight_sum,
+                    bucket.protected_no_positive_main_row_count as f64,
+                )),
             })
         })
         .collect()
