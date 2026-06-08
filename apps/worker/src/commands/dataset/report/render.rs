@@ -133,7 +133,7 @@ pub(crate) fn render_formal_dataset_summary_markdown(
         summary.coverage_catalog.historical_analog_eligible_count
     );
     if let Some(warning) = &summary.coverage_catalog.warning {
-        let _ = writeln!(markdown, "- Coverage warning: {}", warning);
+        let _ = writeln!(markdown, "- Coverage warning: {warning}");
     }
     let _ = writeln!(markdown);
     let _ = writeln!(markdown, "## Split Summary");

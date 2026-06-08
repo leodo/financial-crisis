@@ -78,7 +78,7 @@ pub(super) fn render_release_historical_audit_markdown(
                 .historical_analog_eligible_count
         );
         if let Some(warning) = &report.scenario_coverage_catalog.warning {
-            let _ = writeln!(markdown, "- Coverage warning: {}", warning);
+            let _ = writeln!(markdown, "- Coverage warning: {warning}");
         }
         let _ = writeln!(markdown);
         let _ = writeln!(

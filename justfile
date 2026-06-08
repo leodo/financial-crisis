@@ -159,6 +159,13 @@ formal-candidate-semantics-audit baseline_release_id candidate_release_id:
 formal-candidate-leadtime-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-leadtime-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 用固定美国历史场景包一口气审计 baseline / candidate：
+# 直接把 1987、1990s、2000、2008、2011、2020、2022、2023 的 compare、coverage 和 release-review blocker
+# 收到同一份 JSON 里，优先回答“免费数据能不能覆盖、该用哪个 dataset、主要卡在 gate 还是 continuity”。
+# 用法：`just formal-candidate-scenario-pack-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260608T173701`
+formal-candidate-scenario-pack-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-scenario-pack-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
 # 对 `prewarning_signal_gap / weak_signal_continuity` 这类 residual workstream 直接拉 formal dataset slice，
 # 汇总样本覆盖、split、标签、episode 和 feature 覆盖，避免只知道“哪条线有问题”却不知道“数据证据长什么样”。
 # 用法：`just formal-candidate-workstream-audit us_formal_family_hybrid_20260605T202246 us_formal_family_hybrid_20260606T112926`

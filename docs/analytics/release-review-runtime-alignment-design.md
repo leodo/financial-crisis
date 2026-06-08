@@ -430,6 +430,8 @@ The release-review alignment work now has a fixed offline entrypoint:
 
 - `scripts/formal-candidate-leadtime-audit.ps1`
 - `just formal-candidate-leadtime-audit <baseline> <candidate>`
+- `scripts/formal-candidate-scenario-pack-audit.ps1`
+- `just formal-candidate-scenario-pack-audit <baseline> <candidate>`
 
 This audit is intentionally narrower than the full release-review report. It exists to answer, in one pass:
 
@@ -441,6 +443,16 @@ This audit is intentionally narrower than the full release-review report. It exi
 4. whether the dominant blocker is still `review_gate_gap`,
    `posture_bucket_normal`, or another runtime block family;
 5. which `Historical Audit Workstreams / Actions` remain active for the candidate.
+
+The new `scenario-pack-audit` is broader and complements the lead-time audit:
+
+1. it runs a fixed US history pack spanning `1987 / 1990s / 2000 / 2008 / 2011 / 2020 / 2022 / 2023`;
+2. it automatically chooses `formal_v1_main_1990_daily`, `formal_v1_ext_stress_1990_daily`,
+   or `formal_v1_ext_acute_pre1990` per scenario instead of relying on manual dataset memory;
+3. it merges `formal-probability-compare`, scenario coverage grade / free sources / blocking gaps,
+   and release-review blocker labels into one JSON artifact;
+4. it exists to answer, in one pass, whether a scenario is blocked by
+   free-data coverage, `review_gate_gap`, `posture_continuity`, or residual `L3` conversion.
 
 ## 9. 2026-06-06 当前结论
 

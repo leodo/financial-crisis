@@ -1466,10 +1466,8 @@ async fn bundle_history_rebuild_rebuilds_exact_snapshot_when_new_visible_data_ar
         Some("raw_pit_feature_replay"),
         "when newer observations became visible after the prior snapshot, API should rebuild a true same-day PIT feature snapshot instead of staying in reuse state"
     );
-    let rebuilt_snapshot_id = format!(
-        "financial_system:us:{}:{}:best_effort",
-        latest_date, FORMAL_MAIN_FEATURE_SET_VERSION
-    );
+    let rebuilt_snapshot_id =
+        format!("financial_system:us:{latest_date}:{FORMAL_MAIN_FEATURE_SET_VERSION}:best_effort");
     assert_eq!(
         latest_point.feature_snapshot_id.as_deref(),
         Some(rebuilt_snapshot_id.as_str()),
