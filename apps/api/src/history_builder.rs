@@ -317,7 +317,13 @@ async fn rebuild_full_release_history_from_raw(
             .upsert_prediction_snapshots(&rebuilt.prediction_snapshots)
             .await?;
     }
-    persist_historical_replay_output(store, observations, serving_model, &rebuilt).await?;
+    if let Some(replay_run_id) =
+        persist_historical_replay_output(store, observations, serving_model, &rebuilt).await?
+    {
+        for point in &mut rebuilt.history_points {
+            point.replay_run_id = Some(replay_run_id.clone());
+        }
+    }
     Ok(rebuilt)
 }
 

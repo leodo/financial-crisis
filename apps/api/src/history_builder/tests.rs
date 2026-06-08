@@ -1208,6 +1208,12 @@ async fn default_mode_bundle_release_rebuilds_full_history_when_replay_cache_is_
     assert_eq!(replay_runs.len(), 1);
     assert_eq!(replay_runs[0].point_count, target_dates.len());
     assert_eq!(replay_runs[0].status, "success");
+    assert!(
+        history
+            .iter()
+            .all(|point| point.replay_run_id.as_deref() == Some(replay_runs[0].replay_run_id.as_str())),
+        "freshly rebuilt bundle-backed history should expose the persisted replay run id immediately instead of waiting for a second cache-backed read"
+    );
 }
 
 #[tokio::test]
@@ -1281,6 +1287,12 @@ async fn bundle_history_rebuild_binds_persisted_feature_snapshot_ids_when_availa
         .await
         .unwrap();
     assert_eq!(replay_runs.len(), 1);
+    assert!(
+        history
+            .iter()
+            .all(|point| point.replay_run_id.as_deref() == Some(replay_runs[0].replay_run_id.as_str())),
+        "history points backed by persisted PIT snapshots should still expose the replay run id on the first rebuild response"
+    );
 
     let replay_points = store
         .list_historical_assessment_points(
@@ -1369,6 +1381,10 @@ async fn bundle_history_rebuild_reuses_latest_prior_feature_snapshot_when_same_d
     assert_eq!(
         latest_point.feature_snapshot_id, prior_point.feature_snapshot_id,
         "latest date should reuse the most recent persisted PIT feature snapshot id"
+    );
+    assert!(
+        latest_point.replay_run_id.is_some(),
+        "same-day point should keep the replay run id after raw rebuild metadata is persisted"
     );
 }
 

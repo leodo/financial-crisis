@@ -22,12 +22,12 @@ pub(crate) async fn persist_historical_replay_output(
     observations: &[Observation],
     serving_model: Option<&ServingModelContext>,
     output: &HistoricalAssessmentOutput,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<String>> {
     let Some(first_point) = output.replay_point_drafts.first() else {
-        return Ok(());
+        return Ok(None);
     };
     let Some(last_point) = output.replay_point_drafts.last() else {
-        return Ok(());
+        return Ok(None);
     };
 
     let replay_run_id = Uuid::new_v4().to_string();
@@ -67,7 +67,7 @@ pub(crate) async fn persist_historical_replay_output(
     store
         .replace_historical_assessment_points(&replay_run_id, &points)
         .await?;
-    Ok(())
+    Ok(Some(replay_run_id))
 }
 
 fn historical_assessment_point_record(

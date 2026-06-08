@@ -608,6 +608,7 @@
        - `raw_pit_feature_replay`：这段点位既来自 replay，又已经绑定到真实 `feature snapshot id`
      - 已完成一部分：`bundle-backed formal release` 的 raw rebuild 会优先去匹配已落库的 `feature snapshots`，命中后把真实 `feature_snapshot_id` 写回 replay point，而不是继续只拼一个“看起来像 snapshot id”的字符串
      - 已完成一部分：已把 replay cache 版本升到 `history_cache_v5_20260608`，并修掉同日尾点刷新时丢失 replay metadata 的问题；当前默认 `/api/assessment/history` 已回到 `260/260 raw_pit_feature_replay`，`2026-06-08` 也能复用最近一笔 `2026-05-31` 的 persisted `feature_snapshot_id`
+     - 已完成一部分：fresh rebuild 返回给前端的同一批历史点现在也会立即带上真实 `replay_run_id`，不需要再等下一次 cache 命中；`history_source / replay_run_id / feature_snapshot_id` 三个字段的运行时语义已对齐
      - 已完成一部分：`bootstrap-formal-release` 已拒绝 `--dataset-source snapshot`，正式发布命令层不再允许把过渡 snapshot 训练直接包装成 formal release
      - 已完成一部分：`research snapshot dataset` 与 `train-probability --dataset-source snapshot` 现在也会拒绝 `formal bundle release`；这条路径只保留给 heuristic/transitional research snapshots，legacy 无 manifest 的老快照也要求 `probability_mode=heuristic_mvp`
      - 已完成一部分：snapshot 过渡训练生成的 manifest 现在会标成 `candidate/shadow`；`release publish` 默认只接受 `approved/healthy` 正式 manifest，候选版必须显式 `--review-only` 才能入库，且 `release activate/publish --activate` 会拒绝直接激活 `candidate/*` 或 `*/shadow` release
