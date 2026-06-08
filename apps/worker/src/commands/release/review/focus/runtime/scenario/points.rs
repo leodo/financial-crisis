@@ -66,10 +66,8 @@ pub(super) fn build_interesting_points(
             candidate_p60d: candidate_point.map(|point| point.p_60d),
             baseline_overall_score: baseline_point.map(|point| point.overall_score),
             candidate_overall_score: candidate_point.map(|point| point.overall_score),
-            baseline_external_shock_score: baseline_point
-                .map(|point| point.external_shock_score),
-            candidate_external_shock_score: candidate_point
-                .map(|point| point.external_shock_score),
+            baseline_external_shock_score: baseline_point.map(|point| point.external_shock_score),
+            candidate_external_shock_score: candidate_point.map(|point| point.external_shock_score),
             baseline_posture: baseline_point
                 .map(release_review_posture_name)
                 .map(str::to_string),

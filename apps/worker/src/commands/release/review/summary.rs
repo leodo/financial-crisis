@@ -86,30 +86,6 @@ pub(super) fn build_release_review_recommendation(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::build_release_review_recommendation;
-
-    #[test]
-    fn recommendation_mentions_baseline_fix_workstreams_without_actionability() {
-        let recommendation = build_release_review_recommendation(
-            &[],
-            false,
-            &[crate::ReleaseReviewHistoricalAuditActionSummary {
-                workstream: "prewarning_signal_gap".to_string(),
-                attribution: "baseline_shared_weakness".to_string(),
-                action_type: "baseline_research_fix".to_string(),
-                scenario_count: 4,
-                protected_count: 2,
-                recommendation: "baseline research fix".to_string(),
-            }],
-        );
-
-        assert!(recommendation.contains("pre-warning signal gap"));
-        assert!(recommendation.contains("样本、特征和标签治理"));
-    }
-}
-
 fn release_review_action_workstream_labels(
     actions: &[crate::ReleaseReviewHistoricalAuditActionSummary],
     action_type: &str,
@@ -343,4 +319,28 @@ pub(super) fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope
         }
     }
     println!("  recommendation        {}", report.recommendation);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_release_review_recommendation;
+
+    #[test]
+    fn recommendation_mentions_baseline_fix_workstreams_without_actionability() {
+        let recommendation = build_release_review_recommendation(
+            &[],
+            false,
+            &[crate::ReleaseReviewHistoricalAuditActionSummary {
+                workstream: "prewarning_signal_gap".to_string(),
+                attribution: "baseline_shared_weakness".to_string(),
+                action_type: "baseline_research_fix".to_string(),
+                scenario_count: 4,
+                protected_count: 2,
+                recommendation: "baseline research fix".to_string(),
+            }],
+        );
+
+        assert!(recommendation.contains("pre-warning signal gap"));
+        assert!(recommendation.contains("样本、特征和标签治理"));
+    }
 }

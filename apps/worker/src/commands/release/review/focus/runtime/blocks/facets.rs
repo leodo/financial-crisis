@@ -152,11 +152,7 @@ pub(super) fn release_review_runtime_continuity_facets(
         ),
         format!(
             "confirmation:{}",
-            release_review_runtime_confirmation_facet(
-                point,
-                use_transitional_bridge,
-                thresholds
-            )
+            release_review_runtime_confirmation_facet(point, use_transitional_bridge, thresholds)
         ),
     ]
 }

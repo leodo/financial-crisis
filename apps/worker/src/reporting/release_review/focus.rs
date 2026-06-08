@@ -1,6 +1,9 @@
 use std::fmt::Write;
 
-use crate::{ReleaseReviewEnvelope, ReleaseReviewScenarioFocusDiagnostic};
+use crate::{
+    release_review::ReleaseReviewHistoricalAuditPriority, ReleaseReviewEnvelope,
+    ReleaseReviewScenarioFocusDiagnostic,
+};
 
 pub(super) fn render_release_focus_scenarios_markdown(
     markdown: &mut String,
@@ -13,13 +16,40 @@ pub(super) fn render_release_focus_scenarios_markdown(
     let _ = writeln!(markdown, "## Focus Scenarios");
     let _ = writeln!(markdown);
     for scenario in &report.scenario_focus {
-        render_release_focus_scenario_markdown(markdown, scenario);
+        render_release_focus_scenario_markdown(
+            markdown,
+            scenario,
+            historical_audit_priority_for_scenario(report, scenario.scenario_id.as_str()),
+        );
+    }
+}
+
+fn historical_audit_priority_for_scenario<'a>(
+    report: &'a ReleaseReviewEnvelope,
+    scenario_id: &str,
+) -> Option<&'a ReleaseReviewHistoricalAuditPriority> {
+    report
+        .historical_audit_priorities
+        .iter()
+        .find(|row| row.scenario_id == scenario_id)
+}
+
+fn historical_audit_workstream_label(workstream: &str) -> &str {
+    match workstream {
+        "strict_review_vs_runtime_mapping" => "strict gate vs runtime floor",
+        "posture_continuity" => "posture continuity",
+        "score_confirmation" => "score confirmation",
+        "transitional_bridge" => "transitional bridge",
+        "prewarning_signal_gap" => "pre-warning signal gap",
+        "weak_signal_continuity" => "weak signal continuity",
+        _ => "residual release-review audit",
     }
 }
 
 fn render_release_focus_scenario_markdown(
     markdown: &mut String,
     scenario: &ReleaseReviewScenarioFocusDiagnostic,
+    historical_priority: Option<&ReleaseReviewHistoricalAuditPriority>,
 ) {
     let _ = writeln!(markdown, "### {} ({})", scenario.name, scenario.outcome);
     let _ = writeln!(markdown);
@@ -114,6 +144,16 @@ fn render_release_focus_scenario_markdown(
             .as_deref()
             .unwrap_or("—")
     );
+    if let Some(priority) = historical_priority {
+        let _ = writeln!(
+            markdown,
+            "- Historical audit refinement: workstream={} | protected={} | role={} | suggested review={}",
+            historical_audit_workstream_label(&priority.primary_workstream),
+            if priority.protected_window { "yes" } else { "no" },
+            priority.training_role,
+            priority.suggested_review
+        );
+    }
     let _ = writeln!(
         markdown,
         "- Dominant runtime block: baseline={} ({}) | candidate={} ({})",

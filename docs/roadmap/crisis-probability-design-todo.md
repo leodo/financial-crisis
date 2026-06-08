@@ -683,6 +683,9 @@
          - `2026-06-08` 默认 review 产物现在会在 `scenario_focus.interesting_points` 和 Markdown 表格里直接带出 `Base/Cand overall`、`Base/Cand external`，不再只能看概率和 posture。
          - 基于这组新字段，`2023 美国区域银行危机` 的早期窗口已可直接看出：candidate 在 `2022-12-08 ~ 2022-12-13` 已经进入 `prepare/weeks`，`p20d/p60d` 也明显抬升，并带有 `prepare_probability_plateau / prepare_history_hysteresis`，但 `overall_score` 只有 `51.8 ~ 52.6`，因此之前才会落进笼统的 `review_l3_gate_not_satisfied / residual_review_l3_failure`。
          - 现在这类点位会被明确记成 `prepare_weeks_score_confirmation`，对应诊断文案是“prepare/weeks trigger setup stayed below strict score confirmation”，后续若要放宽 strict L3 准入，可以直接围绕这条 clause 做 targeted 实验，而不是继续在 residual 桶里盲改。
+       - [x] 已让 `release review` 的 `Focus Scenarios` markdown 同步镜像 `historical audit priority`
+         - `2026-06-08` 之后的报告会在每个 focus scenario 下直接展示 `historical audit refinement`，把 `pre-warning signal gap / weak signal continuity / strict gate vs runtime floor` 与 `suggested review` 明确贴回场景本身。
+         - 这样读报告时不需要再在 `scenario_focus`、`historical audit priorities`、`historical audit actions` 三段之间来回对照，尤其能避免把 `1987 / 1998` 这类 `baseline_shared_weakness` 误读成“只剩 posture continuity 一条问题”。
        - [x] 已落一条更窄的 `prepare/weeks + plateau + history_hysteresis` strict L3 修复实验
          - 这次没有去降通用 `prepare` score floor，只新增一条更窄的 strict actionable clause：要求 `prepare/weeks` 同时带 `prepare_probability_plateau + prepare_history_hysteresis`、`p20d/p60d` 达到 relaxed plateau 档位、且 `overall >= 51.5 / external >= 33.0`。
          - `2026-06-08` 实测：重新跑 baseline `us_formal_family_hybrid_20260605T202246` vs candidate `us_formal_family_hybrid_20260606T112926` 的 `default release review` 后，`strict_actionable_point_count 80 -> 84`，`timely_warning_rate 10.0% -> 10.0%`、`actionable_precision 70.5% -> 70.5%`、`longest_false_positive_episode_days 13 -> 13`，说明补到的是窄点位而不是泛化放宽。
