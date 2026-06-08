@@ -165,6 +165,13 @@ formal-candidate-leadtime-audit baseline_release_id candidate_release_id:
 formal-candidate-workstream-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-workstream-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 固定审计 `2022 联储加息与久期冲击`：
+# 把 formal dataset slice 与 baseline/candidate 概率 compare 拼起来，直接看 primary / late_validation /
+# prepare / hedge 各自的 hit rate、最长连续命中、阈值距离和特征分离。
+# 用法：`just formal-candidate-rate-shock-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260608T173701`
+formal-candidate-rate-shock-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-rate-shock-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
 # 标准候选筛选入口：先跑三段窗口 compare，再跑 20d 特征/阈值审计，最后补一轮语义审计。
 # 适合 family-hybrid 主线的新候选第一轮筛查；只有这一步结论足够好，才继续跑 `release-review-fast`。
 # 用法：`just formal-candidate-screen us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`
