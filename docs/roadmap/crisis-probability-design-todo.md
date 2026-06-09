@@ -826,6 +826,12 @@
      - `default release review / cooldown audit` 直接判为 no-go：`timely_warning_rate 50.0% -> 10.0%`、`strict_actionable_point_count 80 -> 21`、`runtime_floor_hit_count 91 -> 59`，虽然 `actionable_precision 69.8% -> 82.1%` 且最长纯误报 `17d -> 4d`，但这是以牺牲提前预警为代价；
      - `rate-shock` 审计也确认同一问题：候选把 2022 的 `primary avg p20d 1.38% -> 21.56%` 抬起来，但 `20d threshold 0.282 -> 0.900` 后 hit 数反而 `48 -> 33`，`60d hits 22 -> 5`；
      - 结论：训练拓扑修复方向有效，但不能单独 promote；下一步必须把 `threshold candidate selection / cooldown penalty / 60d cold_across_all_regimes` 纳入训练或筛选目标，而不是继续只增加 protected rows。
+   - `2026-06-10` 已完成第一版 `over-tight 20d threshold repair` 并重训候选 `us_formal_family_hybrid_20260609T162641`：
+     - 训练诊断显示 `20d base=0.900 final=0.806 repair=true`，calibration pre-warning hits 从 `3/116` 升到 `7/116`；
+     - `funding-stress` 审计显示 2011 已从 `0` 个 20d runtime hit 改善到 `3` 个，`candidate max p20d=0.839` 高于 `0.806` floor，问题从 `no_runtime_floor_signal` 推进到 `partial_runtime_signal`；
+     - `rate-shock` 审计显示 2022 的 20d hits 从 `48 -> 81`，late-validation hit rate 从 `34.3% -> 51.1%`；
+     - 但 `formal-candidate-screen` 仍判为 `no_go_offline`：regional banks positive-window hit rate `80.0% -> 5.0%`、runtime floor hit count `91 -> 69`、candidate 20d 仍是 `cooldown_bleed` 且 cooldown avg `0.488605` 高于 positive-window avg `0.441499`；
+     - 结论：本项已证明“阈值过紧”可以被局部修复，但不能继续单独放宽阈值；下一步必须把 `positive-window retention` 和 `cooldown < positive-window` 作为训练/筛选硬目标，同时继续处理 `60d cold_across_all_regimes`。
    - 为了避免下一轮继续靠猜，threshold diagnostics 现在已经能单独暴露 `episode_native_objective_row_count` 与 `protected_no_positive_main_*` 指标，后续训练输出可直接看出这类行在 calibration evidence 里到底占了多少。
    - `2026-06-09` 同一批专项工件现在也已经被 `/api/research/audit` 和前端“发布审计”页直接消费；做 release review 时，不需要再单独翻 `artifacts/research/rate-shock-audit/*.json` 才能判断 `2022 weak_signal_continuity` 是不是已经改善。
 2. 再围绕 `1987 / 1998 / 2000-2001 / 2011` 的 `prewarning_signal_gap` 做训练样本、特征覆盖与标签窗口专项复盘，确认为什么连稳定的 non-normal / runtime floor 都没有形成；
@@ -859,6 +865,10 @@
      - 新候选 `us_formal_family_hybrid_20260609T151925` 把 2011 `max p20d` 拉到 `0.839`，明显高于 baseline `0.202`；
      - 但候选 `20d floor=0.900`，导致 2011 仍无 runtime-floor hit；同时 `default release review` 退化为 `timely_warning_rate 50.0% -> 10.0%`、`runtime_floor_hit_count 91 -> 59`；
      - 结论：问题已经从“2011 样本完全不可训练”推进到“训练后阈值 / cooldown / 60d 冷信号治理”。
+   - `2026-06-10` 已继续闭环 `over-tight threshold repair`：
+     - 新候选 `us_formal_family_hybrid_20260609T162641` 将 20d floor 修为 `0.806` 后，2011 20d runtime hits 从 `0 -> 3`；
+     - 同时暴露新的硬瓶颈：2023 regional banks positive-window retention 只有 `6.3%`，20d cooldown avg 仍高于 positive-window avg；
+     - 后续 TODO 顺序调整为：先做 positive-window retention / cooldown dominance 的候选筛选与训练目标约束，再继续 60d 冷信号。
    - `2026-06-09` 已把这条专项审计接入 `/api/research/audit` 与前端“发布审计”页：
      - API 新增 `latest_prewarning_gap_audit`，从 `artifacts/research/prewarning-gap-audit/*-prewarning-gap-audit.json` 读取与当前 release review baseline/candidate 匹配的工件；
      - UI 新增“提前预警缺口审计”区块，直接展示 `candidate_margin_erosion / no_runtime_floor_signal / protected_context_signal_present` 分类、dataset 行数、20d/60d 命中与下一步建议；

@@ -293,6 +293,12 @@ family_overlays == []
      3. 但候选 `20d threshold` 同时升到 `0.900`，2011 仍没有 runtime-floor hit；`60d max` 仍只有 `0.0206`；
      4. `default release review` 判为 no-go：`timely_warning_rate 50.0% -> 10.0%`、`runtime_floor_hit_count 91 -> 59`，虽然 precision 和最长误报改善，但代价是提前预警被压掉；
      5. 因此 family overlay 的下一轮主线不应继续只加 protected rows，而应把 threshold candidate selection、cooldown penalty 和 `60d cold_across_all_regimes` 一起纳入训练/筛选治理。
+   - `2026-06-10` 已实现第一版 over-tight threshold repair 并重训候选 `us_formal_family_hybrid_20260609T162641`：
+     1. 20d `base threshold=0.900` 被修到 `final threshold=0.806`，calibration pre-warning hits 从 `3/116` 升到 `7/116`；
+     2. 2011 funding-stress 从 `0` 个 20d runtime hit 改善到 `3` 个，candidate `max p20d=0.839` 已高于 `0.806` floor；
+     3. 2022 rate-shock 的 20d hits 从 `48 -> 81`，说明阈值治理确实释放了一部分已经学到的信号；
+     4. 但 offline screen 仍是 `no_go_offline`：2023 regional banks positive-window hit rate 从 `80.0% -> 5.0%`，runtime floor hits `91 -> 69`，20d runtime regime 仍是 `cooldown_bleed`；
+     5. 结论：阈值治理方向有效但不是最终解，下一步需要同时约束 positive-window retention、cooldown 平均概率必须低于 positive-window，以及 `60d cold_across_all_regimes`。
 4. 对 `jpy_carry` 单独补 family proxy / protected stress 样本后再决定是否进入正式 overlay 训练；
    - `2026-06-06` 已把这条线继续前推到“真实可训练”：
      1. `proxy-only audit` 现在把 `protected_action_window` 和 gate-active carry rows

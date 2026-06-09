@@ -330,6 +330,220 @@ fn regime_support_adjustment_lowers_60d_threshold_when_base_misses_prewarning_bu
 }
 
 #[test]
+fn regime_support_adjustment_repairs_over_tight_20d_threshold_without_lift_gate() {
+    let build_row = |regime_20d: ProbabilityTrainingRegime, label_20d: u8| ProbabilityTrainingRow {
+        as_of_date: NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+        market_scope: "financial_system".to_string(),
+        release_id: None,
+        probability_mode: Some("formal_bundle_v1".to_string()),
+        freshness_status: Some("fresh".to_string()),
+        time_to_risk_bucket: Some("test".to_string()),
+        split_name: Some("calibration".to_string()),
+        features: BTreeMap::new(),
+        primary_scenario_id: Some("scenario".to_string()),
+        scenario_family: Some("mixed_systemic_stress".to_string()),
+        scenario_training_role: None,
+        days_to_primary_crisis_start: Some(15),
+        primary_scenario_supports_5d: true,
+        primary_scenario_supports_20d: true,
+        primary_scenario_supports_60d: true,
+        label_5d: 0,
+        label_20d,
+        label_60d: 0,
+        regime_5d: ProbabilityTrainingRegime::Normal,
+        regime_20d,
+        regime_60d: ProbabilityTrainingRegime::Normal,
+        action_label_5d: 0,
+        action_label_20d: 0,
+        action_label_60d: 0,
+        prepare_episode_label: 0,
+        hedge_episode_label: 0,
+        defend_episode_label: 0,
+        primary_action_level: None,
+        action_episode_id: None,
+        action_episode_phase: "outside".to_string(),
+        protected_action_window: false,
+    };
+
+    let rows = vec![
+        build_row(ProbabilityTrainingRegime::PositiveWindow, 1),
+        build_row(ProbabilityTrainingRegime::PositiveWindow, 1),
+        build_row(ProbabilityTrainingRegime::InCrisis, 1),
+        build_row(ProbabilityTrainingRegime::InCrisis, 1),
+        build_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        build_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        build_row(ProbabilityTrainingRegime::Normal, 0),
+        build_row(ProbabilityTrainingRegime::Normal, 0),
+        build_row(ProbabilityTrainingRegime::Normal, 0),
+        build_row(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+    ];
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    let probabilities = vec![0.95, 0.93, 0.92, 0.91, 0.84, 0.82, 0.60, 0.59, 0.58, 0.54];
+    let labels = rows
+        .iter()
+        .map(|row| row.label_20d as f64)
+        .collect::<Vec<_>>();
+
+    let base_threshold = select_probability_decision_threshold(&probabilities, &labels, 20);
+    let adjusted_threshold = adjust_probability_decision_threshold_for_regime_support(
+        base_threshold,
+        &probabilities,
+        &labels,
+        &row_refs,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    let calibration_selection = ProbabilityCalibrationSelection {
+        rows: row_refs.clone(),
+        eligible_row_count: row_refs.len(),
+        eligible_positive_count: labels.iter().filter(|label| **label >= 0.5).count(),
+        eligible_negative_count: labels.iter().filter(|label| **label < 0.5).count(),
+        used_full_split_fallback: false,
+    };
+    let threshold_selection = ProbabilityThresholdSelection {
+        rows: row_refs.clone(),
+        probabilities: probabilities.clone(),
+        labels: labels.clone(),
+        used_full_split_fallback: false,
+    };
+    let diagnostics =
+        build_probability_threshold_diagnostics(ProbabilityThresholdDiagnosticsInput {
+            full_calibration_rows: &rows,
+            calibration_selection: &calibration_selection,
+            threshold_selection: &threshold_selection,
+            horizon_days: 20,
+            label_mode: ProbabilityTargetLabelMode::ForwardCrisis,
+            base_threshold,
+            final_threshold: adjusted_threshold,
+        });
+
+    let early_warning_hit_count = |threshold: f64| {
+        probabilities
+            .iter()
+            .zip(row_refs.iter())
+            .filter(|(probability, row)| {
+                **probability >= threshold
+                    && row.regime_20d == ProbabilityTrainingRegime::PreWarningBuffer
+            })
+            .count()
+    };
+    let normal_hit_count = |threshold: f64| {
+        probabilities
+            .iter()
+            .zip(row_refs.iter())
+            .filter(|(probability, row)| {
+                **probability >= threshold && row.regime_20d == ProbabilityTrainingRegime::Normal
+            })
+            .count()
+    };
+
+    assert_eq!(base_threshold, 0.90);
+    assert!(adjusted_threshold < base_threshold);
+    assert!(adjusted_threshold <= 0.84);
+    assert_eq!(early_warning_hit_count(base_threshold), 0);
+    assert!(early_warning_hit_count(adjusted_threshold) > 0);
+    assert!(normal_hit_count(adjusted_threshold) < early_warning_hit_count(adjusted_threshold));
+    assert!(diagnostics.repair_applied);
+    assert_eq!(
+        diagnostics.repair_reason,
+        "repaired_over_tight_threshold_below_lift_guardrail"
+    );
+}
+
+#[test]
+fn regime_support_adjustment_repairs_sparse_20d_prewarning_hits_at_extreme_threshold() {
+    let build_row = |regime_20d: ProbabilityTrainingRegime, label_20d: u8| ProbabilityTrainingRow {
+        as_of_date: NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+        market_scope: "financial_system".to_string(),
+        release_id: None,
+        probability_mode: Some("formal_bundle_v1".to_string()),
+        freshness_status: Some("fresh".to_string()),
+        time_to_risk_bucket: Some("test".to_string()),
+        split_name: Some("calibration".to_string()),
+        features: BTreeMap::new(),
+        primary_scenario_id: Some("scenario".to_string()),
+        scenario_family: Some("mixed_systemic_stress".to_string()),
+        scenario_training_role: None,
+        days_to_primary_crisis_start: Some(15),
+        primary_scenario_supports_5d: true,
+        primary_scenario_supports_20d: true,
+        primary_scenario_supports_60d: true,
+        label_5d: 0,
+        label_20d,
+        label_60d: 0,
+        regime_5d: ProbabilityTrainingRegime::Normal,
+        regime_20d,
+        regime_60d: ProbabilityTrainingRegime::Normal,
+        action_label_5d: 0,
+        action_label_20d: 0,
+        action_label_60d: 0,
+        prepare_episode_label: 0,
+        hedge_episode_label: 0,
+        defend_episode_label: 0,
+        primary_action_level: None,
+        action_episode_id: None,
+        action_episode_phase: "outside".to_string(),
+        protected_action_window: false,
+    };
+
+    let mut rows = vec![
+        build_row(ProbabilityTrainingRegime::PositiveWindow, 1),
+        build_row(ProbabilityTrainingRegime::PositiveWindow, 1),
+        build_row(ProbabilityTrainingRegime::InCrisis, 1),
+        build_row(ProbabilityTrainingRegime::InCrisis, 1),
+    ];
+    let mut probabilities = vec![0.96, 0.94, 0.93, 0.91];
+    for index in 0..100 {
+        rows.push(build_row(ProbabilityTrainingRegime::PreWarningBuffer, 0));
+        probabilities.push(match index {
+            0 | 1 => 0.91,
+            2..=7 => 0.84,
+            _ => 0.62,
+        });
+    }
+    for _ in 0..20 {
+        rows.push(build_row(ProbabilityTrainingRegime::Normal, 0));
+        probabilities.push(0.58);
+    }
+    for _ in 0..5 {
+        rows.push(build_row(ProbabilityTrainingRegime::PostCrisisCooldown, 0));
+        probabilities.push(0.54);
+    }
+
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    let labels = rows
+        .iter()
+        .map(|row| row.label_20d as f64)
+        .collect::<Vec<_>>();
+
+    let base_threshold = select_probability_decision_threshold(&probabilities, &labels, 20);
+    let adjusted_threshold = adjust_probability_decision_threshold_for_regime_support(
+        base_threshold,
+        &probabilities,
+        &labels,
+        &row_refs,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    let early_warning_hit_count = |threshold: f64| {
+        probabilities
+            .iter()
+            .zip(row_refs.iter())
+            .filter(|(probability, row)| {
+                **probability >= threshold
+                    && row.regime_20d == ProbabilityTrainingRegime::PreWarningBuffer
+            })
+            .count()
+    };
+
+    assert_eq!(base_threshold, 0.90);
+    assert_eq!(early_warning_hit_count(base_threshold), 2);
+    assert!(adjusted_threshold < base_threshold);
+    assert!(adjusted_threshold <= 0.84);
+    assert!(early_warning_hit_count(adjusted_threshold) >= 8);
+}
+
+#[test]
 fn threshold_selection_excludes_in_crisis_negatives_for_60d_forward_crisis() {
     let build_row = |regime_60d: ProbabilityTrainingRegime, label_60d: u8| ProbabilityTrainingRow {
         as_of_date: NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),

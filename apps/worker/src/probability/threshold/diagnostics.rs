@@ -85,6 +85,23 @@ pub(crate) fn build_probability_threshold_diagnostics(
         "no_early_warning_rows".to_string()
     } else if threshold_has_usable_early_warning_support(base_metrics.regime_hits, horizon_days) {
         "base_threshold_has_usable_early_warning_gap".to_string()
+    } else if actual_positive_count == 0 {
+        "no_positive_labels".to_string()
+    } else if repair_applied
+        && early_warning_probability_cap
+            .is_some_and(|cap| cap < base_threshold && (final_threshold - cap).abs() < 0.000_5)
+    {
+        "repaired_to_early_warning_cap".to_string()
+    } else if repair_applied
+        && regime_summary
+            .as_ref()
+            .and_then(|summary| summary.early_warning_lift_vs_normal)
+            .unwrap_or_default()
+            < 1.5
+    {
+        "repaired_over_tight_threshold_below_lift_guardrail".to_string()
+    } else if repair_applied {
+        "repaired_to_regime_support_candidate".to_string()
     } else if regime_summary
         .as_ref()
         .and_then(|summary| summary.early_warning_lift_vs_normal)
@@ -94,16 +111,10 @@ pub(crate) fn build_probability_threshold_diagnostics(
         "early_warning_lift_below_guardrail".to_string()
     } else if base_metrics.regime_hits.early_warning_hit_count > 0 {
         "base_hits_early_warning_but_gap_is_too_weak".to_string()
-    } else if actual_positive_count == 0 {
-        "no_positive_labels".to_string()
     } else if !repair_applied {
         "repair_considered_but_no_better_candidate".to_string()
-    } else if early_warning_probability_cap
-        .is_some_and(|cap| cap < base_threshold && (final_threshold - cap).abs() < 0.000_5)
-    {
-        "repaired_to_early_warning_cap".to_string()
     } else {
-        "repaired_to_regime_support_candidate".to_string()
+        "repair_not_classified".to_string()
     };
 
     ProbabilityThresholdDiagnosticsWire {
