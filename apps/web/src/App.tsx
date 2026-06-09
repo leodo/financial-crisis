@@ -306,9 +306,9 @@ export default function App() {
               <div className="warmup-metric">
                 <span>危机先验</span>
                 <strong>
-                  {formatProbabilityPercent(assessment.data.probabilities.p_5d)} /
-                  {formatProbabilityPercent(assessment.data.probabilities.p_20d)} /
-                  {formatProbabilityPercent(assessment.data.probabilities.p_60d)}
+                  {formatProbabilityPercent(assessment.data.probabilities.p_5d, { zeroLabel: "<0.01%" })} /
+                  {formatProbabilityPercent(assessment.data.probabilities.p_20d, { zeroLabel: "<0.01%" })} /
+                  {formatProbabilityPercent(assessment.data.probabilities.p_60d, { zeroLabel: "<0.01%" })}
                 </strong>
                 <small>5d / 20d / 60d</small>
               </div>

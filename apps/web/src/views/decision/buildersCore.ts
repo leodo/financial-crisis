@@ -115,6 +115,20 @@ function formatActionProbability(value: number, actionabilityEnabled: boolean): 
   return formatProbabilityPercent(value);
 }
 
+function formatActionCurrentValue(value: number, actionabilityEnabled: boolean): string {
+  if (value === 0 && !actionabilityEnabled) {
+    return `当前未触发（原始值 ${formatPercentPrecise(value)}）。`;
+  }
+  return `当前值 ${formatPercentPrecise(value)}。`;
+}
+
+function formatActionDetailValue(label: string, value: number, actionabilityEnabled: boolean): string {
+  if (value === 0 && !actionabilityEnabled) {
+    return `${label} 未触发（原始值 ${formatPercentPrecise(value)}）`;
+  }
+  return `${label} ${formatPercentPrecise(value)}`;
+}
+
 export function buildTriggerClauses(posture: PostureGuidance) {
   return posture.trigger_codes.map(describePostureClause);
 }
@@ -199,7 +213,10 @@ export function buildRiskHorizonActionMetrics(
         assessment.actionability.prepare,
         assessment.method.actionability_enabled
       ),
-      hint: `${decisionContent.riskHorizon.actionHints.prepare} 当前值 ${formatPercentPrecise(assessment.actionability.prepare)}。`
+      hint: `${decisionContent.riskHorizon.actionHints.prepare} ${formatActionCurrentValue(
+        assessment.actionability.prepare,
+        assessment.method.actionability_enabled
+      )}`
     },
     {
       label: hedgeLabel,
@@ -207,7 +224,10 @@ export function buildRiskHorizonActionMetrics(
         assessment.actionability.hedge,
         assessment.method.actionability_enabled
       ),
-      hint: `${decisionContent.riskHorizon.actionHints.hedge} 当前值 ${formatPercentPrecise(assessment.actionability.hedge)}。`
+      hint: `${decisionContent.riskHorizon.actionHints.hedge} ${formatActionCurrentValue(
+        assessment.actionability.hedge,
+        assessment.method.actionability_enabled
+      )}`
     },
     {
       label: defendLabel,
@@ -215,7 +235,10 @@ export function buildRiskHorizonActionMetrics(
         assessment.actionability.defend,
         assessment.method.actionability_enabled
       ),
-      hint: `${decisionContent.riskHorizon.actionHints.defend} 当前值 ${formatPercentPrecise(assessment.actionability.defend)}。`
+      hint: `${decisionContent.riskHorizon.actionHints.defend} ${formatActionCurrentValue(
+        assessment.actionability.defend,
+        assessment.method.actionability_enabled
+      )}`
     },
     {
       label: "动作头来源",
@@ -296,7 +319,7 @@ export function buildSignalLayerRows(
       id: "prior",
       title: "危机先验",
       description: "先看未来 5d / 20d / 60d 进入风险窗口的概率，回答“离风险还有多远”。",
-      value: `${formatProbabilityPercent(assessment.probabilities.p_5d)} / ${formatProbabilityPercent(assessment.probabilities.p_20d)} / ${formatProbabilityPercent(assessment.probabilities.p_60d)}`,
+      value: `${formatProbabilityPercent(assessment.probabilities.p_5d, { zeroLabel: "<0.01%" })} / ${formatProbabilityPercent(assessment.probabilities.p_20d, { zeroLabel: "<0.01%" })} / ${formatProbabilityPercent(assessment.probabilities.p_60d, { zeroLabel: "<0.01%" })}`,
       detail: priorDetail ? `${priorThresholdSummary} · ${priorDetail}` : priorThresholdSummary
     },
     {
@@ -313,7 +336,19 @@ export function buildSignalLayerRows(
         assessment.actionability.defend,
         assessment.method.actionability_enabled
       )}`,
-      detail: `${actionabilitySource} 原始值：准备 ${formatPercentPrecise(assessment.actionability.prepare)} / 对冲 ${formatPercentPrecise(assessment.actionability.hedge)} / 防守 ${formatPercentPrecise(assessment.actionability.defend)}。`
+      detail: `${actionabilitySource} 当前显示：${formatActionDetailValue(
+        "准备",
+        assessment.actionability.prepare,
+        assessment.method.actionability_enabled
+      )} / ${formatActionDetailValue(
+        "对冲",
+        assessment.actionability.hedge,
+        assessment.method.actionability_enabled
+      )} / ${formatActionDetailValue(
+        "防守",
+        assessment.actionability.defend,
+        assessment.method.actionability_enabled
+      )}。`
     },
     {
       id: "posture",

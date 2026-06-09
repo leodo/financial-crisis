@@ -52,13 +52,16 @@ function trimTrailingZeros(value: string): string {
   return value.replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
 }
 
-export function formatProbabilityPercent(value: number | null | undefined): string {
+export function formatProbabilityPercent(
+  value: number | null | undefined,
+  options: { zeroLabel?: string } = {}
+): string {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return "—";
   }
   const absolute = Math.abs(value);
   if (absolute === 0) {
-    return "0.0%";
+    return options.zeroLabel ?? "0.0%";
   }
   if (absolute < 0.0001) {
     return "<0.01%";

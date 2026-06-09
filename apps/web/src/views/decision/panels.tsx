@@ -10,6 +10,7 @@ import {
   humanizeNarrativeCopy,
   eventStateLabel,
   formatNumber,
+  formatPercent,
   jpyStateLabel
 } from "../../format";
 import { SimpleGroupedBarChart } from "../../simpleCharts";
@@ -33,6 +34,27 @@ import type {
   DecisionAnalogRow,
   DecisionRollingAuditEpisodeRow
 } from "./useDecisionViewModel";
+
+function backtestSummaryCopy(assessment: AssessmentSnapshot) {
+  const summary = assessment.backtest_summary;
+  if (summary.real_scenario_count !== 0 && summary.timely_warning_rate !== 0) {
+    return summary.summary;
+  }
+
+  const localCoverage =
+    summary.real_scenario_count === 0
+      ? `当前危机场景目录共 ${summary.scenario_count} 个样本，本地 SQLite 历史窗口暂未直接覆盖这些危机场景；${summary.fallback_scenario_count} 个样本仍作为模板参照。`
+      : `当前危机场景目录共 ${summary.scenario_count} 个样本，其中 ${summary.real_scenario_count} 个已被本地历史窗口覆盖。`;
+  const structural = `结构性抬升至少提前 7 天出现的比例约为 ${formatPercent(
+    summary.structural_warning_rate
+  )}。`;
+  const action =
+    summary.timely_warning_rate === 0
+      ? "动作级预警暂未形成，页面下方会把它显示为“未形成动作预警”，不能解释成采集失败。"
+      : `动作级预警至少提前 7 天出现的比例约为 ${formatPercent(summary.timely_warning_rate)}。`;
+
+  return `${localCoverage}${structural}${action}`;
+}
 
 export function DecisionWhyNowPanel({
   assessment,
@@ -135,7 +157,14 @@ export function DecisionActionPlanPanel({
         <BudgetBar
           label="对冲覆盖"
           value={assessment.position_guidance.hedge_ratio_pct}
-          note="核心仓位应有多少保护覆盖。"
+          valueLabel={
+            assessment.position_guidance.hedge_ratio_pct === 0 ? "暂不对冲" : undefined
+          }
+          note={
+            assessment.position_guidance.hedge_ratio_pct === 0
+              ? "当前未进入对冲或防守节奏，系统暂不建议增加保护覆盖。"
+              : "核心仓位应有多少保护覆盖。"
+          }
           tone="hedge"
         />
         <BudgetBar
@@ -271,7 +300,7 @@ export function DecisionBacktestSummaryPanel({
     <section className="surface">
       <SurfaceHeader title="历史表现与当前约束" icon={Database} />
       <RuleBox label="历史表现摘要">
-        {humanizeNarrativeCopy(assessment.backtest_summary.summary)}
+        {humanizeNarrativeCopy(backtestSummaryCopy(assessment))}
       </RuleBox>
       <MetricGrid items={backtestSummaryMetrics} />
       <RuleBox label="口径区分">{humanizeNarrativeCopy(coverageScopeText)}</RuleBox>

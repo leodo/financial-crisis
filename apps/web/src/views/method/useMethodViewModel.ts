@@ -34,6 +34,11 @@ export function useMethodViewModel({
   posture: PostureGuidance;
   method: AssessmentMethodResponse;
 }) {
+  const formatMethodActionProbability = (value: number) =>
+    value === 0 && !assessment.method.actionability_enabled
+      ? "未触发"
+      : formatProbabilityPercent(value);
+
   const heuristicMode = assessment.method.probability_mode === "heuristic_mvp";
   const degradedRelease = assessment.method.release_status === "degraded";
   const compactReleaseId = releaseIdLabel(assessment.method.release_id);
@@ -128,11 +133,11 @@ export function useMethodViewModel({
   const priorActionRows: Array<[string, string]> = [
     [
       "危机先验",
-      `当前是 ${formatProbabilityPercent(assessment.probabilities.p_5d)} / ${formatProbabilityPercent(assessment.probabilities.p_20d)} / ${formatProbabilityPercent(assessment.probabilities.p_60d)}，回答“风险窗口离现在有多近”。`
+      `当前是 ${formatProbabilityPercent(assessment.probabilities.p_5d, { zeroLabel: "<0.01%" })} / ${formatProbabilityPercent(assessment.probabilities.p_20d, { zeroLabel: "<0.01%" })} / ${formatProbabilityPercent(assessment.probabilities.p_60d, { zeroLabel: "<0.01%" })}，回答“风险窗口离现在有多近”。`
     ],
     [
       "动作概率",
-      `当前是 ${formatProbabilityPercent(assessment.actionability.prepare)} / ${formatProbabilityPercent(assessment.actionability.hedge)} / ${formatProbabilityPercent(assessment.actionability.defend)}，回答“现在该不该准备、对冲或防守”；它和 60d / 20d / 5d 的危机先验不是一一对应关系。`
+      `当前是 ${formatMethodActionProbability(assessment.actionability.prepare)} / ${formatMethodActionProbability(assessment.actionability.hedge)} / ${formatMethodActionProbability(assessment.actionability.defend)}，回答“现在该不该准备、对冲或防守”；它和 60d / 20d / 5d 的危机先验不是一一对应关系。`
     ],
     [
       "最终执行节奏",

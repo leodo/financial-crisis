@@ -76,7 +76,7 @@ export function ProbabilityTile({
         <span>{label}</span>
         <em>{band.label}</em>
       </div>
-      <strong>{formatProbabilityPercent(value)}</strong>
+      <strong>{formatProbabilityPercent(value, { zeroLabel: "<0.01%" })}</strong>
       <p>{hint}</p>
       <div className="probability-threshold">{thresholdCopy}</div>
       <small>{band.note}</small>
@@ -161,11 +161,13 @@ export function ClauseList({
 export function BudgetBar({
   label,
   value,
+  valueLabel,
   note,
   tone
 }: {
   label: string;
   value: number;
+  valueLabel?: string;
   note: string;
   tone: "risk" | "cash" | "hedge" | "leverage" | "option";
 }) {
@@ -173,7 +175,7 @@ export function BudgetBar({
     <div className="budget-bar">
       <div className="budget-bar-head">
         <strong>{label}</strong>
-        <span>{formatNumber(value, "%")}</span>
+        <span>{valueLabel ?? formatNumber(value, "%")}</span>
       </div>
       <div className="track budget-track">
         <div className={`fill budget-fill tone-${tone}`} style={{ width: `${value}%` }} />
