@@ -129,6 +129,31 @@ function probabilitySnapshotDetail(assessment: AssessmentSnapshot): string {
   return `${currentScope}；历史/候选旧快照可能保留 0 值，不代表当前线上结论。`;
 }
 
+function actionEvidenceScore(assessment: AssessmentSnapshot): number {
+  return assessment.action_evidence?.score ?? assessment.conviction_score;
+}
+
+function actionEvidenceHint(assessment: AssessmentSnapshot): string {
+  const evidence = assessment.action_evidence;
+  if (!evidence) {
+    return "不是“常态结论只有这点把握”。它衡量风险广度和结构/触发共振是否足以升级动作，低风险期会被压低。";
+  }
+
+  const agreementCopy = evidence.structural_trigger_agreement
+    ? `结构/触发已共振贡献 ${formatPercent(evidence.agreement_component)}`
+    : `结构/触发未共振，仅给基础贡献 ${formatPercent(evidence.agreement_component)}`;
+  const breadthCopy =
+    evidence.breadth_component < 0.08
+      ? `风险广度贡献 ${formatPercent(evidence.breadth_component)}，说明高风险维度还不够宽`
+      : `风险广度贡献 ${formatPercent(evidence.breadth_component)}`;
+
+  return [
+    "这不是“结论把握度”，也不是危机发生概率；危机概率看 5/20/60 天三项。",
+    `当前由数据覆盖贡献 ${formatPercent(evidence.data_quality_component)}、${breadthCopy}、${agreementCopy} 加总得到。`,
+    "所以低风险期它可能长期接近 52%，含义是“还不足以升级仓位动作”。"
+  ].join(" ");
+}
+
 function indicatorSourceTimingLabel(
   item: AssessmentSnapshot["key_indicators"][number]
 ): string {
@@ -234,8 +259,8 @@ export function buildHeroMetrics(assessment: AssessmentSnapshot): MetricItem[] {
   return [
     {
       label: "动作证据强度",
-      value: formatPercent(assessment.conviction_score),
-      hint: "不是“常态结论只有这点把握”。它衡量风险广度和结构/触发共振是否足以升级动作，低风险期会被压低。"
+      value: formatPercent(actionEvidenceScore(assessment)),
+      hint: actionEvidenceHint(assessment)
     },
     {
       label: "数据覆盖",

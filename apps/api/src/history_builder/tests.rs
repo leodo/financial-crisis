@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use chrono::{NaiveDate, Utc};
 use fc_domain::{
-    AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot, BacktestPerformanceSummary,
-    BacktestRollingAudit, DataMode, DataQualitySummary, DataTrust, DecisionPosture,
-    EventAssessment, EventConfirmationState, FeatureSnapshotRecord,
+    ActionEvidenceBreakdown, AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot,
+    BacktestPerformanceSummary, BacktestRollingAudit, DataMode, DataQualitySummary, DataTrust,
+    DecisionPosture, EventAssessment, EventConfirmationState, FeatureSnapshotRecord,
     HistoricalAssessmentPointRecord, HistoricalReplayRunRecord, JpyCarrySnapshot, JpyCarryState,
     ModelReleaseManifest, ModelReleaseRecord, PositionGuidance, PositionGuidanceGovernance,
     PostureGuidance, PredictionSnapshotRecord, ProbabilityBlock, ProbabilityBundle,
@@ -213,6 +213,10 @@ fn history_test_assessment(
         time_to_risk_bucket,
         posture,
         conviction_score: 0.6,
+        action_evidence: ActionEvidenceBreakdown {
+            score: 0.6,
+            ..ActionEvidenceBreakdown::default()
+        },
         scores: AssessmentScores {
             overall_score,
             structural_score,

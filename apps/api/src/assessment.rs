@@ -22,8 +22,8 @@ use context::{
     build_runtime_metadata,
 };
 use market_context::{
-    build_conviction_score, build_data_trust, build_jpy_carry_snapshot, build_relief_drivers,
-    high_risk_breadth,
+    build_action_evidence_breakdown, build_data_trust, build_jpy_carry_snapshot,
+    build_relief_drivers, high_risk_breadth,
 };
 use posture::{
     build_position_guidance, build_posture_guidance, build_summary, build_time_to_risk_bucket,
@@ -93,7 +93,8 @@ pub fn build_assessment_snapshot(
     );
     let data_trust = build_data_trust(snapshot, indicator_risks, jpy_carry.usdjpy_level.is_some());
     let breadth_score = high_risk_breadth(snapshot);
-    let conviction_score = build_conviction_score(snapshot, &data_trust, breadth_score);
+    let action_evidence = build_action_evidence_breakdown(snapshot, &data_trust, breadth_score);
+    let conviction_score = action_evidence.score;
     let heuristic_probabilities = build_probabilities(
         snapshot,
         external_shock_score,
@@ -229,6 +230,7 @@ pub fn build_assessment_snapshot(
             time_to_risk_bucket,
             posture: posture_guidance.posture,
             conviction_score,
+            action_evidence,
             scores: AssessmentScores {
                 overall_score: snapshot.overall_score,
                 structural_score: snapshot.structural_score,

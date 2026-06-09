@@ -112,6 +112,20 @@ pub struct AssessmentScores {
     pub external_shock_score: f64,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ActionEvidenceBreakdown {
+    pub score: f64,
+    pub data_quality_component: f64,
+    pub breadth_component: f64,
+    pub agreement_component: f64,
+    pub data_quality_weight: f64,
+    pub breadth_weight: f64,
+    pub agreement_high_component: f64,
+    pub agreement_low_component: f64,
+    pub breadth_score: f64,
+    pub structural_trigger_agreement: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoricalAnalog {
     pub scenario_id: String,
@@ -373,6 +387,8 @@ pub struct AssessmentSnapshot {
     pub time_to_risk_bucket: TimeToRiskBucket,
     pub posture: DecisionPosture,
     pub conviction_score: f64,
+    #[serde(default)]
+    pub action_evidence: ActionEvidenceBreakdown,
     pub scores: AssessmentScores,
     pub summary: String,
     pub posture_reason: String,

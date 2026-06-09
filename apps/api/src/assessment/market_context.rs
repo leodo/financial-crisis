@@ -1,7 +1,7 @@
 use fc_domain::{
-    observation_history_for_indicator, observation_value_difference_from_tail, DataTrust,
-    IndicatorRisk, JpyCarrySnapshot, JpyCarryState, Observation, RiskContributor, RiskDimension,
-    RiskSnapshot,
+    observation_history_for_indicator, observation_value_difference_from_tail,
+    ActionEvidenceBreakdown, DataTrust, IndicatorRisk, JpyCarrySnapshot, JpyCarryState,
+    Observation, RiskContributor, RiskDimension, RiskSnapshot,
 };
 
 use super::{round1, round3, round_option, scaled_pressure};
@@ -231,23 +231,37 @@ pub(super) fn build_relief_drivers(indicator_risks: &[IndicatorRisk]) -> Vec<Ris
     rows
 }
 
-pub(super) fn build_conviction_score(
+pub(super) fn build_action_evidence_breakdown(
     snapshot: &RiskSnapshot,
     data_trust: &DataTrust,
     breadth_score: f64,
-) -> f64 {
+) -> ActionEvidenceBreakdown {
     let breadth_component = scaled_pressure(breadth_score, 32.0, 35.0);
-    let quality_component = data_trust.coverage_score;
-    let agreement_component = if snapshot.structural_score >= 55.0 && snapshot.trigger_score >= 55.0
-    {
+    let data_quality_component = data_trust.coverage_score * 0.48;
+    let weighted_breadth_component = breadth_component * 0.34;
+    let structural_trigger_agreement =
+        snapshot.structural_score >= 55.0 && snapshot.trigger_score >= 55.0;
+    let agreement_component = if structural_trigger_agreement {
         0.18
     } else {
         0.05
     };
-    round3(
-        (quality_component * 0.48 + breadth_component * 0.34 + agreement_component)
+    let score = round3(
+        (data_quality_component + weighted_breadth_component + agreement_component)
             .clamp(0.12, 0.95),
-    )
+    );
+    ActionEvidenceBreakdown {
+        score,
+        data_quality_component: round3(data_quality_component),
+        breadth_component: round3(weighted_breadth_component),
+        agreement_component: round3(agreement_component),
+        data_quality_weight: 0.48,
+        breadth_weight: 0.34,
+        agreement_high_component: 0.18,
+        agreement_low_component: 0.05,
+        breadth_score: round1(breadth_score),
+        structural_trigger_agreement,
+    }
 }
 
 pub(super) fn high_risk_breadth(snapshot: &RiskSnapshot) -> f64 {

@@ -225,6 +225,19 @@ export interface UserRiskPreferences {
   note: string;
 }
 
+export interface ActionEvidenceBreakdown {
+  score: number;
+  data_quality_component: number;
+  breadth_component: number;
+  agreement_component: number;
+  data_quality_weight: number;
+  breadth_weight: number;
+  agreement_high_component: number;
+  agreement_low_component: number;
+  breadth_score: number;
+  structural_trigger_agreement: boolean;
+}
+
 export interface AssessmentSnapshot {
   as_of_date: string;
   entity_id: string;
@@ -235,6 +248,7 @@ export interface AssessmentSnapshot {
   time_to_risk_bucket: TimeToRiskBucket;
   posture: DecisionPosture;
   conviction_score: number;
+  action_evidence?: ActionEvidenceBreakdown;
   scores: AssessmentScores;
   summary: string;
   posture_reason: string;
