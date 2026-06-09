@@ -226,6 +226,7 @@
   - 2026-06-09：API runtime 已补上“缺失当天 snapshot 时按当天 PIT 规则重建 exact feature snapshot”的路径；在本地 SQLite production reload 下，默认历史与 research audit 已实测收口到 `2000/2000 raw_pit_feature_replay`，`reused_feature_snapshot_points=0`，最后一个 `2026-06-08` 的 prior-snapshot reuse 点已消失。
   - 2026-06-09：`build_formal_feature_snapshot_record` 已下沉到 `crates/domain`，worker `feature build` 与 API `exact PIT rebuild` 现已共用同一套分数归一化、`external_dimension_score`、coverage / visibility status、`feature_count` 组装逻辑；formal feature snapshot 的“记录长什么样”不再由两侧各自维护。
   - 2026-06-09：`raw_pit_feature_replay` 证据等级改成保守解析：只有形如 `market_scope:entity:YYYY-MM-DD:feature_set:pit_mode` 且日期等于评估日的 feature snapshot id 才会标记为当天精确 PIT；非标准或不可解析 id 会降级为 `raw_pit_feature_reuse`，避免把桥接/测试 id 误报成正式 PIT 证据。
+  - 2026-06-09：SQLite observation loader 已补同日多来源确定性去重，按 `default_source_id` 与 mapping priority 选择主源，并让运行值与 lineage 使用同一选择口径；这修复了 `USDJPY` 同日 BOJ/FRED 并存时可能因调用顺序混源的问题，也把规则写入 `feature-store-design.md`，后续新增免费源必须先配置 priority。
   - 现阶段剩余问题不再是“默认运行历史里还有最后几个 reused PIT 点”，而是更广义的 feature-store 治理：继续把训练/运行两侧的 PIT 可见性与 formal feature snapshot 逻辑收敛到共享层，并把更早历史区间的可回放覆盖补齐。
 - [x] 扩展美国历史压力样本，尽量覆盖 `1987 / 1994 / 2000 / 2001 / 2008 / 2011 / 2020 / 2023` 中免费可回补的区间
   - 2026-06-09：已把场景覆盖矩阵落成机器可读配置 `config/research_scenario_data_coverage.us.json`，并接入 `/api/assessment/method` 与方法页；至少现在“哪些场景可做主训练 / 扩展训练 / protected stress / historical analog、当前缺什么免费数据”已经不再停留在文档口头说明。
