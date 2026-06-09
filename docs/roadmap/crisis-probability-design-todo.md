@@ -820,6 +820,12 @@
    - `2026-06-09` 已新增固定入口 `just formal-candidate-cooldown-audit <baseline> <candidate>`，直接读取或生成 default release review，并把 `actionable_precision`、最长纯误报 episode、`runtime_floor_hit_count`、`20d/60d` regime cooldown、候选新增/拉长误报 episode 与场景误报 delta 导出成 `artifacts/research/cooldown-audit/*-cooldown-audit.json`。
      - 对 `us_formal_family_hybrid_20260606T112926` vs `us_formal_family_hybrid_20260608T191024` 的实测结论为 `no_go_cooldown_false_positive`；no-go 原因包括 `actionable_precision_regression`、`longest_false_positive_episode_regression`、`runtime_floor_hit_count_regression`、`candidate_20d_cooldown_bleed`、`candidate_20d_cooldown_not_below_positive`。
      - 同一审计还把 `2023-07-31 -> 2023-08-27` 识别为拉长后的候选误报 episode，把 `2023-07-01 -> 2023-07-24` 识别为 candidate-only 误报 episode；后续候选筛选应优先看这份结构化 JSON，而不是只靠控制台输出。
+   - `2026-06-09` 已基于 `2011 mixed-systemic primary topology repair` 再重训候选 `us_formal_family_hybrid_20260609T151925`，并补跑 `funding-stress / cooldown / rate-shock` 三组审计：
+     - dry-run 先确认 `topology_repair train=433`、`mixed_sys_primary_repair train=205`，完整训练使用同一套样本路由；
+     - `funding-stress` 审计显示 2011 的 `candidate max p20d` 已从 baseline `0.202` 抬到 `0.839`，证明拓扑修复确实能把 mixed-systemic 信号拉起来；但该候选自己的 `20d floor` 同时被抬到 `0.900`，所以 2011 仍是 `0` 次 runtime-floor hit，`60d max` 也只有 `0.0206`；
+     - `default release review / cooldown audit` 直接判为 no-go：`timely_warning_rate 50.0% -> 10.0%`、`strict_actionable_point_count 80 -> 21`、`runtime_floor_hit_count 91 -> 59`，虽然 `actionable_precision 69.8% -> 82.1%` 且最长纯误报 `17d -> 4d`，但这是以牺牲提前预警为代价；
+     - `rate-shock` 审计也确认同一问题：候选把 2022 的 `primary avg p20d 1.38% -> 21.56%` 抬起来，但 `20d threshold 0.282 -> 0.900` 后 hit 数反而 `48 -> 33`，`60d hits 22 -> 5`；
+     - 结论：训练拓扑修复方向有效，但不能单独 promote；下一步必须把 `threshold candidate selection / cooldown penalty / 60d cold_across_all_regimes` 纳入训练或筛选目标，而不是继续只增加 protected rows。
    - 为了避免下一轮继续靠猜，threshold diagnostics 现在已经能单独暴露 `episode_native_objective_row_count` 与 `protected_no_positive_main_*` 指标，后续训练输出可直接看出这类行在 calibration evidence 里到底占了多少。
    - `2026-06-09` 同一批专项工件现在也已经被 `/api/research/audit` 和前端“发布审计”页直接消费；做 release review 时，不需要再单独翻 `artifacts/research/rate-shock-audit/*.json` 才能判断 `2022 weak_signal_continuity` 是不是已经改善。
 2. 再围绕 `1987 / 1998 / 2000-2001 / 2011` 的 `prewarning_signal_gap` 做训练样本、特征覆盖与标签窗口专项复盘，确认为什么连稳定的 non-normal / runtime floor 都没有形成；
@@ -848,6 +854,11 @@
      - dry-run 会加载与正式训练同一套 train / calibration / evaluation row，但不拟合模型、不写 bundle；
      - 输出 `topology_repair`、protected rows、`mixed_sys_primary_ext` 与 `mixed_sys_primary_repair` 在三类 split 中的计数；
      - 后续每次调整 formal loader / split repair / extension dataset 入口时，必须先跑 dry-run 验证真实样本路由，再决定是否启动完整重训。
+   - `2026-06-09` 已用 dry-run + 完整重训闭环验证 `2011 mixed-systemic topology repair`：
+     - dry-run 输出 `topology_repair train=433`、`mixed_sys_primary_repair train=205`；
+     - 新候选 `us_formal_family_hybrid_20260609T151925` 把 2011 `max p20d` 拉到 `0.839`，明显高于 baseline `0.202`；
+     - 但候选 `20d floor=0.900`，导致 2011 仍无 runtime-floor hit；同时 `default release review` 退化为 `timely_warning_rate 50.0% -> 10.0%`、`runtime_floor_hit_count 91 -> 59`；
+     - 结论：问题已经从“2011 样本完全不可训练”推进到“训练后阈值 / cooldown / 60d 冷信号治理”。
    - `2026-06-09` 已把这条专项审计接入 `/api/research/audit` 与前端“发布审计”页：
      - API 新增 `latest_prewarning_gap_audit`，从 `artifacts/research/prewarning-gap-audit/*-prewarning-gap-audit.json` 读取与当前 release review baseline/candidate 匹配的工件；
      - UI 新增“提前预警缺口审计”区块，直接展示 `candidate_margin_erosion / no_runtime_floor_signal / protected_context_signal_present` 分类、dataset 行数、20d/60d 命中与下一步建议；
