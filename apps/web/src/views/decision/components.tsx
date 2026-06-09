@@ -1,11 +1,12 @@
 import {
   describePostureClause,
   formatNumber,
+  formatProbabilityBasisPoints,
+  formatProbabilityDecimal,
   formatPercentPrecise,
-  formatProbabilityPercentExact,
-  formatProbabilityPercent
+  formatProbabilityPercentExact
 } from "../../format";
-import type { AssessmentSnapshot } from "../../types";
+import type { AssessmentSnapshot, ProbabilityHorizonOverlayDiagnostics } from "../../types";
 import { RuleBox } from "../shared/panelHelpers";
 import type { DecisionSignalLayerRowModel } from "./useDecisionViewModel";
 
@@ -53,18 +54,108 @@ function describeProbabilityBand(value: number) {
   };
 }
 
+function familyLabel(familyId: string): string {
+  const labels: Record<string, string> = {
+    systemic_credit: "系统性信用",
+    mixed_systemic: "混合系统",
+    rate_shock: "利率冲击",
+    acute_liquidity: "急性流动性",
+    jpy_carry: "日元套息"
+  };
+  return labels[familyId] ?? familyId;
+}
+
+function formatGateValue(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "—";
+  }
+  return value.toFixed(3).replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
+}
+
+function buildGateRows(diagnostic?: ProbabilityHorizonOverlayDiagnostics) {
+  if (!diagnostic || diagnostic.contributions.length === 0) {
+    return [];
+  }
+
+  return diagnostic.contributions.map((contribution) => {
+    const audit = diagnostic.overlay_audits.find(
+      (row) => row.family_id === contribution.family_id
+    );
+    const threshold = audit?.gate_active_threshold;
+    const isActive = threshold !== undefined && contribution.gate_value >= threshold;
+    return {
+      familyId: contribution.family_id,
+      label: familyLabel(contribution.family_id),
+      value: formatGateValue(contribution.gate_value),
+      threshold: threshold === undefined ? "—" : formatGateValue(threshold),
+      status: isActive ? "打开" : "未打开",
+      className: isActive ? "gate-active" : "gate-quiet"
+    };
+  });
+}
+
+function ProbabilityDiagnosticsBlock({
+  diagnostic
+}: {
+  diagnostic?: ProbabilityHorizonOverlayDiagnostics;
+}) {
+  if (!diagnostic) {
+    return (
+      <div className="probability-diagnostics">
+        <span>模型诊断</span>
+        <strong>未返回</strong>
+        <small>当前接口没有提供这个期限的 raw/calibrated/final 诊断。</small>
+      </div>
+    );
+  }
+
+  const runtimeFinal = diagnostic.runtime_final_probability ?? diagnostic.final_probability;
+  const gateRows = buildGateRows(diagnostic);
+
+  return (
+    <div className="probability-diagnostics">
+      <div className="probability-chain">
+        <span>模型链路</span>
+        <strong>
+          raw {formatProbabilityPercentExact(diagnostic.raw_probability)} · calibrated{" "}
+          {formatProbabilityPercentExact(diagnostic.calibrated_probability)} · runtime{" "}
+          {formatProbabilityPercentExact(runtimeFinal)}
+        </strong>
+      </div>
+      {gateRows.length > 0 ? (
+        <div className="probability-gates">
+          <span>风险族 gate</span>
+          {gateRows.map((row) => (
+            <div className="probability-gate-row" key={row.familyId}>
+              <strong>{row.label}</strong>
+              <small>
+                proxy {row.value} / 入场 {row.threshold}
+              </small>
+              <em className={row.className}>{row.status}</em>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <small>该期限没有配置 overlay gate，直接使用正式概率头输出。</small>
+      )}
+    </div>
+  );
+}
+
 export function ProbabilityTile({
   label,
   value,
   hint,
   threshold,
-  thresholdLabel
+  thresholdLabel,
+  diagnostic
 }: {
   label: string;
   value: number;
   hint: string;
   threshold: number;
   thresholdLabel: string;
+  diagnostic?: ProbabilityHorizonOverlayDiagnostics;
 }) {
   const band = describeProbabilityBand(value);
   const thresholdGap = Math.max(0, threshold - value);
@@ -75,11 +166,11 @@ export function ProbabilityTile({
       : `距${thresholdLabel} ${formatPercentPrecise(threshold)} 还差 ${formatPercentagePointGap(
           thresholdGap
         )}`;
-  const exactCopy =
+  const thresholdShareCopy =
     thresholdShare === null
-      ? `精确值 ${formatProbabilityPercentExact(value)}`
-      : `精确值 ${formatProbabilityPercentExact(value)} · 阈值占比 ${formatPercentPrecise(
-          thresholdShare
+      ? "未配置进入线"
+      : `进入线占比 ${formatPercentPrecise(thresholdShare)} · 进入线 ${formatPercentPrecise(
+          threshold
         )}`;
 
   return (
@@ -88,11 +179,15 @@ export function ProbabilityTile({
         <span>{label}</span>
         <em>{band.label}</em>
       </div>
-      <strong>{formatProbabilityPercent(value, { zeroLabel: "<0.01%" })}</strong>
-      <div className="probability-exact">{exactCopy}</div>
+      <strong>{formatProbabilityPercentExact(value)}</strong>
+      <div className="probability-exact">{thresholdShareCopy}</div>
+      <div className="probability-raw">
+        接口值 {formatProbabilityDecimal(value)} · {formatProbabilityBasisPoints(value)}
+      </div>
       <p>{hint}</p>
       <div className="probability-threshold">{thresholdCopy}</div>
       <small>{band.note}</small>
+      <ProbabilityDiagnosticsBlock diagnostic={diagnostic} />
     </div>
   );
 }

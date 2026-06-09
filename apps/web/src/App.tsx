@@ -10,7 +10,7 @@ import {
 import {
   formatDateTime,
   dataModeLabel,
-  formatProbabilityPercent,
+  formatProbabilityPercentExact,
   qualityLabel,
   timeBucketLabel
 } from "./format";
@@ -306,9 +306,9 @@ export default function App() {
               <div className="warmup-metric">
                 <span>危机先验</span>
                 <strong>
-                  {formatProbabilityPercent(assessment.data.probabilities.p_5d, { zeroLabel: "<0.01%" })} /
-                  {formatProbabilityPercent(assessment.data.probabilities.p_20d, { zeroLabel: "<0.01%" })} /
-                  {formatProbabilityPercent(assessment.data.probabilities.p_60d, { zeroLabel: "<0.01%" })}
+                  {formatProbabilityPercentExact(assessment.data.probabilities.p_5d)} /
+                  {formatProbabilityPercentExact(assessment.data.probabilities.p_20d)} /
+                  {formatProbabilityPercentExact(assessment.data.probabilities.p_60d)}
                 </strong>
                 <small>5d / 20d / 60d</small>
               </div>

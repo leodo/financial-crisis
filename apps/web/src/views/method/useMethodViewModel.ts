@@ -4,6 +4,7 @@ import {
   describePostureClause,
   formatDate,
   formatPercent,
+  formatProbabilityPercentExact,
   formatProbabilityPercent,
   historyEvidenceTierLabel,
   historySourceLabel,
@@ -133,7 +134,7 @@ export function useMethodViewModel({
   const priorActionRows: Array<[string, string]> = [
     [
       "危机先验",
-      `当前是 ${formatProbabilityPercent(assessment.probabilities.p_5d, { zeroLabel: "<0.01%" })} / ${formatProbabilityPercent(assessment.probabilities.p_20d, { zeroLabel: "<0.01%" })} / ${formatProbabilityPercent(assessment.probabilities.p_60d, { zeroLabel: "<0.01%" })}，回答“风险窗口离现在有多近”。`
+      `当前是 ${formatProbabilityPercentExact(assessment.probabilities.p_5d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_20d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_60d)}，回答“风险窗口离现在有多近”。`
     ],
     [
       "动作概率",

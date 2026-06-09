@@ -213,7 +213,7 @@
 
 .probability-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
 }
 
@@ -287,6 +287,12 @@
   line-height: 1.35;
 }
 
+.probability-raw {
+  color: #62707b;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .probability-tile p {
   margin: 0;
   color: #55636d;
@@ -312,6 +318,83 @@
   color: #62707b;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.probability-diagnostics {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #e6edf1;
+  padding-top: 8px;
+}
+
+.probability-diagnostics > span,
+.probability-chain span,
+.probability-gates > span {
+  color: #62707b;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.probability-chain {
+  display: grid;
+  gap: 3px;
+}
+
+.probability-chain strong,
+.probability-diagnostics > strong {
+  color: #26343d;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.probability-gates {
+  display: grid;
+  gap: 5px;
+}
+
+.probability-gate-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid #edf2f5;
+  padding-top: 5px;
+}
+
+.probability-gate-row strong {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #34434d;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.probability-gate-row small {
+  color: #62707b;
+  font-size: 11px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.probability-gate-row em {
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.probability-gate-row em.gate-active {
+  background: #fff4e4;
+  border-color: #efcf9d;
+  color: #8a4d0a;
+}
+
+.probability-gate-row em.gate-quiet {
+  background: #eef4f2;
+  border-color: #d7e5df;
+  color: #52645d;
 }
 
 .legend-note,

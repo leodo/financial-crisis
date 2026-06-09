@@ -100,6 +100,35 @@ export function formatProbabilityPercentExact(
   return `${trimTrailingZeros(percent.toFixed(digits))}%`;
 }
 
+export function formatProbabilityBasisPoints(
+  value: number | null | undefined
+): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "—";
+  }
+  const basisPoints = value * 10000;
+  const absolute = Math.abs(basisPoints);
+  if (absolute === 0) {
+    return "0 bp";
+  }
+  const digits = absolute < 1 ? 2 : absolute < 10 ? 1 : 0;
+  return `${trimTrailingZeros(basisPoints.toFixed(digits))} bp`;
+}
+
+export function formatProbabilityDecimal(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "—";
+  }
+  const absolute = Math.abs(value);
+  if (absolute === 0) {
+    return "0";
+  }
+  if (absolute < 0.000001) {
+    return value.toExponential(2);
+  }
+  return trimTrailingZeros(value.toFixed(6));
+}
+
 export function formatCount(value: number | null | undefined, suffix = ""): string {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return "—";

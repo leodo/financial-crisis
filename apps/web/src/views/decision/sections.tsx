@@ -98,6 +98,11 @@ export function DecisionRiskHorizon({
   timeBucketDescription: string;
   analogWindowDescription: string;
 }) {
+  const horizonDiagnostic = (horizonDays: number) =>
+    assessment.probability_diagnostics.horizon_overlays.find(
+      (diagnostic) => diagnostic.horizon_days === horizonDays
+    );
+
   return (
     <section className="surface">
       <SurfaceHeader title="离风险还有多远" icon={Siren} />
@@ -108,6 +113,7 @@ export function DecisionRiskHorizon({
           hint={decisionContent.riskHorizon.tileHints.p5d}
           threshold={method.runtime_thresholds.defend_p5d}
           thresholdLabel="防守线"
+          diagnostic={horizonDiagnostic(5)}
         />
         <ProbabilityTile
           label="20 个交易日"
@@ -115,6 +121,7 @@ export function DecisionRiskHorizon({
           hint={decisionContent.riskHorizon.tileHints.p20d}
           threshold={method.runtime_thresholds.hedge_p20d}
           thresholdLabel="对冲线"
+          diagnostic={horizonDiagnostic(20)}
         />
         <ProbabilityTile
           label="60 个交易日"
@@ -122,6 +129,7 @@ export function DecisionRiskHorizon({
           hint={decisionContent.riskHorizon.tileHints.p60d}
           threshold={method.runtime_thresholds.prepare_p60d}
           thresholdLabel="准备线"
+          diagnostic={horizonDiagnostic(60)}
         />
       </div>
       <div className="legend-note">{decisionContent.riskHorizon.bandLegend}</div>

@@ -8,6 +8,7 @@ import {
   formatPercent,
   formatPercentPrecise,
   formatPreciseNumber,
+  formatProbabilityPercentExact,
   formatProbabilityPercent,
   formatSignedNumber,
   freshnessLabel,
@@ -375,7 +376,7 @@ export function buildSignalLayerRows(
       id: "prior",
       title: "危机先验",
       description: "先看未来 5d / 20d / 60d 进入风险窗口的概率，回答“离风险还有多远”。",
-      value: `${formatProbabilityPercent(assessment.probabilities.p_5d, { zeroLabel: "<0.01%" })} / ${formatProbabilityPercent(assessment.probabilities.p_20d, { zeroLabel: "<0.01%" })} / ${formatProbabilityPercent(assessment.probabilities.p_60d, { zeroLabel: "<0.01%" })}`,
+      value: `${formatProbabilityPercentExact(assessment.probabilities.p_5d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_20d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_60d)}`,
       detail: priorDetail ? `${priorThresholdSummary} · ${priorDetail}` : priorThresholdSummary
     },
     {

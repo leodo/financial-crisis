@@ -75,6 +75,15 @@
     grid-template-columns: 1fr;
   }
 
+  .probability-gate-row {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  .probability-gate-row em {
+    justify-self: flex-start;
+  }
+
   .signal-layer-row {
     flex-direction: column;
   }
