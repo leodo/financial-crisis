@@ -805,6 +805,13 @@
    - 为了避免下一轮继续靠猜，threshold diagnostics 现在已经能单独暴露 `episode_native_objective_row_count` 与 `protected_no_positive_main_*` 指标，后续训练输出可直接看出这类行在 calibration evidence 里到底占了多少。
    - `2026-06-09` 同一批专项工件现在也已经被 `/api/research/audit` 和前端“发布审计”页直接消费；做 release review 时，不需要再单独翻 `artifacts/research/rate-shock-audit/*.json` 才能判断 `2022 weak_signal_continuity` 是不是已经改善。
 2. 再围绕 `1987 / 1998 / 2000-2001 / 2011` 的 `prewarning_signal_gap` 做训练样本、特征覆盖与标签窗口专项复盘，确认为什么连稳定的 non-normal / runtime floor 都没有形成；
+   - `2026-06-09` 已新增固定入口 `just formal-candidate-prewarning-gap-audit <baseline> <candidate>`，针对 `1987 / 1998 / 2000-2001 / 2011` 自动串起 `formal-probability-compare` 与 `formal dataset slice`，把免费数据覆盖、split、forward label、episode-native action label、protected row、20d/60d threshold hit、near-threshold 行数和下一步诊断合并到 `artifacts/research/prewarning-gap-audit/*-prewarning-gap-audit.json`。
+   - 首轮实跑 `us_formal_family_hybrid_20260606T112926 -> us_formal_family_hybrid_20260608T173701` 后，四个场景不应再被粗暴归成同一类：
+     - `1987 黑色星期一`：`candidate_margin_erosion`，仍有稳定 20d/60d hit，但候选均值边际弱化；
+     - `1998 LTCM`：`candidate_margin_erosion`，20d hit 从 baseline 的 `29` 缩到 candidate 的 `24`，但 60d 仍稳定；
+     - `2000-2001 科网泡沫出清`：`protected_context_signal_present`，不是“没有数据/没有标签”，而是 protected context 与动作窗口怎样进入正式主线的问题；
+     - `2011 美欧融资压力`：`no_runtime_floor_signal`，`20d candidate max p20d=18.4%` 仍低于当前 `28.2%` 对冲线，是真正需要优先审计 feature separation / family context 的场景。
+   - 因此下一步如果继续修 `prewarning_signal_gap`，不应再把 1987/1998 当作“没预警”样本，也不应把 2000 当作“没数据”样本；真正的第一刀应聚焦 `2011 funding stress` 的 mixed-systemic feature separation，以及 1998 的候选边际弱化是否来自候选本身而非数据缺口。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 

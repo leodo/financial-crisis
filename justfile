@@ -181,6 +181,13 @@ formal-candidate-leadtime-audit baseline_release_id candidate_release_id:
 formal-candidate-scenario-pack-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-scenario-pack-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 固定审计 `1987 / 1998 / 2000-2001 / 2011` 的 prewarning_signal_gap：
+# 自动跑每个场景的 formal-probability-compare 与 formal dataset slice，合并输出样本覆盖、标签、
+# 动作 episode、阈值命中、近阈值行数和下一步诊断，直接回答“为什么没有形成提前预警”。
+# 用法：`just formal-candidate-prewarning-gap-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260608T173701`
+formal-candidate-prewarning-gap-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-prewarning-gap-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
 # 对 `prewarning_signal_gap / weak_signal_continuity` 这类 residual workstream 直接拉 formal dataset slice，
 # 汇总样本覆盖、split、标签、episode 和 feature 覆盖，避免只知道“哪条线有问题”却不知道“数据证据长什么样”。
 # 用法：`just formal-candidate-workstream-audit us_formal_family_hybrid_20260605T202246 us_formal_family_hybrid_20260606T112926`
