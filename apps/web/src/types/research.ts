@@ -4,6 +4,9 @@ import type {
   ProtectedStressWindowCatalog,
   RuntimeThresholdDiagnostics,
 } from "./assessment";
+import type { FundingStressAuditArtifactSummary } from "./researchFundingStress";
+
+export type { FundingStressAuditArtifactSummary, FundingStressFeatureGap } from "./researchFundingStress";
 
 export interface ModelReleaseManifest {
   release_id: string;
@@ -679,6 +682,7 @@ export interface ResearchAuditResponse {
   latest_workstream_audit: WorkstreamAuditArtifactSummary | null;
   latest_rate_shock_audit: RateShockAuditArtifactSummary | null;
   latest_prewarning_gap_audit: PrewarningGapAuditArtifactSummary | null;
+  latest_funding_stress_audit: FundingStressAuditArtifactSummary | null;
   latest_cooldown_audit: CooldownAuditArtifactSummary | null;
   latest_dataset_summaries: DatasetSummaryArtifactSummary[];
   note: string;

@@ -11,6 +11,7 @@ import {
 } from "../shared/panelHelpers";
 import { auditContent } from "./content";
 import { CooldownAuditSection } from "./cooldownAuditSection";
+import { FundingStressAuditSection } from "./fundingStressAuditSection";
 import { PrewarningGapAuditSection } from "./prewarningGapAuditSection";
 import { useAuditViewModel } from "./useAuditViewModel";
 
@@ -360,6 +361,8 @@ export default function AuditView({
           </section>
 
           <PrewarningGapAuditSection audit={audit} />
+
+          <FundingStressAuditSection audit={audit} />
 
           <section className="surface">
             <SurfaceHeader title="2022 利率冲击专项审计" icon={ClipboardCheck} />
