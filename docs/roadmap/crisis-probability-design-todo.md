@@ -812,6 +812,10 @@
      - `2000-2001 科网泡沫出清`：`protected_context_signal_present`，不是“没有数据/没有标签”，而是 protected context 与动作窗口怎样进入正式主线的问题；
      - `2011 美欧融资压力`：`no_runtime_floor_signal`，`20d candidate max p20d=18.4%` 仍低于当前 `28.2%` 对冲线，是真正需要优先审计 feature separation / family context 的场景。
    - 因此下一步如果继续修 `prewarning_signal_gap`，不应再把 1987/1998 当作“没预警”样本，也不应把 2000 当作“没数据”样本；真正的第一刀应聚焦 `2011 funding stress` 的 mixed-systemic feature separation，以及 1998 的候选边际弱化是否来自候选本身而非数据缺口。
+   - `2026-06-09` 已把这条专项审计接入 `/api/research/audit` 与前端“发布审计”页：
+     - API 新增 `latest_prewarning_gap_audit`，从 `artifacts/research/prewarning-gap-audit/*-prewarning-gap-audit.json` 读取与当前 release review baseline/candidate 匹配的工件；
+     - UI 新增“提前预警缺口审计”区块，直接展示 `candidate_margin_erosion / no_runtime_floor_signal / protected_context_signal_present` 分类、dataset 行数、20d/60d 命中与下一步建议；
+     - 当前页面已经能直接看出：真正的第一优先缺口是 `2011 美欧融资压力 / no_runtime_floor_signal`，而 `1987 / 1998` 更像候选边际弱化，`2000-2001` 已有 protected context 证据。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 

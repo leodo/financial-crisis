@@ -577,6 +577,92 @@ export interface CooldownAuditArtifactSummary {
   no_go_reasons: CooldownAuditNoGoReason[];
 }
 
+export interface PrewarningGapHitSummary {
+  hit_count: number;
+  segment_count: number;
+  max_streak: number;
+  first_hit_date: string | null;
+  last_hit_date: string | null;
+  max_streak_start: string | null;
+  max_streak_end: string | null;
+}
+
+export interface PrewarningGapDatasetEvidence {
+  dataset_key: string | null;
+  row_count: number;
+  split_counts: string[];
+  regime20_counts: string[];
+  regime60_counts: string[];
+  action_phase_counts: string[];
+  primary_action_level_counts: string[];
+  label_20d_count: number;
+  label_60d_count: number;
+  prepare_primary_count: number;
+  hedge_primary_count: number;
+  protected_row_count: number;
+  avg_coverage_score: number | null;
+  feature_name_count: number;
+}
+
+export interface PrewarningGapProbabilityEvidence {
+  compare_status: string | null;
+  compare_row_count: number;
+  baseline_hit_20d: PrewarningGapHitSummary;
+  candidate_hit_20d: PrewarningGapHitSummary;
+  baseline_hit_60d: PrewarningGapHitSummary;
+  candidate_hit_60d: PrewarningGapHitSummary;
+  candidate_near_threshold_20d_5pp_count: number;
+  candidate_near_threshold_60d_5pp_count: number;
+  baseline_max_p_20d: number | null;
+  candidate_max_p_20d: number | null;
+  baseline_max_p_60d: number | null;
+  candidate_max_p_60d: number | null;
+  candidate_avg_p_20d: number | null;
+  candidate_avg_p_60d: number | null;
+  baseline_avg_p_20d: number | null;
+  baseline_avg_p_60d: number | null;
+  avg_delta_p_20d: number | null;
+  avg_delta_p_60d: number | null;
+  positive_window_candidate_hit_rate_20d: number | null;
+  hedge_window_candidate_hit_rate_20d: number | null;
+}
+
+export interface PrewarningGapDiagnosis {
+  gap_class: string;
+  reasons: string[];
+  next_action: string | null;
+}
+
+export interface PrewarningGapScenarioSummary {
+  scenario_id: string;
+  scenario_label: string;
+  family: string;
+  training_role: string;
+  protected_window: boolean;
+  pre_warning_start: string;
+  crisis_start: string;
+  crisis_end: string;
+  coverage_grade: string;
+  coverage_role: string;
+  coverage_pit_mode: string;
+  free_sources: string[];
+  blocking_gaps: string[];
+  dataset_evidence: PrewarningGapDatasetEvidence;
+  probability_evidence: PrewarningGapProbabilityEvidence;
+  diagnosis: PrewarningGapDiagnosis;
+}
+
+export interface PrewarningGapAuditArtifactSummary {
+  generated_at: string;
+  source: string;
+  baseline_release_id: string;
+  candidate_release_id: string;
+  market_scope: string;
+  scenario_count: number;
+  gap_counts: string[];
+  scenario_summaries: PrewarningGapScenarioSummary[];
+}
+
 export interface ResearchAuditResponse {
   supported: boolean;
   storage_mode: string;
@@ -592,6 +678,7 @@ export interface ResearchAuditResponse {
   latest_scenario_pack_audit: ScenarioPackAuditArtifactSummary | null;
   latest_workstream_audit: WorkstreamAuditArtifactSummary | null;
   latest_rate_shock_audit: RateShockAuditArtifactSummary | null;
+  latest_prewarning_gap_audit: PrewarningGapAuditArtifactSummary | null;
   latest_cooldown_audit: CooldownAuditArtifactSummary | null;
   latest_dataset_summaries: DatasetSummaryArtifactSummary[];
   note: string;
