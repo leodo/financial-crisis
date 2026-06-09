@@ -471,11 +471,13 @@
                `just formal-candidate-leadtime-audit <baseline> <candidate>`，
                可以直接复盘 `60d` runtime separation、`L2` 但无 `L3` 的历史样本、
                `Focus Scenarios` 的 runtime block mix，以及 `Historical Audit Actions`；
-            3. [ ] 继续基于这条审计链直接解释为什么 `60d` 仍是
+            3. [x] 继续基于这条审计链直接解释为什么 `60d` 仍是
                `separated_but_below_runtime_floor` 或为什么虽然已过 runtime floor，
                仍没有转成更高的 timely warning；
-            4. [ ] 继续基于这条审计链解释为什么 `2000-2001 / 1990-1993`
+               - 2026-06-10 复跑最新 `default` 审计 `112926 -> 162641` 后，当前候选的 `60d` 已不是“有分离但低于 floor”，而是退化成 `cold_across_all_regimes`，`runtime_floor_hit_count 91 -> 69`、`timely_warning_rate 50% -> 10%`；这类候选应按 No-Go / retrain 处理，不能通过继续放松 floor 解释为可上线。
+            4. [x] 继续基于这条审计链解释为什么 `2000-2001 / 1990-1993`
                只有 `L2` 提前量，却始终无法进入 `L3 actionable`；
+               - 最新 lead-time artifact 已直接列出 `L2-not-L3` 场景：`1987=6d`、`2000-2001=29d`、`2011=11d`、`2007-2009=47d`、`1998=7d`；当前 `162641` 的 focus blocker 主要退化到 `2023 regional banks` 的 `strict_gate_mismatch / p60d_only`，而 `1990-1993` 在这轮候选里没有形成足够可审计的 candidate runtime block，说明后续优先级应回到训练样本 / feature separation，而不是继续 runtime patch。
             5. 训练、threshold policy、runtime posture 后续都以“提前一周以上可执行预警”作为首要目标，而不是继续优先压短误报。
           - [x] 已确认 `081030` 之后的主瓶颈不是“继续压 20d 误报”，而是
             `strict review gate` 与 runtime floor 的口径失配，加上

@@ -174,6 +174,11 @@ formal-candidate-jpy-carry-audit:
 formal-candidate-leadtime-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-leadtime-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 对比指定 history mode 的 release-review 工件；当 API 最新审计是 default 口径时，用这个命令生成可被页面匹配的 lead-time audit。
+# 用法：`just formal-candidate-leadtime-audit-mode us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260609T162641 default`
+formal-candidate-leadtime-audit-mode baseline_release_id candidate_release_id history_mode:
+    ./scripts/formal-candidate-leadtime-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}} -HistoryMode {{history_mode}}
+
 # 用固定美国历史场景包一口气审计 baseline / candidate：
 # 直接把 1987、1990s、2000、2008、2011、2020、2022、2023 的 compare、coverage 和 release-review blocker
 # 收到同一份 JSON 里，优先回答“免费数据能不能覆盖、该用哪个 dataset、主要卡在 gate 还是 continuity”。
