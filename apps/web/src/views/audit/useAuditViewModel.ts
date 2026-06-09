@@ -38,6 +38,38 @@ import type { DetailRowItem, MetricItem } from "../shared/panelHelpers";
 import { buildProbabilityOverlayViewModel } from "../shared/probabilityOverlay";
 import { auditContent } from "./content";
 
+function rateShockPhaseLabel(label: string): string {
+  return (
+    {
+      primary: "主阶段",
+      late_validation: "后验确认",
+      outside: "窗口外"
+    }[label] ?? label
+  );
+}
+
+function rateShockActionLevelLabel(label: string): string {
+  return (
+    {
+      prepare: "准备",
+      hedge: "对冲",
+      defend: "防守",
+      none: "无动作"
+    }[label] ?? label
+  );
+}
+
+function rateShockContinuityFocusLabel(label: string): string {
+  return (
+    {
+      prepare_primary: "准备窗口 x 主阶段",
+      hedge_primary: "对冲窗口 x 主阶段",
+      primary_phase: "主阶段总览",
+      late_validation: "后验确认"
+    }[label] ?? label
+  );
+}
+
 export function useAuditViewModel({
   assessment,
   audit
@@ -460,6 +492,105 @@ export function useAuditViewModel({
         };
       }) ?? [];
 
+  const latestRateShockAudit = audit.latest_rate_shock_audit;
+  const latestRateShockAuditSource = latestRateShockAudit
+    ? compactFileReference(latestRateShockAudit.source)
+    : null;
+  const rateShockSplitSummary = latestRateShockAudit?.split_counts
+    .map((row) => `${row.split_name}=${row.row_count}`)
+    .join(" / ");
+  const latestRateShockAuditMetrics: MetricItem[] = latestRateShockAudit
+    ? [
+        {
+          label: "审计时间",
+          value: formatDateTime(latestRateShockAudit.generated_at)
+        },
+        {
+          label: "样本行数",
+          value: `${latestRateShockAudit.compare_summary.overall_window.row_count}`
+        },
+        {
+          label: "20d 命中",
+          value: `${latestRateShockAudit.compare_summary.baseline_hit_count_20d} -> ${latestRateShockAudit.compare_summary.candidate_hit_count_20d}`
+        },
+        {
+          label: "60d 命中",
+          value: `${latestRateShockAudit.compare_summary.baseline_hit_count_60d} -> ${latestRateShockAudit.compare_summary.candidate_hit_count_60d}`
+        },
+        {
+          label: "20d 阈值",
+          value: `${formatPercent(latestRateShockAudit.thresholds.baseline_20d)} -> ${formatPercent(latestRateShockAudit.thresholds.candidate_20d)}`
+        },
+        {
+          label: "20d 均值变化",
+          value: formatPercent(latestRateShockAudit.compare_summary.overall_window.avg_delta_p_20d),
+          hint: rateShockSplitSummary ? `split: ${rateShockSplitSummary}` : undefined
+        }
+      ]
+    : [];
+
+  const latestRateShockAuditContextRows: DetailRowItem[] = latestRateShockAudit
+    ? [
+        {
+          id: "rate-shock-window",
+          title: "审计窗口",
+          detail: `${formatDate(latestRateShockAudit.from_date)} - ${formatDate(latestRateShockAudit.to_date)}`,
+          note: `Dataset: ${latestRateShockAudit.dataset_key}`
+        },
+        {
+          id: "rate-shock-releases",
+          title: "基线 / 候选",
+          detail: `${releaseIdLabel(latestRateShockAudit.baseline_release_id).value} vs ${releaseIdLabel(latestRateShockAudit.candidate_release_id).value}`,
+          note: "这份专项审计只针对最近一次 release review 对应的 baseline / candidate。"
+        },
+        {
+          id: "rate-shock-thresholds",
+          title: "阈值口径",
+          detail: `20d ${formatPercent(latestRateShockAudit.thresholds.baseline_20d)} -> ${formatPercent(latestRateShockAudit.thresholds.candidate_20d)} / 60d ${formatPercent(latestRateShockAudit.thresholds.baseline_60d)} -> ${formatPercent(latestRateShockAudit.thresholds.candidate_60d)}`
+        }
+      ]
+    : [];
+
+  const latestRateShockContinuityRows: DetailRowItem[] = latestRateShockAudit
+    ? (
+        [
+          ["prepare_primary", latestRateShockAudit.continuity_focus.prepare_primary],
+          ["hedge_primary", latestRateShockAudit.continuity_focus.hedge_primary],
+          ["primary_phase", latestRateShockAudit.continuity_focus.primary_phase],
+          ["late_validation", latestRateShockAudit.continuity_focus.late_validation]
+        ] as const
+      ).map(([label, row]) => ({
+        id: `rate-shock-focus-${label}`,
+        title: rateShockContinuityFocusLabel(label),
+        detail: `样本 ${row.row_count}；20d ${formatPercent(row.baseline_avg_p_20d)} -> ${formatPercent(row.candidate_avg_p_20d)}；60d ${formatPercent(row.baseline_avg_p_60d)} -> ${formatPercent(row.candidate_avg_p_60d)}`,
+        note: `20d 命中 ${row.baseline_hit_20d.hit_count} -> ${row.candidate_hit_20d.hit_count}，最长段 ${row.baseline_hit_20d.max_streak} -> ${row.candidate_hit_20d.max_streak}；20d 阈值差 ${formatPercent(row.baseline_avg_gap_to_threshold_20d)} -> ${formatPercent(row.candidate_avg_gap_to_threshold_20d)}`,
+        meta: `20d Δ ${formatPercent(row.avg_delta_p_20d)}`
+      }))
+    : [];
+
+  const latestRateShockPhaseRows =
+    latestRateShockAudit?.phase_summaries.map((row) => ({
+      id: `phase-${row.label}`,
+      label: rateShockPhaseLabel(row.label),
+      rowCount: `${row.row_count}`,
+      p20Summary: `${formatPercent(row.baseline_avg_p_20d)} -> ${formatPercent(row.candidate_avg_p_20d)} (${formatPercent(row.avg_delta_p_20d)})`,
+      p20Continuity: `命中 ${row.baseline_hit_20d.hit_count} -> ${row.candidate_hit_20d.hit_count} / 最长段 ${row.baseline_hit_20d.max_streak} -> ${row.candidate_hit_20d.max_streak}`,
+      p60Summary: `${formatPercent(row.baseline_avg_p_60d)} -> ${formatPercent(row.candidate_avg_p_60d)} (${formatPercent(row.avg_delta_p_60d)})`,
+      p60Continuity: `命中 ${row.baseline_hit_60d.hit_count} -> ${row.candidate_hit_60d.hit_count} / 最长段 ${row.baseline_hit_60d.max_streak} -> ${row.candidate_hit_60d.max_streak}`,
+      thresholdGap: `20d 阈值差 ${formatPercent(row.baseline_avg_gap_to_threshold_20d)} -> ${formatPercent(row.candidate_avg_gap_to_threshold_20d)}`
+    })) ?? [];
+
+  const latestRateShockActionRows =
+    latestRateShockAudit?.action_level_summaries.map((row) => ({
+      id: `action-${row.label}`,
+      label: rateShockActionLevelLabel(row.label),
+      rowCount: `${row.row_count}`,
+      p20Summary: `${formatPercent(row.baseline_avg_p_20d)} -> ${formatPercent(row.candidate_avg_p_20d)} (${formatPercent(row.avg_delta_p_20d)})`,
+      continuitySummary: `20d 段数 ${row.baseline_hit_20d.segment_count} -> ${row.candidate_hit_20d.segment_count} / 最长段 ${row.baseline_hit_20d.max_streak} -> ${row.candidate_hit_20d.max_streak}`,
+      nearThresholdSummary: `距 20d 阈值 5pp 内 ${row.baseline_near_threshold_20d_within_5pp_count} -> ${row.candidate_near_threshold_20d_within_5pp_count}`,
+      maxSummary: `峰值 ${formatPercent(row.baseline_max_p_20d)} -> ${formatPercent(row.candidate_max_p_20d)}`
+    })) ?? [];
+
   return {
     auditNote: audit.note ? humanizeAuditNote(audit.note) : auditContent.noteSummary,
     runtimeMetrics,
@@ -484,6 +615,13 @@ export function useAuditViewModel({
     latestScenarioPackAuditSource,
     latestScenarioPackAuditMetrics,
     latestScenarioPackAuditRows,
+    latestRateShockAudit,
+    latestRateShockAuditSource,
+    latestRateShockAuditMetrics,
+    latestRateShockAuditContextRows,
+    latestRateShockContinuityRows,
+    latestRateShockPhaseRows,
+    latestRateShockActionRows,
     releaseRows,
     snapshotRows
   };

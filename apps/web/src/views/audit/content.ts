@@ -20,14 +20,22 @@ export const auditContent = {
     "这块回答的是：本次 review 涉及的历史场景到底能不能作为正式主训练、扩展训练、protected stress 或历史类比。不要把所有危机都当成同一类正例。",
   scenarioPackSummary:
     "这块回答的是：固定美国历史场景包里，哪些场景已经稳定覆盖，哪些是主线共享漏报，哪些主要卡在执行连续性。它是 release review 之外的横向历史复盘面板。",
+  rateShockSummary:
+    "这块把 2022 联储加息与久期冲击单独拉出来，直接看 primary / late validation 与 prepare / hedge 这两组连续性证据。重点不是看候选是否更高，而是看真正该提前升温的窗口有没有形成连续命中。",
   releaseReviewEmpty:
     "还没有找到可用的 release review 落库结果。通常说明这条链路尚未执行，或者当前 market scope 还没有写入 artifacts/research/release-review。",
   scenarioPackEmpty:
     "还没有找到与最近一次 release review 对应的 scenario-pack audit 工件。通常说明这条离线审计还没跑，或者当前 review 对应的历史场景包结果尚未落库。",
+  rateShockEmpty:
+    "还没有找到与最近一次 release review 对应的 2022 rate-shock 专项审计工件。通常说明这条离线 continuity 审计还没跑，或者 baseline / candidate 对应的 JSON 结果尚未落库。",
   releaseReviewCoverageTableNote:
     "先看目录结论和可用范围，再看 grade / PIT / 免费主源，最后看主要缺口。重点复核场景和 protected window 会直接影响后续训练与 posture 规则约束。",
   scenarioPackTableNote:
     "先看当前判读，再看真实结果与 lead time，最后结合 coverage / dataset 和 takeaway 判断这是候选退化、主线共享短板，还是稳定覆盖。",
+  rateShockPhaseTableNote:
+    "按阶段看 20d / 60d 均值、命中数和最长连续段。primary 依然过冷，通常说明问题还在 trainability 或标签连续性，而不是单纯阈值。",
+  rateShockActionTableNote:
+    "按动作层看 prepare / hedge / defend 的连续性。先看 20d 段数和最长段，再看离阈值 5pp 内的行数，判断它是不是已经接近可执行窗口。",
   releaseReviewActionTableNote:
     "先看 action type，再看它落在哪个 workstream，最后结合 recommendation 判断是该判退候选、先修 blocker，还是继续补主线研究。",
   releaseReviewAttributionTableNote:

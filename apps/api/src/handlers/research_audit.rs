@@ -34,6 +34,7 @@ struct ResearchAuditResponse {
     latest_replay_run_id: Option<String>,
     latest_release_review: Option<ReleaseReviewArtifactSummary>,
     latest_scenario_pack_audit: Option<ScenarioPackAuditArtifactSummary>,
+    latest_rate_shock_audit: Option<RateShockAuditArtifactSummary>,
     note: String,
     releases: Vec<fc_domain::ModelReleaseRecord>,
     replay_runs: Vec<fc_domain::HistoricalReplayRunRecord>,
@@ -218,6 +219,163 @@ struct ScenarioPackAuditArtifactSummary {
     scenario_summaries: Vec<ScenarioPackAuditScenarioSummary>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct RateShockAuditThresholdSummary {
+    baseline_20d: Option<f64>,
+    candidate_20d: Option<f64>,
+    baseline_60d: Option<f64>,
+    candidate_60d: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct RateShockAuditWindowSummary {
+    row_count: usize,
+    avg_delta_p_20d: Option<f64>,
+    avg_abs_delta_p_20d: Option<f64>,
+    avg_delta_p_60d: Option<f64>,
+    avg_abs_delta_p_60d: Option<f64>,
+    baseline_hit_rate_20d: Option<f64>,
+    candidate_hit_rate_20d: Option<f64>,
+    baseline_hit_rate_60d: Option<f64>,
+    candidate_hit_rate_60d: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct RateShockAuditCompareSummary {
+    baseline_hit_count_20d: usize,
+    candidate_hit_count_20d: usize,
+    baseline_hit_count_60d: usize,
+    candidate_hit_count_60d: usize,
+    baseline_max_p_20d: Option<f64>,
+    baseline_max_p_20d_date: Option<String>,
+    candidate_max_p_20d: Option<f64>,
+    candidate_max_p_20d_date: Option<String>,
+    baseline_max_p_60d: Option<f64>,
+    baseline_max_p_60d_date: Option<String>,
+    candidate_max_p_60d: Option<f64>,
+    candidate_max_p_60d_date: Option<String>,
+    #[serde(default)]
+    overall_window: RateShockAuditWindowSummary,
+    #[serde(default)]
+    hedge_window: RateShockAuditWindowSummary,
+    #[serde(default)]
+    positive_window_20d: RateShockAuditWindowSummary,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct RateShockAuditSplitSummary {
+    split_name: String,
+    row_count: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct RateShockAuditHitSummary {
+    hit_count: usize,
+    segment_count: usize,
+    max_streak: usize,
+    first_hit_date: Option<String>,
+    last_hit_date: Option<String>,
+    max_streak_start: Option<String>,
+    max_streak_end: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct RateShockAuditGroupSummary {
+    label: String,
+    row_count: usize,
+    baseline_avg_p_20d: Option<f64>,
+    candidate_avg_p_20d: Option<f64>,
+    avg_delta_p_20d: Option<f64>,
+    baseline_avg_gap_to_threshold_20d: Option<f64>,
+    candidate_avg_gap_to_threshold_20d: Option<f64>,
+    baseline_avg_p_60d: Option<f64>,
+    candidate_avg_p_60d: Option<f64>,
+    avg_delta_p_60d: Option<f64>,
+    baseline_avg_gap_to_threshold_60d: Option<f64>,
+    candidate_avg_gap_to_threshold_60d: Option<f64>,
+    baseline_hit_rate_20d: Option<f64>,
+    candidate_hit_rate_20d: Option<f64>,
+    baseline_hit_rate_60d: Option<f64>,
+    candidate_hit_rate_60d: Option<f64>,
+    #[serde(default)]
+    baseline_hit_20d: RateShockAuditHitSummary,
+    #[serde(default)]
+    candidate_hit_20d: RateShockAuditHitSummary,
+    #[serde(default)]
+    baseline_hit_60d: RateShockAuditHitSummary,
+    #[serde(default)]
+    candidate_hit_60d: RateShockAuditHitSummary,
+    baseline_near_threshold_20d_within_5pp_count: usize,
+    candidate_near_threshold_20d_within_5pp_count: usize,
+    baseline_near_threshold_60d_within_5pp_count: usize,
+    candidate_near_threshold_60d_within_5pp_count: usize,
+    baseline_max_p_20d: Option<f64>,
+    baseline_max_p_20d_date: Option<String>,
+    candidate_max_p_20d: Option<f64>,
+    candidate_max_p_20d_date: Option<String>,
+    baseline_max_p_60d: Option<f64>,
+    baseline_max_p_60d_date: Option<String>,
+    candidate_max_p_60d: Option<f64>,
+    candidate_max_p_60d_date: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct RateShockAuditContinuityFocus {
+    #[serde(default)]
+    prepare_primary: RateShockAuditGroupSummary,
+    #[serde(default)]
+    hedge_primary: RateShockAuditGroupSummary,
+    #[serde(default)]
+    primary_phase: RateShockAuditGroupSummary,
+    #[serde(default)]
+    late_validation: RateShockAuditGroupSummary,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct RateShockAuditArtifactWire {
+    generated_at: String,
+    compare_path: String,
+    slice_path: String,
+    baseline_release_id: String,
+    candidate_release_id: String,
+    dataset_key: String,
+    scenario_id: String,
+    from_date: String,
+    to_date: String,
+    #[serde(default)]
+    thresholds: RateShockAuditThresholdSummary,
+    #[serde(default)]
+    compare_summary: RateShockAuditCompareSummary,
+    #[serde(default)]
+    split_counts: Vec<RateShockAuditSplitSummary>,
+    #[serde(default)]
+    phase_summaries: Vec<RateShockAuditGroupSummary>,
+    #[serde(default)]
+    action_level_summaries: Vec<RateShockAuditGroupSummary>,
+    #[serde(default)]
+    continuity_focus: RateShockAuditContinuityFocus,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct RateShockAuditArtifactSummary {
+    generated_at: String,
+    source: String,
+    compare_path: String,
+    slice_path: String,
+    baseline_release_id: String,
+    candidate_release_id: String,
+    dataset_key: String,
+    scenario_id: String,
+    from_date: String,
+    to_date: String,
+    thresholds: RateShockAuditThresholdSummary,
+    compare_summary: RateShockAuditCompareSummary,
+    split_counts: Vec<RateShockAuditSplitSummary>,
+    phase_summaries: Vec<RateShockAuditGroupSummary>,
+    action_level_summaries: Vec<RateShockAuditGroupSummary>,
+    continuity_focus: RateShockAuditContinuityFocus,
+}
+
 fn decode_json_artifact(bytes: Vec<u8>) -> Option<String> {
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         return String::from_utf8(bytes[3..].to_vec()).ok();
@@ -379,6 +537,75 @@ fn load_latest_scenario_pack_audit_summary(
     candidates.into_iter().next().map(|(_, summary)| summary)
 }
 
+fn load_latest_rate_shock_audit_summary(
+    release_review: Option<&ReleaseReviewArtifactSummary>,
+) -> Option<RateShockAuditArtifactSummary> {
+    let release_review = release_review?;
+    let mut candidates =
+        Vec::<(Option<DateTime<FixedOffset>>, RateShockAuditArtifactSummary)>::new();
+    for directory in ["artifacts/research/rate-shock-audit"] {
+        let path = FsPath::new(directory);
+        let Ok(entries) = fs::read_dir(path) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(body) = read_json_artifact(&path) else {
+                continue;
+            };
+            let wire = match serde_json::from_str::<RateShockAuditArtifactWire>(&body) {
+                Ok(wire) => wire,
+                Err(error) => {
+                    tracing::warn!(
+                        path = %path.to_string_lossy(),
+                        %error,
+                        "failed to parse rate-shock audit artifact"
+                    );
+                    continue;
+                }
+            };
+            if wire.baseline_release_id != release_review.baseline_release_id
+                || wire.candidate_release_id != release_review.candidate_release_id
+                || wire.scenario_id != "us_rate_shock_2022"
+            {
+                continue;
+            }
+            candidates.push((
+                DateTime::parse_from_rfc3339(&wire.generated_at).ok(),
+                RateShockAuditArtifactSummary {
+                    generated_at: wire.generated_at,
+                    source: path.to_string_lossy().into_owned(),
+                    compare_path: wire.compare_path,
+                    slice_path: wire.slice_path,
+                    baseline_release_id: wire.baseline_release_id,
+                    candidate_release_id: wire.candidate_release_id,
+                    dataset_key: wire.dataset_key,
+                    scenario_id: wire.scenario_id,
+                    from_date: wire.from_date,
+                    to_date: wire.to_date,
+                    thresholds: wire.thresholds,
+                    compare_summary: wire.compare_summary,
+                    split_counts: wire.split_counts,
+                    phase_summaries: wire.phase_summaries,
+                    action_level_summaries: wire.action_level_summaries,
+                    continuity_focus: wire.continuity_focus,
+                },
+            ));
+        }
+    }
+
+    candidates.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| right.1.generated_at.cmp(&left.1.generated_at))
+    });
+    candidates.into_iter().next().map(|(_, summary)| summary)
+}
+
 pub(crate) async fn research_audit(
     State(state): State<Arc<AppState>>,
     Query(query): Query<ResearchAuditQuery>,
@@ -432,6 +659,8 @@ pub(crate) async fn research_audit(
             );
             let latest_scenario_pack_audit =
                 load_latest_scenario_pack_audit_summary(&market_scope, latest_release_review.as_ref());
+            let latest_rate_shock_audit =
+                load_latest_rate_shock_audit_summary(latest_release_review.as_ref());
             ResearchAuditResponse {
                 supported: true,
                 storage_mode: "sqlite".to_string(),
@@ -444,7 +673,8 @@ pub(crate) async fn research_audit(
                 latest_replay_run_id,
                 latest_release_review,
                 latest_scenario_pack_audit,
-                note: "当前页面展示的是 release registry、historical replay run / point、prediction snapshot、最近一次 release review，以及对应的历史场景包审计。若 runtime probability mode 与 release manifest 不一致，说明线上已自动降级回 heuristic。".to_string(),
+                latest_rate_shock_audit,
+                note: "当前页面展示的是 release registry、historical replay run / point、prediction snapshot、最近一次 release review、对应的历史场景包审计，以及 2022 利率冲击专项 continuity 审计。若 runtime probability mode 与 release manifest 不一致，说明线上已自动降级回 heuristic。".to_string(),
                 releases,
                 replay_runs,
                 snapshots,
@@ -462,6 +692,7 @@ pub(crate) async fn research_audit(
             latest_replay_run_id: None,
             latest_release_review: None,
             latest_scenario_pack_audit: None,
+            latest_rate_shock_audit: None,
             note: "当前运行在 demo 模式，release registry、historical replay、prediction snapshot 审计不可用。切到 SQLite 后该页面会显示真实审计数据。".to_string(),
             releases: Vec::new(),
             replay_runs: Vec::new(),
@@ -479,6 +710,7 @@ pub(crate) async fn research_audit(
             latest_replay_run_id: None,
             latest_release_review: None,
             latest_scenario_pack_audit: None,
+            latest_rate_shock_audit: None,
             note: "当前 Postgres 路径尚未接入本地 release registry、historical replay 与 prediction snapshot 审计，建议先通过 SQLite 研究链路完成模型训练、发布与复盘。".to_string(),
             releases: Vec::new(),
             replay_runs: Vec::new(),
@@ -491,7 +723,10 @@ pub(crate) async fn research_audit(
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_json_artifact, ReleaseReviewArtifactWire, ScenarioPackAuditArtifactWire};
+    use super::{
+        decode_json_artifact, RateShockAuditArtifactWire, ReleaseReviewArtifactWire,
+        ScenarioPackAuditArtifactWire,
+    };
 
     #[test]
     fn release_review_wire_allows_missing_optional_audit_fields() {
@@ -540,6 +775,30 @@ mod tests {
             serde_json::from_str(body).expect("wire should deserialize");
         assert!(wire.blocker_counts.is_empty());
         assert!(wire.scenario_summaries.is_empty());
+    }
+
+    #[test]
+    fn rate_shock_wire_allows_missing_optional_arrays() {
+        let body = r#"
+        {
+          "generated_at": "2026-06-09T00:00:00+00:00",
+          "compare_path": "compare.json",
+          "slice_path": "slice.json",
+          "baseline_release_id": "baseline_release",
+          "candidate_release_id": "candidate_release",
+          "dataset_key": "formal_v1_main_1990_daily:test",
+          "scenario_id": "us_rate_shock_2022",
+          "from_date": "2021-10-05",
+          "to_date": "2022-10-31"
+        }
+        "#;
+
+        let wire: RateShockAuditArtifactWire =
+            serde_json::from_str(body).expect("wire should deserialize");
+        assert!(wire.phase_summaries.is_empty());
+        assert!(wire.action_level_summaries.is_empty());
+        assert!(wire.split_counts.is_empty());
+        assert_eq!(wire.compare_summary.overall_window.row_count, 0);
     }
 
     #[test]

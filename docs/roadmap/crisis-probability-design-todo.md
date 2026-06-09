@@ -240,6 +240,7 @@
     `1990-1993 -> stable_pass_with_margin_erosion`。
     这说明下一轮优先级可以更明确地落回 continuity、共享漏报和共享无信号，而不是继续手工解释每个场景。
   - 2026-06-09：`/api/research/audit` 与前端“发布审计”页现已继续接入 `latest_scenario_pack_audit`；现在不只 CLI/JSON 工件可读，网页里也能直接看到固定美国历史场景包的 blocker 分布、逐场景 lead time、dataset 选择、免费主源与结论摘要。
+  - 2026-06-09：`/api/research/audit` 与前端“发布审计”页现已继续接入 `latest_rate_shock_audit`；现在不只本地 JSON 可读，网页里也能直接看到 `2022 联储加息与久期冲击` 的 phase/action-level continuity 审计，包括 `primary / late_validation / prepare / hedge` 的命中数、最长连续段、threshold gap 与焦点窗口摘要。
 - [x] 把方法页和面板解释继续补强，让用户能看懂“危机先验”和“动作概率”不是同一个东西
 
 补充观察：
@@ -788,6 +789,7 @@
    - `2026-06-09` 已基于这版 `primary-only topology repair` 重训候选 `us_formal_family_hybrid_20260608T191024`；专项 rate-shock audit 相对 `us_formal_family_hybrid_20260608T173701` 已出现实质抬升：`20d hits 48 -> 74`、`60d hits 22 -> 71`、`primary avg p20d 1.14% -> 18.61%`、`primary 20d hit rate 0.4% -> 3.9%`，说明“2022 一直太冷”的核心约束确实来自 trainability，而不是单纯 feature 不动。
    - 但同一版 `release-review-fast` 仍未过护栏：相对当前 baseline `us_formal_family_hybrid_20260606T112926`，`actionable_precision 70.5% -> 61.1%`、`longest_false_positive_episode_days 13 -> 28`、`runtime_floor_hit_count 91 -> 82`，并继续暴露 `20d cooldown bleed`。这说明 topology repair 本身已经证明方向有效，但它还不是最终解；下一步主线必须收敛到 `20d cooldown / false-positive governance`，而不是再怀疑 2022 这批 row 到底有没有进训练。
    - 为了避免下一轮继续靠猜，threshold diagnostics 现在已经能单独暴露 `episode_native_objective_row_count` 与 `protected_no_positive_main_*` 指标，后续训练输出可直接看出这类行在 calibration evidence 里到底占了多少。
+   - `2026-06-09` 同一批专项工件现在也已经被 `/api/research/audit` 和前端“发布审计”页直接消费；做 release review 时，不需要再单独翻 `artifacts/research/rate-shock-audit/*.json` 才能判断 `2022 weak_signal_continuity` 是不是已经改善。
 2. 再围绕 `1987 / 1998 / 2000-2001 / 2011` 的 `prewarning_signal_gap` 做训练样本、特征覆盖与标签窗口专项复盘，确认为什么连稳定的 non-normal / runtime floor 都没有形成；
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。

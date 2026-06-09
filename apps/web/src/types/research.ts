@@ -231,6 +231,119 @@ export interface ScenarioPackAuditArtifactSummary {
   scenario_summaries: ScenarioPackAuditScenarioSummary[];
 }
 
+export interface RateShockAuditThresholdSummary {
+  baseline_20d: number | null;
+  candidate_20d: number | null;
+  baseline_60d: number | null;
+  candidate_60d: number | null;
+}
+
+export interface RateShockAuditHitSummary {
+  hit_count: number;
+  segment_count: number;
+  max_streak: number;
+  first_hit_date: string | null;
+  last_hit_date: string | null;
+  max_streak_start: string | null;
+  max_streak_end: string | null;
+}
+
+export interface RateShockAuditWindowSummary {
+  row_count: number;
+  avg_delta_p_20d: number | null;
+  avg_abs_delta_p_20d: number | null;
+  avg_delta_p_60d: number | null;
+  avg_abs_delta_p_60d: number | null;
+  baseline_hit_rate_20d: number | null;
+  candidate_hit_rate_20d: number | null;
+  baseline_hit_rate_60d: number | null;
+  candidate_hit_rate_60d: number | null;
+}
+
+export interface RateShockAuditCompareSummary {
+  baseline_hit_count_20d: number;
+  candidate_hit_count_20d: number;
+  baseline_hit_count_60d: number;
+  candidate_hit_count_60d: number;
+  baseline_max_p_20d: number | null;
+  baseline_max_p_20d_date: string | null;
+  candidate_max_p_20d: number | null;
+  candidate_max_p_20d_date: string | null;
+  baseline_max_p_60d: number | null;
+  baseline_max_p_60d_date: string | null;
+  candidate_max_p_60d: number | null;
+  candidate_max_p_60d_date: string | null;
+  overall_window: RateShockAuditWindowSummary;
+  hedge_window: RateShockAuditWindowSummary;
+  positive_window_20d: RateShockAuditWindowSummary;
+}
+
+export interface RateShockAuditSplitSummary {
+  split_name: string;
+  row_count: number;
+}
+
+export interface RateShockAuditGroupSummary {
+  label: string;
+  row_count: number;
+  baseline_avg_p_20d: number | null;
+  candidate_avg_p_20d: number | null;
+  avg_delta_p_20d: number | null;
+  baseline_avg_gap_to_threshold_20d: number | null;
+  candidate_avg_gap_to_threshold_20d: number | null;
+  baseline_avg_p_60d: number | null;
+  candidate_avg_p_60d: number | null;
+  avg_delta_p_60d: number | null;
+  baseline_avg_gap_to_threshold_60d: number | null;
+  candidate_avg_gap_to_threshold_60d: number | null;
+  baseline_hit_rate_20d: number | null;
+  candidate_hit_rate_20d: number | null;
+  baseline_hit_rate_60d: number | null;
+  candidate_hit_rate_60d: number | null;
+  baseline_hit_20d: RateShockAuditHitSummary;
+  candidate_hit_20d: RateShockAuditHitSummary;
+  baseline_hit_60d: RateShockAuditHitSummary;
+  candidate_hit_60d: RateShockAuditHitSummary;
+  baseline_near_threshold_20d_within_5pp_count: number;
+  candidate_near_threshold_20d_within_5pp_count: number;
+  baseline_near_threshold_60d_within_5pp_count: number;
+  candidate_near_threshold_60d_within_5pp_count: number;
+  baseline_max_p_20d: number | null;
+  baseline_max_p_20d_date: string | null;
+  candidate_max_p_20d: number | null;
+  candidate_max_p_20d_date: string | null;
+  baseline_max_p_60d: number | null;
+  baseline_max_p_60d_date: string | null;
+  candidate_max_p_60d: number | null;
+  candidate_max_p_60d_date: string | null;
+}
+
+export interface RateShockAuditContinuityFocus {
+  prepare_primary: RateShockAuditGroupSummary;
+  hedge_primary: RateShockAuditGroupSummary;
+  primary_phase: RateShockAuditGroupSummary;
+  late_validation: RateShockAuditGroupSummary;
+}
+
+export interface RateShockAuditArtifactSummary {
+  generated_at: string;
+  source: string;
+  compare_path: string;
+  slice_path: string;
+  baseline_release_id: string;
+  candidate_release_id: string;
+  dataset_key: string;
+  scenario_id: string;
+  from_date: string;
+  to_date: string;
+  thresholds: RateShockAuditThresholdSummary;
+  compare_summary: RateShockAuditCompareSummary;
+  split_counts: RateShockAuditSplitSummary[];
+  phase_summaries: RateShockAuditGroupSummary[];
+  action_level_summaries: RateShockAuditGroupSummary[];
+  continuity_focus: RateShockAuditContinuityFocus;
+}
+
 export interface ResearchAuditResponse {
   supported: boolean;
   storage_mode: string;
@@ -243,6 +356,7 @@ export interface ResearchAuditResponse {
   latest_replay_run_id: string | null;
   latest_release_review: ReleaseReviewArtifactSummary | null;
   latest_scenario_pack_audit: ScenarioPackAuditArtifactSummary | null;
+  latest_rate_shock_audit: RateShockAuditArtifactSummary | null;
   note: string;
   releases: ModelReleaseRecord[];
   replay_runs: HistoricalReplayRunRecord[];

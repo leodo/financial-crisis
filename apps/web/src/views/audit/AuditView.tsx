@@ -43,6 +43,13 @@ export default function AuditView({
     latestScenarioPackAuditSource,
     latestScenarioPackAuditMetrics,
     latestScenarioPackAuditRows,
+    latestRateShockAudit,
+    latestRateShockAuditSource,
+    latestRateShockAuditMetrics,
+    latestRateShockAuditContextRows,
+    latestRateShockContinuityRows,
+    latestRateShockPhaseRows,
+    latestRateShockActionRows,
     releaseRows,
     snapshotRows
   } = useAuditViewModel({
@@ -228,6 +235,66 @@ export default function AuditView({
               </>
             ) : (
               <RuleBox label="当前状态">{auditContent.scenarioPackEmpty}</RuleBox>
+            )}
+          </section>
+
+          <section className="surface">
+            <SurfaceHeader title="2022 利率冲击专项审计" icon={ClipboardCheck} />
+            <p className="legend-note">{auditContent.rateShockSummary}</p>
+            {latestRateShockAudit ? (
+              <>
+                <MetricGrid items={latestRateShockAuditMetrics} className="audit-review-metrics" />
+                <RuleBox label="工件来源">
+                  <span title={latestRateShockAuditSource?.hint}>
+                    {latestRateShockAuditSource?.value ?? "未登记"}
+                  </span>
+                </RuleBox>
+                <RuleBox label="审计上下文">
+                  <DetailRows items={latestRateShockAuditContextRows} compact />
+                </RuleBox>
+                {latestRateShockContinuityRows.length > 0 ? (
+                  <RuleBox label="连续性焦点窗口">
+                    <DetailRows items={latestRateShockContinuityRows} compact />
+                  </RuleBox>
+                ) : null}
+                {latestRateShockPhaseRows.length > 0 ? (
+                  <ResponsiveTable
+                    className="wide-table xwide-table"
+                    columns={["阶段", "样本", "20d 均值 / 连续性", "60d 均值 / 连续性", "阈值距离"]}
+                    note={auditContent.rateShockPhaseTableNote}
+                  >
+                    {latestRateShockPhaseRows.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.label}</td>
+                        <td>{row.rowCount}</td>
+                        <StackedTableCell title={row.p20Summary} details={row.p20Continuity} />
+                        <StackedTableCell title={row.p60Summary} details={row.p60Continuity} />
+                        <td>{row.thresholdGap}</td>
+                      </tr>
+                    ))}
+                  </ResponsiveTable>
+                ) : null}
+                {latestRateShockActionRows.length > 0 ? (
+                  <ResponsiveTable
+                    className="wide-table xwide-table"
+                    columns={["动作层", "样本", "20d 均值", "连续性", "阈值附近", "峰值"]}
+                    note={auditContent.rateShockActionTableNote}
+                  >
+                    {latestRateShockActionRows.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.label}</td>
+                        <td>{row.rowCount}</td>
+                        <td>{row.p20Summary}</td>
+                        <td>{row.continuitySummary}</td>
+                        <td>{row.nearThresholdSummary}</td>
+                        <td>{row.maxSummary}</td>
+                      </tr>
+                    ))}
+                  </ResponsiveTable>
+                ) : null}
+              </>
+            ) : (
+              <RuleBox label="当前状态">{auditContent.rateShockEmpty}</RuleBox>
             )}
           </section>
 
