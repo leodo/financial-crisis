@@ -117,14 +117,14 @@ function formatActionProbability(value: number, actionabilityEnabled: boolean): 
 
 function formatActionCurrentValue(value: number, actionabilityEnabled: boolean): string {
   if (value === 0 && !actionabilityEnabled) {
-    return `当前未触发（原始值 ${formatPercentPrecise(value)}）。`;
+    return "当前未触发；过渡动作层没有形成可执行动作信号。";
   }
   return `当前值 ${formatPercentPrecise(value)}。`;
 }
 
 function formatActionDetailValue(label: string, value: number, actionabilityEnabled: boolean): string {
   if (value === 0 && !actionabilityEnabled) {
-    return `${label} 未触发（原始值 ${formatPercentPrecise(value)}）`;
+    return `${label} 未触发`;
   }
   return `${label} ${formatPercentPrecise(value)}`;
 }

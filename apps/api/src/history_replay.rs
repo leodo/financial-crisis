@@ -7,8 +7,8 @@ use fc_domain::{AssessmentHistoryPoint, ProbabilityDiagnostics};
 #[cfg(test)]
 pub(crate) use cache::should_refresh_full_release_history;
 pub(crate) use cache::{
-    expected_prediction_snapshot_method_version, historical_replay_source_watermark,
-    is_formal_main_release, load_cached_historical_replay_output, persist_historical_replay_output,
+    expected_prediction_snapshot_method_version, is_formal_main_release,
+    load_cached_historical_replay_output, persist_historical_replay_output,
 };
 pub(crate) use transform::{
     assessment_history_point_from_assessment, historical_output_from_prediction_snapshots,

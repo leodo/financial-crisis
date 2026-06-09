@@ -2,9 +2,7 @@ use std::{env, fs};
 
 use anyhow::Context;
 use chrono::{Duration, NaiveDate, Utc};
-use fc_domain::{
-    AssessmentHistoryPoint, DataMode, ModelReleaseRecord, Observation, ProbabilityBundle,
-};
+use fc_domain::{AssessmentHistoryPoint, DataMode, ModelReleaseRecord, ProbabilityBundle};
 use fc_storage::{PostgresStore, SqliteStore};
 
 use crate::{
@@ -18,13 +16,13 @@ use crate::{
     },
     history_replay::{
         expected_prediction_snapshot_method_version, historical_output_from_replay_points,
-        historical_replay_source_watermark,
     },
     AppData,
 };
 
 const EVENT_LOOKBACK_DAYS: i64 = 30;
-const SCENARIO_BACKTEST_REPLAY_SCAN_LIMIT: usize = 64;
+const SCENARIO_BACKTEST_REPLAY_MAX_STALENESS_DAYS: i64 = 7;
+const SCENARIO_BACKTEST_REPLAY_SCAN_LIMIT: usize = 512;
 
 #[derive(Debug, Clone)]
 pub enum AppDataSource {
@@ -150,7 +148,6 @@ async fn load_postgres_app_data(
 
 async fn load_sqlite_scenario_backtest_context(
     store: &SqliteStore,
-    observations: &[Observation],
     serving_model: Option<&ServingModelContext>,
     as_of_date: NaiveDate,
     default_history: &[AssessmentHistoryPoint],
@@ -160,20 +157,25 @@ async fn load_sqlite_scenario_backtest_context(
     let default_history_point_count = default_history.len();
     let release_filter = serving_model.map(|context| context.release.manifest.release_id.as_str());
     let expected_history_cache_key = expected_prediction_snapshot_method_version(serving_model);
-    let expected_source_watermark = historical_replay_source_watermark(observations);
 
     let Some(best_run) = store
         .list_historical_replay_runs(
             Some("financial_system"),
             release_filter,
-            Some(as_of_date),
+            None,
             Some(as_of_date),
             Some(SCENARIO_BACKTEST_REPLAY_SCAN_LIMIT),
         )
         .await?
         .into_iter()
         .filter(|run| run.history_cache_key == expected_history_cache_key)
-        .filter(|run| run.source_watermark == expected_source_watermark)
+        .filter(|run| {
+            as_of_date
+                .signed_duration_since(run.to_date)
+                .num_days()
+                .clamp(0, i64::MAX)
+                <= SCENARIO_BACKTEST_REPLAY_MAX_STALENESS_DAYS
+        })
         .filter(|run| run.point_count > default_history_point_count)
         .max_by(|left, right| {
             left.point_count
@@ -194,7 +196,8 @@ async fn load_sqlite_scenario_backtest_context(
             None,
         )
         .await?;
-    let history = historical_output_from_replay_points(replay_points).history_points;
+    let mut history = historical_output_from_replay_points(replay_points).history_points;
+    append_default_tail_to_replay_history(&mut history, default_history);
     if history.len() <= default_history_point_count {
         return Ok(None);
     }
@@ -222,6 +225,23 @@ async fn load_sqlite_scenario_backtest_context(
         history,
         coverage_scope_note,
     }))
+}
+
+fn append_default_tail_to_replay_history(
+    history: &mut Vec<AssessmentHistoryPoint>,
+    default_history: &[AssessmentHistoryPoint],
+) {
+    let Some(replay_end) = history.last().map(|point| point.as_of_date) else {
+        return;
+    };
+
+    history.extend(
+        default_history
+            .iter()
+            .filter(|point| point.as_of_date > replay_end)
+            .cloned(),
+    );
+    history.sort_by_key(|point| point.as_of_date);
 }
 
 async fn load_sqlite_app_data(
@@ -267,7 +287,6 @@ async fn load_sqlite_app_data(
     .await?;
     let scenario_backtest_context = load_sqlite_scenario_backtest_context(
         &store,
-        &observations,
         serving_model.as_ref(),
         as_of_date,
         &assessment_history,
@@ -801,7 +820,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sqlite_runtime_prefers_long_replay_history_for_scenario_backtests() {
+    async fn sqlite_runtime_prefers_recent_long_replay_history_for_scenario_backtests() {
         let sqlite_path = temp_sqlite_path();
         let bundle_path = temp_bundle_path();
         std::fs::write(
@@ -833,11 +852,10 @@ mod tests {
         let serving_model =
             build_serving_model_context(release.clone(), ServingRuntimePurpose::Production);
         let method_version = expected_prediction_snapshot_method_version(Some(&serving_model));
-        let source_watermark =
-            crate::history_replay::historical_replay_source_watermark(&observations);
+        let stale_source_watermark = "us_observations=2026-05-31";
         let replay_run_id = "scenario-backtest-long-run";
         let replay_from = chrono::NaiveDate::from_ymd_opt(2022, 12, 15).unwrap();
-        let replay_to = as_of_date;
+        let replay_to = as_of_date - Duration::days(1);
         let replay_dates = (0_i64..100)
             .map(|offset| replay_from + Duration::days(offset))
             .chain(std::iter::once(replay_to))
@@ -849,7 +867,7 @@ mod tests {
                 &method_version,
                 replay_from,
                 replay_to,
-                &source_watermark,
+                stale_source_watermark,
                 replay_dates.len(),
             ))
             .await
@@ -908,7 +926,7 @@ mod tests {
         );
         assert_eq!(
             data.assessment.backtest_summary.history_end,
-            Some(replay_to)
+            Some(as_of_date)
         );
         assert_eq!(
             data.assessment.backtest_summary.rolling_audit.history_start,
@@ -916,7 +934,7 @@ mod tests {
         );
         assert_eq!(
             data.assessment.backtest_summary.rolling_audit.history_end,
-            Some(replay_to)
+            Some(as_of_date)
         );
         assert!(data
             .assessment
