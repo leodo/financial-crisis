@@ -37,6 +37,7 @@ import type {
 import type { DetailRowItem, MetricItem } from "../shared/panelHelpers";
 import { buildProbabilityOverlayViewModel } from "../shared/probabilityOverlay";
 import { auditContent } from "./content";
+import { buildDatasetSummarySection } from "./datasetSummarySection";
 import { buildWorkstreamAuditSection } from "./workstreamSection";
 
 function rateShockPhaseLabel(label: string): string {
@@ -593,6 +594,13 @@ export function useAuditViewModel({
     })) ?? [];
 
   const {
+    latestDatasetSummaries,
+    latestDatasetSummaryMetrics,
+    latestDatasetSummaryRows,
+    latestDatasetScenarioRows
+  } = buildDatasetSummarySection(audit);
+
+  const {
     latestWorkstreamAudit,
     latestWorkstreamAuditSource,
     latestWorkstreamAuditReport,
@@ -626,6 +634,10 @@ export function useAuditViewModel({
     latestScenarioPackAuditSource,
     latestScenarioPackAuditMetrics,
     latestScenarioPackAuditRows,
+    latestDatasetSummaries,
+    latestDatasetSummaryMetrics,
+    latestDatasetSummaryRows,
+    latestDatasetScenarioRows,
     latestWorkstreamAudit,
     latestWorkstreamAuditSource,
     latestWorkstreamAuditReport,

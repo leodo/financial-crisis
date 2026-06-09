@@ -226,7 +226,7 @@
   - 2026-06-09：API runtime 已补上“缺失当天 snapshot 时按当天 PIT 规则重建 exact feature snapshot”的路径；在本地 SQLite production reload 下，默认历史与 research audit 已实测收口到 `2000/2000 raw_pit_feature_replay`，`reused_feature_snapshot_points=0`，最后一个 `2026-06-08` 的 prior-snapshot reuse 点已消失。
   - 2026-06-09：`build_formal_feature_snapshot_record` 已下沉到 `crates/domain`，worker `feature build` 与 API `exact PIT rebuild` 现已共用同一套分数归一化、`external_dimension_score`、coverage / visibility status、`feature_count` 组装逻辑；formal feature snapshot 的“记录长什么样”不再由两侧各自维护。
   - 现阶段剩余问题不再是“默认运行历史里还有最后几个 reused PIT 点”，而是更广义的 feature-store 治理：继续把训练/运行两侧的 PIT 可见性与 formal feature snapshot 逻辑收敛到共享层，并把更早历史区间的可回放覆盖补齐。
-- [ ] 扩展美国历史压力样本，尽量覆盖 `1987 / 1994 / 2000 / 2001 / 2008 / 2011 / 2020 / 2023` 中免费可回补的区间
+- [x] 扩展美国历史压力样本，尽量覆盖 `1987 / 1994 / 2000 / 2001 / 2008 / 2011 / 2020 / 2023` 中免费可回补的区间
   - 2026-06-09：已把场景覆盖矩阵落成机器可读配置 `config/research_scenario_data_coverage.us.json`，并接入 `/api/assessment/method` 与方法页；至少现在“哪些场景可做主训练 / 扩展训练 / protected stress / historical analog、当前缺什么免费数据”已经不再停留在文档口头说明。
   - 2026-06-09：worker 的 `research dataset summarize-main` 现已直接输出 coverage catalog、dataset intent、场景对齐计数，以及逐场景的 `coverage_grade / recommended_role / PIT 口径 / free_sources / blocking_gaps`；formal main 也已按 `main_training + protected_context` 正确识别 `2000 / 2011 / 2022` 这类 protected context，而不会被误判成“混入了不该进入主数据集的扩展样本”。
   - 2026-06-09：`research release review` 现已复用同一份 `scenario_data_coverage_v1`，把场景覆盖上下文接到 `Historical Audit` 和 `Focus Scenarios`：导出报告会直接显示 `Coverage role / Grade / PIT / Free sources / Blocking gaps`，避免训练 summary、历史审计和逐场景复盘继续用三套不同口径解释同一批历史样本。
@@ -241,6 +241,9 @@
     这说明下一轮优先级可以更明确地落回 continuity、共享漏报和共享无信号，而不是继续手工解释每个场景。
   - 2026-06-09：`/api/research/audit` 与前端“发布审计”页现已继续接入 `latest_scenario_pack_audit`；现在不只 CLI/JSON 工件可读，网页里也能直接看到固定美国历史场景包的 blocker 分布、逐场景 lead time、dataset 选择、免费主源与结论摘要。
   - 2026-06-09：`/api/research/audit` 与前端“发布审计”页现已继续接入 `latest_rate_shock_audit`；现在不只本地 JSON 可读，网页里也能直接看到 `2022 联储加息与久期冲击` 的 phase/action-level continuity 审计，包括 `primary / late_validation / prepare / hedge` 的命中数、最长连续段、threshold gap 与焦点窗口摘要。
+  - 2026-06-09：`/api/research/audit` 与前端“发布审计”页现已继续接入 `latest_dataset_summaries`；网页里可以直接看到 `main / ext_stress / ext_acute` 三套 formal dataset 的真实 `dataset_key / row_count / split 行数 / 正标签 / scenario coverage / blocking gaps`，不再只靠目录口径判断“有没有历史样本”。
+  - 2026-06-09：新增 `scripts/formal-dataset-summary-pack.ps1` 与 `just formal-dataset-summary-pack`；它会自动选出 `formal_v1_main_1990_daily`、`formal_v1_ext_stress_1990_daily`、`formal_v1_ext_acute_pre1990` 当前最新且更完整的一版 key，并把 summary 工件导出到 `artifacts/research/dataset-summary-check`，便于把 SQLite 里的真实样本证据固定下来。
+  - 2026-06-09：当前 SQLite 已有三套 formal dataset 的真实样本证据：`main 8/8 aligned`、`ext_stress 4/4 aligned`、`ext_acute 2/2 aligned`；对应覆盖已把 `1987 / 1994 / 2000-2001 / 2008 / 2011 / 2020 / 2023` 这些免费可回补的美国历史压力区间落到正式主训练、扩展训练、protected stress 或历史类比角色中。后续剩余重点不再是“这些历史样本有没有”，而是 raw PIT feature store 治理、动作层标签与 release gate 的进一步收口。
 - [x] 把方法页和面板解释继续补强，让用户能看懂“危机先验”和“动作概率”不是同一个东西
 
 补充观察：

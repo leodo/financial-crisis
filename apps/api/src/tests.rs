@@ -186,6 +186,18 @@ async fn research_audit_endpoint_returns_runtime_audit_shape() {
                 && json["latest_rate_shock_audit"]["phase_summaries"].is_array()
                 && json["latest_rate_shock_audit"]["action_level_summaries"].is_array())
     );
+    assert!(json["latest_dataset_summaries"].is_array());
+    if let Some(first_summary) = json["latest_dataset_summaries"]
+        .as_array()
+        .and_then(|rows| rows.first())
+    {
+        assert!(first_summary["generated_at"].is_string());
+        assert!(first_summary["dataset_key"].is_string());
+        assert!(first_summary["dataset"]["dataset_id"].is_string());
+        assert!(first_summary["split_summaries"].is_array());
+        assert!(first_summary["scenario_summaries"].is_array());
+        assert!(first_summary["coverage_catalog"]["dataset_intent"].is_string());
+    }
     assert!(json["releases"].is_array());
     assert!(json["replay_runs"].is_array());
     assert!(json["snapshots"].is_array());

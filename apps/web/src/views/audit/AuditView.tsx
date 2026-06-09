@@ -43,6 +43,10 @@ export default function AuditView({
     latestScenarioPackAuditSource,
     latestScenarioPackAuditMetrics,
     latestScenarioPackAuditRows,
+    latestDatasetSummaries,
+    latestDatasetSummaryMetrics,
+    latestDatasetSummaryRows,
+    latestDatasetScenarioRows,
     latestWorkstreamAudit,
     latestWorkstreamAuditSource,
     latestWorkstreamAuditReport,
@@ -242,6 +246,58 @@ export default function AuditView({
               </>
             ) : (
               <RuleBox label="当前状态">{auditContent.scenarioPackEmpty}</RuleBox>
+            )}
+          </section>
+
+          <section className="surface">
+            <SurfaceHeader title="Formal Dataset 证据" icon={Database} />
+            <p className="legend-note">{auditContent.datasetSummary}</p>
+            {latestDatasetSummaries.length > 0 ? (
+              <>
+                <MetricGrid items={latestDatasetSummaryMetrics} className="audit-review-metrics" />
+                <ResponsiveTable
+                  className="wide-table xwide-table"
+                  columns={["数据集", "时间范围 / 版本", "Split / 行数", "标签 / 动作", "目录 / 结论", "建议"]}
+                  note={auditContent.datasetSummaryTableNote}
+                >
+                  {latestDatasetSummaryRows.map((row) => (
+                    <tr key={row.id}>
+                      <StackedTableCell title={row.datasetLabel} details={row.datasetDetails} />
+                      <StackedTableCell title={row.rangeSummary} details={row.rangeDetails} />
+                      <td>{row.splitSummary}</td>
+                      <td>{row.labelSummary}</td>
+                      <StackedTableCell
+                        title={row.coverageSummary}
+                        details={row.coverageDetails}
+                      />
+                      <td>{row.recommendation}</td>
+                    </tr>
+                  ))}
+                </ResponsiveTable>
+                {latestDatasetScenarioRows.length > 0 ? (
+                  <ResponsiveTable
+                    className="wide-table xwide-table"
+                    columns={["数据集", "场景", "时间窗 / 角色", "可用范围", "覆盖 / 免费主源", "主要缺口"]}
+                    note={auditContent.datasetScenarioTableNote}
+                  >
+                    {latestDatasetScenarioRows.map((row) => (
+                      <tr key={row.id}>
+                        <StackedTableCell title={row.datasetLabel} details={row.datasetDetails} />
+                        <StackedTableCell title={row.scenarioLabel} details={row.scenarioDetails} />
+                        <StackedTableCell title={row.windowSummary} details={row.windowDetails} />
+                        <td>{row.labelSummary}</td>
+                        <StackedTableCell
+                          title={row.coverageSummary}
+                          details={row.coverageDetails}
+                        />
+                        <td>{row.statusSummary}</td>
+                      </tr>
+                    ))}
+                  </ResponsiveTable>
+                ) : null}
+              </>
+            ) : (
+              <RuleBox label="当前状态">{auditContent.datasetSummaryEmpty}</RuleBox>
             )}
           </section>
 

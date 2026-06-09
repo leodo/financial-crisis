@@ -344,6 +344,89 @@ export interface RateShockAuditArtifactSummary {
   continuity_focus: RateShockAuditContinuityFocus;
 }
 
+export interface DatasetSummaryArtifactDatasetRecord {
+  dataset_id: string;
+  dataset_version: string;
+  market_scope: string;
+  feature_set_version: string;
+  label_version: string;
+  scenario_set_version: string;
+  point_in_time_mode: string;
+  from_date: string;
+  to_date: string;
+  train_end_date: string;
+  calibration_end_date: string;
+  evaluation_start_date: string;
+  row_count: number;
+  note: string | null;
+  created_at: string;
+}
+
+export interface DatasetSummaryArtifactSplitSummary {
+  split_name: string;
+  row_count: number;
+  positive_5d_count: number;
+  positive_20d_count: number;
+  positive_60d_count: number;
+  prepare_primary_count: number;
+  hedge_primary_count: number;
+  defend_primary_count: number;
+  late_validation_row_count: number;
+  protected_row_count: number;
+  avg_coverage_score: number;
+  scenario_count: number;
+}
+
+export interface DatasetSummaryArtifactScenarioSummary {
+  scenario_id: string;
+  label: string | null;
+  row_count: number;
+  split_count: number;
+  first_as_of_date: string;
+  last_as_of_date: string;
+  family: string | null;
+  training_role: string | null;
+  protected_window: boolean | null;
+  episode_template_id: string | null;
+  default_horizon_roles: number[];
+  coverage_recommended_role: string | null;
+  coverage_grade: string | null;
+  coverage_point_in_time_mode: string | null;
+  coverage_current_status: string | null;
+  coverage_blocking_gaps: string[];
+  coverage_free_sources: string[];
+  usable_for_main_training: boolean | null;
+  usable_for_extension_training: boolean | null;
+  usable_for_protected_stress: boolean | null;
+  usable_for_historical_analog: boolean | null;
+}
+
+export interface DatasetSummaryArtifactCoverageCatalog {
+  catalog_id: string;
+  scenario_catalog_id: string;
+  market_scope: string;
+  source: string;
+  warning: string | null;
+  dataset_intent: string;
+  aligned_scenario_count: number;
+  total_scenario_count: number;
+  main_training_eligible_count: number;
+  extension_training_eligible_count: number;
+  protected_stress_eligible_count: number;
+  historical_analog_eligible_count: number;
+}
+
+export interface DatasetSummaryArtifactSummary {
+  generated_at: string;
+  source: string;
+  dataset_key: string;
+  dataset: DatasetSummaryArtifactDatasetRecord;
+  split_summaries: DatasetSummaryArtifactSplitSummary[];
+  scenario_summaries: DatasetSummaryArtifactScenarioSummary[];
+  coverage_catalog: DatasetSummaryArtifactCoverageCatalog;
+  recommendation: string;
+}
+
 export interface WorkstreamAuditSummary {
   workstream: string;
   scenario_count: number;
@@ -438,6 +521,7 @@ export interface ResearchAuditResponse {
   latest_scenario_pack_audit: ScenarioPackAuditArtifactSummary | null;
   latest_workstream_audit: WorkstreamAuditArtifactSummary | null;
   latest_rate_shock_audit: RateShockAuditArtifactSummary | null;
+  latest_dataset_summaries: DatasetSummaryArtifactSummary[];
   note: string;
   releases: ModelReleaseRecord[];
   replay_runs: HistoricalReplayRunRecord[];

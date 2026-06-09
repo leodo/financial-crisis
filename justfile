@@ -119,6 +119,11 @@ formal-history-backfill:
 formal-dataset-list:
     cargo run -p fc-worker -- research dataset list-main --market-scope financial_system
 
+# 一键导出当前 main / ext_stress / ext_acute 三套 formal dataset summary。
+# 它会自动挑选每个 dataset_id 当前最新的一版 key，并把 JSON/Markdown 写到 ignored 的 artifacts/research/dataset-summary-check。
+formal-dataset-summary-pack:
+    ./scripts/formal-dataset-summary-pack.ps1
+
 # 导出某个危机场景的 formal dataset 样本切片，便于逐日看 split / label / features。
 # 用法：`just formal-dataset-slice us_regional_banks_2023 2022-12-01 2023-03-15`
 formal-dataset-slice scenario_id from_date to_date:
