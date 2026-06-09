@@ -476,6 +476,18 @@ family_overlays == []
     - `soft threshold` 这条思路本身可保留；
     - 但“只改 `jpy_carry proxy`”还不足以超过 `034053`。
 
+### 2026-06-09 JPY carry scenario-level audit
+
+已新增 `just formal-candidate-jpy-carry-audit`，不重训模型，直接从 SQLite formal dataset 行里按正式 resolver 公式重算 `family_proxy__jpy_carry`，检查高 FX 窗口里的 gate-active 行到底来自 protected / pre-warning 压力，还是普通汇率尖峰。
+
+首轮固定窗口结论：
+
+- `1987 Black Monday high-FX window`：gate-active `25` 行，supported `25` 行，ordinary `0` 行，最高 proxy `0.495687 @ 1987-11-05`。
+- `1990 early banking stress high-FX window`：gate-active `45` 行，supported `45` 行，ordinary `0` 行，最高 proxy `0.548219 @ 1990-10-18`。
+- `2024 JPY carry unwind watch window`：gate-active `29` 行，supported `0` 行，ordinary `29` 行，最高 proxy `0.562225 @ 2024-08-01`。
+
+这说明 `jpy_carry` 不是完全无效：1987 / 1990 的高 FX 压力能落在风险上下文里。但它也还不能直接晋升为干净的正式 overlay，因为 2024 这类普通汇率尖峰窗口会被当前 proxy 明显点亮。下一步应先收紧 proxy / gate：要求高位、快速变化和外部或流动性确认同时成立，或者把 2024 ordinary spike 作为 hard negative window 纳入 overlay 审计。
+
 - 候选 `us_formal_family_hybrid_20260604T061852`
   - 改动：
     - 继续把 `USDJPY level -> tail/context` 往前推，直接把

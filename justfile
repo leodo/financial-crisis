@@ -162,6 +162,11 @@ formal-candidate-feature-audit baseline_release_id candidate_release_id:
 formal-candidate-semantics-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-semantics-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 审计 JPY carry proxy 在 1987 / 1990 / 2024 高 FX 窗口里是否主要来自 protected/pre-warning 压力，而不是普通汇率尖峰。
+# 这个命令不重训模型，只从 SQLite formal dataset 行按正式 resolver 公式重算 `family_proxy__jpy_carry` 并导出 JSON。
+formal-candidate-jpy-carry-audit:
+    ./scripts/formal-candidate-jpy-carry-audit.ps1
+
 # 对比 baseline / candidate 的 strict release-review 工件，专门审计 timely warning / actionable lead time。
 # 会把 60d runtime separation、L2 但无 L3 的历史样本、Focus Scenarios 的 runtime block mix、
 # Historical Audit workstreams/actions 统一摊开，直接回答“为什么看见了风险却没形成可执行提前量”。
