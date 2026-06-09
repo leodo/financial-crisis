@@ -169,12 +169,21 @@ export default function DecisionView({
             <MetricGrid className="probability-trend-metrics" items={probabilityTrend.summaryMetrics} />
             <SimpleLineChart model={probabilityTrend.chart} height={320} />
             <div className="legend-note">{probabilityTrend.note}</div>
-            <div className="probability-trend-relative">
-              <div className="section-subhead">
-                <strong>近期相对变化</strong>
-                <span>每条线按自身近期区间归一，专门用来看 20d 这类低位线是否真的没有变化。</span>
+            <div className="probability-trend-drilldowns">
+              <div className="probability-trend-relative">
+                <div className="section-subhead">
+                  <strong>20日局部放大</strong>
+                  <span>只重画 20d，使用 20d 自身量级的纵轴；用来判断它是不是一条真正的直线。</span>
+                </div>
+                <SimpleLineChart model={probabilityTrend.twentyDayZoomChart} height={190} />
               </div>
-              <SimpleLineChart model={probabilityTrend.relativeChart} height={190} />
+              <div className="probability-trend-relative">
+                <div className="section-subhead">
+                  <strong>近期相对变化</strong>
+                  <span>每条线按自身近期区间归一，专门用来看 20d 这类低位线是否真的没有变化。</span>
+                </div>
+                <SimpleLineChart model={probabilityTrend.relativeChart} height={190} />
+              </div>
             </div>
           </section>
 

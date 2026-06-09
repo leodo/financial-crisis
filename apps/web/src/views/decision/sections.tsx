@@ -201,6 +201,15 @@ function buildRiskDistanceSummary(
     .filter((row): row is typeof row & { share: number } => row.share !== null)
     .sort((left, right) => right.share - left.share);
   const nearest = rankedRows[0];
+  const mechanicalDistanceCopy = rows
+    .map((row) => {
+      if (row.share === null) {
+        return `${row.label} 未配置`;
+      }
+      const multipleCopy = row.multiple ? ` / 需 ${formatThresholdMultiple(row.multiple)}` : "";
+      return `${row.label} 机械完成度 ${formatProbabilityPercentExact(row.share)}${multipleCopy}`;
+    })
+    .join("；");
   const allShares = rows
     .map((row) => row.share)
     .filter((value): value is number => value !== null);
@@ -237,12 +246,20 @@ function buildRiskDistanceSummary(
   return {
     bucketLabel: timeBucketLabel(assessment.time_to_risk_bucket),
     bucketDetail: bucketDetail[assessment.time_to_risk_bucket],
-    nearestValue: nearest ? formatProbabilityPercentExact(nearest.share) : "未配置",
-    nearestDetail: nearest
-      ? `${nearest.label} 的触线完成度；不是剩余天数。${
-          nearest.multiple ? ` 触线仍需约 ${formatThresholdMultiple(nearest.multiple)}。` : ""
-        }`
-      : "当前 release 没有返回可比较的动作进入线。",
+    nearestValue:
+      anomalyHorizons.length > 0
+        ? "待审计"
+        : nearest
+          ? formatProbabilityPercentExact(nearest.share)
+          : "未配置",
+    nearestDetail:
+      anomalyHorizons.length > 0
+        ? `当前存在模型方向异常，不能用机械触线完成度判断“离风险还有多远”。审计值：${mechanicalDistanceCopy}。`
+        : nearest
+          ? `${nearest.label} 的触线完成度；不是剩余天数。${
+              nearest.multiple ? ` 触线仍需约 ${formatThresholdMultiple(nearest.multiple)}。` : ""
+            }`
+          : "当前 release 没有返回可比较的动作进入线。",
     modelStatus: modelStatusWithAnomaly,
     modelDetail
   };

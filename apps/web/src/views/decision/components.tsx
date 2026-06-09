@@ -355,6 +355,16 @@ export function ProbabilityTile({
   const thresholdDistance = describeThresholdDistance(value, threshold, thresholdLabel, anomaly);
   const thresholdShareValue =
     thresholdShare === null ? "—" : formatProbabilityPercentExact(thresholdShare);
+  const distanceHeadline = anomaly ? "不作距离结论" : thresholdShareValue;
+  const distanceLabel = anomaly ? "机械触线完成度（仅审计）" : "触线完成度（非天数）";
+  const distanceDetail =
+    thresholdShare === null
+      ? null
+      : anomaly
+        ? `机械值 ${thresholdShareValue}，比例小数 ${formatProbabilityDecimal(
+            thresholdShare
+          )}；该期限先按模型待审计处理。`
+        : `比例小数 ${formatProbabilityDecimal(thresholdShare)}`;
   const thresholdMultipleValue =
     thresholdShare === null
       ? "—"
@@ -385,11 +395,9 @@ export function ProbabilityTile({
         </div>
       ) : null}
       <div className="probability-distance-summary">
-        <span>触线完成度（非天数）</span>
-        <strong>{thresholdShareValue}</strong>
-        {thresholdShare !== null ? (
-          <small>比例小数 {formatProbabilityDecimal(thresholdShare)}</small>
-        ) : null}
+        <span>{distanceLabel}</span>
+        <strong>{distanceHeadline}</strong>
+        {distanceDetail ? <small>{distanceDetail}</small> : null}
         <small>{thresholdDistance.note}</small>
       </div>
       <div className="probability-distance-grid">
@@ -398,7 +406,7 @@ export function ProbabilityTile({
           <strong>{formatPercentPrecise(threshold)}</strong>
         </div>
         <div>
-          <span>触线所需放大</span>
+          <span>{anomaly ? "机械放大倍数" : "触线所需放大"}</span>
           <strong>{thresholdMultipleValue}</strong>
         </div>
         <div>

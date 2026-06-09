@@ -34,6 +34,7 @@
   .band-grid,
   .dimension-detail-grid,
   .sources-top-grid,
+  .probability-trend-drilldowns,
   .audit-review-layout {
     grid-template-columns: 1fr;
   }

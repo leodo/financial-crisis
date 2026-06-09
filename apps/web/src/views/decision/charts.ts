@@ -81,6 +81,7 @@ export function buildProbabilityTrendModel(history: AssessmentHistoryPoint[]) {
 
   return {
     chart: buildProbabilityTrendChart(chartHistory, mode),
+    twentyDayZoomChart: buildTwentyDayZoomChart(chartHistory, mode),
     relativeChart: buildProbabilityRelativeTrendChart(chartHistory, mode),
     summaryMetrics: buildProbabilityTrendSummaryMetrics(chartHistory, mode),
     note: [baseNote, windowNote, scaleNote, sanityNote, sourceNote].filter(Boolean).join(" ")
@@ -403,6 +404,29 @@ function buildProbabilityTrendChart(
         fillColor: "rgba(17, 94, 89, 0.08)",
         values: history.map((point) => probabilityValue(point, 60, mode)),
         pointDetails: buildProbabilityPointDetails(history, 60, mode)
+      }
+    ]
+  };
+}
+
+function buildTwentyDayZoomChart(
+  history: AssessmentHistoryPoint[],
+  mode: ProbabilityTrendMode
+): LineChartModel {
+  const values = history.map((point) => probabilityValue(point, 20, mode));
+  const probabilityMax = values.length > 0 ? Math.max(...values) : 0;
+
+  return {
+    categories: history.map((point) => formatDate(point.as_of_date)),
+    maxValue: buildProbabilityAxisMax(probabilityMax),
+    valueType: "percent",
+    series: [
+      {
+        label: mode === "raw" ? "20日窗口局部放大（原始）" : "20日窗口局部放大",
+        color: "#2563eb",
+        fillColor: "rgba(37, 99, 235, 0.08)",
+        values,
+        pointDetails: buildProbabilityPointDetails(history, 20, mode)
       }
     ]
   };

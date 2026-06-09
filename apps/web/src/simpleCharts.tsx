@@ -236,23 +236,10 @@ export function SimpleLineChart({
 
       {hoverIndex !== null ? (
         <div className="simple-chart-tooltip" style={tooltipStyle}>
-          <strong>{model.categories[hoverIndex]}</strong>
-          {focusedHoverRow ? (
-            <div className="simple-chart-tooltip-focus">
-              <span>
-                <i style={{ background: focusedHoverRow.color }} />
-                {focusedHoverRow.label}
-              </span>
-              <em>
-                {focusedHoverRow.valueLabel ??
-                  chartValueLabel(focusedHoverRow.value, model.valueType, yMax)}
-              </em>
-              {focusedHoverRow.detail ? <small>{focusedHoverRow.detail}</small> : null}
-            </div>
-          ) : null}
-          {nearestSeriesLabel ? (
-            <small className="simple-chart-tooltip-hint">十字星已吸附到最近折线</small>
-          ) : null}
+          <div className="simple-chart-tooltip-head">
+            <strong>{model.categories[hoverIndex]}</strong>
+            {focusedHoverRow ? <span>吸附 {focusedHoverRow.label}</span> : null}
+          </div>
           {hoverRows.map((row) => (
             <div
               className={
@@ -270,6 +257,9 @@ export function SimpleLineChart({
               {row.detail ? <small>{row.detail}</small> : null}
             </div>
           ))}
+          {nearestSeriesLabel ? (
+            <small className="simple-chart-tooltip-hint">移动鼠标可按十字星查看每个日期的折线明细</small>
+          ) : null}
         </div>
       ) : null}
 
