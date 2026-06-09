@@ -258,6 +258,20 @@ pub(crate) fn compare_operational_guardrails(
     regressions
 }
 
+pub(crate) fn compare_release_review_count_guardrails(
+    comparison: &crate::ReleaseReviewComparisonSummary,
+) -> Vec<String> {
+    let mut regressions = Vec::new();
+    let runtime_floor_hits = &comparison.runtime_floor_hit_count;
+    if runtime_floor_hits.delta <= -5 {
+        regressions.push(format!(
+            "runtime_floor_hit_count dropped from {} to {}",
+            runtime_floor_hits.baseline, runtime_floor_hits.candidate
+        ));
+    }
+    regressions
+}
+
 pub(crate) fn compare_runtime_sanity_guardrails(
     baseline: &crate::ReleaseRuntimeReviewDiagnostics,
     candidate: &crate::ReleaseRuntimeReviewDiagnostics,
@@ -345,6 +359,63 @@ fn release_has_cold_runtime_history(diagnostics: &crate::ReleaseRuntimeReviewDia
         });
 
     all_normal && zero_floor_hits && no_usable_early_warning
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scalar_metric() -> crate::ReleaseReviewScalarMetric {
+        crate::ReleaseReviewScalarMetric {
+            baseline: 0.0,
+            candidate: 0.0,
+            delta: 0.0,
+        }
+    }
+
+    fn count_metric(baseline: u32, candidate: u32) -> crate::ReleaseReviewCountMetric {
+        crate::ReleaseReviewCountMetric {
+            baseline,
+            candidate,
+            delta: candidate as i64 - baseline as i64,
+        }
+    }
+
+    fn comparison_with_runtime_floor_hits(
+        baseline: u32,
+        candidate: u32,
+    ) -> crate::ReleaseReviewComparisonSummary {
+        crate::ReleaseReviewComparisonSummary {
+            timely_warning_rate: scalar_metric(),
+            strict_actionable_point_count: count_metric(0, 0),
+            runtime_floor_hit_count: count_metric(baseline, candidate),
+            actionable_precision: scalar_metric(),
+            longest_false_positive_episode_days: count_metric(0, 0),
+            current_p_5d: scalar_metric(),
+            current_p_20d: scalar_metric(),
+            current_p_60d: scalar_metric(),
+            runtime_separation_summary: Vec::new(),
+            backtest_scenarios: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn release_review_count_guardrails_reject_runtime_floor_hit_regression() {
+        let regressions =
+            compare_release_review_count_guardrails(&comparison_with_runtime_floor_hits(91, 69));
+
+        assert!(regressions
+            .iter()
+            .any(|item| item.contains("runtime_floor_hit_count dropped from 91 to 69")));
+    }
+
+    #[test]
+    fn release_review_count_guardrails_allow_small_runtime_floor_noise() {
+        let regressions =
+            compare_release_review_count_guardrails(&comparison_with_runtime_floor_hits(9, 7));
+
+        assert!(regressions.is_empty());
+    }
 }
 
 pub(crate) fn print_operational_guardrail_summary(

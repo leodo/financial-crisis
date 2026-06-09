@@ -7,7 +7,7 @@ mod review;
 pub(crate) use guardrails::{
     build_release_actionability_review, compare_actionability_guardrails,
     compare_operational_guardrails, compare_probability_guardrails,
-    compare_runtime_sanity_guardrails,
+    compare_release_review_count_guardrails, compare_runtime_sanity_guardrails,
 };
 pub(crate) use lifecycle::{
     activate_release_with_runtime_guard, research_release_activate, research_release_list,

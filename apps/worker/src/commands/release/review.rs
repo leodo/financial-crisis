@@ -7,7 +7,7 @@ use fc_domain::ModelReleaseRecord;
 use super::{
     build_release_actionability_review, compare_actionability_guardrails,
     compare_operational_guardrails, compare_probability_guardrails,
-    compare_runtime_sanity_guardrails,
+    compare_release_review_count_guardrails, compare_runtime_sanity_guardrails,
 };
 mod comparison;
 mod focus;
@@ -183,16 +183,35 @@ async fn run_release_review(
     let candidate_actionability_review = build_release_actionability_review(candidate_release)?;
     let probability_regressions = compare_probability_guardrails(candidate_release)?;
     let candidate_has_actionability = candidate_actionability_review.enabled;
+    let release_review_comparison = comparison::build_release_review_comparison(
+        comparison::ReleaseReviewComparisonInput {
+            assessment: &baseline_assessment,
+            backtests: &baseline_runtime_snapshot.backtests,
+            history: &baseline_runtime_snapshot.history,
+            method: &baseline_runtime_snapshot.method,
+        },
+        comparison::ReleaseReviewComparisonInput {
+            assessment: &candidate_assessment,
+            backtests: &candidate_runtime_snapshot.backtests,
+            history: &candidate_runtime_snapshot.history,
+            method: &candidate_runtime_snapshot.method,
+        },
+        &baseline_runtime_review,
+        &candidate_runtime_review,
+    );
     let operational_regressions =
         compare_operational_guardrails(&baseline_assessment, &candidate_assessment);
     let actionability_regressions =
         compare_actionability_guardrails(&candidate_actionability_review);
     let runtime_sanity_regressions =
         compare_runtime_sanity_guardrails(&baseline_runtime_review, &candidate_runtime_review);
+    let release_review_count_regressions =
+        compare_release_review_count_guardrails(&release_review_comparison);
     let mut overall_regressions = operational_regressions.clone();
     overall_regressions.extend(probability_regressions.iter().cloned());
     overall_regressions.extend(actionability_regressions.iter().cloned());
     overall_regressions.extend(runtime_sanity_regressions.iter().cloned());
+    overall_regressions.extend(release_review_count_regressions.iter().cloned());
     let scenario_focus = build_release_review_scenario_focus_diagnostics(
         &baseline_runtime_snapshot.backtests,
         &candidate_runtime_snapshot.backtests,
@@ -233,22 +252,7 @@ async fn run_release_review(
         restored_release_id: original_active.manifest.release_id.clone(),
         baseline_release: baseline_release.clone(),
         candidate_release: candidate_release.clone(),
-        comparison: comparison::build_release_review_comparison(
-            comparison::ReleaseReviewComparisonInput {
-                assessment: &baseline_assessment,
-                backtests: &baseline_runtime_snapshot.backtests,
-                history: &baseline_runtime_snapshot.history,
-                method: &baseline_runtime_snapshot.method,
-            },
-            comparison::ReleaseReviewComparisonInput {
-                assessment: &candidate_assessment,
-                backtests: &candidate_runtime_snapshot.backtests,
-                history: &candidate_runtime_snapshot.history,
-                method: &candidate_runtime_snapshot.method,
-            },
-            &baseline_runtime_review,
-            &candidate_runtime_review,
-        ),
+        comparison: release_review_comparison,
         baseline_assessment,
         candidate_assessment,
         baseline_runtime_review,
