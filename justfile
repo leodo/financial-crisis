@@ -29,6 +29,11 @@ status:
 artifact-status:
     ./scripts/artifact-status.ps1
 
+# 检查当前仓库最大的源码热点文件，并在你直接改到这些大文件时阻止继续提交。
+# 如果这次修改本身就是拆分热点文件，可临时设置 `ALLOW_HOTSPOT_TOUCH=1` 后重跑，并在提交说明里写清原因。
+hotspot-status:
+    ./scripts/hotspot-status.ps1
+
 # 从正在运行的本地 API 导出一份滚动审计报告，默认写到 reports/rolling-audit。
 # 适合每次 refresh/backfill 后留存一份当前评估快照，便于复盘模型是否在“高压但未危机”的阶段过度频繁动作。
 audit-report:
@@ -258,6 +263,10 @@ lint:
 verify-artifacts:
     ./scripts/artifact-status.ps1
 
+# 本地治理门禁：如果直接改到了当前仓库前几位的大源码文件，要求先拆模块或显式说明原因。
+verify-hotspots:
+    ./scripts/hotspot-status.ps1
+
 # 只启动后端 API，默认地址 http://127.0.0.1:18080。
 api:
     cargo run -p fc-api
@@ -395,4 +404,4 @@ web-build:
 check-all: fmt-check test web-build
 
 # 完整本地门禁：版本化工件审计、Rust 格式检查、测试、clippy、前端构建。
-verify: verify-artifacts fmt-check test lint web-build
+verify: verify-artifacts verify-hotspots fmt-check test lint web-build
