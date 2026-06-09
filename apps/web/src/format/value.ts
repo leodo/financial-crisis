@@ -2,6 +2,14 @@ export function formatNumber(value: number | null | undefined, suffix = ""): str
   if (value === null || value === undefined || Number.isNaN(value)) {
     return "—";
   }
+  const absolute = Math.abs(value);
+  if (absolute === 0) {
+    return `0.0${suffix}`;
+  }
+  if (absolute < 0.1) {
+    const digits = absolute < 0.01 ? 4 : 3;
+    return `${trimTrailingZeros(value.toFixed(digits))}${suffix}`;
+  }
   return `${value.toFixed(1)}${suffix}`;
 }
 
