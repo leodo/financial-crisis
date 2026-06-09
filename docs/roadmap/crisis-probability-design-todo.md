@@ -907,6 +907,15 @@
      - 单测新增 `regime_support_adjustment_rejects_prewarning_only_20d_threshold`，防止以后再接受“pre-warning 有高点但 positive-window 全断线”的 20d floor；
      - 重训候选 `us_formal_family_hybrid_20260609T204721` 仍显示 `20d base=0.900 final=0.900`，`formal-candidate-screen` 仍是 `no_go_offline`，regional banks positive-window hit rate 仍为 `80.0% -> 0.0%`；
      - 结论：阈值规则补丁只能防回归，不能安全修复当前候选；真正瓶颈是 20d/60d 训练分布与特征分离，下一步应优先做 `positive-window vs cooldown/normal` 的训练目标与特征审计，而不是继续调 runtime 进入线。
+   - `2026-06-10` 已按用户复核继续修正决策页的“可解释性而不掩盖模型问题”：
+     - `概率轨迹` hover tooltip 现在把吸附到的最近折线作为焦点显示，直接给出日期、期限、精确百分比、bp、接口小数和较前点变化；
+     - `离风险还有多远` 的顶部摘要与三张概率卡会识别 active release 中 `tail_pos__us_usdjpy_level__145` 在 USDJPY 高位时强力负贡献的语义异常，并显示“读数待审计 / 模型待审计”；
+     - 触线完成度改用更精确的百分比和比例小数展示，避免 `0.0238%` 这类极小值被误看成 `0` 或“剩余天数”；
+     - 本轮仍不硬抬概率、不激活 No-Go 候选；页面只是诚实暴露当前 active release 输出偏冷，真正修复仍必须通过训练约束、feature transfer 与 release review。
+   - `2026-06-10` `formal-candidate-feature-audit` 已补充 bundle evaluation 与 runtime replay 的 regime separation 对比：
+     - 20d 候选在 bundle evaluation 里 `positive_minus_cooldown_gap=+8.28pp`，但 runtime replay 变成 `-6.70pp`，说明训练评估到运行回放出现分布漂移；
+     - 60d 候选在 runtime replay 中 `positive / cooldown / normal` 均约 `2%`，诊断为 `cold_across_all_regimes`；
+     - 后续优先级应放在 train/runtime feature transfer、scenario-conditioned feature separation 和 positive-window continuity，而不是继续只调阈值。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 

@@ -355,6 +355,46 @@
   line-height: 1.2;
 }
 
+.simple-chart-tooltip-focus {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #dce6ec;
+  border-radius: 7px;
+  background: #f7fafb;
+  padding: 7px;
+}
+
+.simple-chart-tooltip-focus span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #40505b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.simple-chart-tooltip-focus i {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.simple-chart-tooltip-focus em {
+  color: #111c24;
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.simple-chart-tooltip-focus small {
+  color: #65737d;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .simple-chart-tooltip-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

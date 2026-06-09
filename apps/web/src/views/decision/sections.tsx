@@ -9,7 +9,13 @@ import {
 import type { AssessmentMethodResponse, AssessmentSnapshot, PostureGuidance } from "../../types";
 import type { MetricItem } from "../shared/panelHelpers";
 import { MetricGrid, RuleBox, SurfaceHeader } from "../shared/panelHelpers";
-import { formatThresholdMultiple, PostureLadder, ProbabilityTile } from "./components";
+import {
+  findProbabilityDiagnosticAnomaly,
+  formatThresholdMultiple,
+  PostureLadder,
+  ProbabilityTile
+} from "./components";
+import type { ProbabilityDiagnosticAnomaly } from "./components";
 import { decisionContent } from "./content";
 import type {
   DecisionRuntimeCard,
@@ -174,6 +180,14 @@ function buildRiskDistanceSummary(
 ) {
   const { p_5d: p5d, p_20d: p20d, p_60d: p60d } = assessment.probabilities;
   const thresholds = method.runtime_thresholds;
+  const anomalyHorizons = assessment.probability_diagnostics.horizon_overlays
+    .map((diagnostic) => ({
+      horizonDays: diagnostic.horizon_days,
+      anomaly: findProbabilityDiagnosticAnomaly(diagnostic)
+    }))
+    .filter((row): row is { horizonDays: number; anomaly: ProbabilityDiagnosticAnomaly } =>
+      row.anomaly !== null
+    );
   const rows = [
     { label: "5d 防守线", value: p5d, threshold: thresholds.defend_p5d },
     { label: "20d 对冲线", value: p20d, threshold: thresholds.hedge_p20d },
@@ -205,24 +219,31 @@ function buildRiskDistanceSummary(
     : allFarBelowEntry
       ? "未捕捉临近窗口"
       : "读数可解释";
-  const modelDetail = twentyDayIsCold
-    ? `20d 只有 ${formatProbabilityPercentExact(p20d)}，明显低于 5d ${formatProbabilityPercentExact(
-        p5d
-      )} 和 60d ${formatProbabilityPercentExact(p60d)}；先按模型审计处理，不在运行时硬抬概率。`
-    : allFarBelowEntry
-      ? "三期限都远低于动作进入线，系统因此给出常态观察；仍需结合关键指标和事件确认复核。"
-      : "当前概率和动作进入线之间没有明显显示层异常。";
+  const modelStatusWithAnomaly =
+    anomalyHorizons.length > 0 ? "读数待审计" : modelStatus;
+  const modelDetail =
+    anomalyHorizons.length > 0
+      ? `${anomalyHorizons
+          .map((row) => `${row.horizonDays}d`)
+          .join(" / ")} 命中 USDJPY 高位 tail 压低概率的语义异常；这些小数只能说明 active release 当前输出偏冷，不能当成风险已远离。`
+      : twentyDayIsCold
+        ? `20d 只有 ${formatProbabilityPercentExact(p20d)}，明显低于 5d ${formatProbabilityPercentExact(
+            p5d
+          )} 和 60d ${formatProbabilityPercentExact(p60d)}；先按模型审计处理，不在运行时硬抬概率。`
+        : allFarBelowEntry
+          ? "三期限都远低于动作进入线，系统因此给出常态观察；仍需结合关键指标和事件确认复核。"
+          : "当前概率和动作进入线之间没有明显显示层异常。";
 
   return {
     bucketLabel: timeBucketLabel(assessment.time_to_risk_bucket),
     bucketDetail: bucketDetail[assessment.time_to_risk_bucket],
-    nearestValue: nearest ? formatPercentPrecise(nearest.share) : "未配置",
+    nearestValue: nearest ? formatProbabilityPercentExact(nearest.share) : "未配置",
     nearestDetail: nearest
       ? `${nearest.label} 的触线完成度；不是剩余天数。${
           nearest.multiple ? ` 触线仍需约 ${formatThresholdMultiple(nearest.multiple)}。` : ""
         }`
       : "当前 release 没有返回可比较的动作进入线。",
-    modelStatus,
+    modelStatus: modelStatusWithAnomaly,
     modelDetail
   };
 }
@@ -247,6 +268,28 @@ function buildRiskHorizonSanityNote(
     thresholdShares.length === 3 && thresholdShares.every((share) => share < 0.03);
   const twentyDayIsCold = p20d > 0 && p20d < p5d * 0.25 && p20d < p60d * 0.25;
   const hasAllThresholdMultiples = thresholdMultiples.length === 3;
+  const anomalyHorizons = assessment.probability_diagnostics.horizon_overlays
+    .map((diagnostic) => ({
+      horizonDays: diagnostic.horizon_days,
+      anomaly: findProbabilityDiagnosticAnomaly(diagnostic)
+    }))
+    .filter((row): row is { horizonDays: number; anomaly: ProbabilityDiagnosticAnomaly } =>
+      row.anomaly !== null
+    );
+
+  if (anomalyHorizons.length > 0) {
+    return `当前 ${anomalyHorizons
+      .map((row) => `${row.horizonDays}日`)
+      .join(" / ")} 概率命中模型语义异常：高 USDJPY tail 在 active release 中反而压低概率。页面保留正式输出用于审计，但这些极小数不应被解释成“离风险很远”；下一步应修训练约束和 release review，而不是在运行时硬抬概率。${
+      hasAllThresholdMultiples
+        ? `按当前进入线机械反推，触线仍需 5d ${formatThresholdMultiple(
+            thresholdMultiples[0]
+          )}、20d ${formatThresholdMultiple(thresholdMultiples[1])}、60d ${formatThresholdMultiple(
+            thresholdMultiples[2]
+          )} 的同期限概率放大。`
+        : ""
+    }`;
+  }
 
   if (twentyDayIsCold && allFarBelowEntry) {
     return `当前三条正式概率都远低于进入线，且 20日窗口 ${formatProbabilityPercentExact(

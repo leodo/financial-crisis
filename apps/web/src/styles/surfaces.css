@@ -320,6 +320,11 @@
   border-color: #efcbc4;
 }
 
+.probability-tile.model-anomaly {
+  background: #fffaf5;
+  border-color: #e9c999;
+}
+
 .tile-head {
   display: flex;
   align-items: center;
@@ -350,6 +355,29 @@
   margin-top: 2px;
   font-size: 30px;
   line-height: 1;
+}
+
+.probability-model-warning {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #eccb96;
+  border-radius: 7px;
+  background: #fff5e8;
+  padding: 8px;
+}
+
+.probability-model-warning strong {
+  margin-top: 0;
+  color: #7c4a03;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.probability-tile .probability-model-warning small {
+  color: #6f4b18;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .probability-value-label {

@@ -93,6 +93,7 @@ export function SimpleLineChart({
           detail: series.pointDetails?.[hoverIndex]?.detail,
           isNearest: series.label === nearestSeriesLabel
         }));
+  const focusedHoverRow = hoverRows.find((row) => row.isNearest) ?? hoverRows[0] ?? null;
   const tooltipStyle =
     hoverX === null
       ? undefined
@@ -236,8 +237,21 @@ export function SimpleLineChart({
       {hoverIndex !== null ? (
         <div className="simple-chart-tooltip" style={tooltipStyle}>
           <strong>{model.categories[hoverIndex]}</strong>
+          {focusedHoverRow ? (
+            <div className="simple-chart-tooltip-focus">
+              <span>
+                <i style={{ background: focusedHoverRow.color }} />
+                {focusedHoverRow.label}
+              </span>
+              <em>
+                {focusedHoverRow.valueLabel ??
+                  chartValueLabel(focusedHoverRow.value, model.valueType, yMax)}
+              </em>
+              {focusedHoverRow.detail ? <small>{focusedHoverRow.detail}</small> : null}
+            </div>
+          ) : null}
           {nearestSeriesLabel ? (
-            <small className="simple-chart-tooltip-hint">吸附到 {nearestSeriesLabel}</small>
+            <small className="simple-chart-tooltip-hint">十字星已吸附到最近折线</small>
           ) : null}
           {hoverRows.map((row) => (
             <div

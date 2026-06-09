@@ -11,6 +11,8 @@ import type { AssessmentSnapshot, ProbabilityHorizonOverlayDiagnostics } from ".
 import { RuleBox } from "../shared/panelHelpers";
 import type { DecisionSignalLayerRowModel } from "./useDecisionViewModel";
 
+const USDJPY_HIGH_TAIL_SUPPRESSOR_FEATURE = "tail_pos__us_usdjpy_level__145";
+
 const POSTURE_STEPS: Array<{
   id: AssessmentSnapshot["posture"];
   label: string;
@@ -40,6 +42,40 @@ export function formatThresholdMultiple(value: number): string {
     return `${value.toFixed(1)} 倍`;
   }
   return `${value.toFixed(2)} 倍`;
+}
+
+export interface ProbabilityDiagnosticAnomaly {
+  title: string;
+  detail: string;
+}
+
+export function findProbabilityDiagnosticAnomaly(
+  diagnostic?: ProbabilityHorizonOverlayDiagnostics
+): ProbabilityDiagnosticAnomaly | null {
+  const suppressor = diagnostic?.base_contributions?.find(
+    (contribution) =>
+      contribution.name === USDJPY_HIGH_TAIL_SUPPRESSOR_FEATURE &&
+      contribution.raw_value > 0 &&
+      contribution.contribution <= -1
+  );
+
+  if (!suppressor) {
+    return null;
+  }
+
+  const usdJpyLevel = diagnostic?.base_contributions?.find(
+    (contribution) => contribution.name === "us_usdjpy_level"
+  )?.raw_value;
+  const levelCopy =
+    usdJpyLevel === undefined ? "USDJPY 高于 145" : `USDJPY ${formatNumber(usdJpyLevel)}`;
+
+  return {
+    title: "USDJPY 高位 tail 正在压低读数",
+    detail: `${levelCopy} 时，高位 tail 特征对 ${diagnostic?.horizon_days ?? "当前"}d 概率贡献 ${formatSignedNumber(
+      suppressor.contribution,
+      2
+    )}，方向和“日元套息/外部冲击风险升温”的解释冲突；这个正式概率应先按模型待审计读数处理。`
+  };
 }
 
 function describeProbabilityBand(value: number) {
@@ -155,7 +191,13 @@ function buildBaseContributionRows(diagnostic?: ProbabilityHorizonOverlayDiagnos
   }));
 }
 
-function probabilityReadingNote(value: number): string {
+function probabilityReadingNote(
+  value: number,
+  anomaly: ProbabilityDiagnosticAnomaly | null
+): string {
+  if (anomaly) {
+    return "当前概率数值来自 active release，但该期限命中语义异常；不要把低概率直接解释成风险很远或风险为零。";
+  }
   if (value === 0) {
     return "当前接口精确返回 0，需要结合数据日期、release 状态和模型链路复核；它不等于市场风险被证明为零。";
   }
@@ -170,12 +212,19 @@ function probabilityReadingNote(value: number): string {
 function describeThresholdDistance(
   value: number,
   threshold: number,
-  thresholdLabel: string
+  thresholdLabel: string,
+  anomaly: ProbabilityDiagnosticAnomaly | null
 ): { label: string; note: string } {
   if (threshold <= 0) {
     return {
       label: "未配置进入线",
       note: "当前 release 没有返回可用于比较的动作进入线，需要先复核方法接口。"
+    };
+  }
+  if (anomaly && value < threshold) {
+    return {
+      label: "模型待审计",
+      note: `${anomaly.title}；触线完成度只代表当前 active release 的机械输出，不能当成“离危机很远”的证明。`
     };
   }
   if (value >= threshold) {
@@ -300,11 +349,12 @@ export function ProbabilityTile({
   diagnostic?: ProbabilityHorizonOverlayDiagnostics;
 }) {
   const band = describeProbabilityBand(value);
+  const anomaly = findProbabilityDiagnosticAnomaly(diagnostic);
   const thresholdGap = Math.max(0, threshold - value);
   const thresholdShare = threshold > 0 ? value / threshold : null;
-  const thresholdDistance = describeThresholdDistance(value, threshold, thresholdLabel);
+  const thresholdDistance = describeThresholdDistance(value, threshold, thresholdLabel, anomaly);
   const thresholdShareValue =
-    thresholdShare === null ? "—" : formatPercentPrecise(thresholdShare);
+    thresholdShare === null ? "—" : formatProbabilityPercentExact(thresholdShare);
   const thresholdMultipleValue =
     thresholdShare === null
       ? "—"
@@ -321,16 +371,25 @@ export function ProbabilityTile({
         )}`;
 
   return (
-    <div className={`probability-tile ${band.className}`}>
+    <div className={`probability-tile ${band.className}${anomaly ? " model-anomaly" : ""}`}>
       <div className="tile-head">
         <span>{label}</span>
         <em>{thresholdDistance.label}</em>
       </div>
       <span className="probability-value-label">当前正式概率</span>
       <strong>{formatProbabilityPercentExact(value)}</strong>
+      {anomaly ? (
+        <div className="probability-model-warning">
+          <strong>{anomaly.title}</strong>
+          <small>{anomaly.detail}</small>
+        </div>
+      ) : null}
       <div className="probability-distance-summary">
         <span>触线完成度（非天数）</span>
         <strong>{thresholdShareValue}</strong>
+        {thresholdShare !== null ? (
+          <small>比例小数 {formatProbabilityDecimal(thresholdShare)}</small>
+        ) : null}
         <small>{thresholdDistance.note}</small>
       </div>
       <div className="probability-distance-grid">
@@ -350,7 +409,7 @@ export function ProbabilityTile({
       <div className="probability-raw">
         接口值 {formatProbabilityDecimal(value)} · {formatProbabilityBasisPoints(value)}
       </div>
-      <div className="probability-reading-note">{probabilityReadingNote(value)}</div>
+      <div className="probability-reading-note">{probabilityReadingNote(value, anomaly)}</div>
       <p>{hint}</p>
       <div className="probability-threshold">{thresholdCopy}</div>
       <small>{band.note}</small>
