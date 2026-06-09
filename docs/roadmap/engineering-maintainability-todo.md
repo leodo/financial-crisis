@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-05
+最后更新：2026-06-09
 
 本文档只管理“工程结构、模块边界、共用代码收敛、生成工件治理、维护性约束”，不替代概率模型主线 TODO。
 
@@ -282,8 +282,9 @@
   - 正式 release 工件；
   - 基线对照证据；
   - 还是临时研究副产物。
-- [ ] 任何影响训练口径和运行口径的修改，都要检查共享函数是否已统一。
+- [x] 任何影响训练口径和运行口径的修改，都要检查共享函数是否已统一。
   - 2026-06-09：已先收掉一组高风险重复实现：`probability bundle evaluation` 与 `release review runtime regime audit` 现在共用同一套 `classify_probability_regime_separation / lift_vs_baseline / early_warning_regime_name / gap_retention_ratio` helper，避免后续继续分别修改训练侧和复盘侧的 regime diagnosis。
+  - 2026-06-09：`apps/api/src/backtest/actionability.rs` 与 `apps/worker/src/commands/release/review/focus/runtime/signals.rs` 里重复维护的 `strict prepare gate / runtime floor / plateau-hysteresis` 口径，现已统一下沉到 `crates/domain/src/actionability_gate.rs`；API 滚动审计与 worker release-review 已改用同一套 shared gate 函数，不再各自维护一份高风险阈值逻辑。
 - [x] 任何新的仓位建议或动作规则，都不能绕开现有 `playbook`、`Go/No-Go` 和 “非自动交易指令”边界。
 - [x] 本地提交前统一运行 `just verify`，不要继续靠人工记忆零散执行 `fmt/test/lint/web-build`。
 - [x] CI 自动执行与本地一致的核心检查，不再只靠本地手工自觉。

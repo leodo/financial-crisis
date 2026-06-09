@@ -1,3 +1,4 @@
+pub mod actionability_gate;
 pub mod alert;
 pub mod assessment;
 pub mod backtest;
@@ -18,6 +19,7 @@ pub mod scenario_data_coverage;
 pub mod source;
 pub mod stress_window;
 
+pub use actionability_gate::*;
 pub use alert::*;
 pub use assessment::*;
 pub use backtest::*;

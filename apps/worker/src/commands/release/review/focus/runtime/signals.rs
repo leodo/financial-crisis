@@ -2,49 +2,22 @@ use std::collections::BTreeMap;
 
 use chrono::{Duration, NaiveDate};
 use fc_domain::{
-    AssessmentHistoryPoint, BacktestScenarioSummary, DecisionPosture, TimeToRiskBucket,
+    actionable_prepare_weeks_score_confirmation_gap as domain_actionable_prepare_weeks_score_confirmation_gap,
+    actionable_runtime_floor_hits as domain_actionable_runtime_floor_hits,
+    actionable_runtime_floor_reached as domain_actionable_runtime_floor_reached,
+    actionable_warning_point as domain_actionable_warning_point,
+    strict_prepare_p20d_threshold as domain_strict_prepare_p20d_threshold,
+    strict_prepare_p60d_threshold as domain_strict_prepare_p60d_threshold,
+    strong_prepare_trigger_code as domain_strong_prepare_trigger_code,
+    weak_defend_only_runtime_floor as domain_weak_defend_only_runtime_floor,
+    ActionableGateFloorHits, ActionableGateThresholds, AssessmentHistoryPoint,
+    BacktestScenarioSummary,
 };
 
 const RELEASE_REVIEW_SIGNAL_WINDOW: usize = 5;
 const RELEASE_REVIEW_SIGNAL_MIN_HITS: usize = 3;
-const LEGACY_STRICT_PREPARE_P20D_THRESHOLD: f64 = 0.18;
-const STRICT_PREPARE_P20D_THRESHOLD_RATIO: f64 = 0.60;
-const STRICT_PREPARE_P20D_THRESHOLD_MIN: f64 = 0.12;
-const LEGACY_STRICT_PREPARE_P60D_THRESHOLD: f64 = 0.45;
-const STRICT_PREPARE_P60D_THRESHOLD_BUFFER: f64 = 0.04;
-const STRICT_PREPARE_P60D_THRESHOLD_LIFT: f64 = 1.10;
-const STRICT_PREPARE_P60D_THRESHOLD_MIN: f64 = 0.25;
-const STRICT_PREPARE_PLATEAU_P20D_BUFFER: f64 = 0.10;
-const STRICT_PREPARE_PLATEAU_P20D_MIN: f64 = 0.35;
-const STRICT_PREPARE_PLATEAU_P20D_MAX: f64 = 0.45;
-const STRICT_PREPARE_PLATEAU_RELAXED_P20D_BUFFER: f64 = 0.10;
-const STRICT_PREPARE_PLATEAU_RELAXED_P20D_FLOOR_MIN: f64 = 0.45;
-const STRICT_PREPARE_PLATEAU_P60D_THRESHOLD: f64 = 0.70;
-const STRICT_PREPARE_PLATEAU_RELAXED_P60D_THRESHOLD: f64 = 0.65;
-const STRICT_PREPARE_PLATEAU_OVERALL_FLOOR: f64 = 42.0;
-const STRICT_PREPARE_PLATEAU_EXTERNAL_FLOOR: f64 = 32.0;
-const STRICT_PREPARE_PLATEAU_RELAXED_EXTERNAL_FLOOR: f64 = 40.0;
-const STRICT_PREPARE_WEEKS_TRIGGER_OVERALL_FLOOR: f64 = 51.5;
-const STRICT_PREPARE_WEEKS_TRIGGER_EXTERNAL_FLOOR: f64 = 33.0;
-const STRICT_WEEKS_TRIGGER_DOMINANT_P20D_FLOOR: f64 = 0.25;
-const STRICT_WEEKS_TRIGGER_DOMINANT_P20D_SPREAD_FLOOR: f64 = 0.15;
-const STRICT_WEEKS_TRIGGER_DOMINANT_OVERALL_FLOOR: f64 = 53.0;
-const STRICT_WEEKS_TRIGGER_DOMINANT_EXTERNAL_FLOOR: f64 = 35.0;
-const STRICT_HISTORY_HYSTERESIS_MONTHS_P20D_FLOOR: f64 = 0.35;
-const STRICT_HISTORY_HYSTERESIS_MONTHS_P60D_FLOOR: f64 = 0.65;
-const STRICT_HISTORY_HYSTERESIS_MONTHS_OVERALL_FLOOR: f64 = 43.0;
-const STRICT_HISTORY_HYSTERESIS_MONTHS_EXTERNAL_FLOOR: f64 = 39.0;
-const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P20D_FLOOR: f64 = 0.25;
-const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P60D_FLOOR: f64 = 0.80;
-const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_OVERALL_FLOOR: f64 = 43.5;
-const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_EXTERNAL_FLOOR: f64 = 30.0;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct ReleaseReviewRuntimeFloorHits {
-    pub(super) prepare: bool,
-    pub(super) hedge: bool,
-    pub(super) defend: bool,
-}
+pub(super) type ReleaseReviewRuntimeFloorHits = ActionableGateFloorHits;
 
 pub(crate) fn release_review_structured_signal_counts(
     backtests: &[BacktestScenarioSummary],
@@ -110,34 +83,21 @@ pub(super) fn release_review_hits_runtime_floor(
     point: &AssessmentHistoryPoint,
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> bool {
-    release_review_runtime_floor_hits(point, thresholds)
-        .is_some_and(|hits| hits.prepare || hits.hedge || hits.defend)
+    domain_actionable_runtime_floor_reached(point, actionable_gate_thresholds(thresholds))
 }
 
 pub(super) fn release_review_runtime_floor_hits(
     point: &AssessmentHistoryPoint,
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> Option<ReleaseReviewRuntimeFloorHits> {
-    let thresholds = thresholds?;
-    Some(ReleaseReviewRuntimeFloorHits {
-        prepare: point.p_60d >= thresholds.prepare_p60d,
-        hedge: point.p_20d >= thresholds.hedge_p20d,
-        defend: point.p_5d >= thresholds.defend_p5d,
-    })
+    domain_actionable_runtime_floor_hits(point, actionable_gate_thresholds(thresholds))
 }
 
 pub(super) fn release_review_is_weak_defend_only_runtime_floor(
     point: &AssessmentHistoryPoint,
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> bool {
-    release_review_runtime_floor_hits(point, thresholds).is_some_and(|hits| {
-        hits.defend
-            && !hits.hedge
-            && !hits.prepare
-            && matches!(point.posture, DecisionPosture::Normal)
-            && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
-            && point.posture_trigger_codes.is_empty()
-    })
+    domain_weak_defend_only_runtime_floor(point, actionable_gate_thresholds(thresholds))
 }
 
 pub(super) fn release_review_uses_transitional_actionable_bridge(
@@ -154,50 +114,13 @@ pub(super) fn release_review_uses_transitional_actionable_bridge(
 pub(super) fn release_review_strict_prepare_p20d_threshold(
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> f64 {
-    thresholds
-        .map(|thresholds| {
-            (thresholds.external_prepare_p20d * STRICT_PREPARE_P20D_THRESHOLD_RATIO).clamp(
-                STRICT_PREPARE_P20D_THRESHOLD_MIN,
-                LEGACY_STRICT_PREPARE_P20D_THRESHOLD,
-            )
-        })
-        .unwrap_or(LEGACY_STRICT_PREPARE_P20D_THRESHOLD)
+    domain_strict_prepare_p20d_threshold(actionable_gate_thresholds(thresholds))
 }
 
 pub(super) fn release_review_strict_prepare_p60d_threshold(
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> f64 {
-    thresholds
-        .map(|thresholds| {
-            (thresholds.prepare_p60d + STRICT_PREPARE_P60D_THRESHOLD_BUFFER)
-                .max(thresholds.prepare_p60d * STRICT_PREPARE_P60D_THRESHOLD_LIFT)
-                .clamp(
-                    STRICT_PREPARE_P60D_THRESHOLD_MIN,
-                    LEGACY_STRICT_PREPARE_P60D_THRESHOLD,
-                )
-        })
-        .unwrap_or(LEGACY_STRICT_PREPARE_P60D_THRESHOLD)
-}
-
-fn release_review_strict_prepare_plateau_p20d_threshold(
-    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
-) -> f64 {
-    thresholds
-        .map(|thresholds| {
-            (thresholds.hedge_p20d + STRICT_PREPARE_PLATEAU_P20D_BUFFER).clamp(
-                STRICT_PREPARE_PLATEAU_P20D_MIN,
-                STRICT_PREPARE_PLATEAU_P20D_MAX,
-            )
-        })
-        .unwrap_or(STRICT_PREPARE_PLATEAU_P20D_MAX)
-}
-
-fn release_review_strict_prepare_relaxed_plateau_p20d_threshold(
-    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
-) -> f64 {
-    (release_review_strict_prepare_plateau_p20d_threshold(thresholds)
-        + STRICT_PREPARE_PLATEAU_RELAXED_P20D_BUFFER)
-        .max(STRICT_PREPARE_PLATEAU_RELAXED_P20D_FLOOR_MIN)
+    domain_strict_prepare_p60d_threshold(actionable_gate_thresholds(thresholds))
 }
 
 pub(super) fn release_review_is_actionable_warning_point(
@@ -205,173 +128,36 @@ pub(super) fn release_review_is_actionable_warning_point(
     use_transitional_bridge: bool,
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> bool {
-    let strict_prepare_p20d_threshold = release_review_strict_prepare_p20d_threshold(thresholds);
-    let strict_prepare_p60d_threshold = release_review_strict_prepare_p60d_threshold(thresholds);
-    let strict_prepare_plateau_p20d_threshold =
-        release_review_strict_prepare_plateau_p20d_threshold(thresholds);
-    let strict_prepare_relaxed_plateau_p20d_threshold =
-        release_review_strict_prepare_relaxed_plateau_p20d_threshold(thresholds);
-    let strict_short_horizon_signal =
-        matches!(
-            point.posture,
-            DecisionPosture::Hedge | DecisionPosture::Defend
-        ) || (matches!(point.time_to_risk_bucket, TimeToRiskBucket::Now)
-            && point.overall_score >= 60.0
-            && point.p_5d >= 0.18)
-            || (matches!(point.time_to_risk_bucket, TimeToRiskBucket::Weeks)
-                && point.overall_score >= 58.0
-                && point.p_20d >= 0.25
-                && point.external_shock_score >= 44.0);
-
-    let high_probability_prepare_signal = matches!(point.posture, DecisionPosture::Prepare)
-        && point.p_20d >= strict_prepare_p20d_threshold
-        && point.p_60d >= strict_prepare_p60d_threshold
-        && ((point.overall_score >= 60.0 && point.external_shock_score >= 46.0)
-            || (point.overall_score >= 53.0
-                && !matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
-                && release_review_has_strong_prepare_trigger_code(point)));
-    let probability_plateau_prepare_setup = matches!(point.posture, DecisionPosture::Prepare)
-        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
-        && release_review_has_probability_plateau_trigger_code(point);
-    let standard_probability_plateau_prepare_signal = probability_plateau_prepare_setup
-        && point.p_20d >= strict_prepare_plateau_p20d_threshold
-        && point.p_60d >= strict_prepare_p60d_threshold.max(STRICT_PREPARE_PLATEAU_P60D_THRESHOLD)
-        && point.overall_score >= STRICT_PREPARE_PLATEAU_OVERALL_FLOOR
-        && point.external_shock_score >= STRICT_PREPARE_PLATEAU_EXTERNAL_FLOOR;
-    let relaxed_probability_plateau_prepare_signal = probability_plateau_prepare_setup
-        && point.p_20d >= strict_prepare_relaxed_plateau_p20d_threshold
-        && point.p_60d >= STRICT_PREPARE_PLATEAU_RELAXED_P60D_THRESHOLD
-        && point.overall_score >= STRICT_PREPARE_PLATEAU_OVERALL_FLOOR
-        && point.external_shock_score >= STRICT_PREPARE_PLATEAU_RELAXED_EXTERNAL_FLOOR;
-    let weeks_trigger_dominant_signal = thresholds.is_some()
-        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Weeks)
-        && point.p_20d
-            >= strict_prepare_p20d_threshold.max(STRICT_WEEKS_TRIGGER_DOMINANT_P20D_FLOOR)
-        && point.p_60d < strict_prepare_p60d_threshold
-        && (point.p_20d - point.p_60d) >= STRICT_WEEKS_TRIGGER_DOMINANT_P20D_SPREAD_FLOOR
-        && point.overall_score >= STRICT_WEEKS_TRIGGER_DOMINANT_OVERALL_FLOOR
-        && point.external_shock_score >= STRICT_WEEKS_TRIGGER_DOMINANT_EXTERNAL_FLOOR;
-    let prepare_weeks_plateau_hysteresis_signal =
-        release_review_is_actionable_prepare_weeks_plateau_hysteresis_signal(point, thresholds);
-    let high_probability_months_signal =
-        matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
-            && point.overall_score >= 62.0
-            && point.p_20d >= strict_prepare_p20d_threshold
-            && point.p_60d >= strict_prepare_p60d_threshold
-            && point.external_shock_score >= 48.0;
-    let history_hysteresis_months_signal =
-        matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
-            && release_review_has_history_hysteresis_trigger_code(point)
-            && point.p_20d >= STRICT_HISTORY_HYSTERESIS_MONTHS_P20D_FLOOR
-            && point.p_60d
-                >= strict_prepare_p60d_threshold.max(STRICT_HISTORY_HYSTERESIS_MONTHS_P60D_FLOOR)
-            && (point.overall_score >= STRICT_HISTORY_HYSTERESIS_MONTHS_OVERALL_FLOOR
-                || point.external_shock_score >= STRICT_HISTORY_HYSTERESIS_MONTHS_EXTERNAL_FLOOR);
-    let history_hysteresis_months_structural_carry_signal = thresholds.is_some()
-        && matches!(point.posture, DecisionPosture::Prepare)
-        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
-        && release_review_has_history_hysteresis_trigger_code(point)
-        && point.p_20d >= STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P20D_FLOOR
-        && point.p_60d
-            >= strict_prepare_p60d_threshold
-                .max(STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P60D_FLOOR)
-        && point.overall_score >= STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_OVERALL_FLOOR
-        && point.external_shock_score
-            >= STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_EXTERNAL_FLOOR;
-
-    let prepare_bridge_signal = use_transitional_bridge
-        && matches!(point.posture, DecisionPosture::Prepare)
-        && point.overall_score >= 58.0
-        && point.external_shock_score >= 46.0;
-    let months_bridge_signal = use_transitional_bridge
-        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
-        && point.overall_score >= 58.0
-        && point.external_shock_score >= 42.0;
-
-    strict_short_horizon_signal
-        || high_probability_prepare_signal
-        || standard_probability_plateau_prepare_signal
-        || relaxed_probability_plateau_prepare_signal
-        || weeks_trigger_dominant_signal
-        || prepare_weeks_plateau_hysteresis_signal
-        || high_probability_months_signal
-        || history_hysteresis_months_signal
-        || history_hysteresis_months_structural_carry_signal
-        || prepare_bridge_signal
-        || months_bridge_signal
+    domain_actionable_warning_point(
+        point,
+        use_transitional_bridge,
+        actionable_gate_thresholds(thresholds),
+    )
 }
 
 pub(super) fn release_review_has_prepare_weeks_score_confirmation_gap(
     point: &AssessmentHistoryPoint,
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> bool {
-    release_review_has_prepare_weeks_score_confirmation_setup(point)
-        && point.p_20d >= release_review_strict_prepare_p20d_threshold(thresholds)
-        && point.p_60d >= release_review_strict_prepare_p60d_threshold(thresholds)
-        && !release_review_is_actionable_prepare_weeks_plateau_hysteresis_signal(point, thresholds)
-        && point.overall_score < 53.0
-}
-
-fn release_review_has_prepare_weeks_score_confirmation_setup(
-    point: &AssessmentHistoryPoint,
-) -> bool {
-    matches!(point.posture, DecisionPosture::Prepare)
-        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Weeks)
-        && (release_review_has_probability_plateau_trigger_code(point)
-            || release_review_has_history_hysteresis_trigger_code(point))
-}
-
-fn release_review_has_prepare_weeks_plateau_hysteresis_setup(
-    point: &AssessmentHistoryPoint,
-) -> bool {
-    matches!(point.posture, DecisionPosture::Prepare)
-        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Weeks)
-        && release_review_has_probability_plateau_trigger_code(point)
-        && release_review_has_history_hysteresis_trigger_code(point)
-}
-
-fn release_review_is_actionable_prepare_weeks_plateau_hysteresis_signal(
-    point: &AssessmentHistoryPoint,
-    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
-) -> bool {
-    release_review_has_prepare_weeks_plateau_hysteresis_setup(point)
-        && point.p_20d >= release_review_strict_prepare_relaxed_plateau_p20d_threshold(thresholds)
-        && point.p_60d >= STRICT_PREPARE_PLATEAU_RELAXED_P60D_THRESHOLD
-        && point.overall_score >= STRICT_PREPARE_WEEKS_TRIGGER_OVERALL_FLOOR
-        && point.external_shock_score >= STRICT_PREPARE_WEEKS_TRIGGER_EXTERNAL_FLOOR
+    domain_actionable_prepare_weeks_score_confirmation_gap(
+        point,
+        actionable_gate_thresholds(thresholds),
+    )
 }
 
 pub(super) fn release_review_has_strong_prepare_trigger_code(
     point: &AssessmentHistoryPoint,
 ) -> bool {
-    point.posture_trigger_codes.iter().any(|code| {
-        matches!(
-            code.as_str(),
-            "prepare_p60d_structural"
-                | "prepare_structural_downgrade"
-                | "prepare_carry_structural"
-                | "prepare_external_structural"
-                | "prepare_continuity_bridge"
-                | "prepare_history_hysteresis"
-                | "prepare_probability_plateau"
-        )
+    domain_strong_prepare_trigger_code(point)
+}
+
+pub(super) fn actionable_gate_thresholds(
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
+) -> Option<ActionableGateThresholds> {
+    thresholds.map(|thresholds| ActionableGateThresholds {
+        prepare_p60d: thresholds.prepare_p60d,
+        hedge_p20d: thresholds.hedge_p20d,
+        defend_p5d: thresholds.defend_p5d,
+        external_prepare_p20d: thresholds.external_prepare_p20d,
     })
-}
-
-pub(super) fn release_review_has_probability_plateau_trigger_code(
-    point: &AssessmentHistoryPoint,
-) -> bool {
-    point
-        .posture_trigger_codes
-        .iter()
-        .any(|code| code == "prepare_probability_plateau")
-}
-
-pub(super) fn release_review_has_history_hysteresis_trigger_code(
-    point: &AssessmentHistoryPoint,
-) -> bool {
-    point
-        .posture_trigger_codes
-        .iter()
-        .any(|code| code == "prepare_history_hysteresis")
 }
