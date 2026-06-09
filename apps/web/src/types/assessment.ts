@@ -176,6 +176,25 @@ export interface KeyIndicatorStatus {
   stale_threshold_days: number;
   status: FreshnessStatus;
   note: string;
+  lineage?: KeyIndicatorLineage | null;
+}
+
+export type KeyIndicatorLineageEvidenceLevel =
+  | "run_raw_observation"
+  | "raw_observation"
+  | "observation_only"
+  | "missing";
+
+export interface KeyIndicatorLineage {
+  evidence_level: KeyIndicatorLineageEvidenceLevel;
+  note: string;
+  raw_payload_id: string | null;
+  run_id: string | null;
+  run_status: string | null;
+  fetched_at: string | null;
+  records_written: number | null;
+  response_hash: string | null;
+  raw_file_path: string | null;
 }
 
 export interface EventSignalSummary {

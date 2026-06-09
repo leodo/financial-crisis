@@ -815,6 +815,10 @@
 - 后续约束：
   - 不允许新增抓取路径只写 `raw_responses` 或 watermark 而不写 `ingest_runs`；
   - 页面数据可信度若要回答“这条数据从哪来”，优先从 run/raw/observation 三层链路取证，而不是只看最新观测值。
+- [x] 已把关键指标 lineage 接入 `/api/assessment/current` 与决策面板：
+  - `KeyIndicatorStatus.lineage` 会按 `run_raw_observation / raw_observation / observation_only / missing` 显式区分证据层级；
+  - 决策面板“关键指标是否最新”现在会直接显示 `run+raw / raw / 仅观测` 追溯标签、抓取时间和写入记录数；
+  - 当前本地库实测：VIX 已有完整 `run + raw + observation` 链路，USDJPY / BOJ 利率 / EFFR 等历史 raw 记录会诚实显示为 `raw_observation`，不再伪装成完整 run 证据。
 
 ### 6.5 2026-06-01 Episode-native 第一阶段代码已落地
 

@@ -96,9 +96,8 @@ fn summarize_prediction_snapshot_audit(
     } else if history_provenance.raw_observation_points > 0
         || history_provenance.reused_feature_snapshot_points > 0
     {
-        format!(
-            "当前默认历史已不再依赖旧 snapshot bridge，但仍存在 raw observation / reused PIT 过渡点；这张表只保留每天运行时落库的概率截面，用于审计降级、回退和桥接残留，不代表 formal history 主证据链。"
-        )
+        "当前默认历史已不再依赖旧 snapshot bridge，但仍存在 raw observation / reused PIT 过渡点；这张表只保留每天运行时落库的概率截面，用于审计降级、回退和桥接残留，不代表 formal history 主证据链。"
+            .to_string()
     } else {
         "当前默认历史已经由 replay / PIT provenance 支撑；这张表仅用于查看每天运行时落库的概率截面，以及核对旧 bridge 是否还在残留。"
             .to_string()

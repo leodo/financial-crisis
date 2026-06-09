@@ -100,6 +100,20 @@ pub struct IngestionRunRecord {
     pub error_message: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ObservationLineageRecord {
+    pub indicator_id: String,
+    pub entity_id: String,
+    pub as_of_date: NaiveDate,
+    pub raw_payload_id: Option<String>,
+    pub run_id: Option<String>,
+    pub run_status: Option<String>,
+    pub fetched_at: Option<DateTime<Utc>>,
+    pub records_written: Option<i64>,
+    pub response_hash: Option<String>,
+    pub raw_file_path: Option<String>,
+}
+
 impl SqliteStore {
     pub async fn connect(database_path: impl AsRef<Path>) -> Result<Self, StorageError> {
         let database_path = database_path.as_ref();

@@ -14,6 +14,7 @@ export interface DecisionKeyIndicatorRow {
   id: string;
   title: string;
   detail: string;
+  meta?: string;
   note: string;
 }
 

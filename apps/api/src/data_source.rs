@@ -20,6 +20,8 @@ use crate::{
     AppData,
 };
 
+mod lineage;
+
 const EVENT_LOOKBACK_DAYS: i64 = 30;
 const SCENARIO_BACKTEST_REPLAY_MAX_STALENESS_DAYS: i64 = 7;
 const SCENARIO_BACKTEST_REPLAY_SCAN_LIMIT: usize = 512;
@@ -299,7 +301,7 @@ async fn load_sqlite_app_data(
             serving_model.release.manifest.release_id.clone(),
         ))
     });
-    let built: BuiltAppData = build_app_data_from_inputs(
+    let mut built: BuiltAppData = build_app_data_from_inputs(
         DataMode::Sqlite,
         indicators,
         observations,
@@ -310,6 +312,12 @@ async fn load_sqlite_app_data(
         scenario_backtest_context,
         user_preferences,
     );
+    lineage::enrich_sqlite_key_indicator_lineage(
+        &store,
+        as_of_date,
+        &mut built.app_data.assessment,
+    )
+    .await;
     if let Some((market_scope, release_id)) = bundle_backed_runtime_release {
         if let Err(error) = store
             .delete_prediction_snapshot_history_for_release(&market_scope, &release_id, as_of_date)

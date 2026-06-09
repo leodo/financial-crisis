@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-01
+最后更新：2026-06-09
 
 ## 1. 目标
 
@@ -469,12 +469,28 @@ lag_days
 stale_threshold_days
 status
 note
+lineage
 ```
 
 说明：
 
 - 关键指标 freshness 至少覆盖 `USDJPY`、日本隔夜拆借利率、`EFFR`、`VIX`
 - 用于解释“为什么页面现在显示的值可能与真实市场有偏差”
+- SQLite 模式下，`lineage` 用于解释“这条值从哪来”，优先展示 `ingest_runs -> raw_responses -> ts_indicator_observations` 三层证据；旧数据若缺少 run 记录，也要明确降级为 `raw_observation` 或 `observation_only`，不能伪装成完整抓取链路。
+
+`lineage` 字段：
+
+```text
+evidence_level        // run_raw_observation | raw_observation | observation_only | missing
+note
+raw_payload_id
+run_id
+run_status
+fetched_at
+records_written
+response_hash
+raw_file_path
+```
 
 ### 5.11 EventAssessment
 

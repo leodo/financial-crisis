@@ -187,10 +187,7 @@ pub(crate) async fn backfill_gdelt_with_options(options: BackfillOptions) -> Res
         }
     };
 
-    println!(
-        "GDELT backfill completed: {} observations, {} alerts",
-        observation_count, alert_count
-    );
+    println!("GDELT backfill completed: {observation_count} observations, {alert_count} alerts");
     if let Some(latest_date) = latest_date {
         tracing::info!(%latest_date, "GDELT watermark advanced");
     }
@@ -339,8 +336,7 @@ pub(crate) async fn backfill_sec_edgar_with_options(options: BackfillOptions) ->
         };
 
     println!(
-        "SEC EDGAR backfill completed: {} payloads, {} filings, {} observations, {} alerts",
-        payload_count, filing_count, observation_count, alert_count
+        "SEC EDGAR backfill completed: {payload_count} payloads, {filing_count} filings, {observation_count} observations, {alert_count} alerts"
     );
     if let Some(latest_filing_date) = latest_filing_date {
         tracing::info!(%latest_filing_date, "SEC EDGAR watermark advanced");

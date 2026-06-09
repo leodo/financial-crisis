@@ -158,6 +158,7 @@ export default function DecisionView({
                 id: item.id,
                 title: item.title,
                 detail: item.detail,
+                meta: item.meta,
                 note: item.note
               }))}
             />

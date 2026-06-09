@@ -257,6 +257,30 @@ pub struct KeyIndicatorStatus {
     pub stale_threshold_days: i64,
     pub status: FreshnessStatus,
     pub note: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lineage: Option<KeyIndicatorLineage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyIndicatorLineage {
+    pub evidence_level: KeyIndicatorLineageEvidenceLevel,
+    pub note: String,
+    pub raw_payload_id: Option<String>,
+    pub run_id: Option<String>,
+    pub run_status: Option<String>,
+    pub fetched_at: Option<DateTime<Utc>>,
+    pub records_written: Option<i64>,
+    pub response_hash: Option<String>,
+    pub raw_file_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyIndicatorLineageEvidenceLevel {
+    RunRawObservation,
+    RawObservation,
+    ObservationOnly,
+    Missing,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

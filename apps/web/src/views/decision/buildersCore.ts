@@ -301,8 +301,64 @@ export function buildKeyIndicatorRows(
         ? ` · ${formatLagSummary(item.lag_days, item.lag_business_days)}`
         : ""
     }`,
-    note: humanizeNarrativeCopy(item.note)
+    meta: keyIndicatorLineageMeta(item.lineage),
+    note: keyIndicatorLineageNote(item.note, item.lineage)
   }));
+}
+
+function keyIndicatorLineageMeta(
+  lineage: AssessmentSnapshot["key_indicators"][number]["lineage"]
+): string | undefined {
+  if (!lineage) {
+    return undefined;
+  }
+  const rawRef = lineage.raw_payload_id ? `raw ${lineage.raw_payload_id.slice(0, 8)}` : undefined;
+  const runRef = lineage.run_status ? `run ${runStatusLabel(lineage.run_status)}` : undefined;
+  const evidenceLabel = lineageEvidenceLabel(lineage.evidence_level);
+  return [evidenceLabel, runRef, rawRef].filter(Boolean).join(" · ");
+}
+
+function keyIndicatorLineageNote(
+  note: string,
+  lineage: AssessmentSnapshot["key_indicators"][number]["lineage"]
+): string {
+  const baseNote = humanizeNarrativeCopy(note);
+  if (!lineage) {
+    return baseNote;
+  }
+  const fetchedAt = lineage.fetched_at ? `抓取时间 ${formatDateTime(lineage.fetched_at)}` : null;
+  const recordsWritten =
+    lineage.records_written !== null ? `写入 ${lineage.records_written} 条` : null;
+  return [baseNote, `追溯：${lineage.note}`, fetchedAt, recordsWritten]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function lineageEvidenceLabel(
+  evidenceLevel: NonNullable<
+    AssessmentSnapshot["key_indicators"][number]["lineage"]
+  >["evidence_level"]
+) {
+  const labels: Record<
+    NonNullable<AssessmentSnapshot["key_indicators"][number]["lineage"]>["evidence_level"],
+    string
+  > = {
+    run_raw_observation: "run+raw",
+    raw_observation: "raw",
+    observation_only: "仅观测",
+    missing: "无追溯"
+  };
+  return labels[evidenceLevel];
+}
+
+function runStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    success: "成功",
+    failed: "失败",
+    running: "运行中",
+    skipped: "跳过"
+  };
+  return labels[status] ?? status;
 }
 
 export function buildSignalLayerRows(

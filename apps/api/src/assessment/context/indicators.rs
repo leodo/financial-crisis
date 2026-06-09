@@ -114,6 +114,7 @@ pub(in super::super) fn build_key_indicator_statuses(
                 stale_threshold_days,
                 status,
                 note,
+                lineage: None,
             }
         },
     )
