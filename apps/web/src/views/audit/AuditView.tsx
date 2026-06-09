@@ -39,6 +39,10 @@ export default function AuditView({
     latestReleaseReviewCoverageRows,
     latestReleaseReviewActionRows,
     latestReleaseReviewAttributionRows,
+    latestScenarioPackAudit,
+    latestScenarioPackAuditSource,
+    latestScenarioPackAuditMetrics,
+    latestScenarioPackAuditRows,
     releaseRows,
     snapshotRows
   } = useAuditViewModel({
@@ -192,6 +196,38 @@ export default function AuditView({
               </>
             ) : (
               <RuleBox label="当前状态">{auditContent.releaseReviewEmpty}</RuleBox>
+            )}
+          </section>
+
+          <section className="surface">
+            <SurfaceHeader title="历史场景包审计" icon={ClipboardCheck} />
+            <p className="legend-note">{auditContent.scenarioPackSummary}</p>
+            {latestScenarioPackAudit ? (
+              <>
+                <MetricGrid items={latestScenarioPackAuditMetrics} className="audit-review-metrics" />
+                <RuleBox label="工件来源">
+                  <span title={latestScenarioPackAuditSource?.hint}>
+                    {latestScenarioPackAuditSource?.value ?? "未登记"}
+                  </span>
+                </RuleBox>
+                <ResponsiveTable
+                  className="wide-table xwide-table"
+                  columns={["场景", "当前判读", "结果 / 提前量", "覆盖 / 数据集", "结论"]}
+                  note={auditContent.scenarioPackTableNote}
+                >
+                  {latestScenarioPackAuditRows.map((row) => (
+                    <tr key={row.id}>
+                      <StackedTableCell title={row.scenarioLabel} details={row.scenarioDetails} />
+                      <StackedTableCell title={row.blockerSummary} details={row.blockerDetails} />
+                      <StackedTableCell title={row.timingSummary} details={row.timingDetails} />
+                      <StackedTableCell title={row.coverageSummary} details={row.coverageDetails} />
+                      <StackedTableCell title={row.takeaway} details={row.gapSummary} />
+                    </tr>
+                  ))}
+                </ResponsiveTable>
+              </>
+            ) : (
+              <RuleBox label="当前状态">{auditContent.scenarioPackEmpty}</RuleBox>
             )}
           </section>
 

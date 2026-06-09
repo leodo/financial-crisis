@@ -168,6 +168,12 @@ async fn research_audit_endpoint_returns_runtime_audit_shape() {
                 && json["latest_release_review"]["historical_audit_actions"].is_array()
                 && json["latest_release_review"]["historical_audit_attribution"].is_array())
     );
+    assert!(
+        json["latest_scenario_pack_audit"].is_null()
+            || (json["latest_scenario_pack_audit"]["generated_at"].is_string()
+                && json["latest_scenario_pack_audit"]["blocker_counts"].is_array()
+                && json["latest_scenario_pack_audit"]["scenario_summaries"].is_array())
+    );
     assert!(json["releases"].is_array());
     assert!(json["replay_runs"].is_array());
     assert!(json["snapshots"].is_array());

@@ -238,6 +238,7 @@
     `1987 / 2000 -> stable_pass`，
     `1990-1993 -> stable_pass_with_margin_erosion`。
     这说明下一轮优先级可以更明确地落回 continuity、共享漏报和共享无信号，而不是继续手工解释每个场景。
+  - 2026-06-09：`/api/research/audit` 与前端“发布审计”页现已继续接入 `latest_scenario_pack_audit`；现在不只 CLI/JSON 工件可读，网页里也能直接看到固定美国历史场景包的 blocker 分布、逐场景 lead time、dataset 选择、免费主源与结论摘要。
 - [x] 把方法页和面板解释继续补强，让用户能看懂“危机先验”和“动作概率”不是同一个东西
 
 补充观察：

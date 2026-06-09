@@ -164,6 +164,45 @@ export function releaseReviewScenarioCoveragePitLabel(mode: string): string {
   return RELEASE_REVIEW_SCENARIO_COVERAGE_PIT_LABELS[mode] ?? mode;
 }
 
+const SCENARIO_PACK_BLOCKER_LABELS: Record<string, string> = {
+  stable_pass: "稳定通过",
+  stable_pass_with_margin_erosion: "通过但边际变弱",
+  shared_missed_signal: "主线共享漏报",
+  shared_no_signal: "主线共享无信号",
+  posture_continuity: "执行连续性问题",
+  review_gate_gap: "严格评审门槛映射",
+  residual_review_l3: "残余 L3 转换问题",
+  candidate_regression: "候选版退化",
+  candidate_improvement: "候选版改善",
+  candidate_probability_continuity_regression: "候选版连续命中退化",
+  candidate_probability_level_drop: "候选版概率层级下沉",
+  dataset_coverage_gap: "数据覆盖缺口",
+  no_review_focus_signal: "待进一步人工复核"
+};
+
+export function scenarioPackBlockerLabel(key: string): string {
+  return SCENARIO_PACK_BLOCKER_LABELS[key] ?? key;
+}
+
+const SCENARIO_PACK_OUTCOME_LABELS: Record<string, string> = {
+  timely_to_timely: "两版都能及时预警",
+  missed_to_missed: "两版都未形成有效预警",
+  late_to_late: "两版都偏晚",
+  missed_to_timely: "候选版修复为及时预警",
+  missed_to_late: "候选版改善但仍偏晚",
+  timely_to_missed: "候选版从及时退化为漏报",
+  timely_to_late: "候选版从及时退化为偏晚",
+  late_to_missed: "候选版进一步退化为漏报",
+  late_to_timely: "候选版从偏晚修复为及时"
+};
+
+export function scenarioPackOutcomeLabel(outcome: string | null): string {
+  if (!outcome) {
+    return "未登记";
+  }
+  return SCENARIO_PACK_OUTCOME_LABELS[outcome] ?? outcome;
+}
+
 const HISTORY_EVIDENCE_TIER_LABELS: Record<string, string> = {
   pit_feature_backed: "PIT 特征快照支撑",
   pit_feature_reuse_transitional: "PIT 沿用旧快照",

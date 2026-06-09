@@ -33,6 +33,7 @@ struct ResearchAuditResponse {
     latest_snapshot_date: Option<NaiveDate>,
     latest_replay_run_id: Option<String>,
     latest_release_review: Option<ReleaseReviewArtifactSummary>,
+    latest_scenario_pack_audit: Option<ScenarioPackAuditArtifactSummary>,
     note: String,
     releases: Vec<fc_domain::ModelReleaseRecord>,
     replay_runs: Vec<fc_domain::HistoricalReplayRunRecord>,
@@ -145,6 +146,103 @@ struct ReleaseReviewArtifactSummary {
     scenario_coverages: Vec<ReleaseReviewScenarioCoverageSummary>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct ScenarioPackAuditBlockerCountSummary {
+    key: String,
+    count: usize,
+    #[serde(default)]
+    scenarios: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct ScenarioPackAuditScenarioSummary {
+    scenario_id: String,
+    scenario_label: String,
+    family: String,
+    training_role: String,
+    recommended_role: String,
+    coverage_grade: String,
+    point_in_time_mode: String,
+    current_status: String,
+    protected_window: bool,
+    #[serde(default)]
+    free_sources: Vec<String>,
+    #[serde(default)]
+    blocking_gaps: Vec<String>,
+    outcome: Option<String>,
+    signal_source: Option<String>,
+    baseline_lead_time_days: Option<i64>,
+    candidate_lead_time_days: Option<i64>,
+    baseline_actionable_lead_time_days: Option<i64>,
+    candidate_actionable_lead_time_days: Option<i64>,
+    primary_workstream: Option<String>,
+    suggested_review: Option<String>,
+    candidate_primary_failure_mode: Option<String>,
+    compare_status: String,
+    compare_dataset_key: Option<String>,
+    #[serde(default)]
+    attempted_datasets: Vec<String>,
+    row_count: usize,
+    positive_window_retention_20d: Option<f64>,
+    overall_avg_delta_p_20d: Option<f64>,
+    blocker_class: String,
+    takeaway: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct ScenarioPackAuditArtifactWire {
+    generated_at: String,
+    baseline_release_id: String,
+    candidate_release_id: String,
+    history_mode: String,
+    market_scope: String,
+    compare_ok_count: usize,
+    compare_missing_count: usize,
+    #[serde(default)]
+    blocker_counts: Vec<ScenarioPackAuditBlockerCountSummary>,
+    #[serde(default)]
+    scenario_summaries: Vec<ScenarioPackAuditScenarioSummary>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ScenarioPackAuditArtifactSummary {
+    generated_at: String,
+    source: String,
+    baseline_release_id: String,
+    candidate_release_id: String,
+    history_mode: String,
+    market_scope: String,
+    compare_ok_count: usize,
+    compare_missing_count: usize,
+    blocker_counts: Vec<ScenarioPackAuditBlockerCountSummary>,
+    scenario_summaries: Vec<ScenarioPackAuditScenarioSummary>,
+}
+
+fn decode_json_artifact(bytes: Vec<u8>) -> Option<String> {
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        return String::from_utf8(bytes[3..].to_vec()).ok();
+    }
+    if bytes.starts_with(&[0xFF, 0xFE]) {
+        let utf16: Vec<u16> = bytes[2..]
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect();
+        return String::from_utf16(&utf16).ok();
+    }
+    if bytes.starts_with(&[0xFE, 0xFF]) {
+        let utf16: Vec<u16> = bytes[2..]
+            .chunks_exact(2)
+            .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+            .collect();
+        return String::from_utf16(&utf16).ok();
+    }
+    String::from_utf8(bytes).ok()
+}
+
+fn read_json_artifact(path: &FsPath) -> Option<String> {
+    decode_json_artifact(fs::read(path).ok()?)
+}
+
 fn load_latest_release_review_summary(
     market_scope: &str,
     active_release_id: Option<&str>,
@@ -167,7 +265,7 @@ fn load_latest_release_review_summary(
             if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
                 continue;
             }
-            let Ok(body) = fs::read_to_string(&path) else {
+            let Some(body) = read_json_artifact(&path) else {
                 continue;
             };
             let Ok(wire) = serde_json::from_str::<ReleaseReviewArtifactWire>(&body) else {
@@ -212,6 +310,73 @@ fn load_latest_release_review_summary(
             .then_with(|| right.2.reviewed_at.cmp(&left.2.reviewed_at))
     });
     candidates.into_iter().next().map(|(_, _, summary)| summary)
+}
+
+fn load_latest_scenario_pack_audit_summary(
+    market_scope: &str,
+    release_review: Option<&ReleaseReviewArtifactSummary>,
+) -> Option<ScenarioPackAuditArtifactSummary> {
+    let release_review = release_review?;
+    let mut candidates = Vec::<(
+        Option<DateTime<FixedOffset>>,
+        ScenarioPackAuditArtifactSummary,
+    )>::new();
+    for directory in ["artifacts/research/spa"] {
+        let path = FsPath::new(directory);
+        let Ok(entries) = fs::read_dir(path) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(body) = read_json_artifact(&path) else {
+                continue;
+            };
+            let wire = match serde_json::from_str::<ScenarioPackAuditArtifactWire>(&body) {
+                Ok(wire) => wire,
+                Err(error) => {
+                    tracing::warn!(
+                        path = %path.to_string_lossy(),
+                        %error,
+                        "failed to parse scenario-pack audit artifact"
+                    );
+                    continue;
+                }
+            };
+            if wire.market_scope != market_scope
+                || wire.baseline_release_id != release_review.baseline_release_id
+                || wire.candidate_release_id != release_review.candidate_release_id
+                || wire.history_mode != release_review.history_mode
+            {
+                continue;
+            }
+            candidates.push((
+                DateTime::parse_from_rfc3339(&wire.generated_at).ok(),
+                ScenarioPackAuditArtifactSummary {
+                    generated_at: wire.generated_at,
+                    source: path.to_string_lossy().into_owned(),
+                    baseline_release_id: wire.baseline_release_id,
+                    candidate_release_id: wire.candidate_release_id,
+                    history_mode: wire.history_mode,
+                    market_scope: wire.market_scope,
+                    compare_ok_count: wire.compare_ok_count,
+                    compare_missing_count: wire.compare_missing_count,
+                    blocker_counts: wire.blocker_counts,
+                    scenario_summaries: wire.scenario_summaries,
+                },
+            ));
+        }
+    }
+
+    candidates.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| right.1.generated_at.cmp(&left.1.generated_at))
+    });
+    candidates.into_iter().next().map(|(_, summary)| summary)
 }
 
 pub(crate) async fn research_audit(
@@ -265,6 +430,8 @@ pub(crate) async fn research_audit(
                 &market_scope,
                 data.assessment.method.release_id.as_deref(),
             );
+            let latest_scenario_pack_audit =
+                load_latest_scenario_pack_audit_summary(&market_scope, latest_release_review.as_ref());
             ResearchAuditResponse {
                 supported: true,
                 storage_mode: "sqlite".to_string(),
@@ -276,7 +443,8 @@ pub(crate) async fn research_audit(
                 latest_snapshot_date,
                 latest_replay_run_id,
                 latest_release_review,
-                note: "当前页面展示的是 release registry、historical replay run / point、prediction snapshot，以及最近一次 release review 的落库审计。若 runtime probability mode 与 release manifest 不一致，说明线上已自动降级回 heuristic。".to_string(),
+                latest_scenario_pack_audit,
+                note: "当前页面展示的是 release registry、historical replay run / point、prediction snapshot、最近一次 release review，以及对应的历史场景包审计。若 runtime probability mode 与 release manifest 不一致，说明线上已自动降级回 heuristic。".to_string(),
                 releases,
                 replay_runs,
                 snapshots,
@@ -293,6 +461,7 @@ pub(crate) async fn research_audit(
             latest_snapshot_date: None,
             latest_replay_run_id: None,
             latest_release_review: None,
+            latest_scenario_pack_audit: None,
             note: "当前运行在 demo 模式，release registry、historical replay、prediction snapshot 审计不可用。切到 SQLite 后该页面会显示真实审计数据。".to_string(),
             releases: Vec::new(),
             replay_runs: Vec::new(),
@@ -309,6 +478,7 @@ pub(crate) async fn research_audit(
             latest_snapshot_date: None,
             latest_replay_run_id: None,
             latest_release_review: None,
+            latest_scenario_pack_audit: None,
             note: "当前 Postgres 路径尚未接入本地 release registry、historical replay 与 prediction snapshot 审计，建议先通过 SQLite 研究链路完成模型训练、发布与复盘。".to_string(),
             releases: Vec::new(),
             replay_runs: Vec::new(),
@@ -321,7 +491,7 @@ pub(crate) async fn research_audit(
 
 #[cfg(test)]
 mod tests {
-    use super::ReleaseReviewArtifactWire;
+    use super::{decode_json_artifact, ReleaseReviewArtifactWire, ScenarioPackAuditArtifactWire};
 
     #[test]
     fn release_review_wire_allows_missing_optional_audit_fields() {
@@ -350,5 +520,42 @@ mod tests {
                 .covered_backtest_scenario_count,
             0
         );
+    }
+
+    #[test]
+    fn scenario_pack_wire_allows_missing_optional_arrays() {
+        let body = r#"
+        {
+          "generated_at": "2026-06-09T00:00:00+00:00",
+          "baseline_release_id": "baseline_release",
+          "candidate_release_id": "candidate_release",
+          "history_mode": "default",
+          "market_scope": "financial_system",
+          "compare_ok_count": 0,
+          "compare_missing_count": 0
+        }
+        "#;
+
+        let wire: ScenarioPackAuditArtifactWire =
+            serde_json::from_str(body).expect("wire should deserialize");
+        assert!(wire.blocker_counts.is_empty());
+        assert!(wire.scenario_summaries.is_empty());
+    }
+
+    #[test]
+    fn decode_json_artifact_accepts_utf8_bom() {
+        let bytes = b"\xEF\xBB\xBF{\"ok\":true}".to_vec();
+        let decoded = decode_json_artifact(bytes).expect("utf8 bom should decode");
+        assert_eq!(decoded, "{\"ok\":true}");
+    }
+
+    #[test]
+    fn decode_json_artifact_accepts_utf16le_bom() {
+        let bytes = vec![
+            0xFF, 0xFE, 0x7B, 0x00, 0x22, 0x00, 0x6F, 0x00, 0x6B, 0x00, 0x22, 0x00, 0x3A, 0x00,
+            0x74, 0x00, 0x72, 0x00, 0x75, 0x00, 0x65, 0x00, 0x7D, 0x00,
+        ];
+        let decoded = decode_json_artifact(bytes).expect("utf16le bom should decode");
+        assert_eq!(decoded, "{\"ok\":true}");
     }
 }

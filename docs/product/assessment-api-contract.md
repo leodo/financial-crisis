@@ -702,6 +702,7 @@ GET /api/research/audit
 - `latest_snapshot_date`
 - `latest_replay_run_id`
 - `latest_release_review`
+- `latest_scenario_pack_audit`
 - `note`
 - `releases[]`
 - `replay_runs[]`
@@ -714,3 +715,4 @@ GET /api/research/audit
 - 查看本地 release registry 中有哪些 candidate / approved / active 版本
 - 查看最近一条 replay run 是否和当前 runtime / active release 对得上
 - 查看 `prediction snapshots` 是否跟 active release 对齐
+- 查看最近一次 release review 对应的固定美国历史场景包结论，直接区分稳定通过、共享漏报、共享无信号、执行连续性问题与严格门槛映射问题

@@ -181,6 +181,56 @@ export interface ReleaseReviewArtifactSummary {
   scenario_coverages: ReleaseReviewScenarioCoverageSummary[];
 }
 
+export interface ScenarioPackAuditBlockerCountSummary {
+  key: string;
+  count: number;
+  scenarios: string[];
+}
+
+export interface ScenarioPackAuditScenarioSummary {
+  scenario_id: string;
+  scenario_label: string;
+  family: string;
+  training_role: string;
+  recommended_role: string;
+  coverage_grade: string;
+  point_in_time_mode: string;
+  current_status: string;
+  protected_window: boolean;
+  free_sources: string[];
+  blocking_gaps: string[];
+  outcome: string | null;
+  signal_source: string | null;
+  baseline_lead_time_days: number | null;
+  candidate_lead_time_days: number | null;
+  baseline_actionable_lead_time_days: number | null;
+  candidate_actionable_lead_time_days: number | null;
+  primary_workstream: string | null;
+  suggested_review: string | null;
+  candidate_primary_failure_mode: string | null;
+  compare_status: string;
+  compare_dataset_key: string | null;
+  attempted_datasets: string[];
+  row_count: number;
+  positive_window_retention_20d: number | null;
+  overall_avg_delta_p_20d: number | null;
+  blocker_class: string;
+  takeaway: string;
+}
+
+export interface ScenarioPackAuditArtifactSummary {
+  generated_at: string;
+  source: string;
+  baseline_release_id: string;
+  candidate_release_id: string;
+  history_mode: string;
+  market_scope: string;
+  compare_ok_count: number;
+  compare_missing_count: number;
+  blocker_counts: ScenarioPackAuditBlockerCountSummary[];
+  scenario_summaries: ScenarioPackAuditScenarioSummary[];
+}
+
 export interface ResearchAuditResponse {
   supported: boolean;
   storage_mode: string;
@@ -192,6 +242,7 @@ export interface ResearchAuditResponse {
   latest_snapshot_date: string | null;
   latest_replay_run_id: string | null;
   latest_release_review: ReleaseReviewArtifactSummary | null;
+  latest_scenario_pack_audit: ScenarioPackAuditArtifactSummary | null;
   note: string;
   releases: ModelReleaseRecord[];
   replay_runs: HistoricalReplayRunRecord[];

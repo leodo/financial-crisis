@@ -23,6 +23,8 @@ import {
   releaseManifestStatusLabel,
   releaseIdLabel,
   releaseServingStatusLabel,
+  scenarioPackBlockerLabel,
+  scenarioPackOutcomeLabel,
   timeBucketLabel
 } from "../../format";
 import type {
@@ -350,6 +352,114 @@ export function useAuditViewModel({
         };
       }) ?? [];
 
+  const latestScenarioPackAudit = audit.latest_scenario_pack_audit;
+  const latestScenarioPackAuditSource = latestScenarioPackAudit
+    ? compactFileReference(latestScenarioPackAudit.source)
+    : null;
+  const scenarioPackBlockerCount = (key: string) =>
+    latestScenarioPackAudit?.blocker_counts.find((row) => row.key === key)?.count ?? 0;
+  const latestScenarioPackAuditMetrics: MetricItem[] = latestScenarioPackAudit
+    ? [
+        {
+          label: "场景 compare 覆盖",
+          value: `${latestScenarioPackAudit.compare_ok_count}/${latestScenarioPackAudit.scenario_summaries.length}`
+        },
+        {
+          label: "稳定通过",
+          value: `${scenarioPackBlockerCount("stable_pass")}`
+        },
+        {
+          label: "通过但边际变弱",
+          value: `${scenarioPackBlockerCount("stable_pass_with_margin_erosion")}`
+        },
+        {
+          label: "共享漏报",
+          value: `${scenarioPackBlockerCount("shared_missed_signal")}`
+        },
+        {
+          label: "共享无信号",
+          value: `${scenarioPackBlockerCount("shared_no_signal")}`
+        },
+        {
+          label: "执行连续性问题",
+          value: `${scenarioPackBlockerCount("posture_continuity")}`
+        }
+      ]
+    : [];
+
+  const blockerPriority: Record<string, number> = {
+    candidate_regression: 0,
+    posture_continuity: 1,
+    review_gate_gap: 2,
+    residual_review_l3: 3,
+    stable_pass_with_margin_erosion: 4,
+    shared_missed_signal: 5,
+    shared_no_signal: 6,
+    stable_pass: 7,
+    candidate_improvement: 8
+  };
+
+  const latestScenarioPackAuditRows =
+    latestScenarioPackAudit?.scenario_summaries
+      .slice()
+      .sort((left, right) => {
+        return (
+          (blockerPriority[left.blocker_class] ?? 99) - (blockerPriority[right.blocker_class] ?? 99) ||
+          left.scenario_label.localeCompare(right.scenario_label, "zh-CN")
+        );
+      })
+      .map((row) => {
+        const timingSummary =
+          row.candidate_actionable_lead_time_days !== null
+            ? `候选动作提前 ${row.candidate_actionable_lead_time_days} 天`
+            : row.candidate_lead_time_days !== null
+              ? `候选 L2 提前 ${row.candidate_lead_time_days} 天`
+              : "当前没有有效 lead time";
+        const timingDetails = [
+          scenarioPackOutcomeLabel(row.outcome),
+          row.positive_window_retention_20d !== null
+            ? `20d 连续命中保留 ${formatPercent(row.positive_window_retention_20d)}`
+            : null,
+          row.overall_avg_delta_p_20d !== null
+            ? `20d 均值变化 ${formatPercent(row.overall_avg_delta_p_20d)}`
+            : null
+        ].filter((item): item is string => item !== null);
+        const scenarioTags = [
+          releaseReviewScenarioFamilyLabel(row.family),
+          releaseReviewScenarioTrainingRoleLabel(row.training_role),
+          row.protected_window ? "受保护窗口" : null
+        ].filter((item): item is string => item !== null);
+        const coverageDetails = [
+          row.current_status,
+          row.compare_dataset_key
+            ? `Dataset: ${row.compare_dataset_key}`
+            : row.attempted_datasets.length > 0
+              ? `Tried: ${row.attempted_datasets.join(" / ")}`
+              : null,
+          row.free_sources.length > 0 ? `免费主源: ${row.free_sources.join("、")}` : null
+        ].filter((item): item is string => item !== null);
+        const blockerDetails = [
+          row.primary_workstream ? releaseReviewWorkstreamLabel(row.primary_workstream) : null,
+          row.candidate_primary_failure_mode ?? null,
+          row.suggested_review ?? null
+        ].filter((item): item is string => item !== null);
+
+        return {
+          id: row.scenario_id,
+          scenarioLabel: row.scenario_label,
+          scenarioDetails: [row.scenario_id, ...scenarioTags],
+          blockerSummary: scenarioPackBlockerLabel(row.blocker_class),
+          blockerDetails,
+          timingSummary,
+          timingDetails,
+          coverageSummary: `${row.coverage_grade} / ${releaseReviewScenarioCoveragePitLabel(row.point_in_time_mode)}`,
+          coverageDetails,
+          takeaway: row.takeaway,
+          gapSummary:
+            row.blocking_gaps.length > 0 ? row.blocking_gaps.join("；") : "当前没有额外缺口。"
+        };
+      }) ?? [];
+
   return {
     auditNote: audit.note ? humanizeAuditNote(audit.note) : auditContent.noteSummary,
     runtimeMetrics,
@@ -370,6 +480,10 @@ export function useAuditViewModel({
     latestReleaseReviewCoverageRows,
     latestReleaseReviewActionRows,
     latestReleaseReviewAttributionRows,
+    latestScenarioPackAudit,
+    latestScenarioPackAuditSource,
+    latestScenarioPackAuditMetrics,
+    latestScenarioPackAuditRows,
     releaseRows,
     snapshotRows
   };
