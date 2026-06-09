@@ -4,7 +4,8 @@ import {
   formatProbabilityBasisPoints,
   formatProbabilityDecimal,
   formatPercentPrecise,
-  formatProbabilityPercentExact
+  formatProbabilityPercentExact,
+  formatSignedNumber
 } from "../../format";
 import type { AssessmentSnapshot, ProbabilityHorizonOverlayDiagnostics } from "../../types";
 import { RuleBox } from "../shared/panelHelpers";
@@ -25,7 +26,7 @@ function formatPercentagePointGap(value: number): string {
   return formatPercentPrecise(value).replace("%", " 个百分点");
 }
 
-function formatThresholdMultiple(value: number): string {
+export function formatThresholdMultiple(value: number): string {
   if (!Number.isFinite(value)) {
     return "—";
   }
@@ -120,6 +121,40 @@ function buildGateRows(diagnostic?: ProbabilityHorizonOverlayDiagnostics) {
   });
 }
 
+function featureLabel(featureName: string): string {
+  const exactLabels: Record<string, string> = {
+    us_usdjpy_level: "USDJPY",
+    us_usdjpy_change_20d: "USDJPY 20日变化",
+    us_curve_10y2y_level: "10Y-2Y 利差",
+    us_fed_funds_level: "联邦基金利率",
+    us_baa_10y_spread_level: "BAA-10Y 信用利差",
+    us_market_vix_level: "VIX",
+    external_dimension_score: "外部冲击分"
+  };
+  if (exactLabels[featureName]) {
+    return exactLabels[featureName];
+  }
+  return featureName
+    .replace(/^tail_neg__/, "低尾 ")
+    .replace(/^tail_pos__/, "高尾 ")
+    .replace(/^interaction__/, "交互 ")
+    .replace(/^family_context__/, "风险族上下文 ")
+    .replace(/^family_proxy__/, "风险族代理 ")
+    .replaceAll("__", " × ")
+    .replaceAll("_", " ");
+}
+
+function buildBaseContributionRows(diagnostic?: ProbabilityHorizonOverlayDiagnostics) {
+  return (diagnostic?.base_contributions ?? []).slice(0, 6).map((contribution) => ({
+    id: contribution.name,
+    label: featureLabel(contribution.name),
+    rawName: contribution.name,
+    rawValue: formatNumber(contribution.raw_value),
+    contribution: formatSignedNumber(contribution.contribution, 3),
+    className: contribution.contribution >= 0 ? "base-positive" : "base-negative"
+  }));
+}
+
 function probabilityReadingNote(value: number): string {
   if (value === 0) {
     return "当前接口精确返回 0，需要结合数据日期、release 状态和模型链路复核；它不等于市场风险被证明为零。";
@@ -149,6 +184,7 @@ function ProbabilityDiagnosticsBlock({
 
   const runtimeFinal = diagnostic.runtime_final_probability ?? diagnostic.final_probability;
   const gateRows = buildGateRows(diagnostic);
+  const baseRows = buildBaseContributionRows(diagnostic);
 
   return (
     <div className="probability-diagnostics">
@@ -160,6 +196,19 @@ function ProbabilityDiagnosticsBlock({
           {formatProbabilityPercentExact(runtimeFinal)}
         </strong>
       </div>
+      {baseRows.length > 0 ? (
+        <div className="probability-base-contributions">
+          <span>Base 头贡献</span>
+          {baseRows.map((row) => (
+            <div className="probability-base-row" key={row.id}>
+              <strong>{row.label}</strong>
+              <small>{row.rawName}</small>
+              <em className={row.className}>{row.contribution}</em>
+              <b>原始值 {row.rawValue}</b>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {gateRows.length > 0 ? (
         <div className="probability-gates">
           <span>风险族 gate</span>

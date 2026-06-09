@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 
 use fc_domain::{
     ActionabilityBlock, ActionabilityLevel, DataTrust, JpyCarrySnapshot, KeyIndicatorStatus,
-    Observation, ProbabilityBlock, ProbabilityBundle, ProbabilityDiagnostics,
-    ProbabilityHorizonOverlayDiagnostics, ProbabilityHorizonScore, RiskSnapshot,
+    LogisticProbabilityFeatureContribution, Observation, ProbabilityBlock, ProbabilityBundle,
+    ProbabilityDiagnostics, ProbabilityHorizonOverlayDiagnostics, ProbabilityHorizonScore,
+    RiskSnapshot,
 };
 
 use super::{
@@ -145,6 +146,7 @@ pub(super) fn build_probability_trace(
                     60 => score_60d.as_ref(),
                     _ => None,
                 }?;
+                let base_contributions = top_base_contributions(horizon, &features);
                 let diagnostics = ProbabilityHorizonOverlayDiagnostics {
                     horizon_days: horizon.horizon_days,
                     raw_probability: round_probability(score.raw_probability),
@@ -166,6 +168,7 @@ pub(super) fn build_probability_trace(
                         _ => 0.0,
                     }),
                     configured_overlay_count: horizon.family_overlays.len() as u32,
+                    base_contributions,
                     contributions: score.overlay_contributions.clone(),
                     overlay_audits: horizon.family_overlay_audits.clone(),
                 };
@@ -240,6 +243,19 @@ pub(super) fn build_probability_trace(
             .as_ref()
             .map(|_| "fusion_policy_v3_probability_context_gate_20260601".to_string()),
     }
+}
+
+fn top_base_contributions(
+    horizon: &fc_domain::ProbabilityHorizonBundle,
+    features: &BTreeMap<String, f64>,
+) -> Vec<LogisticProbabilityFeatureContribution> {
+    let mut contributions =
+        fc_domain::score_logistic_probability_model_with_diagnostics(&horizon.raw_model, features)
+            .feature_contributions;
+    contributions
+        .sort_by(|left, right| right.contribution.abs().total_cmp(&left.contribution.abs()));
+    contributions.truncate(8);
+    contributions
 }
 
 fn score_bundle_horizon(

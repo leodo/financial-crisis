@@ -365,6 +365,65 @@
   gap: 5px;
 }
 
+.probability-base-contributions {
+  display: grid;
+  gap: 5px;
+}
+
+.probability-base-contributions > span {
+  color: #62707b;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.probability-base-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  border-top: 1px solid #edf2f5;
+  padding-top: 5px;
+}
+
+.probability-base-row strong {
+  color: #34434d;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.probability-base-row small {
+  color: #70808a;
+  font-size: 11px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.probability-base-row em {
+  align-self: start;
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.probability-base-row em.base-positive {
+  background: #fff4e4;
+  border-color: #efcf9d;
+  color: #8a4d0a;
+}
+
+.probability-base-row em.base-negative {
+  background: #eef4f2;
+  border-color: #d7e5df;
+  color: #52645d;
+}
+
+.probability-base-row b {
+  color: #62707b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .probability-gate-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

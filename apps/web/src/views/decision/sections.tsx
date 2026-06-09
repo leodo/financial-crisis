@@ -1,6 +1,5 @@
 import { BadgeInfo, ShieldCheck, Siren } from "lucide-react";
 import {
-  formatPercentPrecise,
   formatProbabilityPercentExact,
   postureClass,
   postureLabel,
@@ -9,7 +8,7 @@ import {
 import type { AssessmentMethodResponse, AssessmentSnapshot, PostureGuidance } from "../../types";
 import type { MetricItem } from "../shared/panelHelpers";
 import { MetricGrid, RuleBox, SurfaceHeader } from "../shared/panelHelpers";
-import { PostureLadder, ProbabilityTile } from "./components";
+import { formatThresholdMultiple, PostureLadder, ProbabilityTile } from "./components";
 import { decisionContent } from "./content";
 import type {
   DecisionRuntimeCard,
@@ -161,20 +160,30 @@ function buildRiskHorizonSanityNote(
     thresholds.hedge_p20d > 0 ? p20d / thresholds.hedge_p20d : null,
     thresholds.prepare_p60d > 0 ? p60d / thresholds.prepare_p60d : null
   ].filter((value): value is number => value !== null);
+  const thresholdMultiples = [
+    p5d > 0 ? thresholds.defend_p5d / p5d : null,
+    p20d > 0 ? thresholds.hedge_p20d / p20d : null,
+    p60d > 0 ? thresholds.prepare_p60d / p60d : null
+  ].filter((value): value is number => value !== null);
   const allFarBelowEntry =
     thresholdShares.length === 3 && thresholdShares.every((share) => share < 0.03);
   const twentyDayIsCold = p20d > 0 && p20d < p5d * 0.25 && p20d < p60d * 0.25;
+  const hasAllThresholdMultiples = thresholdMultiples.length === 3;
 
   if (twentyDayIsCold && allFarBelowEntry) {
     return `当前三条正式概率都远低于进入线，且 20日窗口 ${formatProbabilityPercentExact(
       p20d
     )} 明显低于 5日 ${formatProbabilityPercentExact(p5d)} 和 60日 ${formatProbabilityPercentExact(
       p60d
-    )}。这不是“风险被证明为 0”，而是活跃正式模型当前没有捕捉到临近危机信号，同时 20d head 输出偏冷；决策上仍要结合关键指标、事件确认、历史类比和动作层。进入线占比约为 5d ${formatPercentPrecise(
-      thresholdShares[0]
-    )} / 20d ${formatPercentPrecise(thresholdShares[1])} / 60d ${formatPercentPrecise(
-      thresholdShares[2]
-    )}。`;
+    )}。这不是“风险被证明为 0”，而是活跃正式模型当前没有捕捉到临近危机信号，同时 20d head 输出偏冷；决策上仍要结合关键指标、事件确认、历史类比和动作层。${
+      hasAllThresholdMultiples
+        ? `按当前进入线反推，触线大约还需要 5d ${formatThresholdMultiple(
+            thresholdMultiples[0]
+          )}、20d ${formatThresholdMultiple(thresholdMultiples[1])}、60d ${formatThresholdMultiple(
+            thresholdMultiples[2]
+          )} 的同期限概率放大，这比“占比小于多少”更适合判断距离。`
+        : ""
+    }`;
   }
 
   if (twentyDayIsCold) {

@@ -24,6 +24,14 @@ export interface ProbabilityOverlayContribution {
   contribution: number;
 }
 
+export interface LogisticProbabilityFeatureContribution {
+  name: string;
+  raw_value: number;
+  normalized_value: number;
+  weight: number;
+  contribution: number;
+}
+
 export interface ProbabilityFamilyOverlayAudit {
   family_id: string;
   gate_feature: string;
@@ -51,6 +59,7 @@ export interface ProbabilityHorizonOverlayDiagnostics {
   runtime_final_probability?: number;
   monotonic_lift?: number;
   configured_overlay_count: number;
+  base_contributions?: LogisticProbabilityFeatureContribution[];
   contributions: ProbabilityOverlayContribution[];
   overlay_audits: ProbabilityFamilyOverlayAudit[];
 }

@@ -2,8 +2,9 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AlertType, DataQualitySummary, ProbabilityFamilyOverlayAudit, ProbabilityOverlayContribution,
-    QualityGrade, RiskContributor, RiskLevel,
+    AlertType, DataQualitySummary, LogisticProbabilityFeatureContribution,
+    ProbabilityFamilyOverlayAudit, ProbabilityOverlayContribution, QualityGrade, RiskContributor,
+    RiskLevel,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,6 +93,8 @@ pub struct ProbabilityHorizonOverlayDiagnostics {
     #[serde(default)]
     pub monotonic_lift: f64,
     pub configured_overlay_count: u32,
+    #[serde(default)]
+    pub base_contributions: Vec<LogisticProbabilityFeatureContribution>,
     #[serde(default)]
     pub contributions: Vec<ProbabilityOverlayContribution>,
     #[serde(default)]

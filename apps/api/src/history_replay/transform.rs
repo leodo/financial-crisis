@@ -207,6 +207,7 @@ fn historical_probability_diagnostics(
                 runtime_final_probability: horizon.runtime_final_probability,
                 monotonic_lift: horizon.monotonic_lift,
                 configured_overlay_count: horizon.configured_overlay_count,
+                base_contributions: horizon.base_contributions.clone(),
                 contributions: horizon.contributions.clone(),
                 overlay_audits: Vec::new(),
             })

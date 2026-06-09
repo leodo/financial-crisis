@@ -100,6 +100,7 @@ pub(super) fn assessment_point(
                 runtime_final_probability: Some(0.23),
                 monotonic_lift: 0.02,
                 configured_overlay_count: 1,
+                base_contributions: Vec::new(),
                 contributions: vec![ProbabilityOverlayContribution {
                     family_id: "jpy_carry".to_string(),
                     gate_feature: "us_usdjpy_level".to_string(),

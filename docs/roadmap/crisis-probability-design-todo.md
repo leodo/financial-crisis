@@ -877,6 +877,9 @@
      - API 新增 `latest_prewarning_gap_audit`，从 `artifacts/research/prewarning-gap-audit/*-prewarning-gap-audit.json` 读取与当前 release review baseline/candidate 匹配的工件；
      - UI 新增“提前预警缺口审计”区块，直接展示 `candidate_margin_erosion / no_runtime_floor_signal / protected_context_signal_present` 分类、dataset 行数、20d/60d 命中与下一步建议；
      - 当前页面已经能直接看出：真正的第一优先缺口是 `2011 美欧融资压力 / no_runtime_floor_signal`，而 `1987 / 1998` 更像候选边际弱化，`2000-2001` 已有 protected context 证据。
+   - `2026-06-10` 已在前端概率卡里补出 `Base 头贡献` 与 crosshair hover 明细，API/历史回放/正式 slice 也同步透出 top base feature contributions：
+     - 这解决的是“为什么 20d 看起来异常偏冷、哪些底层特征在压它”的解释缺口，不是把 20d runtime 值硬抬高；
+     - 当前 20d 过冷仍应按模型诊断处理，后续优先看训练拓扑、特征分离和阈值/冷却治理，不能把它误判成纯 UI 问题。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 
