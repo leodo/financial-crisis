@@ -1,5 +1,6 @@
 import { BadgeInfo, ShieldCheck, Siren } from "lucide-react";
 import {
+  formatPercentPrecise,
   formatProbabilityPercentExact,
   postureClass,
   postureLabel,
@@ -104,11 +105,29 @@ export function DecisionRiskHorizon({
     assessment.probability_diagnostics.horizon_overlays.find(
       (diagnostic) => diagnostic.horizon_days === horizonDays
     );
+  const riskDistanceSummary = buildRiskDistanceSummary(assessment, method);
   const riskHorizonSanityNote = buildRiskHorizonSanityNote(assessment, method);
 
   return (
     <section className="surface">
       <SurfaceHeader title="离风险还有多远" icon={Siren} />
+      <div className="risk-horizon-summary">
+        <div>
+          <span>风险时距</span>
+          <strong>{riskDistanceSummary.bucketLabel}</strong>
+          <small>{riskDistanceSummary.bucketDetail}</small>
+        </div>
+        <div>
+          <span>最接近的动作线</span>
+          <strong>{riskDistanceSummary.nearestValue}</strong>
+          <small>{riskDistanceSummary.nearestDetail}</small>
+        </div>
+        <div>
+          <span>模型读数状态</span>
+          <strong>{riskDistanceSummary.modelStatus}</strong>
+          <small>{riskDistanceSummary.modelDetail}</small>
+        </div>
+      </div>
       <div className="probability-grid">
         <ProbabilityTile
           label="5 个交易日"
@@ -147,6 +166,65 @@ export function DecisionRiskHorizon({
       <RuleBox label="历史参照">{analogWindowDescription}</RuleBox>
     </section>
   );
+}
+
+function buildRiskDistanceSummary(
+  assessment: AssessmentSnapshot,
+  method: AssessmentMethodResponse
+) {
+  const { p_5d: p5d, p_20d: p20d, p_60d: p60d } = assessment.probabilities;
+  const thresholds = method.runtime_thresholds;
+  const rows = [
+    { label: "5d 防守线", value: p5d, threshold: thresholds.defend_p5d },
+    { label: "20d 对冲线", value: p20d, threshold: thresholds.hedge_p20d },
+    { label: "60d 准备线", value: p60d, threshold: thresholds.prepare_p60d }
+  ].map((row) => ({
+    ...row,
+    share: row.threshold > 0 ? row.value / row.threshold : null,
+    multiple: row.threshold > 0 && row.value > 0 ? row.threshold / row.value : null
+  }));
+  const rankedRows = rows
+    .filter((row): row is typeof row & { share: number } => row.share !== null)
+    .sort((left, right) => right.share - left.share);
+  const nearest = rankedRows[0];
+  const allShares = rows
+    .map((row) => row.share)
+    .filter((value): value is number => value !== null);
+  const allFarBelowEntry = allShares.length === 3 && allShares.every((share) => share < 0.03);
+  const twentyDayIsCold = p20d > 0 && p20d < p5d * 0.25 && p20d < p60d * 0.25;
+
+  const bucketDetail: Record<AssessmentSnapshot["time_to_risk_bucket"], string> = {
+    normal: "当前没有形成数月、数周或当下风险窗口；这不是零风险证明。",
+    months: "风险更像数月级脆弱性，适合先准备现金、执行顺序和保护工具。",
+    weeks: "风险已经压缩到数周级别，应重点看对冲和减仓执行节奏。",
+    now: "近端窗口已经打开，应优先确认流动性、杠杆和保护动作。"
+  };
+
+  const modelStatus = twentyDayIsCold
+    ? "20d 偏冷待审计"
+    : allFarBelowEntry
+      ? "未捕捉临近窗口"
+      : "读数可解释";
+  const modelDetail = twentyDayIsCold
+    ? `20d 只有 ${formatProbabilityPercentExact(p20d)}，明显低于 5d ${formatProbabilityPercentExact(
+        p5d
+      )} 和 60d ${formatProbabilityPercentExact(p60d)}；先按模型审计处理，不在运行时硬抬概率。`
+    : allFarBelowEntry
+      ? "三期限都远低于动作进入线，系统因此给出常态观察；仍需结合关键指标和事件确认复核。"
+      : "当前概率和动作进入线之间没有明显显示层异常。";
+
+  return {
+    bucketLabel: timeBucketLabel(assessment.time_to_risk_bucket),
+    bucketDetail: bucketDetail[assessment.time_to_risk_bucket],
+    nearestValue: nearest ? formatPercentPrecise(nearest.share) : "未配置",
+    nearestDetail: nearest
+      ? `${nearest.label} 的触线完成度；不是剩余天数。${
+          nearest.multiple ? ` 触线仍需约 ${formatThresholdMultiple(nearest.multiple)}。` : ""
+        }`
+      : "当前 release 没有返回可比较的动作进入线。",
+    modelStatus,
+    modelDetail
+  };
 }
 
 function buildRiskHorizonSanityNote(

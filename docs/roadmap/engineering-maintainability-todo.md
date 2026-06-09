@@ -289,6 +289,7 @@
 
 - [x] 新增或显著扩展功能时，如果目标文件已经是当前仓库前几位的大文件，优先先拆模块，再加功能。
   - 2026-06-09：已新增 `scripts/hotspot-status.ps1`，并接到 `just verify` / `just hotspot-status`；当前如果直接改到仓库前几位的大源码文件，会在本地门禁里显式失败，除非先拆模块，或用 `ALLOW_HOTSPOT_TOUCH=1` 带着说明有意识地放行。
+  - 2026-06-10：本轮触及 `scripts/formal-candidate-funding-stress-audit.ps1` 只为修正 funding-stress 诊断文案：dry-run 已证明 topology repair 已存在，脚本不能继续暗示“尚未补训练拓扑”。这次未新增结构逻辑；后续如果继续扩展该审计脚本，应先拆分再加功能。
 - [x] 生成工件进入 Git 前，必须说明它属于：
   - 正式 release 工件；
   - 基线对照证据；

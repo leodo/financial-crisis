@@ -329,7 +329,7 @@ export function ProbabilityTile({
       <span className="probability-value-label">当前正式概率</span>
       <strong>{formatProbabilityPercentExact(value)}</strong>
       <div className="probability-distance-summary">
-        <span>进入线完成度</span>
+        <span>触线完成度（非天数）</span>
         <strong>{thresholdShareValue}</strong>
         <small>{thresholdDistance.note}</small>
       </div>

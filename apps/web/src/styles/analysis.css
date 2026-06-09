@@ -348,6 +348,13 @@
   line-height: 1.2;
 }
 
+.simple-chart-tooltip-hint {
+  color: #6b7882;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
 .simple-chart-tooltip-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

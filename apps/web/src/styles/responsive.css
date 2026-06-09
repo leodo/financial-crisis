@@ -72,6 +72,7 @@
 
   .probability-grid,
   .hero-metrics,
+  .risk-horizon-summary,
   .probability-trend-metrics {
     grid-template-columns: 1fr;
   }
@@ -124,6 +125,7 @@
   .dashboard-columns,
   .surface-grid,
   .runtime-card-grid,
+  .risk-horizon-summary,
   .probability-grid,
   .mini-metrics,
   .probability-trend-metrics,

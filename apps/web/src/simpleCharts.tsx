@@ -69,16 +69,19 @@ export function SimpleLineChart({
   const hoverIndex = hoverState?.index ?? null;
   const hoverX = hoverIndex === null ? null : x(hoverIndex);
   const hoverY = hoverState?.svgY ?? null;
-  const nearestSeriesLabel =
+  const nearestSeries =
     hoverIndex === null
       ? null
-      : model.series.reduce<{ label: string; distance: number } | null>((nearest, series) => {
-          const distance = Math.abs(y(series.values[hoverIndex] ?? 0) - (hoverY ?? y(0)));
+      : model.series.reduce<{ label: string; distance: number; y: number } | null>((nearest, series) => {
+          const seriesY = y(series.values[hoverIndex] ?? 0);
+          const distance = Math.abs(seriesY - (hoverY ?? y(0)));
           if (!nearest || distance < nearest.distance) {
-            return { label: series.label, distance };
+            return { label: series.label, distance, y: seriesY };
           }
           return nearest;
-        }, null)?.label ?? null;
+        }, null);
+  const nearestSeriesLabel = nearestSeries?.label ?? null;
+  const snappedHoverY = nearestSeries?.y ?? null;
   const hoverRows =
     hoverIndex === null
       ? []
@@ -185,12 +188,12 @@ export function SimpleLineChart({
 
         {hoverIndex !== null && hoverX !== null ? (
           <g className="simple-chart-hover-layer">
-            {hoverY !== null ? (
+            {snappedHoverY !== null ? (
               <line
                 x1={margins.left}
                 x2={width - margins.right}
-                y1={hoverY}
-                y2={hoverY}
+                y1={snappedHoverY}
+                y2={snappedHoverY}
                 stroke="#27323a"
                 strokeDasharray="4 4"
                 strokeOpacity="0.38"
@@ -233,6 +236,9 @@ export function SimpleLineChart({
       {hoverIndex !== null ? (
         <div className="simple-chart-tooltip" style={tooltipStyle}>
           <strong>{model.categories[hoverIndex]}</strong>
+          {nearestSeriesLabel ? (
+            <small className="simple-chart-tooltip-hint">吸附到 {nearestSeriesLabel}</small>
+          ) : null}
           {hoverRows.map((row) => (
             <div
               className={

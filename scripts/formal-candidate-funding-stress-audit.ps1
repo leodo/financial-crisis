@@ -556,8 +556,8 @@ function buildDiagnosis(rows, thresholds, featureNames, resolvedRelevantFeatures
     reasons.push(`Candidate max 60d ${round(candidateMax60.value, 4)} remains below runtime prepare floor ${round(thresholds.candidate_60d, 4)}.`);
   }
   if (allEvaluation) {
-    reasons.push("All rows are evaluation split, so this exact 2011 slice cannot directly change trained coefficients without topology/split changes or analogous train rows.");
-    nextActions.push("Add train-topology repair or analogous trainable mixed-systemic funding-stress rows before expecting retraining to learn this window.");
+    reasons.push("Persisted dataset rows are all evaluation split, so this exact 2011 slice only affects training if pipeline topology repair promotes protected primary rows or analogous trainable rows exist.");
+    nextActions.push("Verify formal-train-family-hybrid-dry-run reports mixed_systemic_extension_primary_repair_rows > 0 before expecting retraining to learn this window.");
   }
   if (!hasMixedProxy) {
     reasons.push("family_proxy__mixed_systemic is absent from both raw slice features and candidate scored contributions, so mixed-systemic context is not explicitly represented as a family proxy here.");

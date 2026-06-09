@@ -641,6 +641,7 @@
                 continuity 的逐场景复核。
              - `2026-06-09` 二轮 funding-stress 绝对贡献审计已确认：`mixed_systemic` proxy 不是缺失，而是已经在候选 scored slice 中活跃；`family_proxy__mixed_systemic` 的 2011 窗口均值约 `0.3206`，归一化均值约 `0.5610`，overlay gate 均值约 `0.3930`，blend 均值约 `0.0982`，overlay 平均贡献约 `+0.0219`。
              - 同一审计显示，2011 绝对概率仍低，主要因为 base head 里一组特征在 20d 窗口把候选概率压低：`us_fed_funds_level`、`us_curve_10y2y_level`、`us_usdjpy_level`、`external_dimension_score × us_usdjpy_level`、`curve × fed_funds` 是主要负贡献；因此下一步不应直接降 runtime floor，而应验证这些负贡献是否来自 evaluation-only trainability、候选权重约束或 family/context 迁移不足。
+             - 2026-06-10 复跑最新候选 `112926 -> 162641` 的 funding-stress audit：2011 已从“无正式 runtime floor 命中”推进到 `partial_runtime_signal`，`20d hits=3`、`max p20d=0.839` 已高于 `0.806` floor；但 `60d max=0.0206` 仍低于 `0.028` floor。`formal-train-family-hybrid-dry-run` 同时确认 topology repair 已生效：`mixed_sys_primary_repair train=205`，所以后续不应再把主问题归成“2011 没进训练”，而要转向 `60d` 目标/权重、base head 负贡献和 candidate threshold policy。
          - [x] 已把 `jpy_carry` 继续维持为 proxy-only family，并补齐足以进入正式 overlay 训练的 protected / proxy rows 支持。
            - [x] `proxy-only audit` 现在会把 `protected_action_window` 和 gate-active carry rows 一并视为候选支持，不再和训练数据集构建口径脱节。
            - [x] overlay dataset builder 现在会在 formal main / ext_stress / ext_acute 叠加时合并重复 identity 行，保留更强的 `label/regime/protected_action_window`，不再让主数据集的弱标签覆盖扩展数据。
@@ -888,6 +889,10 @@
      - `概率轨迹` 现在保留绝对概率图，同时新增每条期限按自身近期区间归一的相对变化图；hover 明细会显示日期、精确百分比、bp、接口小数和较前点变化，用来确认 `20d` 低位线是否真的没有变化；
      - `离风险还有多远` 现在把当前正式概率、动作进入线、占进入线比例、触线倍数和百分点差值拆开显示，并明确动作进入线不是“危机已经发生线”；
      - 本次只修 UI 解释和排查能力，不改变 active release 概率输出；若 `20d` 长期过冷，仍必须通过候选训练、feature semantics、threshold/cooldown guardrail 处理。
+   - `2026-06-10` 用户复核后继续暴露两个产品风险：`20d` 折线在绝对概率图上长期贴底，以及“离风险还有多远”的小数容易被误读成时间距离或零风险证明。
+     - 前端已把 hover 改为吸附到最近折线点，并在 tooltip 里明确当前吸附期限、精确概率、bp、接口小数和较前点变化；
+     - 决策页已新增风险时距摘要，把 `time_to_risk_bucket`、最接近动作线的触线完成度、`20d head` 偏冷状态前置展示；
+     - 后续模型主线仍需继续审计当前 active release 的 `20d current=0.0067%` 与 `hedge floor=28.2%` 的巨大落差，不能通过 UI 文案替代训练 / 阈值 / cooldown 治理。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 
