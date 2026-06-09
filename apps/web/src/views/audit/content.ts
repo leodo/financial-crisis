@@ -28,6 +28,8 @@ export const auditContent = {
     "这块回答的是：remaining residual workstream 到底有没有真实训练样本与 feature 证据。它不判断候选是否该上线，而是避免团队继续把问题归因停留在“可能没数据”。",
   rateShockSummary:
     "这块把 2022 联储加息与久期冲击单独拉出来，直接看 primary / late validation 与 prepare / hedge 这两组连续性证据。重点不是看候选是否更高，而是看真正该提前升温的窗口有没有形成连续命中。",
+  cooldownSummary:
+    "这块回答的是：候选版有没有因为 20d cooldown bleed 或纯误报变长而不适合继续晋升。它把 release review 里的动作精度、最长误报、runtime floor 和误报 episode 变化收口到一处。",
   releaseReviewEmpty:
     "还没有找到可用的 release review 落库结果。通常说明这条链路尚未执行，或者当前 market scope 还没有写入 artifacts/research/release-review。",
   scenarioPackEmpty:
@@ -38,6 +40,8 @@ export const auditContent = {
     "还没有找到与最近一次 release review 对应的 residual workstream 审计工件。通常说明这条 dataset evidence 审计还没跑，或者 baseline / candidate 对应的 JSON 结果尚未落库。",
   rateShockEmpty:
     "还没有找到与最近一次 release review 对应的 2022 rate-shock 专项审计工件。通常说明这条离线 continuity 审计还没跑，或者 baseline / candidate 对应的 JSON 结果尚未落库。",
+  cooldownEmpty:
+    "还没有找到与最近一次 release review 对应的 cooldown / false-positive 审计工件。通常说明还没运行 `just formal-candidate-cooldown-audit <baseline> <candidate>`，或者 JSON 与当前 review 的 baseline / candidate / history mode 不一致。",
   releaseReviewCoverageTableNote:
     "先看目录结论和可用范围，再看 grade / PIT / 免费主源，最后看主要缺口。重点复核场景和 protected window 会直接影响后续训练与 posture 规则约束。",
   scenarioPackTableNote:
@@ -52,6 +56,12 @@ export const auditContent = {
     "按阶段看 20d / 60d 均值、命中数和最长连续段。primary 依然过冷，通常说明问题还在 trainability 或标签连续性，而不是单纯阈值。",
   rateShockActionTableNote:
     "按动作层看 prepare / hedge / defend 的连续性。先看 20d 段数和最长段，再看离阈值 5pp 内的行数，判断它是不是已经接近可执行窗口。",
+  cooldownRuntimeTableNote:
+    "先看候选诊断是否出现 cooldown bleed，再看 cooldown - positive 与 cooldown - normal。若 cooldown 不低于 positive window，说明模型把危机后余震和前瞻窗口混在一起。",
+  cooldownEpisodeTableNote:
+    "候选新增或拉长的纯误报 episode 是 release 晋升的核心阻断项。优先检查持续天数和是否能被 protected stress window 解释。",
+  cooldownScenarioTableNote:
+    "按历史场景看纯误报数量变化。这里不是看命中率，而是看候选有没有为了局部连续性牺牲误报治理。",
   releaseReviewActionTableNote:
     "先看 action type，再看它落在哪个 workstream，最后结合 recommendation 判断是该判退候选、先修 blocker，还是继续补主线研究。",
   releaseReviewAttributionTableNote:

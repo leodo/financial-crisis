@@ -10,6 +10,7 @@ import {
   SurfaceHeader
 } from "../shared/panelHelpers";
 import { auditContent } from "./content";
+import { CooldownAuditSection } from "./cooldownAuditSection";
 import { useAuditViewModel } from "./useAuditViewModel";
 
 export default function AuditView({
@@ -416,6 +417,8 @@ export default function AuditView({
               <RuleBox label="当前状态">{auditContent.rateShockEmpty}</RuleBox>
             )}
           </section>
+
+          <CooldownAuditSection audit={audit} />
 
           <section className="surface">
             <SurfaceHeader title="Overlay 运行审计" icon={Activity} />

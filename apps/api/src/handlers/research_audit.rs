@@ -9,9 +9,11 @@ use chrono::{DateTime, FixedOffset, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+mod cooldown_audit;
 mod dataset_summary;
 mod workstream_audit;
 
+use self::cooldown_audit::{load_latest_cooldown_audit_summary, CooldownAuditArtifactSummary};
 use self::dataset_summary::{load_latest_dataset_summaries, DatasetSummaryArtifactSummary};
 use self::workstream_audit::{
     load_latest_workstream_audit_summary, WorkstreamAuditArtifactSummary,
@@ -44,6 +46,7 @@ struct ResearchAuditResponse {
     latest_scenario_pack_audit: Option<ScenarioPackAuditArtifactSummary>,
     latest_workstream_audit: Option<WorkstreamAuditArtifactSummary>,
     latest_rate_shock_audit: Option<RateShockAuditArtifactSummary>,
+    latest_cooldown_audit: Option<CooldownAuditArtifactSummary>,
     latest_dataset_summaries: Vec<DatasetSummaryArtifactSummary>,
     note: String,
     releases: Vec<fc_domain::ModelReleaseRecord>,
@@ -740,6 +743,8 @@ pub(crate) async fn research_audit(
             );
             let latest_rate_shock_audit =
                 load_latest_rate_shock_audit_summary(latest_release_review.as_ref());
+            let latest_cooldown_audit =
+                load_latest_cooldown_audit_summary(latest_release_review.as_ref());
             let latest_dataset_summaries = load_latest_dataset_summaries(&market_scope);
             let history_provenance = super::summarize_history_provenance(&data.assessment_history);
             let prediction_snapshot_audit = summarize_prediction_snapshot_audit(
@@ -762,8 +767,9 @@ pub(crate) async fn research_audit(
                 latest_scenario_pack_audit,
                 latest_workstream_audit,
                 latest_rate_shock_audit,
+                latest_cooldown_audit,
                 latest_dataset_summaries,
-                note: "当前页面展示的是 release registry、historical replay run / point、prediction snapshot、最近一次 release review、对应的历史场景包审计、formal dataset 摘要、residual workstream 审计，以及 2022 利率冲击专项 continuity 审计。若 runtime probability mode 与 release manifest 不一致，说明线上已自动降级回 heuristic。".to_string(),
+                note: "当前页面展示的是 release registry、historical replay run / point、prediction snapshot、最近一次 release review、对应的历史场景包审计、formal dataset 摘要、residual workstream 审计、2022 利率冲击专项 continuity 审计，以及 cooldown / false-positive 治理审计。若 runtime probability mode 与 release manifest 不一致，说明线上已自动降级回 heuristic。".to_string(),
                 releases,
                 replay_runs,
                 snapshots,
@@ -791,6 +797,7 @@ pub(crate) async fn research_audit(
                 latest_scenario_pack_audit: None,
                 latest_workstream_audit: None,
                 latest_rate_shock_audit: None,
+                latest_cooldown_audit: None,
                 latest_dataset_summaries: Vec::new(),
                 note: "当前运行在 demo 模式，release registry、historical replay、prediction snapshot 审计不可用。切到 SQLite 后该页面会显示真实审计数据。".to_string(),
                 releases: Vec::new(),
@@ -820,6 +827,7 @@ pub(crate) async fn research_audit(
                 latest_scenario_pack_audit: None,
                 latest_workstream_audit: None,
                 latest_rate_shock_audit: None,
+                latest_cooldown_audit: None,
                 latest_dataset_summaries: Vec::new(),
                 note: "当前 Postgres 路径尚未接入本地 release registry、historical replay 与 prediction snapshot 审计，建议先通过 SQLite 研究链路完成模型训练、发布与复盘。".to_string(),
                 releases: Vec::new(),
@@ -835,8 +843,8 @@ pub(crate) async fn research_audit(
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_json_artifact, RateShockAuditArtifactWire, ReleaseReviewArtifactWire,
-        ScenarioPackAuditArtifactWire,
+        cooldown_audit::CooldownAuditArtifactWire, decode_json_artifact,
+        RateShockAuditArtifactWire, ReleaseReviewArtifactWire, ScenarioPackAuditArtifactWire,
     };
 
     #[test]
@@ -910,6 +918,30 @@ mod tests {
         assert!(wire.action_level_summaries.is_empty());
         assert!(wire.split_counts.is_empty());
         assert_eq!(wire.compare_summary.overall_window.row_count, 0);
+    }
+
+    #[test]
+    fn cooldown_wire_allows_missing_optional_arrays() {
+        let body = r#"
+        {
+          "generated_at": "2026-06-09T00:00:00+00:00",
+          "baseline_release_id": "baseline_release",
+          "candidate_release_id": "candidate_release",
+          "history_mode": "default",
+          "release_review_artifact": "review.json",
+          "recommendation": "manual_review"
+        }
+        "#;
+
+        let wire: CooldownAuditArtifactWire =
+            serde_json::from_str(body).expect("wire should deserialize");
+        assert!(wire.no_go_reasons.is_empty());
+        assert!(wire.runtime_cooldown_rows.is_empty());
+        assert!(wire
+            .false_positive_episodes
+            .candidate_regressions
+            .is_empty());
+        assert!(wire.scenario_false_positive_deltas.is_empty());
     }
 
     #[test]

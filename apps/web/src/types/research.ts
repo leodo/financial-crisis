@@ -516,6 +516,67 @@ export interface WorkstreamAuditArtifactSummary {
   scenario_summaries: WorkstreamAuditScenarioSummary[];
 }
 
+export interface CooldownAuditNoGoReason {
+  code: string;
+  summary: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface CooldownAuditRuntimeRow {
+  horizon_days: number;
+  baseline_diagnosis: string | null;
+  candidate_diagnosis: string | null;
+  candidate_cooldown_minus_positive: number | null;
+  candidate_cooldown_minus_normal: number | null;
+  comparison: Record<string, unknown>;
+}
+
+export interface CooldownAuditFalsePositiveEpisode {
+  start_date: string;
+  end_date: string;
+  duration_days: number;
+  signal_count: number;
+  classification: string;
+  note: string;
+}
+
+export interface CooldownAuditEpisodeRegression {
+  kind: string;
+  episode: CooldownAuditFalsePositiveEpisode;
+  overlapping_baseline_episodes: CooldownAuditFalsePositiveEpisode[];
+}
+
+export interface CooldownAuditFalsePositiveEpisodes {
+  baseline_top: CooldownAuditFalsePositiveEpisode[];
+  candidate_top: CooldownAuditFalsePositiveEpisode[];
+  candidate_regressions: CooldownAuditEpisodeRegression[];
+}
+
+export interface CooldownAuditScenarioFalsePositiveDelta {
+  scenario_id: string;
+  name: string;
+  baseline_false_positive_count: number;
+  candidate_false_positive_count: number;
+  delta: number;
+  outcome: string | null;
+}
+
+export interface CooldownAuditArtifactSummary {
+  generated_at: string;
+  source: string;
+  baseline_release_id: string;
+  candidate_release_id: string;
+  history_mode: string;
+  release_review_artifact: string;
+  reviewed_at: string | null;
+  recommendation: string;
+  comparison_metrics: Record<string, unknown>;
+  runtime_cooldown_rows: CooldownAuditRuntimeRow[];
+  false_positive_episodes: CooldownAuditFalsePositiveEpisodes;
+  scenario_false_positive_deltas: CooldownAuditScenarioFalsePositiveDelta[];
+  no_go_reasons: CooldownAuditNoGoReason[];
+}
+
 export interface ResearchAuditResponse {
   supported: boolean;
   storage_mode: string;
@@ -531,6 +592,7 @@ export interface ResearchAuditResponse {
   latest_scenario_pack_audit: ScenarioPackAuditArtifactSummary | null;
   latest_workstream_audit: WorkstreamAuditArtifactSummary | null;
   latest_rate_shock_audit: RateShockAuditArtifactSummary | null;
+  latest_cooldown_audit: CooldownAuditArtifactSummary | null;
   latest_dataset_summaries: DatasetSummaryArtifactSummary[];
   note: string;
   releases: ModelReleaseRecord[];
