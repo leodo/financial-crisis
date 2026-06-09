@@ -272,6 +272,73 @@ def compare_feature_rows(baseline_rows, candidate_rows):
     rows.sort(key=lambda row: abs(row["delta_mean_contribution"] or 0.0), reverse=True)
     return rows
 
+def threshold_state(probability, threshold):
+    if probability is None or threshold is None or threshold <= 0:
+        return "unconfigured"
+    ratio = probability / threshold
+    if probability >= threshold:
+        return "above_floor"
+    if ratio >= 0.8:
+        return "near_floor"
+    if ratio >= 0.2:
+        return "building"
+    return "cold"
+
+def runtime_group_key(row, horizon_days, threshold):
+    probability = horizon_probability(row, horizon_days, "runtime")
+    bucket = row.get("time_to_risk_bucket") or "unknown_bucket"
+    posture = row.get("posture") or "unknown_posture"
+    state = threshold_state(probability, threshold)
+    return f"bucket={bucket}|posture={posture}|floor={state}"
+
+def build_date_rows(dates, horizon_days, baseline_rows_by_date, candidate_rows_by_date, baseline_threshold, candidate_threshold):
+    rows = []
+    for date in dates:
+        baseline_row = baseline_rows_by_date[date]
+        candidate_row = candidate_rows_by_date[date]
+        baseline_probability = horizon_probability(baseline_row, horizon_days, "runtime")
+        candidate_probability = horizon_probability(candidate_row, horizon_days, "runtime")
+        rows.append({
+            "as_of_date": date,
+            "baseline_runtime_probability": round6(baseline_probability),
+            "candidate_runtime_probability": round6(candidate_probability),
+            "baseline_touchline_ratio": round6(None if not baseline_threshold else (baseline_probability or 0.0) / baseline_threshold),
+            "candidate_touchline_ratio": round6(None if not candidate_threshold else (candidate_probability or 0.0) / candidate_threshold),
+            "baseline_time_to_risk_bucket": baseline_row.get("time_to_risk_bucket"),
+            "candidate_time_to_risk_bucket": candidate_row.get("time_to_risk_bucket"),
+            "baseline_posture": baseline_row.get("posture"),
+            "candidate_posture": candidate_row.get("posture"),
+            "candidate_runtime_group": runtime_group_key(candidate_row, horizon_days, candidate_threshold),
+        })
+    return rows
+
+def build_horizon_aggregate(label, dates, horizon_days, baseline_rows_by_date, candidate_rows_by_date, baseline_threshold, candidate_threshold):
+    baseline_selected = [baseline_rows_by_date[date] for date in dates]
+    candidate_selected = [candidate_rows_by_date[date] for date in dates]
+    baseline_contributing_count, baseline_features = aggregate_feature_rows(baseline_selected, horizon_days)
+    candidate_contributing_count, candidate_features = aggregate_feature_rows(candidate_selected, horizon_days)
+    feature_deltas = compare_feature_rows(baseline_features, candidate_features)
+    baseline_runtime = [horizon_probability(row, horizon_days, "runtime") for row in baseline_selected]
+    candidate_runtime = [horizon_probability(row, horizon_days, "runtime") for row in candidate_selected]
+    return {
+        "label": label,
+        "date_count": len(dates),
+        "baseline_decision_threshold": round6(baseline_threshold),
+        "candidate_decision_threshold": round6(candidate_threshold),
+        "baseline_avg_runtime_probability": round6(avg(baseline_runtime)),
+        "candidate_avg_runtime_probability": round6(avg(candidate_runtime)),
+        "delta_avg_runtime_probability": round6((avg(candidate_runtime) or 0.0) - (avg(baseline_runtime) or 0.0)),
+        "baseline_touchline_ratio": round6(None if not baseline_threshold else (avg(baseline_runtime) or 0.0) / baseline_threshold),
+        "candidate_touchline_ratio": round6(None if not candidate_threshold else (avg(candidate_runtime) or 0.0) / candidate_threshold),
+        "baseline_rows_with_base_contributions": baseline_contributing_count,
+        "candidate_rows_with_base_contributions": candidate_contributing_count,
+        "baseline_top_negative_base_contributions": sorted(baseline_features, key=lambda row: row.get("mean_contribution") or 0.0)[:top_count],
+        "candidate_top_negative_base_contributions": sorted(candidate_features, key=lambda row: row.get("mean_contribution") or 0.0)[:top_count],
+        "top_abs_delta_base_contributions": feature_deltas[:top_count],
+        "baseline_semantic_anomalies": semantic_anomalies(baseline_features, horizon_days),
+        "candidate_semantic_anomalies": semantic_anomalies(candidate_features, horizon_days),
+    }
+
 baseline_rows_by_date = {row.get("as_of_date"): row for row in baseline.get("rows") or []}
 candidate_rows_by_date = {row.get("as_of_date"): row for row in candidate.get("rows") or []}
 common_dates = sorted(set(baseline_rows_by_date.keys()) & set(candidate_rows_by_date.keys()))
@@ -310,35 +377,47 @@ audit = {
 }
 
 for horizon in horizons:
-    baseline_selected = [baseline_rows_by_date[date] for date in common_dates]
-    candidate_selected = [candidate_rows_by_date[date] for date in common_dates]
-    baseline_contributing_count, baseline_features = aggregate_feature_rows(baseline_selected, horizon)
-    candidate_contributing_count, candidate_features = aggregate_feature_rows(candidate_selected, horizon)
-    feature_deltas = compare_feature_rows(baseline_features, candidate_features)
-    baseline_runtime = [horizon_probability(row, horizon, "runtime") for row in baseline_selected]
-    candidate_runtime = [horizon_probability(row, horizon, "runtime") for row in candidate_selected]
     candidate_threshold = candidate_thresholds.get(horizon)
     baseline_threshold = baseline_thresholds.get(horizon)
-    horizon_report = {
-        "horizon_days": horizon,
-        "baseline_decision_threshold": round6(baseline_threshold),
-        "candidate_decision_threshold": round6(candidate_threshold),
-        "baseline_avg_runtime_probability": round6(avg(baseline_runtime)),
-        "candidate_avg_runtime_probability": round6(avg(candidate_runtime)),
-        "delta_avg_runtime_probability": round6((avg(candidate_runtime) or 0.0) - (avg(baseline_runtime) or 0.0)),
-        "baseline_touchline_ratio": round6(None if not baseline_threshold else (avg(baseline_runtime) or 0.0) / baseline_threshold),
-        "candidate_touchline_ratio": round6(None if not candidate_threshold else (avg(candidate_runtime) or 0.0) / candidate_threshold),
-        "baseline_rows_with_base_contributions": baseline_contributing_count,
-        "candidate_rows_with_base_contributions": candidate_contributing_count,
-        "baseline_top_negative_base_contributions": sorted(baseline_features, key=lambda row: row.get("mean_contribution") or 0.0)[:top_count],
-        "candidate_top_negative_base_contributions": sorted(candidate_features, key=lambda row: row.get("mean_contribution") or 0.0)[:top_count],
-        "top_abs_delta_base_contributions": feature_deltas[:top_count],
-        "baseline_semantic_anomalies": semantic_anomalies(baseline_features, horizon),
-        "candidate_semantic_anomalies": semantic_anomalies(candidate_features, horizon),
-    }
+    horizon_report = build_horizon_aggregate(
+        "overall",
+        common_dates,
+        horizon,
+        baseline_rows_by_date,
+        candidate_rows_by_date,
+        baseline_threshold,
+        candidate_threshold,
+    )
+    horizon_report["horizon_days"] = horizon
+    horizon_report["date_rows"] = build_date_rows(
+        common_dates,
+        horizon,
+        baseline_rows_by_date,
+        candidate_rows_by_date,
+        baseline_threshold,
+        candidate_threshold,
+    )
+    runtime_groups = defaultdict(list)
+    for date in common_dates:
+        runtime_groups[runtime_group_key(candidate_rows_by_date[date], horizon, candidate_threshold)].append(date)
+    horizon_report["runtime_group_summaries"] = [
+        {
+            "group": group,
+            **build_horizon_aggregate(
+                group,
+                dates,
+                horizon,
+                baseline_rows_by_date,
+                candidate_rows_by_date,
+                baseline_threshold,
+                candidate_threshold,
+            ),
+        }
+        for group, dates in sorted(runtime_groups.items(), key=lambda item: (-len(item[1]), item[0]))
+    ]
     audit["horizons"].append(horizon_report)
 
-    if baseline_contributing_count == 0 or candidate_contributing_count == 0:
+    if horizon_report["baseline_rows_with_base_contributions"] == 0 or horizon_report["candidate_rows_with_base_contributions"] == 0:
         audit["takeaways"].append(
             f"{horizon}d runtime slice is missing base contributions for baseline or candidate; regenerate replay before using this horizon for attribution."
         )
@@ -350,9 +429,9 @@ for horizon in horizons:
         audit["takeaways"].append(
             f"candidate {horizon}d {anomaly['code']}: {anomaly['feature']} contribution={anomaly['mean_contribution']} raw={anomaly['mean_raw_value']}"
         )
-    if candidate_threshold and avg(candidate_runtime) is not None and avg(candidate_runtime) < candidate_threshold:
+    if candidate_threshold and horizon_report["candidate_avg_runtime_probability"] is not None and horizon_report["candidate_avg_runtime_probability"] < candidate_threshold:
         audit["takeaways"].append(
-            f"candidate {horizon}d runtime avg {pct(avg(candidate_runtime))} is below threshold {pct(candidate_threshold)}; touchline ratio={horizon_report['candidate_touchline_ratio']}"
+            f"candidate {horizon}d runtime avg {pct(horizon_report['candidate_avg_runtime_probability'])} is below threshold {pct(candidate_threshold)}; touchline ratio={horizon_report['candidate_touchline_ratio']}"
         )
 
 stem = "-".join([
@@ -395,6 +474,13 @@ for horizon in audit["horizons"]:
     print("  top candidate-negative feature deltas:")
     for item in horizon["top_abs_delta_base_contributions"][:5]:
         print(f"    - {item['name']}: baseline={item['baseline_mean_contribution']} candidate={item['candidate_mean_contribution']} delta={item['delta_mean_contribution']}")
+    print("  candidate runtime groups:")
+    for group in horizon.get("runtime_group_summaries", [])[:6]:
+        print(
+            f"    - {group['group']}: dates={group['date_count']} "
+            f"candidate_avg={pct(group['candidate_avg_runtime_probability'])} "
+            f"touch={group['candidate_touchline_ratio']}"
+        )
     print("")
 print("Takeaways")
 for takeaway in audit["takeaways"]:

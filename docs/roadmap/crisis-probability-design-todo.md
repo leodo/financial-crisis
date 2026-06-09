@@ -927,6 +927,8 @@
      - 对 `us_formal_family_hybrid_20260606T112926 -> us_formal_family_hybrid_20260609T204721` 的 `2026-06-09` 当前点，baseline 机械触线完成度为 `5d=0.02842 / 20d=0.000238 / 60d=0.001333`，这解释了面板“离风险还有多远”为什么出现极小数；
      - candidate 20d runtime avg 已升到 `56.7713%`，但 candidate threshold 仍是 `90.0000%`，touchline ratio 只有 `0.630792`，因此不能激活；5d 仍只有 `0.0312%`，60d 只有 `2.8079%`；
      - runtime contribution 明确显示 active baseline 三个 horizon 都命中 `tail_pos__us_usdjpy_level__145` 高 USDJPY 负贡献，candidate 5d/60d 仍未清掉该语义异常，20d 也仍有 `us_usdjpy_change_20d` 正变化负贡献；
+     - 脚本已继续扩展为多日期 runtime group attribution：输出 `date_rows`，并按 candidate 的 `time_to_risk_bucket / posture / threshold_state` 聚合 `runtime_group_summaries`；
+     - 对 `2026-06-01 -> 2026-06-09` 的实跑结果显示，20d candidate 在 normal/posture normal 下分裂为 `building=5 天` 与 `cold=4 天`，candidate avg `39.0093%` 仍低于 `90.0000%` floor；这说明问题已经具体到“运行时连续性与阈值策略”，不再只是单日显示异常；
      - 结论：当前 No-Go 不是前端显示问题，也不能靠运行时硬抬概率解决；下一步必须做多日期 runtime regime attribution，并把 `USDJPY/Jpy carry semantics`、`20d threshold policy`、`positive-window continuity`、`60d cold signal` 一起纳入训练和 release review。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
