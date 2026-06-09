@@ -838,6 +838,12 @@
      - 脚本现在会额外生成候选 scored slice，并在 JSON 中登记 `candidate_scored_slice_path`、raw/resolved feature 数、候选 resolved relevant features、20d/60d 分组的 base contribution 与 overlay contribution；
      - 当前 `us_formal_family_hybrid_20260606T112926 -> us_formal_family_hybrid_20260608T173701` 结论已经从“可能缺 mixed-systemic proxy”更新为“proxy 活跃，但绝对概率被 base head 负贡献和训练拓扑压低”；
      - 下一轮修复顺序必须先看 `train_topology / analogous mixed-systemic train rows / candidate weight governance`，再决定是否需要 runtime floor 微调；不得把这份审计结果解读为“直接降低对冲线即可”。
+   - `2026-06-09` 已先落地训练拓扑第一刀：formal training loader 的 protected topology repair 现在会把
+     `extension_only + mixed_systemic_stress + protected_action_window + primary + action_episode_id`
+     的 evaluation 行提升为 `train_topology_repair`。
+     - 当前 funding-stress slice 中符合条件的真实 2011 行为 `205/213`，全部来自 `extension_only`；
+     - `late_validation` 8 行仍保留 evaluation，非 `mixed_systemic_stress` 的 `extension_only` 行也不会被提升；
+     - 这一步只解决“2011 primary 行完全进不了训练”的问题，尚未证明新候选通过 release review；下一步仍必须重训候选并跑 funding-stress / cooldown / release-review 审计。
    - `2026-06-09` 已把这条专项审计接入 `/api/research/audit` 与前端“发布审计”页：
      - API 新增 `latest_prewarning_gap_audit`，从 `artifacts/research/prewarning-gap-audit/*-prewarning-gap-audit.json` 读取与当前 release review baseline/candidate 匹配的工件；
      - UI 新增“提前预警缺口审计”区块，直接展示 `candidate_margin_erosion / no_runtime_floor_signal / protected_context_signal_present` 分类、dataset 行数、20d/60d 命中与下一步建议；

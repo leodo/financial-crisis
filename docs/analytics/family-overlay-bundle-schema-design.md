@@ -242,7 +242,7 @@ family_overlays == []
 
 1. 针对 `60d` 审计为什么 runtime replay 会从“正例反向”切换成“cooldown_bleed”，并区分到底是 base head、overlay，还是 calibration / floor 在主导；
 2. 既然“关闭 60d overlay”也没有改变 review 结论，而“继续加大 60d 权重/惩罚”又明显变差，下一步应直接审计 `60d interaction_tail + episode-native target + runtime threshold policy` 的耦合问题，而不是继续盲调权重；
-3. 对 `mixed_systemic` 先重做 proxy 定义（当前 `gate_active_total=0`，继续训练没有意义）；
+3. 完成 `mixed_systemic` proxy 与训练拓扑收口；早期 `gate_active_total=0` 已修复，当前剩余问题是 2011 protected extension rows 如何进入训练，以及 base head 负贡献如何治理；
    - `2026-06-06` 已把 proxy 从“overall/trigger/external/VIX”泛化分数改成
      “credit spread / curve inversion / NFCI”作为慢性压力锚点，`trigger / VIX / external`
      只做确认，同时把 overlay gate 从 `0.50` 下调到 `0.38`；
@@ -277,6 +277,11 @@ family_overlays == []
      3. 这说明 2011 的下一步不是再单独降低 gate 或 floor，而是要验证：
         这些负贡献是否来自 evaluation-only 样本不可训练、候选权重治理过强，
         或本应迁入 `mixed_systemic / jpy_carry / rate_shock context` 的信号仍留在 base level。
+   - 同日后续修复已把 training loader 的 protected topology repair 从
+     `no_positive_main` 扩展到 `extension_only + mixed_systemic_stress + protected primary`：
+     1. 真实 funding-stress slice 显示 2011 共有 `213` 行，全部是 `extension_only + evaluation + protected_action_window=true`；
+     2. 其中 `205` 行是 `primary`，现在会以 `train_topology_repair` 进入 formal training；
+     3. `late_validation` 8 行仍保留在 evaluation，非 `mixed_systemic_stress` 的 `extension_only` 行也不会被泛化提升。
 4. 对 `jpy_carry` 单独补 family proxy / protected stress 样本后再决定是否进入正式 overlay 训练；
    - `2026-06-06` 已把这条线继续前推到“真实可训练”：
      1. `proxy-only audit` 现在把 `protected_action_window` 和 gate-active carry rows

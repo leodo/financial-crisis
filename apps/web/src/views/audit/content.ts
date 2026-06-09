@@ -34,7 +34,7 @@ export const auditContent = {
   prewarningGapSummary:
     "这块把 1987 / 1998 / 2000-2001 / 2011 的提前预警缺口拆开看。重点是区分“真的没有运行阈值信号”、“已有 protected context 但尚未进入主线”，以及“候选相对基线边际变弱”。",
   fundingStressSummary:
-    "这块专门回答 2011 美欧融资压力为什么没有形成 runtime floor。重点看它是不是 evaluation-only、是否缺 mixed-systemic family proxy、候选是否相对 baseline 边际变弱，以及 20d/60d 离动作阈值还有多远。",
+    "这块专门回答 2011 美欧融资压力为什么没有形成 runtime floor。重点看它是不是仍被 evaluation-only 挡在训练外、mixed-systemic proxy 是否真正参与 runtime、哪些 base 特征在压低 20d/60d，以及离动作阈值还有多远。",
   leadtimeSummary:
     "这块回答的是：候选已经有 runtime floor hit 或 60d 提前分离时，为什么仍没有变成更早的 L3 可执行预警。重点看 timely warning、strict actionable 点、runtime floor hits、p20d/p60d gate gap 和 posture continuity。",
   cooldownSummary:
@@ -74,7 +74,7 @@ export const auditContent = {
   prewarningGapTableNote:
     "先看诊断分类，再看 dataset 行数、标签和候选 20d/60d 命中。若已有大量命中但诊断为候选边际弱化，下一步应先查候选训练；若 2011 这类完全没有 runtime floor，才优先查 feature separation / family context。",
   fundingStressFeatureTableNote:
-    "先看 positive window 相对 normal 的 standardized gap，再看它是否正好落在 funding、credit、curve、VIX 或 USDJPY 这些可解释维度。若缺 family proxy 且全是 evaluation split，下一步通常是训练拓扑和 family context，而不是直接降阈值。",
+    "先看 positive window 相对 normal 的 standardized gap，再看它是否正好落在 funding、credit、curve、VIX 或 USDJPY 这些可解释维度。若 proxy 已存在但行仍是 evaluation split，下一步通常是训练拓扑和 family/context 迁移，而不是直接降阈值。",
   fundingStressContributionTableNote:
     "这是候选模型在 2011 窗口里的绝对 base contribution，不是候选相对基线的差分。先看哪些特征在压低 20d，再决定是修 mixed-systemic proxy、训练拓扑，还是候选权重。",
   fundingStressOverlayTableNote:

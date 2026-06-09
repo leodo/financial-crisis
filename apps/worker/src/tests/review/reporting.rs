@@ -2,12 +2,12 @@ use std::path::PathBuf;
 
 use chrono::{NaiveDate, Utc};
 use fc_domain::{
-    AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot, BacktestPerformanceSummary,
-    BacktestRollingAudit, DataMode, DataQualitySummary, DataTrust, DecisionPosture,
-    EventAssessment, EventConfirmationState, JpyCarrySnapshot, JpyCarryState, ModelReleaseManifest,
-    ModelReleaseRecord, PositionGuidance, PositionGuidanceGovernance, ProbabilityBlock,
-    ProbabilityDiagnostics, QualityGrade, RuntimeMetadata, TimeToRiskBucket, UserRiskPreferences,
-    UserRiskProfile,
+    ActionEvidenceBreakdown, AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot,
+    BacktestPerformanceSummary, BacktestRollingAudit, DataMode, DataQualitySummary, DataTrust,
+    DecisionPosture, EventAssessment, EventConfirmationState, JpyCarrySnapshot, JpyCarryState,
+    ModelReleaseManifest, ModelReleaseRecord, PositionGuidance, PositionGuidanceGovernance,
+    ProbabilityBlock, ProbabilityDiagnostics, QualityGrade, RuntimeMetadata, TimeToRiskBucket,
+    UserRiskPreferences, UserRiskProfile,
 };
 
 fn test_release_record(
@@ -75,6 +75,7 @@ fn test_assessment_snapshot(
         time_to_risk_bucket,
         posture,
         conviction_score: 0.52,
+        action_evidence: ActionEvidenceBreakdown::default(),
         scores: AssessmentScores {
             overall_score: 54.0,
             structural_score: 49.0,

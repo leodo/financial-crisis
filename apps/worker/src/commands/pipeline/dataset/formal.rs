@@ -324,7 +324,7 @@ fn apply_formal_topology_repairs(
     let mut retained_evaluation_rows = Vec::with_capacity(evaluation_rows.len());
 
     for mut row in evaluation_rows.drain(..) {
-        let Some(target_split) = protected_no_positive_main_topology_repair_target(&row) else {
+        let Some(target_split) = protected_context_topology_repair_target(&row) else {
             retained_evaluation_rows.push(row);
             continue;
         };
@@ -347,14 +347,11 @@ fn apply_formal_topology_repairs(
     summary
 }
 
-fn protected_no_positive_main_topology_repair_target(
+fn protected_context_topology_repair_target(
     row: &crate::ProbabilityTrainingRow,
 ) -> Option<&'static str> {
     let supports_repair = row.protected_action_window
-        && matches!(
-            row.scenario_training_role.as_deref(),
-            Some("no_positive_main")
-        )
+        && protected_context_topology_repair_role(row)
         && row.action_episode_id.is_some();
     if !supports_repair {
         return None;
@@ -366,6 +363,17 @@ fn protected_no_positive_main_topology_repair_target(
     }
 }
 
+fn protected_context_topology_repair_role(row: &crate::ProbabilityTrainingRow) -> bool {
+    match row.scenario_training_role.as_deref() {
+        Some("no_positive_main") => true,
+        Some("extension_only") => matches!(
+            row.scenario_family.as_deref(),
+            Some("mixed_systemic_stress")
+        ),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -374,7 +382,7 @@ mod tests {
 
     use crate::{ProbabilityTrainingRegime, ProbabilityTrainingRow};
 
-    use super::{apply_formal_topology_repairs, protected_no_positive_main_topology_repair_target};
+    use super::{apply_formal_topology_repairs, protected_context_topology_repair_target};
 
     fn topology_repair_row(
         as_of_date: &str,
@@ -382,6 +390,7 @@ mod tests {
         primary_action_level: Option<&str>,
         protected_action_window: bool,
         scenario_training_role: Option<&str>,
+        scenario_family: &str,
     ) -> ProbabilityTrainingRow {
         ProbabilityTrainingRow {
             as_of_date: NaiveDate::parse_from_str(as_of_date, "%Y-%m-%d").unwrap(),
@@ -393,7 +402,7 @@ mod tests {
             split_name: Some("evaluation".to_string()),
             features: BTreeMap::new(),
             primary_scenario_id: Some("us_rate_shock_2022".to_string()),
-            scenario_family: Some("rate_shock_or_policy_dislocation".to_string()),
+            scenario_family: Some(scenario_family.to_string()),
             scenario_training_role: scenario_training_role.map(str::to_string),
             days_to_primary_crisis_start: Some(30),
             primary_scenario_supports_5d: false,
@@ -427,6 +436,7 @@ mod tests {
             Some("prepare"),
             true,
             Some("no_positive_main"),
+            "rate_shock_or_policy_dislocation",
         );
         let late_validation = topology_repair_row(
             "2022-07-01",
@@ -434,6 +444,7 @@ mod tests {
             Some("prepare"),
             true,
             Some("no_positive_main"),
+            "rate_shock_or_policy_dislocation",
         );
         let late_validation_hedge = topology_repair_row(
             "2022-07-15",
@@ -441,6 +452,7 @@ mod tests {
             Some("hedge"),
             true,
             Some("no_positive_main"),
+            "rate_shock_or_policy_dislocation",
         );
         let cooldown = topology_repair_row(
             "2022-10-10",
@@ -448,34 +460,74 @@ mod tests {
             Some("hedge"),
             true,
             Some("no_positive_main"),
+            "rate_shock_or_policy_dislocation",
         );
 
         assert_eq!(
-            protected_no_positive_main_topology_repair_target(&primary),
+            protected_context_topology_repair_target(&primary),
             Some("train")
         );
         assert_eq!(
-            protected_no_positive_main_topology_repair_target(&late_validation),
+            protected_context_topology_repair_target(&late_validation),
             None
         );
         assert_eq!(
-            protected_no_positive_main_topology_repair_target(&late_validation_hedge),
+            protected_context_topology_repair_target(&late_validation_hedge),
+            None
+        );
+        assert_eq!(protected_context_topology_repair_target(&cooldown), None);
+    }
+
+    #[test]
+    fn protected_extension_only_mixed_systemic_primary_routes_to_train() {
+        let mixed_systemic_primary = topology_repair_row(
+            "2011-06-20",
+            "primary",
+            Some("prepare"),
+            true,
+            Some("extension_only"),
+            "mixed_systemic_stress",
+        );
+        let mixed_systemic_late_validation = topology_repair_row(
+            "2011-08-15",
+            "late_validation",
+            Some("hedge"),
+            true,
+            Some("extension_only"),
+            "mixed_systemic_stress",
+        );
+        let rate_shock_extension = topology_repair_row(
+            "2022-01-10",
+            "primary",
+            Some("prepare"),
+            true,
+            Some("extension_only"),
+            "rate_shock_or_policy_dislocation",
+        );
+
+        assert_eq!(
+            protected_context_topology_repair_target(&mixed_systemic_primary),
+            Some("train")
+        );
+        assert_eq!(
+            protected_context_topology_repair_target(&mixed_systemic_late_validation),
             None
         );
         assert_eq!(
-            protected_no_positive_main_topology_repair_target(&cooldown),
+            protected_context_topology_repair_target(&rate_shock_extension),
             None
         );
     }
 
     #[test]
-    fn topology_repair_promotes_primary_and_late_validation_rows_out_of_evaluation() {
+    fn topology_repair_promotes_supported_primary_rows_out_of_evaluation() {
         let mut train_rows = vec![topology_repair_row(
             "2008-09-01",
             "outside",
             Some("prepare"),
             false,
             Some("mandatory"),
+            "systemic_credit_banking_crisis",
         )];
         let mut calibration_rows = vec![topology_repair_row(
             "2016-02-01",
@@ -483,6 +535,7 @@ mod tests {
             Some("hedge"),
             false,
             Some("mandatory"),
+            "systemic_credit_banking_crisis",
         )];
         let retained_evaluation = topology_repair_row(
             "2023-03-15",
@@ -490,6 +543,7 @@ mod tests {
             Some("hedge"),
             false,
             Some("mandatory"),
+            "systemic_credit_banking_crisis",
         );
         let mut evaluation_rows = vec![
             topology_repair_row(
@@ -498,6 +552,7 @@ mod tests {
                 Some("prepare"),
                 true,
                 Some("no_positive_main"),
+                "rate_shock_or_policy_dislocation",
             ),
             topology_repair_row(
                 "2022-03-15",
@@ -505,6 +560,15 @@ mod tests {
                 Some("prepare"),
                 true,
                 Some("no_positive_main"),
+                "rate_shock_or_policy_dislocation",
+            ),
+            topology_repair_row(
+                "2011-06-20",
+                "primary",
+                Some("prepare"),
+                true,
+                Some("extension_only"),
+                "mixed_systemic_stress",
             ),
             retained_evaluation.clone(),
         ];
@@ -515,7 +579,7 @@ mod tests {
             &mut evaluation_rows,
         );
 
-        assert_eq!(summary.promoted_train_rows, 1);
+        assert_eq!(summary.promoted_train_rows, 2);
         assert_eq!(summary.promoted_calibration_rows, 0);
         assert!(train_rows
             .iter()
