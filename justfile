@@ -194,6 +194,13 @@ formal-candidate-workstream-audit baseline_release_id candidate_release_id:
 formal-candidate-rate-shock-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-rate-shock-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 固定审计候选版的 cooldown bleed 与 false-positive 回归：
+# 读取或生成 default release review，导出结构化 JSON，直接列出 precision、最长误报、runtime floor、
+# 20d/60d cooldown regime、候选新增/拉长误报 episode 与 no-go 原因。
+# 用法：`just formal-candidate-cooldown-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260608T191024`
+formal-candidate-cooldown-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-cooldown-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
 # 标准候选筛选入口：先跑三段窗口 compare，再读取或生成 default release review，
 # 把 20d cooldown bleed、动作精度、最长误报区间和 runtime floor hit 纳入 no-go 判断；
 # 然后跑 20d 特征/阈值审计、语义审计，最后补一轮美国历史场景包审计。
