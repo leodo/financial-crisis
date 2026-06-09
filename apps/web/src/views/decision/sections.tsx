@@ -11,6 +11,7 @@ import type { MetricItem } from "../shared/panelHelpers";
 import { MetricGrid, RuleBox, SurfaceHeader } from "../shared/panelHelpers";
 import {
   findProbabilityDiagnosticAnomaly,
+  formatPercentagePointGap,
   formatThresholdMultiple,
   PostureLadder,
   ProbabilityTile
@@ -194,6 +195,7 @@ function buildRiskDistanceSummary(
     { label: "60d 准备线", value: p60d, threshold: thresholds.prepare_p60d }
   ].map((row) => ({
     ...row,
+    gap: Math.max(0, row.threshold - row.value),
     share: row.threshold > 0 ? row.value / row.threshold : null,
     multiple: row.threshold > 0 && row.value > 0 ? row.threshold / row.value : null
   }));
@@ -207,7 +209,7 @@ function buildRiskDistanceSummary(
         return `${row.label} 未配置`;
       }
       const multipleCopy = row.multiple ? ` / 需 ${formatThresholdMultiple(row.multiple)}` : "";
-      return `${row.label} 机械完成度 ${formatProbabilityPercentExact(row.share)}${multipleCopy}`;
+      return `${row.label} 审计比例 ${formatProbabilityPercentExact(row.share)}${multipleCopy}`;
     })
     .join("；");
   const allShares = rows
@@ -248,16 +250,24 @@ function buildRiskDistanceSummary(
     bucketDetail: bucketDetail[assessment.time_to_risk_bucket],
     nearestValue:
       anomalyHorizons.length > 0
-        ? "待审计"
+        ? "不作距离结论"
         : nearest
-          ? formatProbabilityPercentExact(nearest.share)
+          ? nearest.gap === 0
+            ? "已触线"
+            : nearest.multiple
+              ? `需 ${formatThresholdMultiple(nearest.multiple)}`
+              : "无法计算"
           : "未配置",
     nearestDetail:
       anomalyHorizons.length > 0
-        ? `当前存在模型方向异常，不能用机械触线完成度判断“离风险还有多远”。审计值：${mechanicalDistanceCopy}。`
+        ? `当前存在模型方向异常，不能用机械触线比例判断“离风险还有多远”。机械值只保留为审计证据：${mechanicalDistanceCopy}。`
         : nearest
-          ? `${nearest.label} 的触线完成度；不是剩余天数。${
-              nearest.multiple ? ` 触线仍需约 ${formatThresholdMultiple(nearest.multiple)}。` : ""
+          ? `${nearest.label} 最接近；还差 ${formatPercentagePointGap(
+              nearest.gap
+            )}。机械完成度 ${formatProbabilityPercentExact(nearest.share)}，不是剩余天数。${
+              nearest.multiple && nearest.gap > 0
+                ? ` 触线仍需约 ${formatThresholdMultiple(nearest.multiple)}。`
+                : ""
             }`
           : "当前 release 没有返回可比较的动作进入线。",
     modelStatus: modelStatusWithAnomaly,

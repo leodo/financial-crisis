@@ -24,6 +24,12 @@ function percentLabel(value: number, yMax: number) {
   if (yMax <= 0.01) {
     return `${trimTrailingZeros(percent.toFixed(2))}%`;
   }
+  if (yMax <= 0.02) {
+    return `${trimTrailingZeros(percent.toFixed(2))}%`;
+  }
+  if (yMax <= 0.1) {
+    return `${trimTrailingZeros(percent.toFixed(1))}%`;
+  }
   return `${Math.round(percent)}%`;
 }
 

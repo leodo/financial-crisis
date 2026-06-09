@@ -24,7 +24,7 @@ const POSTURE_STEPS: Array<{
   { id: "defend", label: "防守优先", description: "短期窗口已打开，先保流动性和资本。 " }
 ];
 
-function formatPercentagePointGap(value: number): string {
+export function formatPercentagePointGap(value: number): string {
   return formatPercentPrecise(value).replace("%", " 个百分点");
 }
 
@@ -355,16 +355,12 @@ export function ProbabilityTile({
   const thresholdDistance = describeThresholdDistance(value, threshold, thresholdLabel, anomaly);
   const thresholdShareValue =
     thresholdShare === null ? "—" : formatProbabilityPercentExact(thresholdShare);
-  const distanceHeadline = anomaly ? "不作距离结论" : thresholdShareValue;
-  const distanceLabel = anomaly ? "机械触线完成度（仅审计）" : "触线完成度（非天数）";
-  const distanceDetail =
-    thresholdShare === null
-      ? null
-      : anomaly
-        ? `机械值 ${thresholdShareValue}，比例小数 ${formatProbabilityDecimal(
-            thresholdShare
-          )}；该期限先按模型待审计处理。`
-        : `比例小数 ${formatProbabilityDecimal(thresholdShare)}`;
+  const distanceHeadline = anomaly
+    ? "不作距离结论"
+    : thresholdGap === 0
+      ? "已触线"
+      : `还差 ${formatPercentagePointGap(thresholdGap)}`;
+  const distanceLabel = anomaly ? "模型审计状态" : "距离动作线";
   const thresholdMultipleValue =
     thresholdShare === null
       ? "—"
@@ -373,6 +369,14 @@ export function ProbabilityTile({
         : value > 0
           ? formatThresholdMultiple(threshold / value)
           : "无法计算";
+  const distanceDetail =
+    thresholdShare === null
+      ? null
+      : anomaly
+        ? `审计比例 ${thresholdShareValue}，比例小数 ${formatProbabilityDecimal(
+            thresholdShare
+          )}；该期限先按模型待审计处理，不把比例当距离结论。`
+        : `触线仍需约 ${thresholdMultipleValue}；机械完成度 ${thresholdShareValue}，不是剩余天数。`;
   const thresholdCopy =
     thresholdGap === 0
       ? `已达到${thresholdLabel} ${formatPercentPrecise(threshold)}`
