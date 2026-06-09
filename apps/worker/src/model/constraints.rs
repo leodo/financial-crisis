@@ -158,13 +158,15 @@ fn forward_crisis_coefficient_bounds(
         }),
         // High USDJPY is allowed to matter as carry-pressure context, but it must
         // not become a large negative suppressor that hides a possible unwind
-        // setup. Keep the high-level tail nonnegative and auxiliary.
-        (20, "tail_pos__us_usdjpy_level__145") if uses_family_context_features => {
-            Some(CoefficientBounds {
-                min: Some(0.0),
-                max: Some(0.18),
-            })
-        }
+        // setup. Keep the high-level tail nonnegative and auxiliary across base
+        // and family-context model shapes.
+        (5 | 20 | 60, "tail_pos__us_usdjpy_level__145") => Some(CoefficientBounds {
+            min: Some(0.0),
+            max: Some(match horizon_days {
+                5 => 0.12,
+                _ => 0.18,
+            }),
+        }),
         (20, "interaction__external_dimension_score__us_usdjpy_level")
             if uses_family_context_features =>
         {
@@ -197,7 +199,9 @@ fn forward_crisis_coefficient_bound_strength(
         return 0.0;
     }
     match horizon_days {
+        5 => 0.30,
         20 => 0.40,
+        60 => 0.35,
         _ => 0.0,
     }
 }
@@ -284,7 +288,8 @@ pub(crate) fn project_forward_crisis_sign_constraints(
     horizon_days: u32,
     label_mode: ProbabilityTargetLabelMode,
 ) {
-    if forward_crisis_sign_constraint_strength(horizon_days, label_mode) <= 0.0 {
+    let sign_strength = forward_crisis_sign_constraint_strength(horizon_days, label_mode);
+    if sign_strength <= 0.0 && label_mode != ProbabilityTargetLabelMode::ForwardCrisis {
         return;
     }
     let uses_family_context_features = feature_names.iter().any(|feature_name| {
@@ -292,13 +297,15 @@ pub(crate) fn project_forward_crisis_sign_constraints(
     });
 
     for (weight, feature_name) in weights.iter_mut().zip(feature_names.iter()) {
-        if let Some(expected_sign) =
-            forward_crisis_expected_coefficient_sign(feature_name, horizon_days, label_mode)
-        {
-            match expected_sign {
-                ExpectedCoefficientSign::Positive if *weight < 0.0 => *weight = 0.0,
-                ExpectedCoefficientSign::Negative if *weight > 0.0 => *weight = 0.0,
-                _ => {}
+        if sign_strength > 0.0 {
+            if let Some(expected_sign) =
+                forward_crisis_expected_coefficient_sign(feature_name, horizon_days, label_mode)
+            {
+                match expected_sign {
+                    ExpectedCoefficientSign::Positive if *weight < 0.0 => *weight = 0.0,
+                    ExpectedCoefficientSign::Negative if *weight > 0.0 => *weight = 0.0,
+                    _ => {}
+                }
             }
         }
 

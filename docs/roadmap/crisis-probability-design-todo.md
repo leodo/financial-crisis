@@ -930,6 +930,13 @@
      - 脚本已继续扩展为多日期 runtime group attribution：输出 `date_rows`，并按 candidate 的 `time_to_risk_bucket / posture / threshold_state` 聚合 `runtime_group_summaries`；
      - 对 `2026-06-01 -> 2026-06-09` 的实跑结果显示，20d candidate 在 normal/posture normal 下分裂为 `building=5 天` 与 `cold=4 天`，candidate avg `39.0093%` 仍低于 `90.0000%` floor；这说明问题已经具体到“运行时连续性与阈值策略”，不再只是单日显示异常；
      - 结论：当前 No-Go 不是前端显示问题，也不能靠运行时硬抬概率解决；下一步必须做多日期 runtime regime attribution，并把 `USDJPY/Jpy carry semantics`、`20d threshold policy`、`positive-window continuity`、`60d cold signal` 一起纳入训练和 release review。
+   - `2026-06-10` 用户再次复核后确认：决策面板十字星 hover 能给出日期、三条线精确概率、bp、接口小数和较前点变化；20d 主图贴底不是绘图 bug，而是 active release 当前 20d head 只有 `0.0067%`，最近窗口 `0.0031% -> 0.023%`，在共用纵轴上被压缩。
+     - `离风险还有多远` 的极小数来自 active release 的机械触线完成度：`5d=2.842% / 20d=0.0238% / 60d=0.1333%`，且三期限都命中 USDJPY 高位 tail 负贡献；这些数只能作为审计证据，不能解释成“风险离得很远”。
+     - 已把 `tail_pos__us_usdjpy_level__145` 训练护栏从 20d family-context 扩展为 base / family-context 通用的 `5d / 20d / 60d` 约束：5d 上限 `0.12`，20d/60d 上限 `0.18`，三期限下限均为 `0.0`；这只影响下一轮候选训练，不改变当前 active release。
+     - 候选 `us_formal_family_hybrid_20260609T224315` 验证了 5d/20d tail 负贡献会消失，但 60d 仍保留 `tail_pos__us_usdjpy_level__145=-7.10`，说明只把护栏挂在 family-context 形态上还不够。
+     - 候选 `us_formal_family_hybrid_20260609T230426` 继续验证 base / family-context 通用护栏：runtime contribution audit 中 5d/20d/60d 的 `usdjpy_high_tail_negative` 均已从 candidate anomalies 消失；当前点候选概率为 5d `2.1657%`、20d `56.7713%`、60d `1.6579%`，触线完成度分别为 `56.99% / 63.08% / 59.21%`。
+     - `230426` 仍是 `no_go_offline`，不能激活：regional banks 20d positive-window hit rate `80.0% -> 0.0%`，runtime floor hit count `91 -> 62`，20d `cooldown_bleed`，60d `cold_across_all_regimes`；下一步不能继续单点修 USDJPY tail，必须转向 `us_usdjpy_change_20d` 语义迁移、20d threshold/continuity 与 60d feature transfer。
+     - 下一步必须重训候选并跑 runtime contribution audit、semantics audit、candidate screen 和 release review；只有候选同时解决 USDJPY 语义、20d threshold/continuity 与 60d cold signal，才能进入 Go/No-Go。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 

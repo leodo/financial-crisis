@@ -136,11 +136,31 @@ fn forward_crisis_usdjpy_level_family_cap_only_applies_when_family_context_exist
 }
 
 #[test]
-fn forward_crisis_usdjpy_tail_family_cap_keeps_high_level_tail_auxiliary() {
+fn forward_crisis_usdjpy_tail_cap_keeps_high_level_tail_auxiliary() {
     let family_feature_names = vec![
         "tail_pos__us_usdjpy_level__145".to_string(),
         "family_proxy__jpy_carry".to_string(),
     ];
+    let mut negative_tail_weights_5d = vec![-1.20, 0.03];
+    crate::project_forward_crisis_sign_constraints(
+        &mut negative_tail_weights_5d,
+        &family_feature_names,
+        5,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert_eq!(negative_tail_weights_5d[0], 0.0);
+    assert_eq!(negative_tail_weights_5d[1], 0.03);
+
+    let mut excessive_tail_weights_5d = vec![0.40, 0.03];
+    crate::project_forward_crisis_sign_constraints(
+        &mut excessive_tail_weights_5d,
+        &family_feature_names,
+        5,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert_eq!(excessive_tail_weights_5d[0], 0.12);
+    assert_eq!(excessive_tail_weights_5d[1], 0.03);
+
     let mut negative_tail_weights = vec![-1.20, 0.03];
     crate::project_forward_crisis_sign_constraints(
         &mut negative_tail_weights,
@@ -161,6 +181,26 @@ fn forward_crisis_usdjpy_tail_family_cap_keeps_high_level_tail_auxiliary() {
     assert_eq!(excessive_tail_weights[0], 0.18);
     assert_eq!(excessive_tail_weights[1], 0.03);
 
+    let mut negative_tail_weights_60d = vec![-1.20, 0.03];
+    crate::project_forward_crisis_sign_constraints(
+        &mut negative_tail_weights_60d,
+        &family_feature_names,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert_eq!(negative_tail_weights_60d[0], 0.0);
+    assert_eq!(negative_tail_weights_60d[1], 0.03);
+
+    let mut excessive_tail_weights_60d = vec![0.40, 0.03];
+    crate::project_forward_crisis_sign_constraints(
+        &mut excessive_tail_weights_60d,
+        &family_feature_names,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert_eq!(excessive_tail_weights_60d[0], 0.18);
+    assert_eq!(excessive_tail_weights_60d[1], 0.03);
+
     let plain_feature_names = vec!["tail_pos__us_usdjpy_level__145".to_string()];
     let mut plain_weights_20d = vec![-1.20];
     crate::project_forward_crisis_sign_constraints(
@@ -169,7 +209,16 @@ fn forward_crisis_usdjpy_tail_family_cap_keeps_high_level_tail_auxiliary() {
         20,
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
-    assert_eq!(plain_weights_20d[0], -1.20);
+    assert_eq!(plain_weights_20d[0], 0.0);
+
+    let mut excessive_plain_weights_60d = vec![0.40];
+    crate::project_forward_crisis_sign_constraints(
+        &mut excessive_plain_weights_60d,
+        &plain_feature_names,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert_eq!(excessive_plain_weights_60d[0], 0.18);
 }
 
 #[test]
@@ -357,7 +406,7 @@ fn forward_crisis_usdjpy_level_family_cap_gradient_only_activates_for_family_con
 }
 
 #[test]
-fn forward_crisis_usdjpy_tail_family_cap_gradient_only_activates_for_family_context_sets() {
+fn forward_crisis_usdjpy_tail_cap_gradient_applies_across_feature_sets() {
     let family_feature_names = vec![
         "tail_pos__us_usdjpy_level__145".to_string(),
         "family_proxy__jpy_carry".to_string(),
@@ -377,6 +426,36 @@ fn forward_crisis_usdjpy_tail_family_cap_gradient_only_activates_for_family_cont
     assert!(family_gradients[0] < 0.0);
     assert_eq!(family_gradients[1], 0.0);
 
+    let family_weights_5d = vec![-1.20, 0.03];
+    let mut family_gradients_5d = vec![0.0; family_weights_5d.len()];
+
+    crate::apply_forward_crisis_coefficient_bound_gradient(
+        &mut family_gradients_5d,
+        &family_weights_5d,
+        &family_feature_names,
+        100.0,
+        5,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert!(family_gradients_5d[0] < 0.0);
+    assert_eq!(family_gradients_5d[1], 0.0);
+
+    let family_weights_60d = vec![-1.20, 0.03];
+    let mut family_gradients_60d = vec![0.0; family_weights_60d.len()];
+
+    crate::apply_forward_crisis_coefficient_bound_gradient(
+        &mut family_gradients_60d,
+        &family_weights_60d,
+        &family_feature_names,
+        100.0,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert!(family_gradients_60d[0] < 0.0);
+    assert_eq!(family_gradients_60d[1], 0.0);
+
     let plain_feature_names = vec!["tail_pos__us_usdjpy_level__145".to_string()];
     let plain_weights = vec![-1.20];
     let mut plain_gradients = vec![0.0; plain_weights.len()];
@@ -390,7 +469,7 @@ fn forward_crisis_usdjpy_tail_family_cap_gradient_only_activates_for_family_cont
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
 
-    assert_eq!(plain_gradients[0], 0.0);
+    assert!(plain_gradients[0] < 0.0);
 }
 
 #[test]
