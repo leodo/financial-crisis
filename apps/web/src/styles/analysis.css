@@ -282,9 +282,11 @@
 .simple-chart {
   display: grid;
   gap: 10px;
+  position: relative;
 }
 
 .simple-chart-svg {
+  cursor: crosshair;
   width: 100%;
   display: block;
   overflow: visible;
@@ -314,6 +316,67 @@
   width: 10px;
   height: 10px;
   border-radius: 999px;
+}
+
+.simple-chart-hit-area {
+  pointer-events: all;
+}
+
+.simple-chart-hover-layer {
+  pointer-events: none;
+}
+
+.simple-chart-tooltip {
+  position: absolute;
+  top: 12px;
+  z-index: 4;
+  min-width: 190px;
+  max-width: min(280px, calc(100% - 24px));
+  border: 1px solid rgba(39, 50, 58, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 30px rgba(28, 39, 48, 0.12);
+  color: #1c2730;
+  display: grid;
+  gap: 7px;
+  padding: 9px 10px;
+  pointer-events: none;
+}
+
+.simple-chart-tooltip strong {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.simple-chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.simple-chart-tooltip-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #55636d;
+}
+
+.simple-chart-tooltip-row i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.simple-chart-tooltip-row em {
+  color: #1c2730;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .simple-hbar-chart {

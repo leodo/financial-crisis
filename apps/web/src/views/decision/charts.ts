@@ -57,10 +57,11 @@ export function buildProbabilityTrendModel(history: AssessmentHistoryPoint[]) {
       ? `当前图表已缩放到最近 ${chartHistory.length} 条评估点，避免历史高峰把当前低位压成贴地线；完整历史仍用于回测和发布审计。`
       : "";
   const sourceNote = buildProbabilityTrendSourceNote(history);
+  const sanityNote = buildProbabilityTrendSanityNote(chartHistory, mode);
 
   return {
     chart: buildProbabilityTrendChart(chartHistory, mode),
-    note: [baseNote, windowNote, sourceNote].filter(Boolean).join(" ")
+    note: [baseNote, windowNote, sanityNote, sourceNote].filter(Boolean).join(" ")
   };
 }
 
@@ -165,6 +166,30 @@ function buildProbabilityTrendSourceNote(history: AssessmentHistoryPoint[]) {
   }
 
   return "";
+}
+
+function buildProbabilityTrendSanityNote(
+  history: AssessmentHistoryPoint[],
+  mode: ProbabilityTrendMode
+) {
+  const latest = history.at(-1);
+  if (!latest) {
+    return "";
+  }
+
+  const latest5d = probabilityValue(latest, 5, mode);
+  const latest20d = probabilityValue(latest, 20, mode);
+  const latest60d = probabilityValue(latest, 60, mode);
+  const twentyDayIsCold =
+    latest20d > 0 &&
+    latest20d < latest5d * 0.25 &&
+    latest20d < latest60d * 0.25;
+
+  if (!twentyDayIsCold) {
+    return "";
+  }
+
+  return "当前 20日窗口明显低于 5日和 60日，不是画图错误；它表示活跃正式模型的 20d head 在当前样本上输出偏冷，后续需要通过训练和 release review 修复，而不是在运行时硬抬概率。";
 }
 
 function probabilityValue(

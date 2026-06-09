@@ -1,3 +1,5 @@
+import { useState, type PointerEvent } from "react";
+
 import type {
   GroupedBarChartModel,
   HorizontalBarChartModel,
@@ -6,13 +8,27 @@ import type {
 
 function percentLabel(value: number, yMax: number) {
   const percent = value * 100;
+  const absolutePercent = Math.abs(percent);
+  if (absolutePercent === 0) {
+    return "0%";
+  }
+  if (absolutePercent < 0.01) {
+    return `${trimTrailingZeros(percent.toFixed(4))}%`;
+  }
+  if (absolutePercent < 0.1) {
+    return `${trimTrailingZeros(percent.toFixed(3))}%`;
+  }
   if (yMax <= 0.001) {
-    return `${percent.toFixed(2)}%`;
+    return `${trimTrailingZeros(percent.toFixed(2))}%`;
   }
   if (yMax <= 0.01) {
-    return `${percent.toFixed(1)}%`;
+    return `${trimTrailingZeros(percent.toFixed(2))}%`;
   }
   return `${Math.round(percent)}%`;
+}
+
+function trimTrailingZeros(value: string) {
+  return value.replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
 }
 
 function scoreLabel(value: number) {
@@ -34,6 +50,7 @@ export function SimpleLineChart({
   model: LineChartModel;
   height?: number;
 }) {
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const width = 920;
   const margins = { top: 14, right: 12, bottom: 56, left: 42 };
   const plotWidth = width - margins.left - margins.right;
@@ -49,10 +66,48 @@ export function SimpleLineChart({
   const y = (value: number) => margins.top + plotHeight - (Math.max(0, value) / yMax) * plotHeight;
 
   const ticks = Array.from({ length: 5 }, (_, index) => (yMax / 4) * index).reverse();
+  const hoverX = hoverIndex === null ? null : x(hoverIndex);
+  const hoverRows =
+    hoverIndex === null
+      ? []
+      : model.series.map((series) => ({
+          label: series.label,
+          color: series.color,
+          value: series.values[hoverIndex] ?? 0
+        }));
+  const tooltipStyle =
+    hoverX === null
+      ? undefined
+      : {
+          left: `${(hoverX / width) * 100}%`,
+          transform: hoverX > width * 0.72 ? "translateX(-100%)" : "translateX(0)"
+        };
+
+  const updateHoverIndex = (event: PointerEvent<SVGSVGElement>) => {
+    if (model.categories.length === 0) {
+      setHoverIndex(null);
+      return;
+    }
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const svgX = ((event.clientX - bounds.left) / bounds.width) * width;
+    const clampedX = Math.max(margins.left, Math.min(width - margins.right, svgX));
+    const nextIndex =
+      pointCount === 1
+        ? 0
+        : Math.round(((clampedX - margins.left) / plotWidth) * (pointCount - 1));
+    setHoverIndex(Math.max(0, Math.min(model.categories.length - 1, nextIndex)));
+  };
 
   return (
     <div className="simple-chart">
-      <svg className="simple-chart-svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+      <svg
+        className="simple-chart-svg"
+        onPointerLeave={() => setHoverIndex(null)}
+        onPointerMove={updateHoverIndex}
+        preserveAspectRatio="none"
+        viewBox={`0 0 ${width} ${height}`}
+      >
         {ticks.map((tick) => (
           <g key={tick}>
             <line
@@ -107,7 +162,56 @@ export function SimpleLineChart({
             </text>
           );
         })}
+
+        {hoverIndex !== null && hoverX !== null ? (
+          <g className="simple-chart-hover-layer">
+            <line
+              x1={hoverX}
+              x2={hoverX}
+              y1={margins.top}
+              y2={margins.top + plotHeight}
+              stroke="#27323a"
+              strokeDasharray="4 4"
+              strokeWidth="1.2"
+            />
+            {model.series.map((series) => (
+              <circle
+                cx={hoverX}
+                cy={y(series.values[hoverIndex] ?? 0)}
+                fill="#ffffff"
+                key={series.label}
+                r="4.5"
+                stroke={series.color}
+                strokeWidth="2"
+              />
+            ))}
+          </g>
+        ) : null}
+
+        <rect
+          className="simple-chart-hit-area"
+          fill="transparent"
+          height={plotHeight}
+          width={plotWidth}
+          x={margins.left}
+          y={margins.top}
+        />
       </svg>
+
+      {hoverIndex !== null ? (
+        <div className="simple-chart-tooltip" style={tooltipStyle}>
+          <strong>{model.categories[hoverIndex]}</strong>
+          {hoverRows.map((row) => (
+            <div className="simple-chart-tooltip-row" key={row.label}>
+              <span>
+                <i style={{ background: row.color }} />
+                {row.label}
+              </span>
+              <em>{chartValueLabel(row.value, model.valueType, yMax)}</em>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <div className="simple-chart-legend">
         {model.series.map((series) => (
@@ -224,6 +328,7 @@ export function SimpleGroupedBarChart({
             </g>
           );
         })}
+
       </svg>
 
       <div className="simple-chart-legend">

@@ -156,7 +156,7 @@ export default function App() {
 
     return [
       `风险时距 ${timeBucketLabel(assessment.data.time_to_risk_bucket)}`,
-      `可信度 ${qualityLabel(assessment.data.data_trust.quality_grade)}`,
+      `数据可信度 ${qualityLabel(assessment.data.data_trust.quality_grade)}`,
       `关键数据 ${assessment.data.runtime.latest_key_indicator_at ?? assessment.data.runtime.latest_observation_at ?? "—"}`
     ];
   }, [assessment.data]);
@@ -228,7 +228,7 @@ export default function App() {
                 </span>
                 <span>生成时间 {formatDateTime(assessment.data.runtime.generated_at)}</span>
                 <span>风险时距 {timeBucketLabel(assessment.data.time_to_risk_bucket)}</span>
-                <span>可信度 {qualityLabel(assessment.data.data_trust.quality_grade)}</span>
+                <span>数据可信度 {qualityLabel(assessment.data.data_trust.quality_grade)}</span>
               </div>
             ) : null}
           </div>
