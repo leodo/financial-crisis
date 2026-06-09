@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-09
+最后更新：2026-06-10
 
 ## 1. 目的
 
@@ -920,8 +920,14 @@
      - 它会复用或生成 `formal-probability-compare` 工件，并按 `20d / 60d`、`regime_20d / regime_60d` 聚合 baseline/candidate 平均概率、命中率、decision threshold 与 top feature contribution；
      - 对 `us_formal_family_hybrid_20260606T112926 -> us_formal_family_hybrid_20260609T204721` 的 `us_regional_banks_2023` 窗口，确认 20d 候选正窗口均值虽升到 `76.48%`，但 `candidate threshold=90.00%`，因此 positive-window hit rate 仍是 `0%`；这解释了“概率看着不低但离触线很远”的一类异常；
      - 同一审计确认 60d 不是阈值小问题，而是正窗口均值从 baseline `95.66%` 塌到 candidate `1.39%`，属于 `cold signal / feature transfer` 问题；
-     - 对 `2023-07` 常态窗口，20d candidate normal avg 已达 `56.63%`，占 `90%` threshold 的 `62.9%`；如果只下调阈值，会很容易把常态误报重新放出来；
-     - 重要边界：当前 formal compare 的 `regional_banks` 样本没有 normal/cooldown 行，无法单独解释 runtime `cooldown_bleed`；该脚本只能做 top feature delta 级 triage，下一步仍必须补 runtime replay contribution 证据。
+   - 对 `2023-07` 常态窗口，20d candidate normal avg 已达 `56.63%`，占 `90%` threshold 的 `62.9%`；如果只下调阈值，会很容易把常态误报重新放出来；
+   - 重要边界：当前 formal compare 的 `regional_banks` 样本没有 normal/cooldown 行，无法单独解释 runtime `cooldown_bleed`；该脚本只能做 top feature delta 级 triage，下一步仍必须补 runtime replay contribution 证据。
+   - `2026-06-10` 已新增 `scripts/formal-candidate-runtime-contribution-audit.ps1` 与 `just formal-candidate-runtime-contribution-audit <baseline> <candidate>`：
+     - 该脚本复用或生成 runtime `release probability-slice`，直接比较 baseline/candidate 当前回放里的 `base_contributions`、runtime threshold、touchline ratio 与 USDJPY 语义异常；
+     - 对 `us_formal_family_hybrid_20260606T112926 -> us_formal_family_hybrid_20260609T204721` 的 `2026-06-09` 当前点，baseline 机械触线完成度为 `5d=0.02842 / 20d=0.000238 / 60d=0.001333`，这解释了面板“离风险还有多远”为什么出现极小数；
+     - candidate 20d runtime avg 已升到 `56.7713%`，但 candidate threshold 仍是 `90.0000%`，touchline ratio 只有 `0.630792`，因此不能激活；5d 仍只有 `0.0312%`，60d 只有 `2.8079%`；
+     - runtime contribution 明确显示 active baseline 三个 horizon 都命中 `tail_pos__us_usdjpy_level__145` 高 USDJPY 负贡献，candidate 5d/60d 仍未清掉该语义异常，20d 也仍有 `us_usdjpy_change_20d` 正变化负贡献；
+     - 结论：当前 No-Go 不是前端显示问题，也不能靠运行时硬抬概率解决；下一步必须做多日期 runtime regime attribution，并把 `USDJPY/Jpy carry semantics`、`20d threshold policy`、`positive-window continuity`、`60d cold signal` 一起纳入训练和 release review。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 

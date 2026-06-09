@@ -162,6 +162,12 @@ formal-candidate-feature-audit baseline_release_id candidate_release_id:
 formal-candidate-regime-contribution-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-regime-contribution-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 对比 baseline / candidate 在 runtime replay slice 里的 base contribution，直接解释当前面板读数为什么被压低。
+# 默认读取当前 API as_of_date，输出到 ignored artifacts/research/runtime-contribution-audit。
+# 用法：`just formal-candidate-runtime-contribution-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260609T204721`
+formal-candidate-runtime-contribution-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-runtime-contribution-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
 # 进一步对齐 `curve / bond-spread / USDJPY / jpy carry / 20d threshold` 语义审计。
 # 会明确输出哪些约束已经在训练层落实，哪些还只是文档约束，以及最小代码入口在哪。
 # 用法：`just formal-candidate-semantics-audit us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`
