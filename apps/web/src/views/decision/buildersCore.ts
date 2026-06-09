@@ -133,10 +133,23 @@ function actionEvidenceScore(assessment: AssessmentSnapshot): number {
   return assessment.action_evidence?.score ?? assessment.conviction_score;
 }
 
+function actionEvidenceStatus(score: number): string {
+  if (score >= 0.82) {
+    return "强证据";
+  }
+  if (score >= 0.68) {
+    return "可升级";
+  }
+  if (score >= 0.55) {
+    return "接近观察";
+  }
+  return "低位观察";
+}
+
 function actionEvidenceHint(assessment: AssessmentSnapshot): string {
   const evidence = assessment.action_evidence;
   if (!evidence) {
-    return "不是“常态结论只有这点把握”。它衡量风险广度和结构/触发共振是否足以升级动作，低风险期会被压低。";
+    return `原始证据分 ${formatPercent(actionEvidenceScore(assessment))}。这不是模型结论置信概率，而是风险广度和结构/触发共振是否足以升级动作。`;
   }
 
   const agreementCopy = evidence.structural_trigger_agreement
@@ -148,9 +161,10 @@ function actionEvidenceHint(assessment: AssessmentSnapshot): string {
       : `风险广度贡献 ${formatPercent(evidence.breadth_component)}`;
 
   return [
-    "这不是“结论把握度”，也不是危机发生概率；危机概率看 5/20/60 天三项。",
+    "这不是模型结论置信概率，也不是危机发生概率；危机概率看 5/20/60 天三项。",
+    `原始证据分 ${formatPercent(evidence.score)}，当前状态为 ${actionEvidenceStatus(evidence.score)}。`,
     `当前由数据覆盖贡献 ${formatPercent(evidence.data_quality_component)}、${breadthCopy}、${agreementCopy} 加总得到。`,
-    "所以低风险期它可能长期接近 52%，含义是“还不足以升级仓位动作”。"
+    "如果风险广度没有打开、结构和触发没有共振，它会长期停在 50% 左右，含义是“还不足以升级仓位动作”。"
   ].join(" ");
 }
 
@@ -256,11 +270,13 @@ export function buildRuntimeCards(
 }
 
 export function buildHeroMetrics(assessment: AssessmentSnapshot): MetricItem[] {
+  const evidenceScore = actionEvidenceScore(assessment);
   return [
     {
-      label: "动作证据强度",
-      value: formatPercent(actionEvidenceScore(assessment)),
-      hint: actionEvidenceHint(assessment)
+      label: "执行证据状态",
+      value: actionEvidenceStatus(evidenceScore),
+      hint: actionEvidenceHint(assessment),
+      valueClassName: "metric-value-token"
     },
     {
       label: "数据覆盖",
@@ -444,6 +460,10 @@ export function buildSignalLayerRows(
   posture: PostureGuidance
 ): DecisionSignalLayerRowModel[] {
   const actionabilitySource = actionSourceSummary(assessment).detail;
+  const actionEvidence = assessment.action_evidence;
+  const actionEvidenceDetail = actionEvidence
+    ? `原始证据分 ${formatPercent(actionEvidence.score)} = 数据覆盖 ${formatPercent(actionEvidence.data_quality_component)} + 风险广度 ${formatPercent(actionEvidence.breadth_component)} + 结构/触发${actionEvidence.structural_trigger_agreement ? "共振" : "未共振"} ${formatPercent(actionEvidence.agreement_component)}。它不是模型结论置信概率。`
+    : `原始证据分 ${formatPercent(actionEvidenceScore(assessment))}，当前缺少后端拆解，只能作为过渡动作证据。`;
   const priorDetail = probabilityDisplayNote(assessment);
   const priorThresholdSummary = `当前进入线：准备 ${formatPercent(method.runtime_thresholds.prepare_p60d)} / 对冲 ${formatPercent(method.runtime_thresholds.hedge_p20d)} / 防守 ${formatPercent(method.runtime_thresholds.defend_p5d)}`;
 
@@ -482,6 +502,13 @@ export function buildSignalLayerRows(
         assessment.actionability.defend,
         assessment.method.actionability_enabled
       )}。`
+    },
+    {
+      id: "action-evidence",
+      title: "执行证据状态",
+      description: "看当前证据是否足以把仓位动作从观察推向准备、对冲或防守。",
+      value: actionEvidenceStatus(actionEvidenceScore(assessment)),
+      detail: actionEvidenceDetail
     },
     {
       id: "posture",
