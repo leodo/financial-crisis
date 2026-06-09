@@ -518,8 +518,8 @@ export function buildSignalLayerRows(
   const actionabilitySource = actionSourceSummary(assessment).detail;
   const actionEvidence = assessment.action_evidence;
   const actionEvidenceDetail = actionEvidence
-    ? `${actionEvidenceBreakdownCopy(assessment)} 它不是结论把握度；结论可靠性请看数据覆盖、模型服务状态和关键数据日期。`
-    : `${actionEvidenceBreakdownCopy(assessment)} 它不是结论把握度；结论可靠性请看数据覆盖、模型服务状态和关键数据日期。`;
+    ? `${actionEvidenceBreakdownCopy(assessment)} 它不是模型结论置信概率；结论可靠性请看数据覆盖、模型服务状态和关键数据日期。`
+    : `${actionEvidenceBreakdownCopy(assessment)} 它不是模型结论置信概率；结论可靠性请看数据覆盖、模型服务状态和关键数据日期。`;
   const priorDetail = probabilityDisplayNote(assessment);
   const priorThresholdSummary = `当前进入线：准备 ${formatPercent(method.runtime_thresholds.prepare_p60d)} / 对冲 ${formatPercent(method.runtime_thresholds.hedge_p20d)} / 防守 ${formatPercent(method.runtime_thresholds.defend_p5d)}`;
 
@@ -562,7 +562,7 @@ export function buildSignalLayerRows(
     {
       id: "action-evidence",
       title: "动作升级证据",
-      description: "看当前证据是否足以把仓位动作从观察推向准备、对冲或防守；它不是结论把握度。",
+      description: "看当前证据是否足以把仓位动作从观察推向准备、对冲或防守；它不是模型结论置信概率。",
       value: actionEvidenceStatus(actionEvidenceScore(assessment)),
       detail: actionEvidenceDetail
     },
