@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::training::PipelineArtifacts;
 
 use super::{options::PipelineBootstrapOptions, PipelineTrainOptions};
@@ -6,6 +8,12 @@ pub(crate) async fn research_pipeline_train_probability(args: &[String]) -> anyh
     let options = PipelineTrainOptions::parse(args)?;
     let store = crate::open_sqlite_store().await?;
     store.migrate().await?;
+    if options.dry_run {
+        let training =
+            crate::commands::pipeline::load_probability_training_input(&store, &options).await?;
+        print_training_dry_run_summary(&training, &options);
+        return Ok(());
+    }
     let artifacts = crate::train_probability_pipeline(&store, &options).await?;
     print_training_artifacts_summary(&artifacts, &options);
     Ok(())
@@ -40,6 +48,127 @@ pub(crate) async fn research_pipeline_bootstrap_formal_release(
     }
 
     Ok(())
+}
+
+#[derive(Debug, Default)]
+struct TrainingRowTopologySummary {
+    row_count: usize,
+    topology_repair_rows: usize,
+    protected_action_rows: usize,
+    mixed_systemic_extension_primary_rows: usize,
+    mixed_systemic_extension_primary_repair_rows: usize,
+    mixed_systemic_extension_late_validation_rows: usize,
+}
+
+fn print_training_dry_run_summary(
+    training: &crate::ProbabilityTrainingInput,
+    options: &PipelineTrainOptions,
+) {
+    let train = summarize_training_topology_rows(&training.train_rows);
+    let calibration = summarize_training_topology_rows(&training.calibration_rows);
+    let evaluation = summarize_training_topology_rows(&training.evaluation_rows);
+
+    println!("Formal probability training dry run.");
+    println!("  dataset_source   {}", training.dataset_source.as_str());
+    println!("  dataset_label    {}", training.dataset_label);
+    println!("  market_scope     {}", training.market_scope);
+    println!("  model_shape      {}", options.model_shape.as_str());
+    println!("  pit_mode         {}", training.point_in_time_mode);
+    println!("  feature_set      {}", training.feature_set_version);
+    println!("  label_version    {}", training.label_version);
+    println!("  feature_count    {}", training.feature_names.len());
+    println!(
+        "  rows             train={} calibration={} evaluation={}",
+        train.row_count, calibration.row_count, evaluation.row_count,
+    );
+    println!(
+        "  topology_repair  train={} calibration={} evaluation={}",
+        train.topology_repair_rows,
+        calibration.topology_repair_rows,
+        evaluation.topology_repair_rows,
+    );
+    println!(
+        "  protected_rows   train={} calibration={} evaluation={}",
+        train.protected_action_rows,
+        calibration.protected_action_rows,
+        evaluation.protected_action_rows,
+    );
+    println!(
+        "  mixed_sys_primary_ext train={} calibration={} evaluation={}",
+        train.mixed_systemic_extension_primary_rows,
+        calibration.mixed_systemic_extension_primary_rows,
+        evaluation.mixed_systemic_extension_primary_rows,
+    );
+    println!(
+        "  mixed_sys_primary_repair train={} calibration={} evaluation={}",
+        train.mixed_systemic_extension_primary_repair_rows,
+        calibration.mixed_systemic_extension_primary_repair_rows,
+        evaluation.mixed_systemic_extension_primary_repair_rows,
+    );
+    println!(
+        "  mixed_sys_late_ext    train={} calibration={} evaluation={}",
+        train.mixed_systemic_extension_late_validation_rows,
+        calibration.mixed_systemic_extension_late_validation_rows,
+        evaluation.mixed_systemic_extension_late_validation_rows,
+    );
+    println!(
+        "  split_names      train=[{}] calibration=[{}] evaluation=[{}]",
+        format_split_name_counts(&training.train_rows),
+        format_split_name_counts(&training.calibration_rows),
+        format_split_name_counts(&training.evaluation_rows),
+    );
+}
+
+fn summarize_training_topology_rows(
+    rows: &[crate::ProbabilityTrainingRow],
+) -> TrainingRowTopologySummary {
+    rows.iter()
+        .fold(TrainingRowTopologySummary::default(), |mut summary, row| {
+            summary.row_count += 1;
+            let topology_repair_row = matches!(
+                row.split_name.as_deref(),
+                Some("train_topology_repair") | Some("calibration_topology_repair")
+            );
+            if topology_repair_row {
+                summary.topology_repair_rows += 1;
+            }
+            if row.protected_action_window {
+                summary.protected_action_rows += 1;
+            }
+            if row.scenario_training_role.as_deref() == Some("extension_only")
+                && row.scenario_family.as_deref() == Some("mixed_systemic_stress")
+                && row.protected_action_window
+                && row.action_episode_id.is_some()
+            {
+                match row.action_episode_phase.as_str() {
+                    "primary" => {
+                        summary.mixed_systemic_extension_primary_rows += 1;
+                        if topology_repair_row {
+                            summary.mixed_systemic_extension_primary_repair_rows += 1;
+                        }
+                    }
+                    "late_validation" => summary.mixed_systemic_extension_late_validation_rows += 1,
+                    _ => {}
+                }
+            }
+            summary
+        })
+}
+
+fn format_split_name_counts(rows: &[crate::ProbabilityTrainingRow]) -> String {
+    if rows.is_empty() {
+        return "none".to_string();
+    }
+    let mut counts = BTreeMap::<&str, usize>::new();
+    for row in rows {
+        let split_name = row.split_name.as_deref().unwrap_or("unknown");
+        *counts.entry(split_name).or_insert(0) += 1;
+    }
+    counts
+        .into_iter()
+        .map(|(split_name, count)| format!("{split_name}:{count}"))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn print_training_artifacts_summary(artifacts: &PipelineArtifacts, options: &PipelineTrainOptions) {

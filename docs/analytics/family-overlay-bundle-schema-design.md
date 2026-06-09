@@ -282,6 +282,11 @@ family_overlays == []
      1. 真实 funding-stress slice 显示 2011 共有 `213` 行，全部是 `extension_only + evaluation + protected_action_window=true`；
      2. 其中 `205` 行是 `primary`，现在会以 `train_topology_repair` 进入 formal training；
      3. `late_validation` 8 行仍保留在 evaluation，非 `mixed_systemic_stress` 的 `extension_only` 行也不会被泛化提升。
+   - 为避免每次验证这类训练拓扑都启动完整训练，`research pipeline train-probability --dry-run`
+     已成为标准预检入口：
+     1. `just formal-train-family-overlay-dry-run` 会自动解析最新 main / ext_stress / ext_acute dataset key；
+     2. 命令只加载训练输入并打印 train / calibration / evaluation 的 row count、`topology_repair` row count、protected row count，以及 `mixed_sys_primary_ext / mixed_sys_primary_repair` 计数；
+     3. 后续若继续调整 split repair 或 extension/protected 入口，必须先用 dry-run 证明真实样本路由，再进入完整 candidate retrain。
 4. 对 `jpy_carry` 单独补 family proxy / protected stress 样本后再决定是否进入正式 overlay 训练；
    - `2026-06-06` 已把这条线继续前推到“真实可训练”：
      1. `proxy-only audit` 现在把 `protected_action_window` 和 gate-active carry rows

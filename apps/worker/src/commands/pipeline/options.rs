@@ -89,6 +89,7 @@ impl ProbabilityModelShape {
 pub(crate) struct PipelineTrainOptions {
     pub(crate) dataset_source: PipelineDatasetSource,
     pub(crate) model_shape: ProbabilityModelShape,
+    pub(crate) dry_run: bool,
     pub(crate) dataset_id: String,
     pub(crate) dataset_version: Option<String>,
     pub(crate) dataset_key: Option<String>,
@@ -106,6 +107,7 @@ impl PipelineTrainOptions {
         let mut release_prefix = None;
         let mut dataset_source = PipelineDatasetSource::Formal;
         let mut model_shape = ProbabilityModelShape::LinearV1;
+        let mut dry_run = false;
         let mut dataset_id = crate::DEFAULT_FORMAL_DATASET_ID.to_string();
         let mut dataset_version = None;
         let mut dataset_key = None;
@@ -114,6 +116,7 @@ impl PipelineTrainOptions {
         let mut index = 0;
         while index < args.len() {
             match args[index].as_str() {
+                "--dry-run" => dry_run = true,
                 "--dataset-source" => {
                     index += 1;
                     dataset_source = PipelineDatasetSource::parse(
@@ -189,6 +192,7 @@ impl PipelineTrainOptions {
         Ok(Self {
             dataset_source,
             model_shape,
+            dry_run,
             dataset_id,
             dataset_version,
             dataset_key,

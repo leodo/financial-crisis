@@ -1,5 +1,6 @@
 param(
     [switch]$Tracked,
+    [switch]$DryRun,
     [string]$MarketScope = "financial_system",
     [string]$ModelShape = "family_conditional_v1",
     [string]$PrimaryDatasetId = "formal_v1_main_1990_daily",
@@ -73,6 +74,10 @@ $args = @(
 
 foreach ($key in $auxKeys) {
     $args += @("--aux-dataset-key", $key)
+}
+
+if ($DryRun) {
+    $args += @("--dry-run")
 }
 
 if ($Tracked) {

@@ -228,6 +228,11 @@ formal-candidate-screen baseline_release_id candidate_release_id:
 formal-train:
     cargo run -p fc-worker -- research pipeline train-probability --market-scope financial_system
 
+# 只加载 formal train/calibration/evaluation 数据并打印 split / topology repair 计数，不训练、不写 bundle。
+# 适合先验证样本是否真的进入训练拓扑。
+formal-train-dry-run:
+    cargo run -p fc-worker -- research pipeline train-probability --market-scope financial_system --dry-run
+
 # 和 `formal-train` 相同，但显式把 bundle / manifest 输出到版本化 generated 目录。
 # 只在需要把该候选版作为仓库长期证据保留时使用。
 formal-train-tracked:
@@ -246,6 +251,11 @@ formal-train-interaction-tail-tracked:
 # 训练 `family_conditional_v1` overlay 候选，避免每次手工拼接长参数。
 formal-train-family-overlay:
     ./scripts/formal-train-family-overlay.ps1
+
+# 自动解析最新 main + ext_stress + ext_acute key，只做训练拓扑 dry-run 审计。
+# 用来确认 2011 funding-stress 等 protected extension row 是否已进入 train_topology_repair。
+formal-train-family-overlay-dry-run:
+    ./scripts/formal-train-family-overlay.ps1 -DryRun
 
 # 和 `formal-train-family-overlay` 相同，但把 bundle / manifest 显式写到版本化 generated 目录。
 formal-train-family-overlay-tracked:

@@ -844,6 +844,10 @@
      - 当前 funding-stress slice 中符合条件的真实 2011 行为 `205/213`，全部来自 `extension_only`；
      - `late_validation` 8 行仍保留 evaluation，非 `mixed_systemic_stress` 的 `extension_only` 行也不会被提升；
      - 这一步只解决“2011 primary 行完全进不了训练”的问题，尚未证明新候选通过 release review；下一步仍必须重训候选并跑 funding-stress / cooldown / release-review 审计。
+   - `2026-06-09` 已给 `research pipeline train-probability` 增加 `--dry-run` 训练拓扑审计，并新增 `just formal-train-family-overlay-dry-run`：
+     - dry-run 会加载与正式训练同一套 train / calibration / evaluation row，但不拟合模型、不写 bundle；
+     - 输出 `topology_repair`、protected rows、`mixed_sys_primary_ext` 与 `mixed_sys_primary_repair` 在三类 split 中的计数；
+     - 后续每次调整 formal loader / split repair / extension dataset 入口时，必须先跑 dry-run 验证真实样本路由，再决定是否启动完整重训。
    - `2026-06-09` 已把这条专项审计接入 `/api/research/audit` 与前端“发布审计”页：
      - API 新增 `latest_prewarning_gap_audit`，从 `artifacts/research/prewarning-gap-audit/*-prewarning-gap-audit.json` 读取与当前 release review baseline/candidate 匹配的工件；
      - UI 新增“提前预警缺口审计”区块，直接展示 `candidate_margin_erosion / no_runtime_floor_signal / protected_context_signal_present` 分类、dataset 行数、20d/60d 命中与下一步建议；
