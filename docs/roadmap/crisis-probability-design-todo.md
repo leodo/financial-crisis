@@ -902,6 +902,11 @@
      - 20d final threshold 从 `28.2%` 被推到 `90.0%`，positive-window avg p20d `45.97%` 仍低于进入线，导致“离风险还有多远”继续表现为很小的触线完成度；
      - 60d 正窗口保留严重塌陷，release review 标记为 `cold_across_all_regimes`，runtime floor hit count `91 -> 62`；
      - 结论：这轮只固化 “高 USDJPY 不能作为 20d 强压分项” 的训练护栏；下一轮主线必须同时解决 `20d threshold policy`、`positive-window continuity` 与 `60d cold signal`，不能把该候选发布到生产。
+   - `2026-06-10` 已继续验证 threshold repair 是否能单独解决“离风险还有多远数值过小”：
+     - 代码层把 20d/60d threshold 的“可用支持”补严为：base threshold 不能只靠 pre-warning 零星命中，还必须有 positive-window 触线，且 positive-window 不得弱于 cooldown；
+     - 单测新增 `regime_support_adjustment_rejects_prewarning_only_20d_threshold`，防止以后再接受“pre-warning 有高点但 positive-window 全断线”的 20d floor；
+     - 重训候选 `us_formal_family_hybrid_20260609T204721` 仍显示 `20d base=0.900 final=0.900`，`formal-candidate-screen` 仍是 `no_go_offline`，regional banks positive-window hit rate 仍为 `80.0% -> 0.0%`；
+     - 结论：阈值规则补丁只能防回归，不能安全修复当前候选；真正瓶颈是 20d/60d 训练分布与特征分离，下一步应优先做 `positive-window vs cooldown/normal` 的训练目标与特征审计，而不是继续调 runtime 进入线。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 

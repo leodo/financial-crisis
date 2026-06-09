@@ -46,6 +46,14 @@ fn regime_floor_over_tight_base_threshold(horizon_days: u32) -> f64 {
     }
 }
 
+fn regime_positive_window_min_hit_rate(horizon_days: u32) -> f64 {
+    match horizon_days {
+        20 => 0.25,
+        60 => 0.10,
+        _ => regime_floor_min_hit_rate(horizon_days),
+    }
+}
+
 fn probability_threshold_prediction_counts(
     probabilities: &[f64],
     labels: &[f64],
@@ -75,6 +83,44 @@ pub(in super::super) fn threshold_has_usable_early_warning_support(
             >= regime_floor_min_gap_vs_normal(horizon_days)
 }
 
+fn threshold_has_usable_positive_window_support(
+    hits: ProbabilityThresholdRegimeHitSummary,
+    horizon_days: u32,
+) -> bool {
+    if !matches!(horizon_days, 20 | 60) || hits.positive_window_row_count == 0 {
+        return true;
+    }
+
+    let positive_window_hit_rate = hits.positive_window_hit_rate();
+    hits.positive_window_hit_count > 0
+        && positive_window_hit_rate >= regime_positive_window_min_hit_rate(horizon_days)
+        && (positive_window_hit_rate - hits.normal_hit_rate())
+            >= regime_floor_min_gap_vs_normal(horizon_days)
+        && (hits.cooldown_row_count == 0
+            || positive_window_hit_rate + 1e-9 >= hits.cooldown_hit_rate())
+}
+
+fn threshold_has_usable_forward_crisis_support(
+    hits: ProbabilityThresholdRegimeHitSummary,
+    horizon_days: u32,
+) -> bool {
+    threshold_has_usable_early_warning_support(hits, horizon_days)
+        && threshold_has_usable_positive_window_support(hits, horizon_days)
+}
+
+fn threshold_has_usable_repair_candidate_support(
+    hits: ProbabilityThresholdRegimeHitSummary,
+    horizon_days: u32,
+) -> bool {
+    let positive_window_supported =
+        threshold_has_usable_positive_window_support(hits, horizon_days);
+    if horizon_days == 20 {
+        return positive_window_supported;
+    }
+
+    threshold_has_usable_early_warning_support(hits, horizon_days) && positive_window_supported
+}
+
 fn threshold_has_over_tight_repair_candidate(
     probabilities: &[f64],
     labels: &[f64],
@@ -90,7 +136,7 @@ fn threshold_has_over_tight_repair_candidate(
 
         let hits =
             probability_threshold_regime_hit_summary(probabilities, rows, horizon_days, threshold);
-        if !threshold_has_usable_early_warning_support(hits, horizon_days) {
+        if !threshold_has_usable_repair_candidate_support(hits, horizon_days) {
             continue;
         }
 
@@ -135,7 +181,7 @@ pub(crate) fn adjust_probability_decision_threshold_for_regime_support(
 
     let base_hits =
         probability_threshold_regime_hit_summary(probabilities, rows, horizon_days, base_threshold);
-    if threshold_has_usable_early_warning_support(base_hits, horizon_days) {
+    if threshold_has_usable_forward_crisis_support(base_hits, horizon_days) {
         return base_threshold;
     }
 
@@ -206,7 +252,7 @@ pub(crate) fn adjust_probability_decision_threshold_for_regime_support(
         if hits.early_warning_hit_count == 0 {
             continue;
         }
-        if !threshold_has_usable_early_warning_support(hits, horizon_days) {
+        if !threshold_has_usable_repair_candidate_support(hits, horizon_days) {
             continue;
         }
 
