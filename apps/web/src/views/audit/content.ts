@@ -8,6 +8,7 @@ export const auditContent = {
     ["Residual Workstream", "看当前 residual workstream 到底有没有训练样本、落在哪些 dataset、标签和 regime 长什么样。"],
     ["提前预警缺口", "看 1987 / 1998 / 2000 / 2011 这些历史样本到底是真缺运行信号，还是已有信号但候选边际变弱。"],
     ["2011 Funding Stress", "单独看 2011 美欧融资压力为什么有数据、有 protected rows，却没有形成可执行 runtime floor。"],
+    ["Lead-Time 转化", "看 runtime 已有信号时，为什么仍没有转成更早的 L3 可执行预警。"],
     ["Overlay 审计", "看当前 active release 是只有 family 审计元数据，还是已经有 overlay head 真正参与 runtime。"],
     ["运行快照 / 旧桥接视图", "看每天落库的概率截面是否和当前生效版本对得上，并核对旧 snapshot bridge 是否还有残留。"],
     ["降级识别", "如果版本登记已经是正式版，但运行态退回启发式层，通常说明 bundle 加载或服务检查失败。"]
@@ -34,6 +35,8 @@ export const auditContent = {
     "这块把 1987 / 1998 / 2000-2001 / 2011 的提前预警缺口拆开看。重点是区分“真的没有运行阈值信号”、“已有 protected context 但尚未进入主线”，以及“候选相对基线边际变弱”。",
   fundingStressSummary:
     "这块专门回答 2011 美欧融资压力为什么没有形成 runtime floor。重点看它是不是 evaluation-only、是否缺 mixed-systemic family proxy、候选是否相对 baseline 边际变弱，以及 20d/60d 离动作阈值还有多远。",
+  leadtimeSummary:
+    "这块回答的是：候选已经有 runtime floor hit 或 60d 提前分离时，为什么仍没有变成更早的 L3 可执行预警。重点看 timely warning、strict actionable 点、runtime floor hits、p20d/p60d gate gap 和 posture continuity。",
   cooldownSummary:
     "这块回答的是：候选版有没有因为 20d cooldown bleed 或纯误报变长而不适合继续晋升。它把 release review 里的动作精度、最长误报、runtime floor 和误报 episode 变化收口到一处。",
   releaseReviewEmpty:
@@ -50,6 +53,8 @@ export const auditContent = {
     "还没有找到与最近一次 release review 对应的 pre-warning gap 审计工件。通常说明还没运行 `just formal-candidate-prewarning-gap-audit <baseline> <candidate>`，或者 JSON 与当前 review 的 baseline / candidate 不一致。",
   fundingStressEmpty:
     "还没有找到与最近一次 release review 对应的 2011 funding-stress 专项审计工件。通常说明还没运行 `just formal-candidate-funding-stress-audit <baseline> <candidate>`，或者 JSON 与当前 review 的 baseline / candidate 不一致。",
+  leadtimeEmpty:
+    "还没有找到与最近一次 release review 对应的 lead-time 转化链审计工件。通常说明还没运行 `just formal-candidate-leadtime-audit <baseline> <candidate>`，或者 JSON 与当前 review 的 baseline / candidate / history mode 不一致。",
   cooldownEmpty:
     "还没有找到与最近一次 release review 对应的 cooldown / false-positive 审计工件。通常说明还没运行 `just formal-candidate-cooldown-audit <baseline> <candidate>`，或者 JSON 与当前 review 的 baseline / candidate / history mode 不一致。",
   releaseReviewCoverageTableNote:
@@ -70,6 +75,8 @@ export const auditContent = {
     "先看诊断分类，再看 dataset 行数、标签和候选 20d/60d 命中。若已有大量命中但诊断为候选边际弱化，下一步应先查候选训练；若 2011 这类完全没有 runtime floor，才优先查 feature separation / family context。",
   fundingStressFeatureTableNote:
     "先看 positive window 相对 normal 的 standardized gap，再看它是否正好落在 funding、credit、curve、VIX 或 USDJPY 这些可解释维度。若缺 family proxy 且全是 evaluation split，下一步通常是训练拓扑和 family context，而不是直接降阈值。",
+  leadtimeRuntimeTableNote:
+    "先看候选是否已经有 early-warning separation，再看它离 runtime floor 和 strict review gate 还有多远。若 separation 已有但 timely warning 不升，问题通常在 posture continuity、p20d gate 或 sustained-hit 转化。",
   cooldownRuntimeTableNote:
     "先看候选诊断是否出现 cooldown bleed，再看 cooldown - positive 与 cooldown - normal。若 cooldown 不低于 positive window，说明模型把危机后余震和前瞻窗口混在一起。",
   cooldownEpisodeTableNote:

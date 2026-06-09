@@ -585,6 +585,21 @@
                    history runtime policy cache key 一起带回 legacy 口径；
                 3. 现已统一改成 `feature_formal_v1_main* + formal_label_v1_main`
                    识别，live API 已恢复走 formal bundle runtime。
+            4.14 [x] lead-time 转化链审计已从控制台输出升级为结构化证据：
+                1. `scripts/formal-candidate-leadtime-audit.ps1` 现会把 summary metrics、
+                   runtime separation、L2-not-L3 gap、focus failure mode、block mix、
+                   continuity facet、workstream/action 和 takeaways 写到
+                   `artifacts/research/leadtime-audit/*-leadtime-audit.json`；
+                2. `/api/research/audit` 已按最近一次 release review 的
+                   `baseline / candidate / history_mode / market_scope` 匹配最新
+                   lead-time artifact；
+                3. 前端“发布审计”页已新增“可执行提前量转化审计”，可以直接看到
+                   timely warning、strict actionable、runtime floor hits、最长误报、
+                   60d 诊断、L2 未转 L3 场景，以及候选主阻塞；
+                4. 当前 `112926 -> 173701 default` 审计显示：`60d` 已是
+                   `usable_early_warning_separation`，但 timely warning 没有提升，
+                   下一步仍应优先修 `strict/actionable` 转化链、`p20d` gate 和
+                   posture continuity，而不是继续单独放松概率 floor。
             5. 下一步不再把所有 missed / degraded 场景混成一个问题，而是按 blocker 排序：
                - 先专项复核 `strict p20d gate`，重点覆盖 `1990-1993 / 1998 / 2007-2009 / 2023`；
                - 再专项复核 `months_score_confirmation / posture continuity`，重点覆盖 `1987 / 1990-1993 / 1998`；

@@ -5,8 +5,10 @@ import type {
   RuntimeThresholdDiagnostics,
 } from "./assessment";
 import type { FundingStressAuditArtifactSummary } from "./researchFundingStress";
+import type { LeadtimeAuditArtifactSummary } from "./researchLeadtime";
 
 export type { FundingStressAuditArtifactSummary, FundingStressFeatureGap } from "./researchFundingStress";
+export type { LeadtimeAuditArtifactSummary, LeadtimeFocusRow, LeadtimeRuntimeRow } from "./researchLeadtime";
 
 export interface ModelReleaseManifest {
   release_id: string;
@@ -683,6 +685,7 @@ export interface ResearchAuditResponse {
   latest_rate_shock_audit: RateShockAuditArtifactSummary | null;
   latest_prewarning_gap_audit: PrewarningGapAuditArtifactSummary | null;
   latest_funding_stress_audit: FundingStressAuditArtifactSummary | null;
+  latest_leadtime_audit: LeadtimeAuditArtifactSummary | null;
   latest_cooldown_audit: CooldownAuditArtifactSummary | null;
   latest_dataset_summaries: DatasetSummaryArtifactSummary[];
   note: string;
