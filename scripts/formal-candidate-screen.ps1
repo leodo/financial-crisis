@@ -406,14 +406,31 @@ if ($reviewRuntimeFloorHits -and [double]$reviewRuntimeFloorHits.delta -le -5) {
     Add-NoGoReason -Reason ("runtime floor hit count fell materially in release review: {0} -> {1}" -f [int]$reviewRuntimeFloorHits.baseline, [int]$reviewRuntimeFloorHits.candidate)
 }
 
-if ($candidateRuntime20) {
-    $candidate20CooldownMinusPositive = [double]$candidateRuntime20.post_crisis_cooldown_avg_probability -
-        [double]$candidateRuntime20.positive_window_avg_probability
-    if ($candidateRuntime20.diagnosis -eq "cooldown_bleed") {
-        Add-NoGoReason -Reason ("candidate shows 20d cooldown_bleed in release review runtime audit")
+foreach ($runtimeCheck in @(
+        @{ horizon = 20; baseline = $baselineRuntime20; candidate = $candidateRuntime20 },
+        @{ horizon = 60; baseline = $baselineRuntime60; candidate = $candidateRuntime60 }
+    )) {
+    if (-not $runtimeCheck.candidate) {
+        continue
     }
-    if ($candidate20CooldownMinusPositive -ge 0.0) {
-        Add-NoGoReason -Reason ("candidate 20d cooldown avg is not below positive-window avg")
+
+    $candidateCooldownMinusPositive = [double]$runtimeCheck.candidate.post_crisis_cooldown_avg_probability -
+        [double]$runtimeCheck.candidate.positive_window_avg_probability
+    if ($runtimeCheck.candidate.diagnosis -eq "cooldown_bleed") {
+        Add-NoGoReason -Reason ("candidate shows {0}d cooldown_bleed in release review runtime audit" -f [int]$runtimeCheck.horizon)
+    }
+    if ($candidateCooldownMinusPositive -ge 0.0) {
+        Add-NoGoReason -Reason ("candidate {0}d cooldown avg is not below positive-window avg" -f [int]$runtimeCheck.horizon)
+    }
+
+    if ($runtimeCheck.baseline -and [double]$runtimeCheck.baseline.positive_window_avg_probability -gt 0.0) {
+        $positiveRetention = [double]$runtimeCheck.candidate.positive_window_avg_probability /
+            [double]$runtimeCheck.baseline.positive_window_avg_probability
+        $positiveDelta = [double]$runtimeCheck.candidate.positive_window_avg_probability -
+            [double]$runtimeCheck.baseline.positive_window_avg_probability
+        if ($positiveRetention -lt 0.75 -or $positiveDelta -le -0.06) {
+            Add-NoGoReason -Reason ("candidate retained only {0:P1} of {1}d positive-window avg probability in release review runtime audit" -f $positiveRetention, [int]$runtimeCheck.horizon)
+        }
     }
 }
 
