@@ -142,6 +142,8 @@ export default function App() {
   const isAssessmentUnavailable = !assessment.data && queries.assessment.isError;
   const systemHealthOk = queries.systemHealth.data?.status === "ok";
   const latestLagDays =
+    assessment.data?.runtime.latest_key_indicator_lag_business_days ??
+    assessment.data?.runtime.latest_observation_lag_business_days ??
     assessment.data?.runtime.latest_key_indicator_lag_days ??
     assessment.data?.runtime.latest_observation_lag_days ??
     null;
@@ -269,7 +271,7 @@ export default function App() {
         {assessment.data && hasDataLag && view !== "decision" && (
           <RecoveryPanel
             details={[
-              `当前评估依赖的关键市场指标最新日期落后 ${latestLagDays ?? "—"} 天。`,
+              `当前评估依赖的关键市场指标按工作日口径约落后 ${latestLagDays ?? "—"} 天。`,
               ...(statusSummary ?? []),
               "这套系统是免费日频/周频预警面板，不是盘中行情终端；近端风险判断必须保守解释。"
             ]}

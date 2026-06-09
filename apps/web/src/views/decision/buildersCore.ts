@@ -46,11 +46,25 @@ function formatOptionalNumber(value: number | null, unit?: string) {
   return value === null ? "—" : formatNumber(value, unit);
 }
 
+function formatLagSummary(
+  calendarLagDays: number | null | undefined,
+  businessLagDays: number | null | undefined
+) {
+  if (calendarLagDays === null || calendarLagDays === undefined) {
+    return "当前没有可用滞后信息。";
+  }
+  if (businessLagDays === null || businessLagDays === undefined) {
+    return `自然日滞后 ${calendarLagDays} 天。`;
+  }
+  return `自然日滞后 ${calendarLagDays} 天；按工作日口径约 ${businessLagDays} 天。`;
+}
+
 function actionSourceSummary(assessment: AssessmentSnapshot) {
   if (!assessment.method.actionability_enabled) {
     return {
       label: "过渡动作映射",
-      detail: "当前线上版本还没有独立动作模型，先用危机先验和评分层映射准备、对冲和防守。"
+      detail:
+        "当前线上版本还没有独立动作模型，准备/对冲/防守仍由危机先验和评分层过渡映射而来，只适合辅助执行节奏，不应当成正式校准后的独立动作概率。"
     };
   }
 
@@ -79,14 +93,17 @@ function probabilityDisplayNote(assessment: AssessmentSnapshot): string | null {
     return null;
   }
   const staleDays =
-    assessment.runtime.latest_key_indicator_lag_days ?? assessment.runtime.latest_observation_lag_days;
+    assessment.runtime.latest_key_indicator_lag_business_days ??
+    assessment.runtime.latest_observation_lag_business_days ??
+    assessment.runtime.latest_key_indicator_lag_days ??
+    assessment.runtime.latest_observation_lag_days;
   if (peakProbability === 0) {
     return staleDays !== null && staleDays >= 7
-      ? `当前 formal 先验低于展示精度，且关键观测已滞后 ${staleDays} 天；这代表“暂未看到足够证据支持主动防守”，不代表市场风险被证明为零。`
+      ? `当前 formal 先验低于展示精度，且关键观测按工作日口径已滞后约 ${staleDays} 天；这代表“暂未看到足够证据支持主动防守”，不代表市场风险被证明为零。`
       : "当前 formal 先验低于展示精度；这代表“风险很低”，不代表市场风险被证明为零。";
   }
   return staleDays !== null && staleDays >= 7
-    ? `当前 formal 先验仍低于 1%，且关键观测已滞后 ${staleDays} 天；短期判断应保守解释。`
+    ? `当前 formal 先验仍低于 1%，且关键观测按工作日口径已滞后约 ${staleDays} 天；短期判断应保守解释。`
     : "当前 formal 先验仍低于 1%，属于低位区间，而不是零风险断言。";
 }
 
@@ -124,14 +141,12 @@ export function buildRuntimeCards(
     {
       label: "最新关键观测",
       value: formatDate(assessment.runtime.latest_key_indicator_at ?? assessment.runtime.latest_observation_at),
-      detail:
-        (assessment.runtime.latest_key_indicator_lag_days ?? assessment.runtime.latest_observation_lag_days) ===
-        null
-          ? "当前没有可用滞后信息。"
-          : `距离请求日滞后 ${
-              assessment.runtime.latest_key_indicator_lag_days ??
-              assessment.runtime.latest_observation_lag_days
-            } 天。`
+      detail: formatLagSummary(
+        assessment.runtime.latest_key_indicator_lag_days ??
+          assessment.runtime.latest_observation_lag_days,
+        assessment.runtime.latest_key_indicator_lag_business_days ??
+          assessment.runtime.latest_observation_lag_business_days
+      )
     },
     {
       label: "本次评估生成",
@@ -165,20 +180,23 @@ export function buildRiskHorizonActionMetrics(
   assessment: AssessmentSnapshot
 ): MetricItem[] {
   const actionSource = actionSourceSummary(assessment);
+  const prepareLabel = assessment.method.actionability_enabled ? "准备动作" : "准备动作（过渡）";
+  const hedgeLabel = assessment.method.actionability_enabled ? "对冲动作" : "对冲动作（过渡）";
+  const defendLabel = assessment.method.actionability_enabled ? "防守动作" : "防守动作（过渡）";
 
   return [
     {
-      label: "准备动作",
+      label: prepareLabel,
       value: formatProbabilityPercent(assessment.actionability.prepare),
       hint: decisionContent.riskHorizon.actionHints.prepare
     },
     {
-      label: "对冲动作",
+      label: hedgeLabel,
       value: formatProbabilityPercent(assessment.actionability.hedge),
       hint: decisionContent.riskHorizon.actionHints.hedge
     },
     {
-      label: "防守动作",
+      label: defendLabel,
       value: formatProbabilityPercent(assessment.actionability.defend),
       hint: decisionContent.riskHorizon.actionHints.defend
     },
@@ -238,7 +256,11 @@ export function buildKeyIndicatorRows(
     title: `${item.display_name} · ${freshnessLabel(item.status)}`,
     detail: `${formatNumber(item.latest_value)} ${unitLabel(item.unit)} · 日期 ${
       item.latest_as_of_date ? formatDate(item.latest_as_of_date) : "—"
-    } · 来源 ${sourceLabel(item.source_id)}${item.lag_days !== null ? ` · 滞后 ${item.lag_days} 天` : ""}`,
+    } · 来源 ${sourceLabel(item.source_id)}${
+      item.lag_days !== null
+        ? ` · ${formatLagSummary(item.lag_days, item.lag_business_days)}`
+        : ""
+    }`,
     note: humanizeNarrativeCopy(item.note)
   }));
 }

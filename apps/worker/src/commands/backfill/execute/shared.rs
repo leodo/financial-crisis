@@ -26,12 +26,34 @@ pub(super) async fn backfill_mappings(
     }
     let mut total_written = 0_usize;
     let mut failures = Vec::new();
+    let mut skipped_mappings = 0_usize;
     let chunks = options.chunks();
     let chunk_count = chunks.len();
+    let source_id = connector.describe().source_id;
     for mapping in mappings {
+        let watermark = if options.respect_frequency_watermark {
+            store
+                .load_watermark_date(&source_id, dataset_id, &mapping.indicator_id)
+                .await?
+        } else {
+            None
+        };
+        if options.should_skip_due_to_frequency_watermark(mapping.frequency, watermark) {
+            skipped_mappings += 1;
+            println!(
+                "skipped {} ({}) from {}: {:?} series watermark {:?} is still within refresh cadence",
+                mapping.indicator_id,
+                mapping.external_code,
+                source_id,
+                mapping.frequency,
+                watermark
+            );
+            continue;
+        }
+
         for (chunk_index, (chunk_start, chunk_end)) in chunks.iter().copied().enumerate() {
             let plan = FetchPlan {
-                source_id: connector.describe().source_id,
+                source_id: source_id.clone(),
                 dataset_id: dataset_id.to_string(),
                 target_id: mapping.indicator_id.clone(),
                 external_code: Some(mapping.external_code.clone()),
@@ -138,10 +160,15 @@ pub(super) async fn backfill_mappings(
 
     if failures.is_empty() {
         println!(
-            "{} backfill completed: {} observations written to {}",
+            "{} backfill completed: {} observations written to {}{}",
             label,
             total_written,
-            crate::sqlite_path()
+            crate::sqlite_path(),
+            if skipped_mappings > 0 {
+                format!(", {skipped_mappings} mapping(s) skipped by refresh cadence")
+            } else {
+                String::new()
+            }
         );
         Ok(())
     } else {

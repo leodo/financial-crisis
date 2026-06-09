@@ -1,5 +1,6 @@
 use anyhow::{bail, Context};
 use chrono::{NaiveDate, Utc};
+use fc_domain::Frequency;
 use fc_ingestion::BojDataset;
 use fc_storage::ExternalIndicatorMapping;
 
@@ -11,6 +12,7 @@ pub(crate) struct BackfillOptions {
     pub(crate) indicator_filter: Option<String>,
     pub(crate) external_code_filter: Option<String>,
     pub(crate) watermark_overlap_days: Option<i64>,
+    pub(crate) respect_frequency_watermark: bool,
 }
 
 impl BackfillOptions {
@@ -81,6 +83,7 @@ impl BackfillOptions {
             indicator_filter,
             external_code_filter,
             watermark_overlap_days,
+            respect_frequency_watermark: false,
         })
     }
 
@@ -88,6 +91,11 @@ impl BackfillOptions {
         if self.chunk_days.is_none() {
             self.chunk_days = Some(chunk_days);
         }
+        self
+    }
+
+    pub(crate) fn with_frequency_watermark_refresh(mut self) -> Self {
+        self.respect_frequency_watermark = true;
         self
     }
 
@@ -141,6 +149,30 @@ impl BackfillOptions {
         watermark
             .map(|date| (date - chrono::Duration::days(overlap_days)).max(self.start))
             .unwrap_or(self.start)
+    }
+
+    pub(super) fn should_skip_due_to_frequency_watermark(
+        &self,
+        frequency: Frequency,
+        watermark: Option<NaiveDate>,
+    ) -> bool {
+        if !self.respect_frequency_watermark {
+            return false;
+        }
+
+        let Some(watermark) = watermark else {
+            return false;
+        };
+
+        let cadence_days = match frequency {
+            Frequency::Daily | Frequency::Event => 0,
+            Frequency::Weekly => 5,
+            Frequency::Monthly => 20,
+            Frequency::Quarterly => 60,
+            Frequency::Annual => 300,
+        };
+
+        cadence_days > 0 && (self.end - watermark).num_days() < cadence_days
     }
 }
 
@@ -206,4 +238,35 @@ impl BojBackfillOptions {
 pub(crate) enum FredBackfillMode {
     GraphCsv,
     Api,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refresh_frequency_skip_ignores_daily_but_defers_slow_series_with_recent_watermark() {
+        let options = BackfillOptions::parse(&[])
+            .unwrap()
+            .with_frequency_watermark_refresh();
+        let recent = NaiveDate::from_ymd_opt(2026, 6, 5).unwrap();
+
+        assert!(!options.should_skip_due_to_frequency_watermark(Frequency::Daily, Some(recent)));
+        assert!(options.should_skip_due_to_frequency_watermark(Frequency::Weekly, Some(recent)));
+        assert!(options.should_skip_due_to_frequency_watermark(Frequency::Monthly, Some(recent)));
+        assert!(options.should_skip_due_to_frequency_watermark(Frequency::Annual, Some(recent)));
+    }
+
+    #[test]
+    fn refresh_frequency_skip_keeps_stale_monthly_series_eligible() {
+        let mut options = BackfillOptions::parse(&[])
+            .unwrap()
+            .with_frequency_watermark_refresh();
+        options.end = NaiveDate::from_ymd_opt(2026, 6, 9).unwrap();
+        let old_monthly = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
+
+        assert!(
+            !options.should_skip_due_to_frequency_watermark(Frequency::Monthly, Some(old_monthly))
+        );
+    }
 }

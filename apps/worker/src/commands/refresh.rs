@@ -121,20 +121,26 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
             indicator_filter: None,
             external_code_filter: None,
             watermark_overlap_days: None,
-        },
+            respect_frequency_watermark: false,
+        }
+        .with_frequency_watermark_refresh(),
         fred_mode: FredBackfillMode::GraphCsv,
     })
     .await?;
 
     println!("Stage 2/{total_stages}: Treasury yield curve");
-    backfill_treasury_yield_with_options(BackfillOptions {
-        start: fast_start,
-        end: today,
-        chunk_days: Some(options.fast_lookback_days.min(180)),
-        indicator_filter: None,
-        external_code_filter: None,
-        watermark_overlap_days: None,
-    })
+    backfill_treasury_yield_with_options(
+        BackfillOptions {
+            start: fast_start,
+            end: today,
+            chunk_days: Some(options.fast_lookback_days.min(180)),
+            indicator_filter: None,
+            external_code_filter: None,
+            watermark_overlap_days: None,
+            respect_frequency_watermark: false,
+        }
+        .with_frequency_watermark_refresh(),
+    )
     .await?;
 
     println!("Stage 3/{total_stages}: BOJ FX");
@@ -147,7 +153,9 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
             indicator_filter: None,
             external_code_filter: None,
             watermark_overlap_days: None,
-        },
+            respect_frequency_watermark: false,
+        }
+        .with_frequency_watermark_refresh(),
     })
     .await?;
 
@@ -161,46 +169,60 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
             indicator_filter: None,
             external_code_filter: None,
             watermark_overlap_days: None,
-        },
+            respect_frequency_watermark: false,
+        }
+        .with_frequency_watermark_refresh(),
     })
     .await?;
 
     println!("Stage 5/{total_stages}: SEC EDGAR");
-    backfill_sec_edgar_with_options(BackfillOptions {
-        start: fast_start,
-        end: today,
-        chunk_days: None,
-        indicator_filter: None,
-        external_code_filter: None,
-        watermark_overlap_days: None,
-    })
-    .await?;
-
-    let mut next_stage = 6;
-    if !options.skip_world_bank {
-        println!("Stage {next_stage}/{total_stages}: World Bank slow variables");
-        backfill_world_bank_with_options(BackfillOptions {
-            start: slow_start,
+    backfill_sec_edgar_with_options(
+        BackfillOptions {
+            start: fast_start,
             end: today,
             chunk_days: None,
             indicator_filter: None,
             external_code_filter: None,
             watermark_overlap_days: None,
-        })
+            respect_frequency_watermark: false,
+        }
+        .with_frequency_watermark_refresh(),
+    )
+    .await?;
+
+    let mut next_stage = 6;
+    if !options.skip_world_bank {
+        println!("Stage {next_stage}/{total_stages}: World Bank slow variables");
+        backfill_world_bank_with_options(
+            BackfillOptions {
+                start: slow_start,
+                end: today,
+                chunk_days: None,
+                indicator_filter: None,
+                external_code_filter: None,
+                watermark_overlap_days: None,
+                respect_frequency_watermark: false,
+            }
+            .with_frequency_watermark_refresh(),
+        )
         .await?;
         next_stage += 1;
     }
 
     if options.include_gdelt {
         println!("Stage {next_stage}/{total_stages}: GDELT prototype events");
-        backfill_gdelt_with_options(BackfillOptions {
-            start: fast_start,
-            end: today,
-            chunk_days: None,
-            indicator_filter: None,
-            external_code_filter: None,
-            watermark_overlap_days: Some(7),
-        })
+        backfill_gdelt_with_options(
+            BackfillOptions {
+                start: fast_start,
+                end: today,
+                chunk_days: None,
+                indicator_filter: None,
+                external_code_filter: None,
+                watermark_overlap_days: Some(7),
+                respect_frequency_watermark: false,
+            }
+            .with_frequency_watermark_refresh(),
+        )
         .await?;
     }
 

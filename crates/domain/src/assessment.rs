@@ -234,8 +234,10 @@ pub struct RuntimeMetadata {
     pub requested_as_of_date: NaiveDate,
     pub latest_observation_at: Option<NaiveDate>,
     pub latest_observation_lag_days: Option<i64>,
+    pub latest_observation_lag_business_days: Option<i64>,
     pub latest_key_indicator_at: Option<NaiveDate>,
     pub latest_key_indicator_lag_days: Option<i64>,
+    pub latest_key_indicator_lag_business_days: Option<i64>,
     pub demo_mode: bool,
     pub stale_warning: Option<String>,
 }
@@ -251,6 +253,7 @@ pub struct KeyIndicatorStatus {
     pub latest_value: Option<f64>,
     pub latest_as_of_date: Option<NaiveDate>,
     pub lag_days: Option<i64>,
+    pub lag_business_days: Option<i64>,
     pub stale_threshold_days: i64,
     pub status: FreshnessStatus,
     pub note: String,
