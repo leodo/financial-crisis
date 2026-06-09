@@ -4,6 +4,7 @@ export const auditContent = {
     ["运行模式", "看 API 当前实际正在使用启发式过渡层，还是正式概率包。"],
     ["Release Review", "看最近一次 baseline vs candidate 评审是否通过 guard，以及问题到底属于候选退化还是主线共性短板。"],
     ["历史场景包", "看固定美国历史场景里，哪些已经稳定通过，哪些仍是主线共享漏报或执行连续性问题。"],
+    ["Residual Workstream", "看当前 residual workstream 到底有没有训练样本、落在哪些 dataset、标签和 regime 长什么样。"],
     ["Overlay 审计", "看当前 active release 是只有 family 审计元数据，还是已经有 overlay head 真正参与 runtime。"],
     ["快照历史", "看每天落库的概率快照是否和当前生效版本对得上。"],
     ["降级识别", "如果版本登记已经是正式版，但运行态退回启发式层，通常说明 bundle 加载或服务检查失败。"]
@@ -20,18 +21,24 @@ export const auditContent = {
     "这块回答的是：本次 review 涉及的历史场景到底能不能作为正式主训练、扩展训练、protected stress 或历史类比。不要把所有危机都当成同一类正例。",
   scenarioPackSummary:
     "这块回答的是：固定美国历史场景包里，哪些场景已经稳定覆盖，哪些是主线共享漏报，哪些主要卡在执行连续性。它是 release review 之外的横向历史复盘面板。",
+  workstreamSummary:
+    "这块回答的是：remaining residual workstream 到底有没有真实训练样本与 feature 证据。它不判断候选是否该上线，而是避免团队继续把问题归因停留在“可能没数据”。",
   rateShockSummary:
     "这块把 2022 联储加息与久期冲击单独拉出来，直接看 primary / late validation 与 prepare / hedge 这两组连续性证据。重点不是看候选是否更高，而是看真正该提前升温的窗口有没有形成连续命中。",
   releaseReviewEmpty:
     "还没有找到可用的 release review 落库结果。通常说明这条链路尚未执行，或者当前 market scope 还没有写入 artifacts/research/release-review。",
   scenarioPackEmpty:
     "还没有找到与最近一次 release review 对应的 scenario-pack audit 工件。通常说明这条离线审计还没跑，或者当前 review 对应的历史场景包结果尚未落库。",
+  workstreamEmpty:
+    "还没有找到与最近一次 release review 对应的 residual workstream 审计工件。通常说明这条 dataset evidence 审计还没跑，或者 baseline / candidate 对应的 JSON 结果尚未落库。",
   rateShockEmpty:
     "还没有找到与最近一次 release review 对应的 2022 rate-shock 专项审计工件。通常说明这条离线 continuity 审计还没跑，或者 baseline / candidate 对应的 JSON 结果尚未落库。",
   releaseReviewCoverageTableNote:
     "先看目录结论和可用范围，再看 grade / PIT / 免费主源，最后看主要缺口。重点复核场景和 protected window 会直接影响后续训练与 posture 规则约束。",
   scenarioPackTableNote:
     "先看当前判读，再看真实结果与 lead time，最后结合 coverage / dataset 和 takeaway 判断这是候选退化、主线共享短板，还是稳定覆盖。",
+  workstreamTableNote:
+    "先看它落到哪个 workstream，再看 dataset / split / regime / 标签分布。若这里已经有足够样本与正标签，问题通常不再是“没数据”，而是训练拓扑、feature separation 或 gate 设计本身。",
   rateShockPhaseTableNote:
     "按阶段看 20d / 60d 均值、命中数和最长连续段。primary 依然过冷，通常说明问题还在 trainability 或标签连续性，而不是单纯阈值。",
   rateShockActionTableNote:

@@ -721,6 +721,8 @@
          - 首轮证据显示：
            1. `weak_signal_continuity / 2022` 在 main dataset 里有 `66` 个 evaluation rows、`prepare=48 / hedge=11`，但 `20d/60d` 正标签都是 `0`，说明主问题更像正标签/continuity 约束缺失，不是 coverage 缺口。
            2. `prewarning_signal_gap` 的 `1987 / 1998 / 2000-2001 / 2011` 已分别落到 acute/stress 扩展数据集，合计 `343` 行，`20d` 正标签 `80`、`60d` 正标签 `240`，平均 coverage `0.9665`，说明这些 residual 样本已经具备可训练证据，下一步应直接回到 feature separation / gate / release slice 对比，而不是继续停留在“可能没数据”的猜测层。
+         - `2026-06-09` 已把这条 evidence 正式接入 `/api/research/audit` 与前端“发布审计”页：当前会新增 `latest_workstream_audit`，并在页面展示 `Residual Workstream 审计` 区块，直接回答“哪些 residual 主线短板仍存在、各自落在哪个 dataset、覆盖了多少历史场景、正标签和 protected rows 到底有多少”。
+         - 当前 UI 的选择策略不再机械绑定“最新 review pair 的最新 JSON”，而是优先展示“与当前 active/review 上下文相关、且 residual 覆盖更完整”的 artifact。原因是最新 pair `112926 -> 173701` 只覆盖 `weak_signal_continuity`，而更完整的 residual 证据仍在 `202246 -> 112926` 这对工件里；如果仍只盯最新 pair，用户会误以为 `prewarning_signal_gap` 已经消失。
        - [x] 已把 `focus scenario` 点位证据补充到 `overall_score / external_shock_score`，并把 `prepare/weeks + plateau/history_hysteresis` 的 L3 漏接住情况单独归成 `score_confirmation_failure`
          - `2026-06-08` 默认 review 产物现在会在 `scenario_focus.interesting_points` 和 Markdown 表格里直接带出 `Base/Cand overall`、`Base/Cand external`，不再只能看概率和 posture。
          - 基于这组新字段，`2023 美国区域银行危机` 的早期窗口已可直接看出：candidate 在 `2022-12-08 ~ 2022-12-13` 已经进入 `prepare/weeks`，`p20d/p60d` 也明显抬升，并带有 `prepare_probability_plateau / prepare_history_hysteresis`，但 `overall_score` 只有 `51.8 ~ 52.6`，因此之前才会落进笼统的 `review_l3_gate_not_satisfied / residual_review_l3_failure`。

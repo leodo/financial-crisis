@@ -37,6 +37,7 @@ import type {
 import type { DetailRowItem, MetricItem } from "../shared/panelHelpers";
 import { buildProbabilityOverlayViewModel } from "../shared/probabilityOverlay";
 import { auditContent } from "./content";
+import { buildWorkstreamAuditSection } from "./workstreamSection";
 
 function rateShockPhaseLabel(label: string): string {
   return (
@@ -591,6 +592,16 @@ export function useAuditViewModel({
       maxSummary: `峰值 ${formatPercent(row.baseline_max_p_20d)} -> ${formatPercent(row.candidate_max_p_20d)}`
     })) ?? [];
 
+  const {
+    latestWorkstreamAudit,
+    latestWorkstreamAuditSource,
+    latestWorkstreamAuditReport,
+    latestWorkstreamAuditMetrics,
+    latestWorkstreamAuditContextRows,
+    latestWorkstreamSummaryRows,
+    latestWorkstreamScenarioRows
+  } = buildWorkstreamAuditSection(audit);
+
   return {
     auditNote: audit.note ? humanizeAuditNote(audit.note) : auditContent.noteSummary,
     runtimeMetrics,
@@ -615,6 +626,13 @@ export function useAuditViewModel({
     latestScenarioPackAuditSource,
     latestScenarioPackAuditMetrics,
     latestScenarioPackAuditRows,
+    latestWorkstreamAudit,
+    latestWorkstreamAuditSource,
+    latestWorkstreamAuditReport,
+    latestWorkstreamAuditMetrics,
+    latestWorkstreamAuditContextRows,
+    latestWorkstreamSummaryRows,
+    latestWorkstreamScenarioRows,
     latestRateShockAudit,
     latestRateShockAuditSource,
     latestRateShockAuditMetrics,

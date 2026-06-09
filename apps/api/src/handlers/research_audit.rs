@@ -9,6 +9,11 @@ use chrono::{DateTime, FixedOffset, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+mod workstream_audit;
+
+use self::workstream_audit::{
+    load_latest_workstream_audit_summary, WorkstreamAuditArtifactSummary,
+};
 use crate::{data_source::AppDataSource, handlers::HistoryProvenanceSummary, AppState};
 use fc_storage::SqliteStore;
 
@@ -34,6 +39,7 @@ struct ResearchAuditResponse {
     latest_replay_run_id: Option<String>,
     latest_release_review: Option<ReleaseReviewArtifactSummary>,
     latest_scenario_pack_audit: Option<ScenarioPackAuditArtifactSummary>,
+    latest_workstream_audit: Option<WorkstreamAuditArtifactSummary>,
     latest_rate_shock_audit: Option<RateShockAuditArtifactSummary>,
     note: String,
     releases: Vec<fc_domain::ModelReleaseRecord>,
@@ -659,6 +665,11 @@ pub(crate) async fn research_audit(
             );
             let latest_scenario_pack_audit =
                 load_latest_scenario_pack_audit_summary(&market_scope, latest_release_review.as_ref());
+            let latest_workstream_audit = load_latest_workstream_audit_summary(
+                &market_scope,
+                data.assessment.method.release_id.as_deref(),
+                latest_release_review.as_ref(),
+            );
             let latest_rate_shock_audit =
                 load_latest_rate_shock_audit_summary(latest_release_review.as_ref());
             ResearchAuditResponse {
@@ -673,8 +684,9 @@ pub(crate) async fn research_audit(
                 latest_replay_run_id,
                 latest_release_review,
                 latest_scenario_pack_audit,
+                latest_workstream_audit,
                 latest_rate_shock_audit,
-                note: "当前页面展示的是 release registry、historical replay run / point、prediction snapshot、最近一次 release review、对应的历史场景包审计，以及 2022 利率冲击专项 continuity 审计。若 runtime probability mode 与 release manifest 不一致，说明线上已自动降级回 heuristic。".to_string(),
+                note: "当前页面展示的是 release registry、historical replay run / point、prediction snapshot、最近一次 release review、对应的历史场景包审计、residual workstream 审计，以及 2022 利率冲击专项 continuity 审计。若 runtime probability mode 与 release manifest 不一致，说明线上已自动降级回 heuristic。".to_string(),
                 releases,
                 replay_runs,
                 snapshots,
@@ -692,6 +704,7 @@ pub(crate) async fn research_audit(
             latest_replay_run_id: None,
             latest_release_review: None,
             latest_scenario_pack_audit: None,
+            latest_workstream_audit: None,
             latest_rate_shock_audit: None,
             note: "当前运行在 demo 模式，release registry、historical replay、prediction snapshot 审计不可用。切到 SQLite 后该页面会显示真实审计数据。".to_string(),
             releases: Vec::new(),
@@ -710,6 +723,7 @@ pub(crate) async fn research_audit(
             latest_replay_run_id: None,
             latest_release_review: None,
             latest_scenario_pack_audit: None,
+            latest_workstream_audit: None,
             latest_rate_shock_audit: None,
             note: "当前 Postgres 路径尚未接入本地 release registry、historical replay 与 prediction snapshot 审计，建议先通过 SQLite 研究链路完成模型训练、发布与复盘。".to_string(),
             releases: Vec::new(),

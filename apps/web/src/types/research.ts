@@ -344,6 +344,86 @@ export interface RateShockAuditArtifactSummary {
   continuity_focus: RateShockAuditContinuityFocus;
 }
 
+export interface WorkstreamAuditSummary {
+  workstream: string;
+  scenario_count: number;
+  scenarios: string[];
+  covered_scenario_count: number;
+  missing_scenario_count: number;
+  missing_scenarios: string[];
+  training_roles: string[];
+  scenario_families: string[];
+  total_rows: number;
+  total_positive_label_5d_count: number;
+  total_positive_label_20d_count: number;
+  total_positive_label_60d_count: number;
+  total_prepare_primary_count: number;
+  total_hedge_primary_count: number;
+  total_defend_primary_count: number;
+  total_protected_row_count: number;
+  avg_coverage_score: number | null;
+  avg_core_feature_coverage: number | null;
+  avg_trigger_feature_coverage: number | null;
+  avg_external_feature_coverage: number | null;
+}
+
+export interface WorkstreamAuditScenarioSummary {
+  scenario_id: string;
+  scenario_name: string;
+  workstream: string;
+  scenario_family: string;
+  training_role: string;
+  protected_window: boolean;
+  suggested_review: string | null;
+  window_start: string;
+  window_end: string;
+  crisis_start: string | null;
+  crisis_end: string | null;
+  slice_status: string;
+  slice_selector_reason: string;
+  attempted_datasets: string[];
+  dataset_key: string;
+  feature_set_version: string;
+  label_version: string;
+  row_count: number;
+  split_counts: string[];
+  quality_counts: string[];
+  regime20_counts: string[];
+  regime60_counts: string[];
+  action_phase_counts: string[];
+  primary_action_level_counts: string[];
+  avg_coverage_score: number | null;
+  avg_core_feature_coverage: number | null;
+  avg_trigger_feature_coverage: number | null;
+  avg_external_feature_coverage: number | null;
+  positive_label_5d_count: number;
+  positive_label_20d_count: number;
+  positive_label_60d_count: number;
+  prepare_primary_count: number;
+  hedge_primary_count: number;
+  defend_primary_count: number;
+  protected_row_count: number;
+  feature_name_count: number;
+  feature_names: string[];
+  slice_json_path: string;
+}
+
+export interface WorkstreamAuditArtifactSummary {
+  generated_at: string;
+  source: string;
+  review_report_path: string;
+  baseline_release_id: string;
+  candidate_release_id: string;
+  history_mode: string;
+  market_scope: string;
+  dataset_key: string;
+  dataset_id: string;
+  dataset_version: string;
+  requested_workstreams: string[];
+  workstream_summaries: WorkstreamAuditSummary[];
+  scenario_summaries: WorkstreamAuditScenarioSummary[];
+}
+
 export interface ResearchAuditResponse {
   supported: boolean;
   storage_mode: string;
@@ -356,6 +436,7 @@ export interface ResearchAuditResponse {
   latest_replay_run_id: string | null;
   latest_release_review: ReleaseReviewArtifactSummary | null;
   latest_scenario_pack_audit: ScenarioPackAuditArtifactSummary | null;
+  latest_workstream_audit: WorkstreamAuditArtifactSummary | null;
   latest_rate_shock_audit: RateShockAuditArtifactSummary | null;
   note: string;
   releases: ModelReleaseRecord[];

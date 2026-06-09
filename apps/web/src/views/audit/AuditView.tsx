@@ -43,6 +43,13 @@ export default function AuditView({
     latestScenarioPackAuditSource,
     latestScenarioPackAuditMetrics,
     latestScenarioPackAuditRows,
+    latestWorkstreamAudit,
+    latestWorkstreamAuditSource,
+    latestWorkstreamAuditReport,
+    latestWorkstreamAuditMetrics,
+    latestWorkstreamAuditContextRows,
+    latestWorkstreamSummaryRows,
+    latestWorkstreamScenarioRows,
     latestRateShockAudit,
     latestRateShockAuditSource,
     latestRateShockAuditMetrics,
@@ -235,6 +242,60 @@ export default function AuditView({
               </>
             ) : (
               <RuleBox label="当前状态">{auditContent.scenarioPackEmpty}</RuleBox>
+            )}
+          </section>
+
+          <section className="surface">
+            <SurfaceHeader title="Residual Workstream 审计" icon={ClipboardCheck} />
+            <p className="legend-note">{auditContent.workstreamSummary}</p>
+            {latestWorkstreamAudit ? (
+              <>
+                <MetricGrid items={latestWorkstreamAuditMetrics} className="audit-review-metrics" />
+                <div className="audit-review-layout">
+                  <div className="audit-review-stack">
+                    <RuleBox label="工件来源">
+                      <span title={latestWorkstreamAuditSource?.hint}>
+                        {latestWorkstreamAuditSource?.value ?? "未登记"}
+                      </span>
+                    </RuleBox>
+                    <RuleBox label="关联 review">
+                      <span title={latestWorkstreamAuditReport?.hint}>
+                        {latestWorkstreamAuditReport?.value ?? "未登记"}
+                      </span>
+                    </RuleBox>
+                  </div>
+                  <div className="audit-review-stack">
+                    <RuleBox label="审计上下文">
+                      <DetailRows items={latestWorkstreamAuditContextRows} compact />
+                    </RuleBox>
+                  </div>
+                </div>
+                {latestWorkstreamSummaryRows.length > 0 ? (
+                  <RuleBox label="工作流摘要">
+                    <DetailRows items={latestWorkstreamSummaryRows} compact />
+                  </RuleBox>
+                ) : null}
+                {latestWorkstreamScenarioRows.length > 0 ? (
+                  <ResponsiveTable
+                    className="wide-table xwide-table"
+                    columns={["场景 / Workstream", "Dataset / 窗口", "Split / Regime", "标签 / 动作", "覆盖 / 特征", "结论"]}
+                    note={auditContent.workstreamTableNote}
+                  >
+                    {latestWorkstreamScenarioRows.map((row) => (
+                      <tr key={row.id}>
+                        <StackedTableCell title={row.scenarioLabel} details={row.scenarioDetails} />
+                        <StackedTableCell title={row.datasetSummary} details={row.datasetDetails} />
+                        <StackedTableCell title={row.splitSummary} details={row.regimeSummary} />
+                        <StackedTableCell title={row.labelSummary} details={row.actionSummary} />
+                        <StackedTableCell title={row.coverageSummary} details={row.coverageDetails} />
+                        <td>{row.takeaway}</td>
+                      </tr>
+                    ))}
+                  </ResponsiveTable>
+                ) : null}
+              </>
+            ) : (
+              <RuleBox label="当前状态">{auditContent.workstreamEmpty}</RuleBox>
             )}
           </section>
 

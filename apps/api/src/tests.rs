@@ -175,6 +175,12 @@ async fn research_audit_endpoint_returns_runtime_audit_shape() {
                 && json["latest_scenario_pack_audit"]["scenario_summaries"].is_array())
     );
     assert!(
+        json["latest_workstream_audit"].is_null()
+            || (json["latest_workstream_audit"]["generated_at"].is_string()
+                && json["latest_workstream_audit"]["workstream_summaries"].is_array()
+                && json["latest_workstream_audit"]["scenario_summaries"].is_array())
+    );
+    assert!(
         json["latest_rate_shock_audit"].is_null()
             || (json["latest_rate_shock_audit"]["generated_at"].is_string()
                 && json["latest_rate_shock_audit"]["phase_summaries"].is_array()
