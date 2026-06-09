@@ -89,7 +89,7 @@ export function DecisionReliefPanel({
     <section className="surface">
       <SurfaceHeader title="为什么还没更糟" icon={ShieldCheck} />
       <p className="body-copy">{decisionContent.panels.reliefBody}</p>
-      <DriverList rows={assessment.top_relief_drivers.slice(0, 3)} />
+      <DriverList rows={assessment.top_relief_drivers.slice(0, 3)} reverse />
       <RuleBox label="降级条件">{humanizeNarrativeCopy(posture.downgrade_condition)}</RuleBox>
       <RuleBox label="旧版评分层辅助解释">{humanizeNarrativeCopy(overview.level_reason)}</RuleBox>
     </section>

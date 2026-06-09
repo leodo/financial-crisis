@@ -109,6 +109,40 @@ function probabilityDisplayNote(assessment: AssessmentSnapshot): string | null {
     : "当前 formal 先验仍低于 1%，属于低位区间，而不是零风险断言。";
 }
 
+function probabilitySnapshotValue(probabilities: AssessmentSnapshot["probabilities"]): string {
+  return [
+    formatProbabilityPercentExact(probabilities.p_5d),
+    formatProbabilityPercentExact(probabilities.p_20d),
+    formatProbabilityPercentExact(probabilities.p_60d)
+  ].join(" / ");
+}
+
+function probabilitySnapshotDetail(assessment: AssessmentSnapshot): string {
+  const allZero =
+    assessment.probabilities.p_5d === 0 &&
+    assessment.probabilities.p_20d === 0 &&
+    assessment.probabilities.p_60d === 0;
+  const currentScope = `当前线上 ${formatDate(assessment.as_of_date)} · 5d / 20d / 60d`;
+  if (allZero) {
+    return `${currentScope}；三个期限均为精确 0，需要先检查正式概率包、关键观测日期和 release 状态。`;
+  }
+  return `${currentScope}；历史/候选旧快照可能保留 0 值，不代表当前线上结论。`;
+}
+
+function indicatorSourceTimingLabel(
+  item: AssessmentSnapshot["key_indicators"][number]
+): string {
+  if (item.indicator_id === "us_external_usdjpy_level") {
+    if (item.source_id === "boj") {
+      return "BOJ 9:00 JST spot";
+    }
+    if (item.source_id === "fred") {
+      return "FRED DEXJPUS 日频";
+    }
+  }
+  return sourceLabel(item.source_id);
+}
+
 function formatActionProbability(value: number, actionabilityEnabled: boolean): string {
   if (value === 0) {
     return actionabilityEnabled ? "0%" : "未触发";
@@ -177,10 +211,15 @@ export function buildRuntimeCards(
       detail: decisionContent.prelude.generatedHint
     },
     {
+      label: "当前概率快照",
+      value: probabilitySnapshotValue(assessment.probabilities),
+      detail: probabilitySnapshotDetail(assessment)
+    },
+    {
       label: "当前 USDJPY",
       value: formatNumber(usdJpyIndicator?.latest_value),
       detail: usdJpyIndicator?.latest_as_of_date
-        ? `${formatDate(usdJpyIndicator.latest_as_of_date)} · ${sourceLabel(usdJpyIndicator.source_id)} · ${freshnessLabel(usdJpyIndicator.status)}`
+        ? `${formatDate(usdJpyIndicator.latest_as_of_date)} · ${indicatorSourceTimingLabel(usdJpyIndicator)} · ${freshnessLabel(usdJpyIndicator.status)}`
         : "缺少 USDJPY 最新观测。"
     },
     {
@@ -297,7 +336,7 @@ export function buildKeyIndicatorRows(
     title: `${item.display_name} · ${freshnessLabel(item.status)}`,
     detail: `${formatNumber(item.latest_value)} ${unitLabel(item.unit)} · 日期 ${
       item.latest_as_of_date ? formatDate(item.latest_as_of_date) : "—"
-    } · 来源 ${sourceLabel(item.source_id)}${
+    } · 来源 ${indicatorSourceTimingLabel(item)}${
       item.lag_days !== null
         ? ` · ${formatLagSummary(item.lag_days, item.lag_business_days)}`
         : ""
