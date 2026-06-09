@@ -430,6 +430,7 @@
             1. `tail_neg__us_curve_10y2y_level__0` 在 `20d` 训练约束里已收紧为 `>= 0`；
             2. `USDJPY` 已不再允许“base level 下压 + interaction 放大”自由组合：`us_usdjpy_level` family cap 已改到 `0.30 ~ 0.40`，`interaction__external_dimension_score__us_usdjpy_level` 新增上界 `0.58`；
             3. `just formal-candidate-screen` 已新增 `positive_window_avg_probability` 与 `curve tail + USDJPY mix` 的离线 `No-Go` 规则。
+            4. 2026-06-09：`just formal-candidate-screen` 已继续接入 default `release review` 的全局治理证据；脚本现在会读取或生成 review artifact，并把 `actionable_precision < 70% / 下滑超过 5pp`、`longest_false_positive_episode_days` 显著变长、`runtime_floor_hit_count` 明显下降，以及 `20d cooldown_bleed / cooldown avg >= positive_window avg` 直接纳入 `no_go_offline`。这一步把 `us_formal_family_hybrid_20260608T191024` 这类“局部连续性看似改善、但 20d cooldown 与误报治理恶化”的候选挡在 fast review 前。
           - [ ] 下一步继续把剩余结论下沉到训练 / 评审策略：
             1. `20d threshold` 只保留 soft penalty / policy guard，不再当作主修复手段；
             2. `USDJPY` 的最终目标仍是迁往“高位 + 变化率/波动率 + 外部确认”的 proxy/context 结构，而不是长期停在 base level cap；

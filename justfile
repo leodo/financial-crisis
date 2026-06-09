@@ -189,8 +189,9 @@ formal-candidate-workstream-audit baseline_release_id candidate_release_id:
 formal-candidate-rate-shock-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-rate-shock-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
-# 标准候选筛选入口：先跑三段窗口 compare，再跑 20d 特征/阈值审计，再补语义审计，
-# 最后补一轮美国历史场景包审计。
+# 标准候选筛选入口：先跑三段窗口 compare，再读取或生成 default release review，
+# 把 20d cooldown bleed、动作精度、最长误报区间和 runtime floor hit 纳入 no-go 判断；
+# 然后跑 20d 特征/阈值审计、语义审计，最后补一轮美国历史场景包审计。
 # 适合 family-hybrid 主线的新候选第一轮筛查；只有这一步结论足够好，才继续跑 `release-review-fast`。
 # 用法：`just formal-candidate-screen us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`
 formal-candidate-screen baseline_release_id candidate_release_id:
