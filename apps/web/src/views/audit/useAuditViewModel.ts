@@ -4,6 +4,8 @@ import {
   formatDate,
   formatDateTime,
   formatPercent,
+  formatProbabilityBasisPoints,
+  formatProbabilityDecimal,
   formatProbabilityPercentExact,
   freshnessLabel,
   historyEvidenceTierLabel,
@@ -71,6 +73,17 @@ function rateShockContinuityFocusLabel(label: string): string {
       late_validation: "后验确认"
     }[label] ?? label
   );
+}
+
+function formatSnapshotProbabilityDecimalSummary(
+  label: string,
+  values: [number, number, number]
+): string {
+  return `${label} ${values.map(formatProbabilityDecimal).join(" / ")}`;
+}
+
+function formatSnapshotProbabilityBasisPointSummary(values: [number, number, number]): string {
+  return `概率基点 ${values.map(formatProbabilityBasisPoints).join(" / ")}`;
 }
 
 export function useAuditViewModel({
@@ -220,15 +233,30 @@ export function useAuditViewModel({
 
   const snapshotRows = audit.snapshots.map((snapshot) => {
     const compact = releaseIdLabel(snapshot.release_id);
+    const calibratedValues: [number, number, number] = [
+      snapshot.calibrated_p_5d,
+      snapshot.calibrated_p_20d,
+      snapshot.calibrated_p_60d
+    ];
+    const rawValues: [number, number, number] = [
+      snapshot.raw_p_5d,
+      snapshot.raw_p_20d,
+      snapshot.raw_p_60d
+    ];
+    const snapshotScope =
+      snapshot.release_id === audit.active_release_id ? "当前线上快照" : "历史/候选快照";
     return {
       id: `${snapshot.as_of_date}-${snapshot.release_id ?? "inline"}-${snapshot.recorded_at}`,
       asOfDate: formatDate(snapshot.as_of_date),
       releaseId: snapshot.release_id ? compact.value : "内联快照",
-      pointInTimeMode: pointInTimeModeLabel(snapshot.point_in_time_mode),
+      pointInTimeMode: [snapshotScope, pointInTimeModeLabel(snapshot.point_in_time_mode)],
       probabilityMode: probabilityModeLabel(snapshot.probability_mode),
       releaseStatus: releaseServingStatusLabel(snapshot.release_status),
       calibratedSummary: `${formatProbabilityPercentExact(snapshot.calibrated_p_5d)} / ${formatProbabilityPercentExact(snapshot.calibrated_p_20d)} / ${formatProbabilityPercentExact(snapshot.calibrated_p_60d)}`,
       rawSummary: `${formatProbabilityPercentExact(snapshot.raw_p_5d)} / ${formatProbabilityPercentExact(snapshot.raw_p_20d)} / ${formatProbabilityPercentExact(snapshot.raw_p_60d)}`,
+      calibratedDecimalSummary: formatSnapshotProbabilityDecimalSummary("接口小数", calibratedValues),
+      rawDecimalSummary: formatSnapshotProbabilityDecimalSummary("原始接口小数", rawValues),
+      calibratedBasisPointSummary: formatSnapshotProbabilityBasisPointSummary(calibratedValues),
       posture: postureLabel(snapshot.posture as DecisionPosture),
       timeBucket: timeBucketLabel(snapshot.time_to_risk_bucket as TimeToRiskBucket),
       triggerLabels: snapshot.posture_trigger_codes.map((code) => describePostureClause(code).label),

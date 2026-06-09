@@ -504,7 +504,12 @@ export default function AuditView({
                   <StackedTableCell title={snapshot.probabilityMode} details={snapshot.releaseStatus} />
                   <StackedTableCell
                     title={snapshot.calibratedSummary}
-                    details={`原始轨迹 ${snapshot.rawSummary}`}
+                    details={[
+                      `原始轨迹 ${snapshot.rawSummary}`,
+                      snapshot.calibratedDecimalSummary,
+                      snapshot.calibratedBasisPointSummary,
+                      snapshot.rawDecimalSummary
+                    ]}
                   />
                   <StackedTableCell
                     title={snapshot.posture}

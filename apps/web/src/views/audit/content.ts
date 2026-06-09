@@ -76,5 +76,5 @@ export const auditContent = {
   unsupportedSuffix: "，暂时没有可展示的本地版本 / 快照审计数据。",
   releaseTableNote: "小屏幕下这张表支持横向滚动，优先看版本、登记状态和训练区间。",
   snapshotTableNote:
-    "这张表不是 formal history 主证据链。先看日期、版本和 5d/20d/60d，再核对它和当前 active release 是否一致，以及旧 snapshot bridge 是否还有残留。"
+    "这张表是运行快照审计，不是当前实时决策结论；当前实时结论请以“决策面板”的“离风险还有多远”为准。先看它是当前线上快照还是历史/候选快照，再看 5d/20d/60d 的百分比、接口小数和 bp。"
 } as const;
