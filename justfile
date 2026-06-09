@@ -188,6 +188,13 @@ formal-candidate-scenario-pack-audit baseline_release_id candidate_release_id:
 formal-candidate-prewarning-gap-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-prewarning-gap-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 固定审计 `2011 美欧融资压力 / no_runtime_floor_signal`：
+# 在 prewarning-gap 总览之后继续下钻 funding stress 的 split、标签、20d/60d floor 距离、
+# mixed-systemic family context 与关键 feature separation，判断应先修训练拓扑/特征还是阈值。
+# 用法：`just formal-candidate-funding-stress-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260608T173701`
+formal-candidate-funding-stress-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-funding-stress-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
 # 对 `prewarning_signal_gap / weak_signal_continuity` 这类 residual workstream 直接拉 formal dataset slice，
 # 汇总样本覆盖、split、标签、episode 和 feature 覆盖，避免只知道“哪条线有问题”却不知道“数据证据长什么样”。
 # 用法：`just formal-candidate-workstream-audit us_formal_family_hybrid_20260605T202246 us_formal_family_hybrid_20260606T112926`
