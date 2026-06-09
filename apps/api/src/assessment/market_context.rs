@@ -55,8 +55,17 @@ pub(super) fn build_data_trust(
     if !has_jpy_data {
         warnings.push("JPY carry 模块缺少 USDJPY 历史数据，外部冲击识别能力受限。".to_string());
     }
-    if snapshot.data_quality_summary.blocked_indicator_count > 0 {
-        warnings.push("存在被阻断的核心指标，建议先补齐数据再做强动作。".to_string());
+    let (blocked_core_count, blocked_auxiliary_count) =
+        blocked_indicator_counts_by_decision_role(indicator_risks);
+    if blocked_core_count > 0 {
+        warnings.push(format!(
+            "存在 {blocked_core_count} 个核心指标缺少或被阻断，建议先补齐数据再做强动作。"
+        ));
+    }
+    if blocked_auxiliary_count > 0 {
+        warnings.push(format!(
+            "存在 {blocked_auxiliary_count} 个辅助/原型指标缺少观测；它不会单独触发强结论，但会降低事件层覆盖。"
+        ));
     }
 
     DataTrust {
@@ -68,6 +77,29 @@ pub(super) fn build_data_trust(
         data_quality_summary: snapshot.data_quality_summary.clone(),
         warnings,
     }
+}
+
+fn blocked_indicator_counts_by_decision_role(indicator_risks: &[IndicatorRisk]) -> (usize, usize) {
+    indicator_risks
+        .iter()
+        .filter(|risk| matches!(risk.quality_grade, fc_domain::QualityGrade::F))
+        .fold((0, 0), |(core, auxiliary), risk| {
+            if is_auxiliary_or_prototype_indicator(risk) {
+                (core, auxiliary + 1)
+            } else {
+                (core + 1, auxiliary)
+            }
+        })
+}
+
+fn is_auxiliary_or_prototype_indicator(risk: &IndicatorRisk) -> bool {
+    let quality_tier = risk.indicator.quality_tier.as_str();
+    quality_tier.eq_ignore_ascii_case("supplemental")
+        || quality_tier.eq_ignore_ascii_case("best_effort")
+        || matches!(
+            risk.indicator.default_source_id.as_str(),
+            "gdelt" | "yfinance"
+        )
 }
 
 pub(super) fn build_jpy_carry_snapshot(
@@ -292,4 +324,113 @@ fn ratio(present: usize, total: usize) -> f64 {
         return 0.0;
     }
     present as f64 / total as f64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{NaiveDate, Utc};
+    use fc_domain::{
+        DataQualitySummary, Frequency, Indicator, QualityGrade, RiskDirection, RiskLevel,
+    };
+
+    fn risk_with_quality(
+        indicator_id: &str,
+        display_name: &str,
+        dimension: RiskDimension,
+        source_id: &str,
+        quality_tier: &str,
+        quality_grade: QualityGrade,
+    ) -> IndicatorRisk {
+        IndicatorRisk {
+            indicator: Indicator {
+                indicator_id: indicator_id.to_string(),
+                display_name: display_name.to_string(),
+                dimension,
+                description: "test".to_string(),
+                unit: "count".to_string(),
+                frequency: Frequency::Daily,
+                risk_direction: RiskDirection::HigherIsRiskier,
+                default_source_id: source_id.to_string(),
+                quality_tier: quality_tier.to_string(),
+            },
+            latest_observation: None,
+            score: 0.0,
+            level: RiskLevel::Normal,
+            percentile: None,
+            change_30d: None,
+            score_basis: "缺少观测".to_string(),
+            score_input_value: None,
+            score_input_unit: None,
+            quality_grade,
+            contribution: 0.0,
+        }
+    }
+
+    fn snapshot_with_blocked_count(blocked_indicator_count: usize) -> RiskSnapshot {
+        RiskSnapshot {
+            as_of_date: NaiveDate::from_ymd_opt(2026, 6, 9).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            overall_score: 0.0,
+            overall_level: RiskLevel::Normal,
+            structural_score: 0.0,
+            trigger_score: 0.0,
+            level_reason: "test".to_string(),
+            dimensions: Vec::new(),
+            top_contributors: Vec::new(),
+            data_quality_summary: DataQualitySummary {
+                overall_score: 88.0,
+                grade: QualityGrade::B,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count,
+            },
+            generated_at: Utc::now(),
+            method_version: "test".to_string(),
+        }
+    }
+
+    #[test]
+    fn data_trust_warns_auxiliary_when_gdelt_news_is_missing() {
+        let risks = vec![risk_with_quality(
+            "global_news_financial_stress_count",
+            "金融压力新闻数量",
+            RiskDimension::EventsSentiment,
+            "gdelt",
+            "supplemental",
+            QualityGrade::F,
+        )];
+
+        let trust = build_data_trust(&snapshot_with_blocked_count(1), &risks, true);
+
+        assert!(trust
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("辅助/原型指标缺少观测")));
+        assert!(!trust
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("核心指标")));
+    }
+
+    #[test]
+    fn data_trust_preserves_core_blocker_warning_for_core_missing_indicator() {
+        let risks = vec![risk_with_quality(
+            "us_market_vix_close",
+            "VIX 收盘价",
+            RiskDimension::MarketStress,
+            "fred",
+            "core",
+            QualityGrade::F,
+        )];
+
+        let trust = build_data_trust(&snapshot_with_blocked_count(1), &risks, true);
+
+        assert!(trust
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("核心指标缺少或被阻断")));
+    }
 }
