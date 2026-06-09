@@ -1,6 +1,7 @@
 import {
   auditEpisodeClass,
   auditEpisodeLabel,
+  formatCount,
   formatDate,
   formatNumber,
   formatPercent,
@@ -40,15 +41,15 @@ export function buildBacktestSummaryMetrics(
     },
     {
       label: "预警折返",
-      value: formatNumber(assessment.backtest_summary.total_false_positive_count)
+      value: formatCount(assessment.backtest_summary.total_false_positive_count)
     },
     {
       label: "本地覆盖场景",
-      value: formatNumber(assessment.backtest_summary.real_scenario_count)
+      value: formatCount(assessment.backtest_summary.real_scenario_count)
     },
     {
       label: "模板参照场景",
-      value: formatNumber(assessment.backtest_summary.fallback_scenario_count)
+      value: formatCount(assessment.backtest_summary.fallback_scenario_count)
     },
     {
       label: "用户风险档位",
@@ -70,31 +71,31 @@ export function buildRollingAuditMetrics(
     },
     {
       label: "动作信号点",
-      value: formatNumber(assessment.backtest_summary.rolling_audit.actionable_signal_count)
+      value: formatCount(assessment.backtest_summary.rolling_audit.actionable_signal_count)
     },
     {
       label: "危机前命中点",
-      value: formatNumber(assessment.backtest_summary.rolling_audit.pre_crisis_signal_count)
+      value: formatCount(assessment.backtest_summary.rolling_audit.pre_crisis_signal_count)
     },
     {
       label: "危机中信号点",
-      value: formatNumber(assessment.backtest_summary.rolling_audit.in_crisis_signal_count)
+      value: formatCount(assessment.backtest_summary.rolling_audit.in_crisis_signal_count)
     },
     {
       label: "受保护压力点",
-      value: formatNumber(assessment.backtest_summary.rolling_audit.stress_window_signal_count)
+      value: formatCount(assessment.backtest_summary.rolling_audit.stress_window_signal_count)
     },
     {
       label: "纯误报点",
-      value: formatNumber(assessment.backtest_summary.rolling_audit.false_positive_signal_count)
+      value: formatCount(assessment.backtest_summary.rolling_audit.false_positive_signal_count)
     },
     {
       label: "误报区间",
-      value: formatNumber(assessment.backtest_summary.rolling_audit.false_positive_episode_count)
+      value: formatCount(assessment.backtest_summary.rolling_audit.false_positive_episode_count)
     },
     {
       label: "最长误报区间",
-      value: formatNumber(
+      value: formatCount(
         assessment.backtest_summary.rolling_audit.longest_false_positive_episode_days,
         "d"
       )
@@ -117,8 +118,8 @@ export function buildRollingAuditEpisodes(
     classificationClass: auditEpisodeClass(episode.classification),
     classificationLabel: auditEpisodeLabel(episode.classification),
     interval: `${formatDate(episode.start_date)} - ${formatDate(episode.end_date)}`,
-    duration: formatNumber(episode.duration_days, "d"),
-    signalCount: formatNumber(episode.signal_count),
+    duration: formatCount(episode.duration_days, "d"),
+    signalCount: formatCount(episode.signal_count),
     note: episode.note
   }));
 }

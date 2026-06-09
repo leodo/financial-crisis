@@ -4,6 +4,7 @@ import {
   describePostureClause,
   formatDate,
   formatPercent,
+  formatProbabilityPercent,
   historyEvidenceTierLabel,
   historySourceLabel,
   humanizeMethodNote,
@@ -127,11 +128,11 @@ export function useMethodViewModel({
   const priorActionRows: Array<[string, string]> = [
     [
       "危机先验",
-      `当前是 ${formatPercent(assessment.probabilities.p_5d)} / ${formatPercent(assessment.probabilities.p_20d)} / ${formatPercent(assessment.probabilities.p_60d)}，回答“风险窗口离现在有多近”。`
+      `当前是 ${formatProbabilityPercent(assessment.probabilities.p_5d)} / ${formatProbabilityPercent(assessment.probabilities.p_20d)} / ${formatProbabilityPercent(assessment.probabilities.p_60d)}，回答“风险窗口离现在有多近”。`
     ],
     [
       "动作概率",
-      `当前是 ${formatPercent(assessment.actionability.prepare)} / ${formatPercent(assessment.actionability.hedge)} / ${formatPercent(assessment.actionability.defend)}，回答“现在该不该准备、对冲或防守”；它和 60d / 20d / 5d 的危机先验不是一一对应关系。`
+      `当前是 ${formatProbabilityPercent(assessment.actionability.prepare)} / ${formatProbabilityPercent(assessment.actionability.hedge)} / ${formatProbabilityPercent(assessment.actionability.defend)}，回答“现在该不该准备、对冲或防守”；它和 60d / 20d / 5d 的危机先验不是一一对应关系。`
     ],
     [
       "最终执行节奏",

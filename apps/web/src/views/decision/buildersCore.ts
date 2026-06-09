@@ -6,6 +6,8 @@ import {
   formatDateTime,
   formatNumber,
   formatPercent,
+  formatPreciseNumber,
+  formatProbabilityPercent,
   formatSignedNumber,
   freshnessLabel,
   pointInTimeModeLabel,
@@ -65,6 +67,26 @@ function actionSourceSummary(assessment: AssessmentSnapshot) {
     label: "双层动作模型",
     detail: `当前已启用独立动作模型和融合层：${actionModel} / ${fusionPolicy}`
   };
+}
+
+function probabilityDisplayNote(assessment: AssessmentSnapshot): string | null {
+  const peakProbability = Math.max(
+    assessment.probabilities.p_5d,
+    assessment.probabilities.p_20d,
+    assessment.probabilities.p_60d
+  );
+  if (peakProbability >= 0.01) {
+    return null;
+  }
+  const staleDays = assessment.runtime.latest_observation_lag_days;
+  if (peakProbability === 0) {
+    return staleDays !== null && staleDays >= 7
+      ? `当前 formal 先验低于展示精度，且关键观测已滞后 ${staleDays} 天；这代表“暂未看到足够证据支持主动防守”，不代表市场风险被证明为零。`
+      : "当前 formal 先验低于展示精度；这代表“风险很低”，不代表市场风险被证明为零。";
+  }
+  return staleDays !== null && staleDays >= 7
+    ? `当前 formal 先验仍低于 1%，且关键观测已滞后 ${staleDays} 天；短期判断应保守解释。`
+    : "当前 formal 先验仍低于 1%，属于低位区间，而不是零风险断言。";
 }
 
 export function buildTriggerClauses(posture: PostureGuidance) {
@@ -142,17 +164,17 @@ export function buildRiskHorizonActionMetrics(
   return [
     {
       label: "准备动作",
-      value: formatPercent(assessment.actionability.prepare),
+      value: formatProbabilityPercent(assessment.actionability.prepare),
       hint: decisionContent.riskHorizon.actionHints.prepare
     },
     {
       label: "对冲动作",
-      value: formatPercent(assessment.actionability.hedge),
+      value: formatProbabilityPercent(assessment.actionability.hedge),
       hint: decisionContent.riskHorizon.actionHints.hedge
     },
     {
       label: "防守动作",
-      value: formatPercent(assessment.actionability.defend),
+      value: formatProbabilityPercent(assessment.actionability.defend),
       hint: decisionContent.riskHorizon.actionHints.defend
     },
     {
@@ -222,20 +244,22 @@ export function buildSignalLayerRows(
   posture: PostureGuidance
 ): DecisionSignalLayerRowModel[] {
   const actionabilitySource = actionSourceSummary(assessment).detail;
+  const priorDetail = probabilityDisplayNote(assessment);
+  const priorThresholdSummary = `当前进入线：准备 ${formatPercent(method.runtime_thresholds.prepare_p60d)} / 对冲 ${formatPercent(method.runtime_thresholds.hedge_p20d)} / 防守 ${formatPercent(method.runtime_thresholds.defend_p5d)}`;
 
   return [
     {
       id: "prior",
       title: "危机先验",
       description: "先看未来 5d / 20d / 60d 进入风险窗口的概率，回答“离风险还有多远”。",
-      value: `${formatPercent(assessment.probabilities.p_5d)} / ${formatPercent(assessment.probabilities.p_20d)} / ${formatPercent(assessment.probabilities.p_60d)}`,
-      detail: `当前进入线：准备 ${formatPercent(method.runtime_thresholds.prepare_p60d)} / 对冲 ${formatPercent(method.runtime_thresholds.hedge_p20d)} / 防守 ${formatPercent(method.runtime_thresholds.defend_p5d)}`
+      value: `${formatProbabilityPercent(assessment.probabilities.p_5d)} / ${formatProbabilityPercent(assessment.probabilities.p_20d)} / ${formatProbabilityPercent(assessment.probabilities.p_60d)}`,
+      detail: priorDetail ? `${priorThresholdSummary} · ${priorDetail}` : priorThresholdSummary
     },
     {
       id: "actionability",
       title: "动作概率",
       description: "再看准备 / 对冲 / 防守，回答“现在该不该开始准备、加保护、保流动性”。",
-      value: `${formatPercent(assessment.actionability.prepare)} / ${formatPercent(assessment.actionability.hedge)} / ${formatPercent(assessment.actionability.defend)}`,
+      value: `${formatProbabilityPercent(assessment.actionability.prepare)} / ${formatProbabilityPercent(assessment.actionability.hedge)} / ${formatProbabilityPercent(assessment.actionability.defend)}`,
       detail: actionabilitySource
     },
     {
@@ -330,7 +354,7 @@ export function buildJpyCarryMetrics(
       label: "美日利差",
       value: formatSignedNumber(assessment.jpy_carry.us_jp_short_rate_diff, 2, "%")
     },
-    { label: "20d 波动", value: formatNumber(assessment.jpy_carry.realized_vol_20d) },
+    { label: "20d 波动", value: formatPreciseNumber(assessment.jpy_carry.realized_vol_20d) },
     {
       label: "融资压力",
       value: formatNumber(assessment.jpy_carry.funding_pressure_score)

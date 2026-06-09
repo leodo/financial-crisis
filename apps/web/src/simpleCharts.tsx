@@ -4,16 +4,27 @@ import type {
   LineChartModel
 } from "./views/decision/charts";
 
-function percentLabel(value: number) {
-  return `${Math.round(value * 100)}%`;
+function percentLabel(value: number, yMax: number) {
+  const percent = value * 100;
+  if (yMax <= 0.001) {
+    return `${percent.toFixed(2)}%`;
+  }
+  if (yMax <= 0.01) {
+    return `${percent.toFixed(1)}%`;
+  }
+  return `${Math.round(percent)}%`;
 }
 
 function scoreLabel(value: number) {
   return value.toFixed(0);
 }
 
-function chartValueLabel(value: number, valueType: LineChartModel["valueType"]) {
-  return valueType === "percent" ? percentLabel(value) : scoreLabel(value);
+function chartValueLabel(
+  value: number,
+  valueType: LineChartModel["valueType"],
+  yMax: number
+) {
+  return valueType === "percent" ? percentLabel(value, yMax) : scoreLabel(value);
 }
 
 export function SimpleLineChart({
@@ -53,7 +64,7 @@ export function SimpleLineChart({
               strokeWidth="1"
             />
             <text x={margins.left - 8} y={y(tick) + 4} textAnchor="end" className="simple-chart-axis">
-              {chartValueLabel(tick, model.valueType)}
+              {chartValueLabel(tick, model.valueType, yMax)}
             </text>
           </g>
         ))}

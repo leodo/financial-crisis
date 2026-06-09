@@ -1,4 +1,4 @@
-import { formatPercent, formatSignedNumber } from "../../format";
+import { formatPercent, formatProbabilityPercent, formatSignedNumber } from "../../format";
 import type { AssessmentSnapshot } from "../../types";
 import type { DetailRowItem, MetricItem } from "./panelHelpers";
 
@@ -101,7 +101,7 @@ export function buildProbabilityOverlayViewModel(assessment: AssessmentSnapshot)
     return {
       id: `overlay-${horizon.horizon_days}`,
       title: `${overlayHorizonLabel(horizon.horizon_days)} · ${horizon.configured_overlay_count > 0 ? `${horizon.configured_overlay_count} 个已挂载 overlay` : "当前仅保留审计元数据"}`,
-      detail: `base raw ${formatPercent(horizon.raw_probability)}，base calibrated ${formatPercent(horizon.calibrated_probability)}，overlay final ${formatPercent(horizon.final_probability)}，runtime final ${formatPercent(runtimeFinalProbability)}。${monotonicLift > 0 ? `单调约束额外抬升 ${formatPercent(monotonicLift)}。` : ""}${runtimeContributionSummary}`,
+      detail: `base raw ${formatProbabilityPercent(horizon.raw_probability)}，base calibrated ${formatProbabilityPercent(horizon.calibrated_probability)}，overlay final ${formatProbabilityPercent(horizon.final_probability)}，runtime final ${formatProbabilityPercent(runtimeFinalProbability)}。${monotonicLift > 0 ? `单调约束额外抬升 ${formatProbabilityPercent(monotonicLift)}。` : ""}${runtimeContributionSummary}`,
       meta: formatSignedNumber(
         monotonicLift > 0
           ? monotonicLift * 100

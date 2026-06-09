@@ -12,6 +12,7 @@ use super::{
     heuristic::heuristic_actionability_block,
 };
 use crate::assessment::{probability_action_thresholds, round3, ServingModelContext};
+use crate::assessment::common::round_probability;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ProbabilityComputationTrace {
@@ -107,9 +108,9 @@ pub(super) fn build_probability_trace(
         });
 
     let raw_probabilities = ProbabilityBlock {
-        p_5d: round3(raw_p_5d),
-        p_20d: round3(raw_p_20d),
-        p_60d: round3(raw_p_60d),
+        p_5d: round_probability(raw_p_5d),
+        p_20d: round_probability(raw_p_20d),
+        p_60d: round_probability(raw_p_60d),
     };
 
     let apply_runtime_monotonic_gap = serving_model.runtime_probability_mode != "formal_bundle_v1";
@@ -129,9 +130,9 @@ pub(super) fn build_probability_trace(
     };
     let calibrated_p_60d = crate::assessment::clamp_probability(calibrated_p_60d_pre_clamp);
     let calibrated_probabilities = ProbabilityBlock {
-        p_5d: round3(calibrated_p_5d),
-        p_20d: round3(calibrated_p_20d),
-        p_60d: round3(calibrated_p_60d),
+        p_5d: round_probability(calibrated_p_5d),
+        p_20d: round_probability(calibrated_p_20d),
+        p_60d: round_probability(calibrated_p_60d),
     };
     let probability_diagnostics = ProbabilityDiagnostics {
         horizon_overlays: bundle
@@ -146,16 +147,16 @@ pub(super) fn build_probability_trace(
                 }?;
                 let diagnostics = ProbabilityHorizonOverlayDiagnostics {
                     horizon_days: horizon.horizon_days,
-                    raw_probability: round3(score.raw_probability),
-                    calibrated_probability: round3(score.calibrated_probability),
-                    final_probability: round3(score.final_probability),
+                    raw_probability: round_probability(score.raw_probability),
+                    calibrated_probability: round_probability(score.calibrated_probability),
+                    final_probability: round_probability(score.final_probability),
                     runtime_final_probability: Some(match horizon.horizon_days {
-                        5 => round3(calibrated_p_5d),
-                        20 => round3(calibrated_p_20d),
-                        60 => round3(calibrated_p_60d),
-                        _ => round3(score.final_probability),
+                        5 => round_probability(calibrated_p_5d),
+                        20 => round_probability(calibrated_p_20d),
+                        60 => round_probability(calibrated_p_60d),
+                        _ => round_probability(score.final_probability),
                     }),
-                    monotonic_lift: round3(match horizon.horizon_days {
+                    monotonic_lift: round_probability(match horizon.horizon_days {
                         20 if apply_runtime_monotonic_gap => {
                             (calibrated_p_20d_pre_clamp - calibrated_p_20d_raw).max(0.0)
                         }

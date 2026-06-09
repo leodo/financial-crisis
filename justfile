@@ -293,16 +293,16 @@ db-check:
     cargo run -p fc-worker -- db check
 
 # 一键刷新最近一段免费高频数据，并在 API 运行时自动触发 /api/system/reload。
-# 当前会串行刷新 FRED / Treasury / BOJ / SEC EDGAR，World Bank 可按需关闭。
-# 这是日常维护本地评估库的首选入口。
+# 默认跳过 World Bank 年频慢变量，保证日常刷新能在几分钟内完成。
+# 这是日常维护本地评估库的首选入口；需要慢变量时再单独运行 `just backfill-world-bank`。
 refresh-latest:
-    cargo run -p fc-worker -- refresh latest-free
+    cargo run -p fc-worker -- refresh latest-free --skip-world-bank
     ./scripts/dev-status.ps1
 
 # 在日常刷新基础上追加 GDELT prototype 事件源。
-# 适合想把新闻压力序列也一并拉进当前面板的场景。
+# 同样默认跳过 World Bank，避免把“看当下”的刷新命令拖成慢任务。
 refresh-latest-full:
-    cargo run -p fc-worker -- refresh latest-free --include-gdelt
+    cargo run -p fc-worker -- refresh latest-free --skip-world-bank --include-gdelt
     ./scripts/dev-status.ps1
 
 # 无需 API key，使用 FRED 图表 CSV 回填历史数据到本地 SQLite。

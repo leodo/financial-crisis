@@ -25,8 +25,32 @@ pub(super) fn round3(value: f64) -> f64 {
     (value * 1000.0).round() / 1000.0
 }
 
+pub(in crate::assessment) fn round_probability(value: f64) -> f64 {
+    round6(value)
+}
+
 pub(super) fn format_probability_threshold(value: f64) -> String {
     format!("{value:.2}")
+}
+
+pub(in crate::assessment) fn format_probability_percent(value: f64) -> String {
+    let absolute = value.abs();
+    if absolute == 0.0 {
+        return "0.0%".to_string();
+    }
+    if absolute < 0.0001 {
+        return "<0.01%".to_string();
+    }
+    if absolute < 0.001 {
+        return format!("{:.2}%", value * 100.0);
+    }
+    if absolute < 0.01 {
+        return format!("{:.1}%", value * 100.0);
+    }
+    if absolute < 0.1 {
+        return format!("{:.1}%", value * 100.0);
+    }
+    format!("{:.0}%", value * 100.0)
 }
 
 pub(super) fn round6(value: f64) -> f64 {

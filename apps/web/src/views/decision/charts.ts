@@ -91,6 +91,22 @@ function probabilitySpread(values: number[]) {
   return Math.max(...values) - Math.min(...values);
 }
 
+function buildProbabilityAxisMax(probabilityMax: number) {
+  if (probabilityMax <= 0) {
+    return 0.02;
+  }
+  if (probabilityMax < 0.001) {
+    return Math.max(0.0004, Math.ceil((probabilityMax * 1.35) / 0.0001) * 0.0001);
+  }
+  if (probabilityMax < 0.01) {
+    return Math.max(0.004, Math.ceil((probabilityMax * 1.35) / 0.001) * 0.001);
+  }
+  if (probabilityMax < 0.08) {
+    return Math.max(0.02, Math.ceil((probabilityMax * 1.35) / 0.01) * 0.01);
+  }
+  return Math.min(1, Math.max(0.08, Math.ceil((probabilityMax * 1.35) / 0.02) * 0.02));
+}
+
 function buildProbabilityTrendSourceNote(history: AssessmentHistoryPoint[]) {
   if (history.length === 0) {
     return "";
@@ -149,10 +165,7 @@ function buildProbabilityTrendChart(
     probabilityValue(point, 60, mode)
   ]);
   const probabilityMax = probabilityValues.length > 0 ? Math.max(...probabilityValues) : 0;
-  const yAxisMax = Math.min(
-    1,
-    Math.max(0.08, Math.ceil((probabilityMax * 1.35) / 0.02) * 0.02)
-  );
+  const yAxisMax = buildProbabilityAxisMax(probabilityMax);
 
   return {
     categories: history.map((point) => formatDate(point.as_of_date)),

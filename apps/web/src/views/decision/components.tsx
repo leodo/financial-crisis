@@ -1,7 +1,7 @@
 import {
   describePostureClause,
   formatNumber,
-  formatPercent
+  formatProbabilityPercent
 } from "../../format";
 import type { AssessmentSnapshot } from "../../types";
 import { RuleBox } from "../shared/panelHelpers";
@@ -64,7 +64,7 @@ export function ProbabilityTile({
         <span>{label}</span>
         <em>{band.label}</em>
       </div>
-      <strong>{formatPercent(value)}</strong>
+      <strong>{formatProbabilityPercent(value)}</strong>
       <p>{hint}</p>
       <small>{band.note}</small>
     </div>

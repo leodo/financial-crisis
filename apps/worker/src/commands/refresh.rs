@@ -109,6 +109,10 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     super::db_init().await?;
     super::db_seed().await?;
 
+    let total_stages =
+        5 + if options.skip_world_bank { 0 } else { 1 } + if options.include_gdelt { 1 } else { 0 };
+
+    println!("Stage 1/{total_stages}: FRED market series");
     backfill_fred_with_options(FredBackfillOptions {
         options: BackfillOptions {
             start: fast_start,
@@ -122,6 +126,7 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     })
     .await?;
 
+    println!("Stage 2/{total_stages}: Treasury yield curve");
     backfill_treasury_yield_with_options(BackfillOptions {
         start: fast_start,
         end: today,
@@ -132,6 +137,7 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     })
     .await?;
 
+    println!("Stage 3/{total_stages}: BOJ FX");
     backfill_boj_with_options(BojBackfillOptions {
         dataset: BojDataset::FxDaily,
         options: BackfillOptions {
@@ -145,6 +151,7 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     })
     .await?;
 
+    println!("Stage 4/{total_stages}: BOJ money market");
     backfill_boj_with_options(BojBackfillOptions {
         dataset: BojDataset::MoneyMarketRates,
         options: BackfillOptions {
@@ -158,6 +165,7 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     })
     .await?;
 
+    println!("Stage 5/{total_stages}: SEC EDGAR");
     backfill_sec_edgar_with_options(BackfillOptions {
         start: fast_start,
         end: today,
@@ -168,7 +176,9 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     })
     .await?;
 
+    let mut next_stage = 6;
     if !options.skip_world_bank {
+        println!("Stage {next_stage}/{total_stages}: World Bank slow variables");
         backfill_world_bank_with_options(BackfillOptions {
             start: slow_start,
             end: today,
@@ -178,9 +188,11 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
             watermark_overlap_days: None,
         })
         .await?;
+        next_stage += 1;
     }
 
     if options.include_gdelt {
+        println!("Stage {next_stage}/{total_stages}: GDELT prototype events");
         backfill_gdelt_with_options(BackfillOptions {
             start: fast_start,
             end: today,

@@ -2,6 +2,7 @@ import {
   auditEpisodeClass,
   auditEpisodeLabel,
   backtestSignalSourceLabel,
+  formatCount,
   formatDate,
   formatNumber,
   formatPercent,
@@ -53,22 +54,22 @@ export function useBacktestsViewModel({
     ["漏报率", formatPercent(assessment.backtest_summary.missed_rate)],
     ["平均结构提前量", formatNumber(assessment.backtest_summary.avg_structural_lead_time_days, "d")],
     ["平均动作提前量", formatNumber(assessment.backtest_summary.avg_lead_time_days, "d")],
-    ["预警折返", formatNumber(assessment.backtest_summary.total_false_positive_count)],
-    ["本地覆盖场景", formatNumber(assessment.backtest_summary.real_scenario_count)],
-    ["模板参照场景", formatNumber(assessment.backtest_summary.fallback_scenario_count)]
+    ["预警折返", formatCount(assessment.backtest_summary.total_false_positive_count)],
+    ["本地覆盖场景", formatCount(assessment.backtest_summary.real_scenario_count)],
+    ["模板参照场景", formatCount(assessment.backtest_summary.fallback_scenario_count)]
   ] as Array<[string, string]>;
 
   const rollingMetrics = [
     ["动作信号精度", formatPercent(assessment.backtest_summary.rolling_audit.actionable_precision)],
-    ["动作信号点", formatNumber(assessment.backtest_summary.rolling_audit.actionable_signal_count)],
-    ["危机前命中点", formatNumber(assessment.backtest_summary.rolling_audit.pre_crisis_signal_count)],
-    ["危机中信号点", formatNumber(assessment.backtest_summary.rolling_audit.in_crisis_signal_count)],
-    ["受保护压力点", formatNumber(assessment.backtest_summary.rolling_audit.stress_window_signal_count)],
-    ["纯误报点", formatNumber(assessment.backtest_summary.rolling_audit.false_positive_signal_count)],
-    ["误报区间", formatNumber(assessment.backtest_summary.rolling_audit.false_positive_episode_count)],
+    ["动作信号点", formatCount(assessment.backtest_summary.rolling_audit.actionable_signal_count)],
+    ["危机前命中点", formatCount(assessment.backtest_summary.rolling_audit.pre_crisis_signal_count)],
+    ["危机中信号点", formatCount(assessment.backtest_summary.rolling_audit.in_crisis_signal_count)],
+    ["受保护压力点", formatCount(assessment.backtest_summary.rolling_audit.stress_window_signal_count)],
+    ["纯误报点", formatCount(assessment.backtest_summary.rolling_audit.false_positive_signal_count)],
+    ["误报区间", formatCount(assessment.backtest_summary.rolling_audit.false_positive_episode_count)],
     [
       "最长误报区间",
-      formatNumber(assessment.backtest_summary.rolling_audit.longest_false_positive_episode_days, "d")
+      formatCount(assessment.backtest_summary.rolling_audit.longest_false_positive_episode_days, "d")
     ]
   ] as Array<[string, string]>;
 
@@ -84,10 +85,10 @@ export function useBacktestsViewModel({
   const currentPosture = postureLabel(assessment.posture);
   const headlineMetrics = [
     ["动作命中", formatPercent(assessment.backtest_summary.timely_warning_rate)],
-    ["纯误报区间", formatNumber(assessment.backtest_summary.rolling_audit.false_positive_episode_count)],
+    ["纯误报区间", formatCount(assessment.backtest_summary.rolling_audit.false_positive_episode_count)],
     [
       "最长误报",
-      formatNumber(assessment.backtest_summary.rolling_audit.longest_false_positive_episode_days, "d")
+      formatCount(assessment.backtest_summary.rolling_audit.longest_false_positive_episode_days, "d")
     ],
     ["当前执行节奏", currentPosture]
   ] as Array<[string, string]>;
@@ -100,7 +101,7 @@ export function useBacktestsViewModel({
     leadTime: `${scenario.lead_time_days ?? "—"}d`,
     actionableLeadTime: `${scenario.actionable_lead_time_days ?? "—"}d`,
     peakScore: formatNumber(scenario.max_score),
-    falsePositives: formatNumber(scenario.false_positive_count),
+    falsePositives: formatCount(scenario.false_positive_count),
     note: humanizeNarrativeCopy(scenario.note)
   }));
 
@@ -110,8 +111,8 @@ export function useBacktestsViewModel({
     badgeLabel: auditEpisodeLabel(episode.classification),
     startDate: formatDate(episode.start_date),
     endDate: formatDate(episode.end_date),
-    duration: formatNumber(episode.duration_days, "d"),
-    signalCount: formatNumber(episode.signal_count),
+    duration: formatCount(episode.duration_days, "d"),
+    signalCount: formatCount(episode.signal_count),
     note: humanizeNarrativeCopy(episode.note)
   }));
 

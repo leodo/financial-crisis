@@ -5,6 +5,7 @@ use fc_domain::{
     UserRiskProfile,
 };
 
+use super::super::common::format_probability_percent;
 use super::super::{
     format_probability_threshold, posture_label, round1, ProbabilityActionThresholds,
     ACTION_PLAYBOOK_VERSION,
@@ -293,11 +294,11 @@ pub(in super::super) fn build_summary(
         TimeToRiskBucket::Now => "短期风险窗口已经打开",
     };
     format!(
-        "{}。5d / 20d / 60d 概率分别为 {:.0}% / {:.0}% / {:.0}%，它们回答的是危机窗口离现在多近；prepare / hedge / defend 动作层与当前 posture 回答的是现在该不该开始准备、保护或防守。当前 posture 为 {}。",
+        "{}。5d / 20d / 60d 概率分别为 {} / {} / {}，它们回答的是危机窗口离现在多近；prepare / hedge / defend 动作层与当前 posture 回答的是现在该不该开始准备、保护或防守。当前 posture 为 {}。",
         horizon_text,
-        probabilities.p_5d * 100.0,
-        probabilities.p_20d * 100.0,
-        probabilities.p_60d * 100.0,
+        format_probability_percent(probabilities.p_5d),
+        format_probability_percent(probabilities.p_20d),
+        format_probability_percent(probabilities.p_60d),
         posture_label(posture.posture)
     )
 }
