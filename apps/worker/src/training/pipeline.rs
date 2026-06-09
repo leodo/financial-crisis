@@ -1,4 +1,7 @@
-use std::fs;
+use std::{
+    fs,
+    io::{self, Write},
+};
 
 use chrono::Utc;
 use fc_domain::{
@@ -38,41 +41,60 @@ pub(crate) async fn train_probability_pipeline(
     options: &PipelineTrainOptions,
 ) -> anyhow::Result<PipelineArtifacts> {
     let generated_at = Utc::now();
+    log_training_progress("Loading probability training input...");
     let training =
         crate::commands::pipeline::load_probability_training_input(store, options).await?;
+    log_training_progress(format!(
+        "Loaded probability training input: dataset={} train={} calibration={} evaluation={} features={}",
+        training.dataset_label,
+        training.train_rows.len(),
+        training.calibration_rows.len(),
+        training.evaluation_rows.len(),
+        training.feature_names.len(),
+    ));
     let bundle_feature_names = probability_feature_names_for_transform(
         &training.feature_names,
         options.model_shape.feature_transform(),
     );
     let crisis_prior_label_mode = ProbabilityTargetLabelMode::ForwardCrisis;
-    let horizons = [5_u32, 20_u32, 60_u32]
-        .into_iter()
-        .map(|horizon| {
-            let base_feature_names = probability_feature_names_for_transform(
-                &training.feature_names,
-                options
-                    .model_shape
-                    .base_feature_transform_for_horizon(horizon),
-            );
-            let overlay_feature_names = probability_feature_names_for_transform(
-                &training.feature_names,
-                options
-                    .model_shape
-                    .overlay_feature_transform_for_horizon(horizon),
-            );
-            crate::train_horizon_bundle(
-                &training.train_rows,
-                &training.calibration_rows,
-                &training.evaluation_rows,
-                &base_feature_names,
-                &overlay_feature_names,
-                horizon,
-                crisis_prior_label_mode,
-            )
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
+    let mut horizons = Vec::new();
+    for horizon in [5_u32, 20_u32, 60_u32] {
+        log_training_progress(format!(
+            "Training probability horizon {horizon}d with model_shape={}...",
+            options.model_shape.as_str()
+        ));
+        let base_feature_names = probability_feature_names_for_transform(
+            &training.feature_names,
+            options
+                .model_shape
+                .base_feature_transform_for_horizon(horizon),
+        );
+        let overlay_feature_names = probability_feature_names_for_transform(
+            &training.feature_names,
+            options
+                .model_shape
+                .overlay_feature_transform_for_horizon(horizon),
+        );
+        let horizon_bundle = crate::train_horizon_bundle(
+            &training.train_rows,
+            &training.calibration_rows,
+            &training.evaluation_rows,
+            &base_feature_names,
+            &overlay_feature_names,
+            horizon,
+            crisis_prior_label_mode,
+        )?;
+        log_training_progress(format!("Finished probability horizon {horizon}d."));
+        horizons.push(horizon_bundle);
+    }
 
+    log_training_progress("Training actionability head if eligible...");
     let actionability = maybe_train_actionability_bundle(&training, &generated_at)?;
+    log_training_progress(if actionability.is_some() {
+        "Actionability head enabled for this bundle."
+    } else {
+        "Actionability head omitted for this bundle."
+    });
     let aggregate_evaluation = crate::summarize_bundle_evaluation(&horizons);
     let release_suffix = generated_at.format("%Y%m%dT%H%M%S").to_string();
     let release_id = format!("{}_{}", options.release_prefix, release_suffix);
@@ -163,6 +185,12 @@ pub(crate) async fn train_probability_pipeline(
         &evaluation_path,
         serde_json::to_string_pretty(&evaluation_report)?,
     )?;
+    log_training_progress(format!(
+        "Wrote probability bundle artifacts: bundle={} manifest={} evaluation={}",
+        bundle_path.display(),
+        manifest_path.display(),
+        evaluation_path.display(),
+    ));
 
     Ok(PipelineArtifacts {
         release,
@@ -173,6 +201,11 @@ pub(crate) async fn train_probability_pipeline(
         dataset_source: training.dataset_source.as_str().to_string(),
         dataset_label: training.dataset_label,
     })
+}
+
+fn log_training_progress(message: impl AsRef<str>) {
+    println!("{}", message.as_ref());
+    let _ = io::stdout().flush();
 }
 
 fn maybe_train_actionability_bundle(
