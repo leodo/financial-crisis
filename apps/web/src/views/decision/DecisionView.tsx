@@ -166,8 +166,16 @@ export default function DecisionView({
 
           <section className="surface">
             <SurfaceHeader title="概率轨迹" icon={History} />
+            <MetricGrid className="probability-trend-metrics" items={probabilityTrend.summaryMetrics} />
             <SimpleLineChart model={probabilityTrend.chart} height={320} />
             <div className="legend-note">{probabilityTrend.note}</div>
+            <div className="probability-trend-relative">
+              <div className="section-subhead">
+                <strong>近期相对变化</strong>
+                <span>每条线按自身近期区间归一，专门用来看 20d 这类低位线是否真的没有变化。</span>
+              </div>
+              <SimpleLineChart model={probabilityTrend.relativeChart} height={190} />
+            </div>
           </section>
 
           <DecisionWhyNowPanel assessment={assessment} posture={posture} />

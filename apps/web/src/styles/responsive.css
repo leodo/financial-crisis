@@ -71,13 +71,27 @@
   }
 
   .probability-grid,
-  .hero-metrics {
+  .hero-metrics,
+  .probability-trend-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .section-subhead {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .section-subhead span {
+    text-align: left;
   }
 
   .probability-gate-row {
     grid-template-columns: 1fr;
     align-items: flex-start;
+  }
+
+  .probability-distance-grid {
+    grid-template-columns: 1fr;
   }
 
   .probability-gate-row em {
@@ -112,6 +126,7 @@
   .runtime-card-grid,
   .probability-grid,
   .mini-metrics,
+  .probability-trend-metrics,
   .warmup-metric-grid,
   .sources-top-grid,
   .audit-review-metrics {

@@ -1,4 +1,11 @@
-import { formatDate, formatProbabilityPercentExact, wrapTimelineLabel } from "../../format";
+import {
+  formatDate,
+  formatPercentPrecise,
+  formatProbabilityBasisPoints,
+  formatProbabilityDecimal,
+  formatProbabilityPercentExact,
+  wrapTimelineLabel
+} from "../../format";
 import type {
   AssessmentHistoryPoint,
   AssessmentSnapshot,
@@ -10,6 +17,12 @@ export interface LineChartSeriesModel {
   color: string;
   values: number[];
   fillColor?: string;
+  pointDetails?: LineChartPointDetail[];
+}
+
+export interface LineChartPointDetail {
+  valueLabel: string;
+  detail?: string;
 }
 
 export interface LineChartModel {
@@ -42,6 +55,12 @@ export interface GroupedBarChartModel {
   series: GroupedBarSeriesModel[];
 }
 
+export interface ProbabilityTrendMetric {
+  label: string;
+  value: string;
+  hint: string;
+}
+
 type ProbabilityTrendMode = "calibrated" | "raw";
 const RECENT_PROBABILITY_WINDOW_POINTS = 90;
 
@@ -62,6 +81,8 @@ export function buildProbabilityTrendModel(history: AssessmentHistoryPoint[]) {
 
   return {
     chart: buildProbabilityTrendChart(chartHistory, mode),
+    relativeChart: buildProbabilityRelativeTrendChart(chartHistory, mode),
+    summaryMetrics: buildProbabilityTrendSummaryMetrics(chartHistory, mode),
     note: [baseNote, windowNote, scaleNote, sanityNote, sourceNote].filter(Boolean).join(" ")
   };
 }
@@ -228,7 +249,9 @@ function probabilitySeriesStats(label: string, values: number[]) {
   return {
     label,
     minValue: Math.min(...values),
-    maxValue: Math.max(...values)
+    maxValue: Math.max(...values),
+    latestValue: values.at(-1) ?? 0,
+    spread: probabilitySpread(values)
   };
 }
 
@@ -256,6 +279,95 @@ function probabilityValue(
   return point.p_60d;
 }
 
+function formatProbabilityDelta(value: number): string {
+  if (value === 0) {
+    return "持平";
+  }
+
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${formatProbabilityPercentExact(value)}`;
+}
+
+function buildProbabilityPointDetails(
+  history: AssessmentHistoryPoint[],
+  horizon: 5 | 20 | 60,
+  mode: ProbabilityTrendMode
+): LineChartPointDetail[] {
+  return history.map((point, index) => {
+    const value = probabilityValue(point, horizon, mode);
+    const previous = index > 0 ? probabilityValue(history[index - 1], horizon, mode) : null;
+    const deltaCopy =
+      previous === null ? "首个点" : `较前点 ${formatProbabilityDelta(value - previous)}`;
+
+    return {
+      valueLabel: `${formatProbabilityPercentExact(value)} · ${formatProbabilityBasisPoints(value)}`,
+      detail: `接口 ${formatProbabilityDecimal(value)} · ${deltaCopy}`
+    };
+  });
+}
+
+function normalizedProbabilityValues(values: number[]): number[] {
+  if (values.length === 0) {
+    return [];
+  }
+
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const spread = maxValue - minValue;
+  if (spread <= 0) {
+    return values.map(() => 50);
+  }
+
+  return values.map((value) => ((value - minValue) / spread) * 100);
+}
+
+function buildRelativePointDetails(
+  history: AssessmentHistoryPoint[],
+  horizon: 5 | 20 | 60,
+  mode: ProbabilityTrendMode,
+  normalizedValues: number[]
+): LineChartPointDetail[] {
+  return history.map((point, index) => {
+    const value = probabilityValue(point, horizon, mode);
+    return {
+      valueLabel: `${normalizedValues[index].toFixed(0)} / 100`,
+      detail: `原始概率 ${formatProbabilityPercentExact(value)} · ${formatProbabilityBasisPoints(value)}`
+    };
+  });
+}
+
+function buildProbabilityTrendSummaryMetrics(
+  history: AssessmentHistoryPoint[],
+  mode: ProbabilityTrendMode
+): ProbabilityTrendMetric[] {
+  if (history.length === 0) {
+    return [];
+  }
+
+  const stats = [
+    probabilitySeriesStats("5日窗口", history.map((point) => probabilityValue(point, 5, mode))),
+    probabilitySeriesStats("20日窗口", history.map((point) => probabilityValue(point, 20, mode))),
+    probabilitySeriesStats("60日窗口", history.map((point) => probabilityValue(point, 60, mode)))
+  ];
+  const yAxisMax = buildProbabilityAxisMax(Math.max(...stats.map((series) => series.maxValue), 0));
+
+  return stats.map((series) => {
+    const axisShare = yAxisMax > 0 ? series.maxValue / yAxisMax : 0;
+    const compressionCopy =
+      axisShare > 0 && axisShare < 0.12
+        ? `纵轴占比 ${formatPercentPrecise(axisShare)}，视觉上会贴底`
+        : `纵轴占比 ${formatPercentPrecise(axisShare)}`;
+
+    return {
+      label: series.label,
+      value: formatProbabilityPercentExact(series.latestValue),
+      hint: `近期 ${formatProbabilityPercentExact(series.minValue)} - ${formatProbabilityPercentExact(
+        series.maxValue
+      )} · 波动 ${formatProbabilityPercentExact(series.spread)} · ${compressionCopy}`
+    };
+  });
+}
+
 function buildProbabilityTrendChart(
   history: AssessmentHistoryPoint[],
   mode: ProbabilityTrendMode
@@ -276,18 +388,59 @@ function buildProbabilityTrendChart(
       {
         label: mode === "raw" ? "5日窗口（原始）" : "5日窗口",
         color: "#b45309",
-        values: history.map((point) => probabilityValue(point, 5, mode))
+        values: history.map((point) => probabilityValue(point, 5, mode)),
+        pointDetails: buildProbabilityPointDetails(history, 5, mode)
       },
       {
         label: mode === "raw" ? "20日窗口（原始）" : "20日窗口",
         color: "#2563eb",
-        values: history.map((point) => probabilityValue(point, 20, mode))
+        values: history.map((point) => probabilityValue(point, 20, mode)),
+        pointDetails: buildProbabilityPointDetails(history, 20, mode)
       },
       {
         label: mode === "raw" ? "60日窗口（原始）" : "60日窗口",
         color: "#115e59",
         fillColor: "rgba(17, 94, 89, 0.08)",
-        values: history.map((point) => probabilityValue(point, 60, mode))
+        values: history.map((point) => probabilityValue(point, 60, mode)),
+        pointDetails: buildProbabilityPointDetails(history, 60, mode)
+      }
+    ]
+  };
+}
+
+function buildProbabilityRelativeTrendChart(
+  history: AssessmentHistoryPoint[],
+  mode: ProbabilityTrendMode
+): LineChartModel {
+  const values5d = history.map((point) => probabilityValue(point, 5, mode));
+  const values20d = history.map((point) => probabilityValue(point, 20, mode));
+  const values60d = history.map((point) => probabilityValue(point, 60, mode));
+  const relative5d = normalizedProbabilityValues(values5d);
+  const relative20d = normalizedProbabilityValues(values20d);
+  const relative60d = normalizedProbabilityValues(values60d);
+
+  return {
+    categories: history.map((point) => formatDate(point.as_of_date)),
+    maxValue: 100,
+    valueType: "score",
+    series: [
+      {
+        label: mode === "raw" ? "5日相对（原始）" : "5日相对",
+        color: "#b45309",
+        values: relative5d,
+        pointDetails: buildRelativePointDetails(history, 5, mode, relative5d)
+      },
+      {
+        label: mode === "raw" ? "20日相对（原始）" : "20日相对",
+        color: "#2563eb",
+        values: relative20d,
+        pointDetails: buildRelativePointDetails(history, 20, mode, relative20d)
+      },
+      {
+        label: mode === "raw" ? "60日相对（原始）" : "60日相对",
+        color: "#115e59",
+        values: relative60d,
+        pointDetails: buildRelativePointDetails(history, 60, mode, relative60d)
       }
     ]
   };

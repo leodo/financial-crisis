@@ -349,9 +349,9 @@
 }
 
 .simple-chart-tooltip-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   font-size: 12px;
   line-height: 1.2;
@@ -384,6 +384,13 @@
   font-style: normal;
   font-weight: 800;
   white-space: nowrap;
+}
+
+.simple-chart-tooltip-row small {
+  grid-column: 1 / -1;
+  color: #6b7882;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .simple-hbar-chart {

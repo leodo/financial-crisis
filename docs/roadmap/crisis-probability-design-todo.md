@@ -881,6 +881,10 @@
    - `2026-06-10` 已在前端概率卡里补出 `Base 头贡献` 与 crosshair hover 明细，API/历史回放/正式 slice 也同步透出 top base feature contributions：
      - 这解决的是“为什么 20d 看起来异常偏冷、哪些底层特征在压它”的解释缺口，不是把 20d runtime 值硬抬高；
      - 当前 20d 过冷仍应按模型诊断处理，后续优先看训练拓扑、特征分离和阈值/冷却治理，不能把它误判成纯 UI 问题。
+   - `2026-06-10` 已继续修正决策面板的概率可读性：
+     - `概率轨迹` 现在保留绝对概率图，同时新增每条期限按自身近期区间归一的相对变化图；hover 明细会显示日期、精确百分比、bp、接口小数和较前点变化，用来确认 `20d` 低位线是否真的没有变化；
+     - `离风险还有多远` 现在把当前正式概率、动作进入线、占进入线比例、触线倍数和百分点差值拆开显示，并明确动作进入线不是“危机已经发生线”；
+     - 本次只修 UI 解释和排查能力，不改变 active release 概率输出；若 `20d` 长期过冷，仍必须通过候选训练、feature semantics、threshold/cooldown guardrail 处理。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 

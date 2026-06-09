@@ -86,6 +86,8 @@ export function SimpleLineChart({
           label: series.label,
           color: series.color,
           value: series.values[hoverIndex] ?? 0,
+          valueLabel: series.pointDetails?.[hoverIndex]?.valueLabel,
+          detail: series.pointDetails?.[hoverIndex]?.detail,
           isNearest: series.label === nearestSeriesLabel
         }));
   const tooltipStyle =
@@ -210,7 +212,7 @@ export function SimpleLineChart({
                 cy={y(series.values[hoverIndex] ?? 0)}
                 fill="#ffffff"
                 key={series.label}
-                r="4.5"
+                r={series.label === nearestSeriesLabel ? "5.8" : "4.5"}
                 stroke={series.color}
                 strokeWidth="2"
               />
@@ -244,7 +246,8 @@ export function SimpleLineChart({
                 <i style={{ background: row.color }} />
                 {row.label}
               </span>
-              <em>{chartValueLabel(row.value, model.valueType, yMax)}</em>
+              <em>{row.valueLabel ?? chartValueLabel(row.value, model.valueType, yMax)}</em>
+              {row.detail ? <small>{row.detail}</small> : null}
             </div>
           ))}
         </div>

@@ -167,6 +167,61 @@ function probabilityReadingNote(value: number): string {
   return "当前概率已高于 1%，应重点看是否接近对应进入线和动作档位。";
 }
 
+function describeThresholdDistance(
+  value: number,
+  threshold: number,
+  thresholdLabel: string
+): { label: string; note: string } {
+  if (threshold <= 0) {
+    return {
+      label: "未配置进入线",
+      note: "当前 release 没有返回可用于比较的动作进入线，需要先复核方法接口。"
+    };
+  }
+  if (value >= threshold) {
+    return {
+      label: `已触达${thresholdLabel}`,
+      note: `正式概率已经达到 ${thresholdLabel}，应优先看执行节奏、事件确认和人工复核清单。`
+    };
+  }
+  if (value === 0) {
+    return {
+      label: `低于${thresholdLabel}`,
+      note: "当前正式概率为精确 0；这通常是模型输出或数据链路需要复核的信号，不应被解释成零风险证明。"
+    };
+  }
+
+  const share = value / threshold;
+  if (share < 0.001) {
+    return {
+      label: `极低于${thresholdLabel}`,
+      note: `当前不到 ${thresholdLabel} 的 0.1%，说明活跃正式模型没有捕捉到这个期限的危机前证据；若直觉上不合理，应进入模型审计，而不是在 UI 上硬抬概率。`
+    };
+  }
+  if (share < 0.01) {
+    return {
+      label: `远低于${thresholdLabel}`,
+      note: `当前不到 ${thresholdLabel} 的 1%，仍属于非常低位，需要结合关键指标和历史类比确认模型是否漏看风险。`
+    };
+  }
+  if (share < 0.1) {
+    return {
+      label: `低于${thresholdLabel}`,
+      note: `当前已经是非零概率，但仍明显低于 ${thresholdLabel}；更适合继续观察，而不是按危机临近处理。`
+    };
+  }
+  if (share < 0.5) {
+    return {
+      label: `接近${thresholdLabel}前段`,
+      note: `当前离 ${thresholdLabel} 还有距离，但已经不是极低位，应重点看是否连续升温。`
+    };
+  }
+  return {
+    label: `接近${thresholdLabel}`,
+    note: `当前已经接近 ${thresholdLabel}，若事件确认和关键指标同步恶化，应准备动作升级。`
+  };
+}
+
 function ProbabilityDiagnosticsBlock({
   diagnostic
 }: {
@@ -247,31 +302,50 @@ export function ProbabilityTile({
   const band = describeProbabilityBand(value);
   const thresholdGap = Math.max(0, threshold - value);
   const thresholdShare = threshold > 0 ? value / threshold : null;
+  const thresholdDistance = describeThresholdDistance(value, threshold, thresholdLabel);
+  const thresholdShareValue =
+    thresholdShare === null ? "—" : formatPercentPrecise(thresholdShare);
+  const thresholdMultipleValue =
+    thresholdShare === null
+      ? "—"
+      : thresholdGap === 0
+        ? "已触线"
+        : value > 0
+          ? formatThresholdMultiple(threshold / value)
+          : "无法计算";
   const thresholdCopy =
     thresholdGap === 0
       ? `已达到${thresholdLabel} ${formatPercentPrecise(threshold)}`
       : `距${thresholdLabel} ${formatPercentPrecise(threshold)} 还差 ${formatPercentagePointGap(
           thresholdGap
         )}`;
-  const thresholdShareCopy =
-    thresholdShare === null
-      ? "未配置进入线"
-      : thresholdGap === 0
-        ? `已达到${thresholdLabel} · 进入线 ${formatPercentPrecise(threshold)}`
-        : value > 0
-          ? `当前仅为${thresholdLabel}的 ${formatPercentPrecise(
-              thresholdShare
-            )} · 触线约需当前值的 ${formatThresholdMultiple(threshold / value)}`
-          : `当前为 0 · 进入线 ${formatPercentPrecise(threshold)}`;
 
   return (
     <div className={`probability-tile ${band.className}`}>
       <div className="tile-head">
         <span>{label}</span>
-        <em>{band.label}</em>
+        <em>{thresholdDistance.label}</em>
       </div>
       <strong>{formatProbabilityPercentExact(value)}</strong>
-      <div className="probability-exact">{thresholdShareCopy}</div>
+      <div className="probability-distance-summary">
+        <span>距离动作进入线</span>
+        <strong>{thresholdShareValue}</strong>
+        <small>{thresholdDistance.note}</small>
+      </div>
+      <div className="probability-distance-grid">
+        <div>
+          <span>{thresholdLabel}</span>
+          <strong>{formatPercentPrecise(threshold)}</strong>
+        </div>
+        <div>
+          <span>触线倍数</span>
+          <strong>{thresholdMultipleValue}</strong>
+        </div>
+        <div>
+          <span>差值</span>
+          <strong>{thresholdGap === 0 ? "已触线" : formatPercentagePointGap(thresholdGap)}</strong>
+        </div>
+      </div>
       <div className="probability-raw">
         接口值 {formatProbabilityDecimal(value)} · {formatProbabilityBasisPoints(value)}
       </div>
