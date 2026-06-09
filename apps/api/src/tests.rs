@@ -200,6 +200,12 @@ async fn research_audit_endpoint_returns_runtime_audit_shape() {
                 && json["latest_rate_shock_audit"]["phase_summaries"].is_array()
                 && json["latest_rate_shock_audit"]["action_level_summaries"].is_array())
     );
+    assert!(
+        json["latest_runtime_contribution_audit"].is_null()
+            || (json["latest_runtime_contribution_audit"]["generated_at"].is_string()
+                && json["latest_runtime_contribution_audit"]["horizons"].is_array()
+                && json["latest_runtime_contribution_audit"]["takeaways"].is_array())
+    );
     assert!(json["latest_dataset_summaries"].is_array());
     if let Some(first_summary) = json["latest_dataset_summaries"]
         .as_array()

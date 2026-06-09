@@ -14,6 +14,7 @@ import { CooldownAuditSection } from "./cooldownAuditSection";
 import { FundingStressAuditSection } from "./fundingStressAuditSection";
 import { LeadtimeAuditSection } from "./leadtimeAuditSection";
 import { PrewarningGapAuditSection } from "./prewarningGapAuditSection";
+import { RuntimeContributionAuditSection } from "./runtimeContributionAuditSection";
 import { useAuditViewModel } from "./useAuditViewModel";
 
 export default function AuditView({
@@ -428,6 +429,8 @@ export default function AuditView({
           </section>
 
           <CooldownAuditSection audit={audit} />
+
+          <RuntimeContributionAuditSection audit={audit} />
 
           <section className="surface">
             <SurfaceHeader title="Overlay 运行审计" icon={Activity} />

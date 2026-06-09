@@ -14,6 +14,7 @@ mod dataset_summary;
 mod funding_stress_audit;
 mod leadtime_audit;
 mod prewarning_gap_audit;
+mod runtime_contribution_audit;
 mod workstream_audit;
 
 use self::cooldown_audit::{load_latest_cooldown_audit_summary, CooldownAuditArtifactSummary};
@@ -24,6 +25,9 @@ use self::funding_stress_audit::{
 use self::leadtime_audit::{load_latest_leadtime_audit_summary, LeadtimeAuditArtifactSummary};
 use self::prewarning_gap_audit::{
     load_latest_prewarning_gap_audit_summary, PrewarningGapAuditArtifactSummary,
+};
+use self::runtime_contribution_audit::{
+    load_latest_runtime_contribution_audit_summary, RuntimeContributionAuditArtifactSummary,
 };
 use self::workstream_audit::{
     load_latest_workstream_audit_summary, WorkstreamAuditArtifactSummary,
@@ -60,6 +64,7 @@ struct ResearchAuditResponse {
     latest_funding_stress_audit: Option<FundingStressAuditArtifactSummary>,
     latest_leadtime_audit: Option<LeadtimeAuditArtifactSummary>,
     latest_cooldown_audit: Option<CooldownAuditArtifactSummary>,
+    latest_runtime_contribution_audit: Option<RuntimeContributionAuditArtifactSummary>,
     latest_dataset_summaries: Vec<DatasetSummaryArtifactSummary>,
     note: String,
     releases: Vec<fc_domain::ModelReleaseRecord>,
@@ -768,6 +773,10 @@ pub(crate) async fn research_audit(
                 load_latest_leadtime_audit_summary(&market_scope, latest_release_review.as_ref());
             let latest_cooldown_audit =
                 load_latest_cooldown_audit_summary(latest_release_review.as_ref());
+            let latest_runtime_contribution_audit = load_latest_runtime_contribution_audit_summary(
+                &market_scope,
+                latest_release_review.as_ref(),
+            );
             let latest_dataset_summaries = load_latest_dataset_summaries(&market_scope);
             let history_provenance = super::summarize_history_provenance(&data.assessment_history);
             let prediction_snapshot_audit = summarize_prediction_snapshot_audit(
@@ -794,8 +803,9 @@ pub(crate) async fn research_audit(
                 latest_funding_stress_audit,
                 latest_leadtime_audit,
                 latest_cooldown_audit,
+                latest_runtime_contribution_audit,
                 latest_dataset_summaries,
-                note: "当前页面展示的是 release registry、historical replay run / point、prediction snapshot、最近一次 release review、对应的历史场景包审计、formal dataset 摘要、residual workstream 审计、2022 利率冲击专项 continuity 审计、pre-warning gap 审计、2011 funding stress 审计、lead-time 转化链审计，以及 cooldown / false-positive 治理审计。若 runtime probability mode 与 release manifest 不一致，说明线上已自动降级回 heuristic。".to_string(),
+                note: "当前页面展示的是 release registry、historical replay run / point、prediction snapshot、最近一次 release review、对应的历史场景包审计、formal dataset 摘要、residual workstream 审计、2022 利率冲击专项 continuity 审计、pre-warning gap 审计、2011 funding stress 审计、lead-time 转化链审计、cooldown / false-positive 治理审计，以及 runtime contribution / touchline 审计。若 runtime probability mode 与 release manifest 不一致，说明线上已自动降级回 heuristic。".to_string(),
                 releases,
                 replay_runs,
                 snapshots,
@@ -827,6 +837,7 @@ pub(crate) async fn research_audit(
                 latest_funding_stress_audit: None,
                 latest_leadtime_audit: None,
                 latest_cooldown_audit: None,
+                latest_runtime_contribution_audit: None,
                 latest_dataset_summaries: Vec::new(),
                 note: "当前运行在 demo 模式，release registry、historical replay、prediction snapshot 审计不可用。切到 SQLite 后该页面会显示真实审计数据。".to_string(),
                 releases: Vec::new(),
@@ -860,6 +871,7 @@ pub(crate) async fn research_audit(
                 latest_funding_stress_audit: None,
                 latest_leadtime_audit: None,
                 latest_cooldown_audit: None,
+                latest_runtime_contribution_audit: None,
                 latest_dataset_summaries: Vec::new(),
                 note: "当前 Postgres 路径尚未接入本地 release registry、historical replay 与 prediction snapshot 审计，建议先通过 SQLite 研究链路完成模型训练、发布与复盘。".to_string(),
                 releases: Vec::new(),

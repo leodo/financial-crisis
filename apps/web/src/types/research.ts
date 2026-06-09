@@ -673,6 +673,111 @@ export interface PrewarningGapAuditArtifactSummary {
   scenario_summaries: PrewarningGapScenarioSummary[];
 }
 
+export interface RuntimeContributionBaseContributionSummary {
+  name: string;
+  observed_count: number;
+  row_coverage_ratio: number;
+  mean_contribution: number;
+  mean_weight: number;
+  mean_raw_value: number;
+  mean_normalized_value: number;
+}
+
+export interface RuntimeContributionDeltaContributionSummary {
+  name: string;
+  baseline_mean_contribution: number | null;
+  candidate_mean_contribution: number | null;
+  delta_mean_contribution: number | null;
+  baseline_observed_count: number;
+  candidate_observed_count: number;
+}
+
+export interface RuntimeContributionSemanticAnomaly {
+  code: string;
+  horizon_days: number;
+  feature: string;
+  mean_raw_value: number;
+  mean_contribution: number;
+  message: string;
+}
+
+export interface RuntimeContributionDateRow {
+  as_of_date: string;
+  baseline_runtime_probability: number;
+  candidate_runtime_probability: number;
+  baseline_touchline_ratio: number;
+  candidate_touchline_ratio: number;
+  baseline_time_to_risk_bucket: string;
+  candidate_time_to_risk_bucket: string;
+  baseline_posture: string;
+  candidate_posture: string;
+  candidate_runtime_group: string;
+}
+
+export interface RuntimeContributionGroupSummary {
+  group: string;
+  label: string;
+  date_count: number;
+  baseline_decision_threshold: number;
+  candidate_decision_threshold: number;
+  baseline_avg_runtime_probability: number;
+  candidate_avg_runtime_probability: number;
+  delta_avg_runtime_probability: number;
+  baseline_touchline_ratio: number;
+  candidate_touchline_ratio: number;
+  baseline_rows_with_base_contributions: number;
+  candidate_rows_with_base_contributions: number;
+  baseline_top_negative_base_contributions: RuntimeContributionBaseContributionSummary[];
+  candidate_top_negative_base_contributions: RuntimeContributionBaseContributionSummary[];
+  top_abs_delta_base_contributions: RuntimeContributionDeltaContributionSummary[];
+  baseline_semantic_anomalies: RuntimeContributionSemanticAnomaly[];
+  candidate_semantic_anomalies: RuntimeContributionSemanticAnomaly[];
+}
+
+export interface RuntimeContributionHorizonSummary {
+  label: string;
+  date_count: number;
+  baseline_decision_threshold: number;
+  candidate_decision_threshold: number;
+  baseline_avg_runtime_probability: number;
+  candidate_avg_runtime_probability: number;
+  delta_avg_runtime_probability: number;
+  baseline_touchline_ratio: number;
+  candidate_touchline_ratio: number;
+  baseline_rows_with_base_contributions: number;
+  candidate_rows_with_base_contributions: number;
+  baseline_top_negative_base_contributions: RuntimeContributionBaseContributionSummary[];
+  candidate_top_negative_base_contributions: RuntimeContributionBaseContributionSummary[];
+  top_abs_delta_base_contributions: RuntimeContributionDeltaContributionSummary[];
+  baseline_semantic_anomalies: RuntimeContributionSemanticAnomaly[];
+  candidate_semantic_anomalies: RuntimeContributionSemanticAnomaly[];
+  horizon_days: number;
+  date_rows: RuntimeContributionDateRow[];
+  runtime_group_summaries: RuntimeContributionGroupSummary[];
+}
+
+export interface RuntimeContributionAuditArtifactSummary {
+  generated_at: string;
+  source: string;
+  market_scope: string;
+  history_mode: string;
+  from_date: string;
+  to_date: string;
+  baseline_release_id: string;
+  candidate_release_id: string;
+  baseline_slice_path: string;
+  candidate_slice_path: string;
+  baseline_replay_run_id: string;
+  candidate_replay_run_id: string;
+  baseline_threshold_source: string;
+  candidate_threshold_source: string;
+  runtime_threshold_source: string;
+  common_date_count: number;
+  methodology_limitations: string[];
+  horizons: RuntimeContributionHorizonSummary[];
+  takeaways: string[];
+}
+
 export interface ResearchAuditResponse {
   supported: boolean;
   storage_mode: string;
@@ -692,6 +797,7 @@ export interface ResearchAuditResponse {
   latest_funding_stress_audit: FundingStressAuditArtifactSummary | null;
   latest_leadtime_audit: LeadtimeAuditArtifactSummary | null;
   latest_cooldown_audit: CooldownAuditArtifactSummary | null;
+  latest_runtime_contribution_audit: RuntimeContributionAuditArtifactSummary | null;
   latest_dataset_summaries: DatasetSummaryArtifactSummary[];
   note: string;
   releases: ModelReleaseRecord[];

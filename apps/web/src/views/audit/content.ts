@@ -9,6 +9,7 @@ export const auditContent = {
     ["提前预警缺口", "看 1987 / 1998 / 2000 / 2011 这些历史样本到底是真缺运行信号，还是已有信号但候选边际变弱。"],
     ["2011 Funding Stress", "单独看 2011 美欧融资压力为什么有数据、有 protected rows，却没有形成可执行 runtime floor。"],
     ["Lead-Time 转化", "看 runtime 已有信号时，为什么仍没有转成更早的 L3 可执行预警。"],
+    ["Runtime Contribution", "看当前面板概率和触线完成度为什么偏冷，尤其是 USDJPY / JPY carry 相关特征是否在运行时压低读数。"],
     ["Overlay 审计", "看当前 active release 是只有 family 审计元数据，还是已经有 overlay head 真正参与 runtime。"],
     ["运行快照 / 旧桥接视图", "看每天落库的概率截面是否和当前生效版本对得上，并核对旧 snapshot bridge 是否还有残留。"],
     ["降级识别", "如果版本登记已经是正式版，但运行态退回启发式层，通常说明 bundle 加载或服务检查失败。"]
@@ -39,6 +40,8 @@ export const auditContent = {
     "这块回答的是：候选已经有 runtime floor hit 或 60d 提前分离时，为什么仍没有变成更早的 L3 可执行预警。重点看 timely warning、strict actionable 点、runtime floor hits、p20d/p60d gate gap 和 posture continuity。",
   cooldownSummary:
     "这块回答的是：候选版有没有因为 20d cooldown bleed 或纯误报变长而不适合继续晋升。它把 release review 里的动作精度、最长误报、runtime floor 和误报 episode 变化收口到一处。",
+  runtimeContributionSummary:
+    "这块回答的是：当前 runtime 概率和“触线完成度”为什么这么冷。它直接比较 baseline / candidate 在最近运行窗口里的 base contribution、语义异常、阈值和 runtime group；它是模型诊断证据，不是新的 Go/No-Go 放行结论。",
   releaseReviewEmpty:
     "还没有找到可用的 release review 落库结果。通常说明这条链路尚未执行，或者当前 market scope 还没有写入 artifacts/research/release-review。",
   scenarioPackEmpty:
@@ -57,6 +60,8 @@ export const auditContent = {
     "还没有找到与最近一次 release review 对应的 lead-time 转化链审计工件。通常说明还没运行 `just formal-candidate-leadtime-audit <baseline> <candidate>`，或者 JSON 与当前 review 的 baseline / candidate / history mode 不一致。",
   cooldownEmpty:
     "还没有找到与最近一次 release review 对应的 cooldown / false-positive 审计工件。通常说明还没运行 `just formal-candidate-cooldown-audit <baseline> <candidate>`，或者 JSON 与当前 review 的 baseline / candidate / history mode 不一致。",
+  runtimeContributionEmpty:
+    "还没有找到与最近一次 release review 对应的 runtime contribution 审计工件。通常说明还没运行 `just formal-candidate-runtime-contribution-audit <baseline> <candidate>`，或者 JSON 与当前 review 的 baseline / candidate / history mode 不一致。",
   releaseReviewCoverageTableNote:
     "先看目录结论和可用范围，再看 grade / PIT / 免费主源，最后看主要缺口。重点复核场景和 protected window 会直接影响后续训练与 posture 规则约束。",
   scenarioPackTableNote:
@@ -87,6 +92,14 @@ export const auditContent = {
     "候选新增或拉长的纯误报 episode 是 release 晋升的核心阻断项。优先检查持续天数和是否能被 protected stress window 解释。",
   cooldownScenarioTableNote:
     "按历史场景看纯误报数量变化。这里不是看命中率，而是看候选有没有为了局部连续性牺牲误报治理。",
+  runtimeContributionHorizonTableNote:
+    "先看三期限的候选均值是否接近运行线，再看 semantic anomalies。若 USDJPY 高位 tail 仍是负贡献，触线完成度只能当模型审计证据，不能解释成风险很远。",
+  runtimeContributionGroupTableNote:
+    "Runtime group 把候选输出按时距、posture 和阈值状态分组。若 building / cold 之间差异很大，说明候选已经能区分部分状态，但阈值或特征方向仍可能有问题。",
+  runtimeContributionLatestDateTableNote:
+    "这张表只看审计窗口最后一天，方便对照当前面板读数；正式决策仍以当前 active release 和人工复核为准。",
+  runtimeContributionAnomalyTableNote:
+    "语义异常说明特征方向与金融解释冲突，例如 USDJPY 高位或上行反而压低危机概率。出现这类行时，应修训练约束和 release review，而不是在运行时硬抬概率。",
   releaseReviewActionTableNote:
     "先看 action type，再看它落在哪个 workstream，最后结合 recommendation 判断是该判退候选、先修 blocker，还是继续补主线研究。",
   releaseReviewAttributionTableNote:

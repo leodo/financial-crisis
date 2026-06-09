@@ -59,8 +59,7 @@ fn regime_support_adjustment_rejects_prewarning_only_20d_threshold() {
     ];
     let row_refs = rows.iter().collect::<Vec<_>>();
     let probabilities = vec![
-        0.62, 0.61, 0.60, 0.59, 0.95, 0.94, 0.93, 0.92, 0.91, 0.90, 0.20, 0.18,
-        0.16, 0.30,
+        0.62, 0.61, 0.60, 0.59, 0.95, 0.94, 0.93, 0.92, 0.91, 0.90, 0.20, 0.18, 0.16, 0.30,
     ];
     let labels = rows
         .iter()
