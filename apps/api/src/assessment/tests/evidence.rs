@@ -26,15 +26,16 @@ fn snapshot_with_scores(structural_score: f64, trigger_score: f64) -> RiskSnapsh
 }
 
 #[test]
-fn action_evidence_breakdown_explains_stable_low_risk_score() {
+fn action_evidence_breakdown_does_not_mistake_data_quality_for_risk_evidence() {
     let snapshot = snapshot_with_scores(44.0, 37.0);
     let evidence =
         build_action_evidence_breakdown(&snapshot, &test_data_trust(QualityGrade::A), 32.0);
 
-    assert_eq!(evidence.score, 0.52);
-    assert_eq!(evidence.data_quality_component, 0.47);
-    assert_eq!(evidence.breadth_component, 0.0);
-    assert_eq!(evidence.agreement_component, 0.05);
+    assert_eq!(evidence.score, 0.178);
+    assert_eq!(evidence.data_quality_component, 0.098);
+    assert_eq!(evidence.breadth_component, 0.08);
+    assert_eq!(evidence.risk_pressure_component, 0.0);
+    assert_eq!(evidence.agreement_component, 0.0);
     assert!(!evidence.structural_trigger_agreement);
 }
 
@@ -44,8 +45,9 @@ fn action_evidence_rises_when_breadth_and_agreement_confirm() {
     let evidence =
         build_action_evidence_breakdown(&snapshot, &test_data_trust(QualityGrade::A), 67.0);
 
-    assert_eq!(evidence.score, 0.95);
-    assert_eq!(evidence.breadth_component, 0.34);
-    assert_eq!(evidence.agreement_component, 0.18);
+    assert_eq!(evidence.score, 0.712);
+    assert_eq!(evidence.breadth_component, 0.3);
+    assert_eq!(evidence.risk_pressure_component, 0.194);
+    assert_eq!(evidence.agreement_component, 0.12);
     assert!(evidence.structural_trigger_agreement);
 }

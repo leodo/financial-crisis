@@ -141,10 +141,13 @@ function actionEvidenceStatus(score: number): string {
   if (score >= 0.68) {
     return "可升级证据";
   }
-  if (score >= 0.55) {
+  if (score >= 0.42) {
     return "接近观察线";
   }
-  return "仅基础证据";
+  if (score >= 0.18) {
+    return "初步观察证据";
+  }
+  return "仅数据底座";
 }
 
 function actionEvidenceBreakdownCopy(assessment: AssessmentSnapshot): string {
@@ -157,11 +160,16 @@ function actionEvidenceBreakdownCopy(assessment: AssessmentSnapshot): string {
     evidence.breadth_component <= 0
       ? "风险广度尚未贡献"
       : `风险广度贡献 ${formatPercent(evidence.breadth_component)}`;
+  const riskPressureComponent = evidence.risk_pressure_component ?? 0;
+  const riskPressureCopy =
+    riskPressureComponent <= 0
+      ? "整体/结构/触发压力尚未贡献"
+      : `整体/结构/触发压力贡献 ${formatPercent(riskPressureComponent)}`;
   const agreementCopy = evidence.structural_trigger_agreement
     ? `结构/触发共振贡献 ${formatPercent(evidence.agreement_component)}`
-    : `结构/触发未共振，仅保留基础贡献 ${formatPercent(evidence.agreement_component)}`;
+    : "结构/触发未共振，未给共振加分";
 
-  return `动作升级证据分 ${formatPercent(evidence.score)} = 数据覆盖底座 ${formatPercent(evidence.data_quality_component)} + ${breadthCopy} + ${agreementCopy}。`;
+  return `动作升级证据分 ${formatPercent(evidence.score)} = 数据可信底座 ${formatPercent(evidence.data_quality_component)} + ${breadthCopy} + ${riskPressureCopy} + ${agreementCopy}。`;
 }
 
 function actionEvidenceHint(assessment: AssessmentSnapshot): string {
@@ -174,7 +182,7 @@ function actionEvidenceHint(assessment: AssessmentSnapshot): string {
     actionEvidenceBreakdownCopy(assessment),
     `当前状态为 ${actionEvidenceStatus(evidence.score)}。`,
     "这不是模型结论置信概率，也不是危机发生概率；危机概率看 5/20/60 天三项。",
-    "如果风险广度没有打开、结构和触发没有共振，它会长期停在 50% 左右，含义是“数据可用，但还不足以升级仓位动作”。"
+    "如果风险广度没有打开、整体/结构/触发压力没有抬升，它会停在低位；含义是“数据可用，但还不足以升级仓位动作”。"
   ].join(" ");
 }
 

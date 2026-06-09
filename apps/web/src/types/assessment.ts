@@ -229,9 +229,11 @@ export interface ActionEvidenceBreakdown {
   score: number;
   data_quality_component: number;
   breadth_component: number;
+  risk_pressure_component?: number;
   agreement_component: number;
   data_quality_weight: number;
   breadth_weight: number;
+  risk_pressure_weight?: number;
   agreement_high_component: number;
   agreement_low_component: number;
   breadth_score: number;

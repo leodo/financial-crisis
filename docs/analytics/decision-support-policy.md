@@ -35,7 +35,8 @@ historical_analogs
 
 - `conviction_score` 是历史兼容字段，当前等价于 `action_evidence.score`，含义是“动作升级证据是否足够”，不是“系统对当前结论有多大把握”。
 - 结论可靠性应由 `data_trust.coverage_score`、`data_trust.quality_grade`、`method.probability_mode`、`method.release_status`、关键指标最新日期和 stale warning 共同解释。
-- 低风险、数据覆盖良好、但风险广度和结构/触发共振没有打开时，`conviction_score` 可能长期在 0.50 左右；这表示“数据可用但不足以升级仓位动作”，不表示系统只有 50% 把握。
+- 低风险、数据覆盖良好、但风险广度、整体/结构/触发压力和结构/触发共振没有打开时，`conviction_score` 应停在低位；这表示“数据可用但不足以升级仓位动作”，不表示系统只有低把握。
+- 数据覆盖只提供小额可信底座，不能再把低风险状态直接垫到 0.50 附近；真正推高该值的必须是风险广度、压力强度和共振证据。
 
 ## 4. 输出 posture
 

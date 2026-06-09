@@ -78,12 +78,18 @@ entity_id
   },
   "time_to_risk_bucket": "now",
   "posture": "defend",
-  "conviction_score": 0.95,
+  "conviction_score": 0.87,
   "action_evidence": {
-    "score": 0.95,
-    "data_quality_component": 0.48,
-    "breadth_component": 0.34,
-    "agreement_component": 0.18,
+    "score": 0.87,
+    "data_quality_component": 0.10,
+    "breadth_component": 0.30,
+    "risk_pressure_component": 0.35,
+    "agreement_component": 0.12,
+    "data_quality_weight": 0.10,
+    "breadth_weight": 0.30,
+    "risk_pressure_weight": 0.48,
+    "agreement_high_component": 0.12,
+    "agreement_low_component": 0.0,
     "breadth_score": 67.0,
     "structural_trigger_agreement": true
   },
@@ -250,7 +256,8 @@ entity_id
 - `conviction_score` 仍保留给旧调用方，但它是 `action_evidence.score` 的兼容别名。
 - `action_evidence.score` 表示“动作升级证据”，用于判断是否足以从观察推进到准备、对冲或防守。
 - 它不是“结论把握度”，也不是危机发生概率。结论可靠性应结合 `data_trust`、`method.probability_mode`、`method.release_status`、`runtime.latest_key_indicator_at` 和 `runtime.stale_warning` 解释。
-- 当数据覆盖高、风险广度低、结构/触发未共振时，该值可能稳定在 0.50 附近，含义是“数据可用但还不足以升级仓位动作”。
+- 当数据覆盖高、风险广度低、整体/结构/触发压力低、结构/触发未共振时，该值应保持低位，含义是“数据可用但还不足以升级仓位动作”。
+- 数据覆盖只提供小额可信底座；风险广度、风险压力和结构/触发共振才会显著推高动作升级证据。
 
 ## 4.1 `method` 响应结构
 

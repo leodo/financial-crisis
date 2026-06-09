@@ -236,29 +236,42 @@ pub(super) fn build_action_evidence_breakdown(
     data_trust: &DataTrust,
     breadth_score: f64,
 ) -> ActionEvidenceBreakdown {
-    let breadth_component = scaled_pressure(breadth_score, 32.0, 35.0);
-    let data_quality_component = data_trust.coverage_score * 0.48;
-    let weighted_breadth_component = breadth_component * 0.34;
+    let data_quality_weight = 0.10;
+    let breadth_weight = 0.30;
+    let risk_pressure_weight = 0.48;
+    let agreement_high_component = 0.12;
+    let agreement_low_component = 0.0;
+    let data_quality_component = data_trust.coverage_score * data_quality_weight;
+    let weighted_breadth_component = scaled_pressure(breadth_score, 20.0, 45.0) * breadth_weight;
+    let risk_pressure_component = (scaled_pressure(snapshot.overall_score, 45.0, 25.0) * 0.16
+        + scaled_pressure(snapshot.structural_score, 45.0, 25.0) * 0.18
+        + scaled_pressure(snapshot.trigger_score, 45.0, 25.0) * 0.14)
+        .min(risk_pressure_weight);
     let structural_trigger_agreement =
         snapshot.structural_score >= 55.0 && snapshot.trigger_score >= 55.0;
     let agreement_component = if structural_trigger_agreement {
-        0.18
+        agreement_high_component
     } else {
-        0.05
+        agreement_low_component
     };
     let score = round3(
-        (data_quality_component + weighted_breadth_component + agreement_component)
-            .clamp(0.12, 0.95),
+        (data_quality_component
+            + weighted_breadth_component
+            + risk_pressure_component
+            + agreement_component)
+            .clamp(0.02, 0.95),
     );
     ActionEvidenceBreakdown {
         score,
         data_quality_component: round3(data_quality_component),
         breadth_component: round3(weighted_breadth_component),
+        risk_pressure_component: round3(risk_pressure_component),
         agreement_component: round3(agreement_component),
-        data_quality_weight: 0.48,
-        breadth_weight: 0.34,
-        agreement_high_component: 0.18,
-        agreement_low_component: 0.05,
+        data_quality_weight,
+        breadth_weight,
+        risk_pressure_weight,
+        agreement_high_component,
+        agreement_low_component,
         breadth_score: round1(breadth_score),
         structural_trigger_agreement,
     }

@@ -117,9 +117,13 @@ pub struct ActionEvidenceBreakdown {
     pub score: f64,
     pub data_quality_component: f64,
     pub breadth_component: f64,
+    #[serde(default)]
+    pub risk_pressure_component: f64,
     pub agreement_component: f64,
     pub data_quality_weight: f64,
     pub breadth_weight: f64,
+    #[serde(default)]
+    pub risk_pressure_weight: f64,
     pub agreement_high_component: f64,
     pub agreement_low_component: f64,
     pub breadth_score: f64,
