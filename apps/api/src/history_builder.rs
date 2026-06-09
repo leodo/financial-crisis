@@ -2,12 +2,11 @@ use std::collections::BTreeSet;
 
 use chrono::{NaiveDate, Utc};
 use fc_domain::{
-    assessment_cutoff_utc, build_formal_observation_feature_map, formal_feature_coverage_summary,
-    formal_feature_dimension_score, formal_feature_snapshot_visibility_status,
-    observation_is_visible_for_date_for_point_in_time_mode,
+    assessment_cutoff_utc, build_formal_feature_snapshot_record,
+    build_formal_observation_feature_map, observation_is_visible_for_date_for_point_in_time_mode,
     observation_visible_at_for_point_in_time_mode, AlertEvent, AssessmentSnapshot,
     BacktestWindowPoint, DataMode, DecisionPosture, FeatureSnapshotRecord, Indicator, Observation,
-    PostureGuidance, RiskDimension, TimeToRiskBucket, UserRiskPreferences,
+    PostureGuidance, TimeToRiskBucket, UserRiskPreferences,
 };
 use fc_scoring::ScoringEngine;
 use fc_storage::SqliteStore;
@@ -535,55 +534,20 @@ fn build_exact_feature_snapshot_for_date(
     );
     let observation_feature_map =
         build_formal_observation_feature_map(observations, as_of_date, point_in_time_mode);
-    let latest_visible_at = observation_feature_map.latest_visible_at;
-    let mut features = observation_feature_map.features;
-
-    features.insert(
-        "overall_score".to_string(),
-        round6((scoring_output.snapshot.overall_score / 100.0).clamp(0.0, 1.0)),
-    );
-    features.insert(
-        "structural_score".to_string(),
-        round6((scoring_output.snapshot.structural_score / 100.0).clamp(0.0, 1.0)),
-    );
-    features.insert(
-        "trigger_score".to_string(),
-        round6((scoring_output.snapshot.trigger_score / 100.0).clamp(0.0, 1.0)),
-    );
-    features.insert(
-        "external_dimension_score".to_string(),
-        round6(
-            (formal_feature_dimension_score(
-                &scoring_output.indicator_risks,
-                RiskDimension::ExternalSector,
-            ) / 100.0)
-                .clamp(0.0, 1.0),
-        ),
-    );
-
-    let coverage = formal_feature_coverage_summary(&scoring_output.indicator_risks, as_of_date);
-    let visibility_status = formal_feature_snapshot_visibility_status(
-        &features,
-        coverage.coverage_score,
-        latest_visible_at,
-    );
-
-    Ok(FeatureSnapshotRecord {
+    Ok(build_formal_feature_snapshot_record(
         as_of_date,
-        entity_id: "us".to_string(),
-        market_scope: serving_model.release.manifest.market_scope.clone(),
-        feature_set_version: serving_model.release.manifest.feature_set_version.clone(),
-        point_in_time_mode: serving_model.release.manifest.point_in_time_mode.clone(),
-        visibility_status: visibility_status.to_string(),
-        latest_visible_at,
-        coverage_score: coverage.coverage_score,
-        core_feature_coverage: coverage.core_feature_coverage,
-        trigger_feature_coverage: coverage.trigger_feature_coverage,
-        external_feature_coverage: coverage.external_feature_coverage,
-        feature_count: features.len(),
-        features,
-        created_at: Utc::now(),
-    })
+        "us",
+        &serving_model.release.manifest.market_scope,
+        &serving_model.release.manifest.feature_set_version,
+        &serving_model.release.manifest.point_in_time_mode,
+        &scoring_output.indicator_risks,
+        observation_feature_map.features,
+        observation_feature_map.latest_visible_at,
+        scoring_output.snapshot.overall_score,
+        scoring_output.snapshot.structural_score,
+        scoring_output.snapshot.trigger_score,
+        Utc::now(),
+    ))
 }
 
 fn materialize_carry_forward_snapshot(
@@ -617,10 +581,6 @@ fn can_materialize_exact_carry_forward_snapshot(
         .all(|visible_at| {
             visible_at <= prior_latest_visible_at || visible_at > assessment_cutoff_utc(as_of_date)
         })
-}
-
-fn round6(value: f64) -> f64 {
-    (value * 1_000_000.0).round() / 1_000_000.0
 }
 
 fn feature_snapshot_id(

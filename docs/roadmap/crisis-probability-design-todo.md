@@ -224,6 +224,7 @@
   - 2026-06-09：场景回测与滚动审计已优先复用本地 SQLite 中更长的 persisted replay 历史，并在 API/UI 中显式拆开“场景回测历史窗口”“滚动审计历史窗口”和“默认运行历史轨迹”的口径；这解决了用户面板层的历史窗口混淆，但仍属于 persisted replay 过渡模型，不是最终的 raw PIT formal history。
   - 2026-06-09：默认历史 provenance 现已显式区分“当天精确 PIT feature replay”与“沿用旧 PIT snapshot”的 carry-forward 点，避免把 prior-snapshot reuse 误记成完全 formal 的 raw PIT 覆盖；剩余缺口转为继续压缩这类 reuse 点，而不只是笼统统计 `feature_snapshot_id` 是否存在。
   - 2026-06-09：API runtime 已补上“缺失当天 snapshot 时按当天 PIT 规则重建 exact feature snapshot”的路径；在本地 SQLite production reload 下，默认历史与 research audit 已实测收口到 `2000/2000 raw_pit_feature_replay`，`reused_feature_snapshot_points=0`，最后一个 `2026-06-08` 的 prior-snapshot reuse 点已消失。
+  - 2026-06-09：`build_formal_feature_snapshot_record` 已下沉到 `crates/domain`，worker `feature build` 与 API `exact PIT rebuild` 现已共用同一套分数归一化、`external_dimension_score`、coverage / visibility status、`feature_count` 组装逻辑；formal feature snapshot 的“记录长什么样”不再由两侧各自维护。
   - 现阶段剩余问题不再是“默认运行历史里还有最后几个 reused PIT 点”，而是更广义的 feature-store 治理：继续把训练/运行两侧的 PIT 可见性与 formal feature snapshot 逻辑收敛到共享层，并把更早历史区间的可回放覆盖补齐。
 - [ ] 扩展美国历史压力样本，尽量覆盖 `1987 / 1994 / 2000 / 2001 / 2008 / 2011 / 2020 / 2023` 中免费可回补的区间
   - 2026-06-09：已把场景覆盖矩阵落成机器可读配置 `config/research_scenario_data_coverage.us.json`，并接入 `/api/assessment/method` 与方法页；至少现在“哪些场景可做主训练 / 扩展训练 / protected stress / historical analog、当前缺什么免费数据”已经不再停留在文档口头说明。

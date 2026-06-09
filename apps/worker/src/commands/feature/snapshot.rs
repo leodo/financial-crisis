@@ -3,13 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::bail;
 use chrono::{NaiveDate, Utc};
 use fc_domain::{
-    build_formal_observation_feature_map, formal_feature_snapshot_visibility_status,
-    FeatureSnapshotRecord, Frequency, Indicator, Observation, RiskDimension,
+    build_formal_feature_snapshot_record, build_formal_observation_feature_map,
+    FeatureSnapshotRecord, Frequency, Indicator, Observation,
 };
 use fc_scoring::ScoringEngine;
 use fc_storage::SqliteStore;
 
-use super::coverage::{coverage_summary, find_dimension_score};
 use super::options::{FeatureSnapshotBuildOptions, FeatureSnapshotListOptions, PointInTimeMode};
 use super::visibility::observation_is_visible_for_date;
 
@@ -230,54 +229,20 @@ pub(crate) fn build_formal_feature_snapshot_for_date(
     );
     let observation_feature_map =
         build_formal_observation_feature_map(observations, as_of_date, point_in_time_mode.as_str());
-    let latest_visible_at = observation_feature_map.latest_visible_at;
-    let mut features = observation_feature_map.features;
-
-    features.insert(
-        "overall_score".to_string(),
-        crate::round6((output.snapshot.overall_score / 100.0).clamp(0.0, 1.0)),
-    );
-    features.insert(
-        "structural_score".to_string(),
-        crate::round6((output.snapshot.structural_score / 100.0).clamp(0.0, 1.0)),
-    );
-    features.insert(
-        "trigger_score".to_string(),
-        crate::round6((output.snapshot.trigger_score / 100.0).clamp(0.0, 1.0)),
-    );
-    features.insert(
-        "external_dimension_score".to_string(),
-        crate::round6(
-            (find_dimension_score(&output.indicator_risks, RiskDimension::ExternalSector) / 100.0)
-                .clamp(0.0, 1.0),
-        ),
-    );
-
-    let (
-        core_feature_coverage,
-        trigger_feature_coverage,
-        external_feature_coverage,
-        coverage_score,
-    ) = coverage_summary(&output.indicator_risks, as_of_date);
-    let visibility_status =
-        formal_feature_snapshot_visibility_status(&features, coverage_score, latest_visible_at);
-
-    Ok(FeatureSnapshotRecord {
+    Ok(build_formal_feature_snapshot_record(
         as_of_date,
-        entity_id: "us".to_string(),
-        market_scope: options.market_scope.clone(),
-        feature_set_version: options.feature_set_version.clone(),
-        point_in_time_mode: options.point_in_time_mode.clone(),
-        visibility_status: visibility_status.to_string(),
-        latest_visible_at,
-        coverage_score,
-        core_feature_coverage,
-        trigger_feature_coverage,
-        external_feature_coverage,
-        feature_count: features.len(),
-        features,
-        created_at: Utc::now(),
-    })
+        "us",
+        &options.market_scope,
+        &options.feature_set_version,
+        &options.point_in_time_mode,
+        &output.indicator_risks,
+        observation_feature_map.features,
+        observation_feature_map.latest_visible_at,
+        output.snapshot.overall_score,
+        output.snapshot.structural_score,
+        output.snapshot.trigger_score,
+        Utc::now(),
+    ))
 }
 
 pub(crate) fn formal_feature_dates(

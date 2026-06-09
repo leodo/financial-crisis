@@ -166,6 +166,7 @@
 - `apps/api` 与 `apps/worker` 已改用 `observation_history_for_indicator*` / `observation_value_difference_*`，避免训练侧与运行侧各写一套窗口切片和尾部差值。
 - PIT 可见性过滤暂时保留在 worker 的 `observations_for_indicator` 包装函数内，因为它绑定 source publication timing、cutoff timezone 和 `PointInTimeMode`，不应在未完成边界设计前强行下沉到 domain。
 - `crates/domain` 已补观测窗口排序、过滤、lookback 差值单测；`probability_bundle` 已覆盖共享 Platt 校准和派生特征 resolver。
+- 已把 formal feature snapshot 的最终记录组装进一步收口到 `crates/domain::build_formal_feature_snapshot_record`；worker `feature build` 与 API `exact PIT rebuild` 现已共用同一套 score normalization、`external_dimension_score`、coverage / visibility / `feature_count` 逻辑，避免 runtime 与训练侧对“同一 PIT snapshot record”继续各拼一遍。
 - 共享边界已补到 [工程治理方案](../architecture/engineering-governance-plan.md)：纯概率打分、Platt 应用、观测窗口和纯 transform 进 `crates/domain`；训练拟合、阈值选择、release review 留 `apps/worker`；active release / 用户偏好 / response 装配留 `apps/api`；Web 只做展示翻译。
 - 已新增 `crates/domain/src/formal_feature.rs`，把正式观测特征的 `feature id -> source indicator -> transform/lookback` 注册表收敛到 domain；API runtime 与 worker PIT feature snapshot 已共用该注册表。
 - 后续新增免费数据指标或调整 lookback，应先改 `FORMAL_OBSERVATION_FEATURE_SPECS`，再由 API/worker 自动沿用同一口径。

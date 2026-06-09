@@ -4,8 +4,8 @@ use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
 
 use crate::{
     formal_observation_feature_value_from_history, observation_history_for_indicator_where,
-    FormalObservationFeatureTransform, Frequency, IndicatorRisk, Observation, RiskDimension,
-    FORMAL_OBSERVATION_FEATURE_SPECS,
+    FeatureSnapshotRecord, FormalObservationFeatureTransform, Frequency, IndicatorRisk,
+    Observation, RiskDimension, FORMAL_OBSERVATION_FEATURE_SPECS,
 };
 
 pub const FEATURE_SNAPSHOT_STATUS_READY: &str = "ready";
@@ -205,6 +205,68 @@ pub fn formal_feature_snapshot_visibility_status(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn build_formal_feature_snapshot_record(
+    as_of_date: NaiveDate,
+    entity_id: &str,
+    market_scope: &str,
+    feature_set_version: &str,
+    point_in_time_mode: &str,
+    indicator_risks: &[IndicatorRisk],
+    features: BTreeMap<String, f64>,
+    latest_visible_at: Option<DateTime<Utc>>,
+    overall_score: f64,
+    structural_score: f64,
+    trigger_score: f64,
+    created_at: DateTime<Utc>,
+) -> FeatureSnapshotRecord {
+    let mut features = features;
+    features.insert(
+        "overall_score".to_string(),
+        round6((overall_score / 100.0).clamp(0.0, 1.0)),
+    );
+    features.insert(
+        "structural_score".to_string(),
+        round6((structural_score / 100.0).clamp(0.0, 1.0)),
+    );
+    features.insert(
+        "trigger_score".to_string(),
+        round6((trigger_score / 100.0).clamp(0.0, 1.0)),
+    );
+    features.insert(
+        "external_dimension_score".to_string(),
+        round6(
+            (formal_feature_dimension_score(indicator_risks, RiskDimension::ExternalSector)
+                / 100.0)
+                .clamp(0.0, 1.0),
+        ),
+    );
+
+    let coverage = formal_feature_coverage_summary(indicator_risks, as_of_date);
+    let visibility_status = formal_feature_snapshot_visibility_status(
+        &features,
+        coverage.coverage_score,
+        latest_visible_at,
+    );
+
+    FeatureSnapshotRecord {
+        as_of_date,
+        entity_id: entity_id.to_string(),
+        market_scope: market_scope.to_string(),
+        feature_set_version: feature_set_version.to_string(),
+        point_in_time_mode: point_in_time_mode.to_string(),
+        visibility_status: visibility_status.to_string(),
+        latest_visible_at,
+        coverage_score: coverage.coverage_score,
+        core_feature_coverage: coverage.core_feature_coverage,
+        trigger_feature_coverage: coverage.trigger_feature_coverage,
+        external_feature_coverage: coverage.external_feature_coverage,
+        feature_count: features.len(),
+        features,
+        created_at,
+    }
+}
+
 pub fn observation_is_visible_for_date_for_point_in_time_mode(
     observation: &Observation,
     as_of_date: NaiveDate,
@@ -388,4 +450,157 @@ fn last_weekday_of_month(year: i32, month: u32, weekday: Weekday) -> NaiveDate {
     last_day
         .checked_sub_signed(Duration::days(backward_offset))
         .expect("last weekday must be representable")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use chrono::{NaiveDate, Utc};
+
+    use super::{
+        build_formal_feature_snapshot_record, FEATURE_SNAPSHOT_STATUS_COVERAGE_OR_VISIBILITY_FAILED,
+    };
+    use crate::{
+        Frequency, Indicator, IndicatorRisk, Observation, QualityGrade, RiskDimension,
+        RiskDirection, RiskLevel,
+    };
+
+    fn indicator_risk(
+        indicator_id: &str,
+        dimension: RiskDimension,
+        as_of_date: NaiveDate,
+        present: bool,
+    ) -> IndicatorRisk {
+        IndicatorRisk {
+            indicator: Indicator {
+                indicator_id: indicator_id.to_string(),
+                display_name: indicator_id.to_string(),
+                dimension,
+                description: "test".to_string(),
+                unit: "value".to_string(),
+                frequency: Frequency::Daily,
+                risk_direction: RiskDirection::HigherIsRiskier,
+                default_source_id: "test".to_string(),
+                quality_tier: "best_effort".to_string(),
+            },
+            latest_observation: present.then(|| Observation {
+                indicator_id: indicator_id.to_string(),
+                entity_id: "us".to_string(),
+                as_of_date,
+                period_start: Some(as_of_date),
+                period_end: Some(as_of_date),
+                frequency: Frequency::Daily,
+                value: 1.0,
+                unit: "value".to_string(),
+                source_id: "test".to_string(),
+                dataset_id: "test".to_string(),
+                revision_time: None,
+                publication_time: None,
+                quality_score: 100.0,
+                quality_flags: Vec::new(),
+            }),
+            score: 50.0,
+            level: RiskLevel::Normal,
+            percentile: Some(0.5),
+            change_30d: None,
+            score_basis: "test".to_string(),
+            score_input_value: Some(1.0),
+            score_input_unit: Some("value".to_string()),
+            quality_grade: QualityGrade::A,
+            contribution: 0.0,
+        }
+    }
+
+    #[test]
+    fn build_snapshot_record_adds_runtime_scores_and_coverage() {
+        let as_of_date = NaiveDate::from_ymd_opt(1993, 1, 5).unwrap();
+        let indicator_risks = vec![
+            indicator_risk(
+                "us_market_vix_close",
+                RiskDimension::MarketStress,
+                as_of_date,
+                true,
+            ),
+            indicator_risk(
+                "us_rates_yield_curve_10y2y",
+                RiskDimension::LeverageCredit,
+                as_of_date,
+                true,
+            ),
+            indicator_risk(
+                "us_credit_baa_10y_spread",
+                RiskDimension::LeverageCredit,
+                as_of_date,
+                true,
+            ),
+            indicator_risk(
+                "us_liquidity_effr",
+                RiskDimension::LiquidityFunding,
+                as_of_date,
+                true,
+            ),
+            indicator_risk(
+                "us_liquidity_national_financial_conditions",
+                RiskDimension::LiquidityFunding,
+                as_of_date,
+                true,
+            ),
+            indicator_risk(
+                "us_liquidity_financial_stress_stl",
+                RiskDimension::LiquidityFunding,
+                as_of_date,
+                false,
+            ),
+            indicator_risk(
+                "us_macro_unemployment_rate",
+                RiskDimension::MacroFragility,
+                as_of_date,
+                true,
+            ),
+            indicator_risk(
+                "us_real_estate_housing_starts",
+                RiskDimension::RealEstate,
+                as_of_date,
+                true,
+            ),
+            indicator_risk(
+                "us_external_usdjpy_level",
+                RiskDimension::ExternalSector,
+                as_of_date,
+                true,
+            ),
+        ];
+
+        let latest_visible_at = Some(Utc::now());
+        let record = build_formal_feature_snapshot_record(
+            as_of_date,
+            "us",
+            "financial_system",
+            "formal_v1",
+            "best_effort",
+            &indicator_risks,
+            BTreeMap::from([("us_vix_level".to_string(), 0.12)]),
+            latest_visible_at,
+            82.0,
+            71.0,
+            65.0,
+            Utc::now(),
+        );
+
+        assert_eq!(record.coverage_score, 1.0);
+        assert_eq!(record.core_feature_coverage, 1.0);
+        assert_eq!(record.trigger_feature_coverage, 1.0);
+        assert_eq!(record.external_feature_coverage, 1.0);
+        assert_eq!(record.features.get("overall_score"), Some(&0.82));
+        assert_eq!(record.features.get("structural_score"), Some(&0.71));
+        assert_eq!(record.features.get("trigger_score"), Some(&0.65));
+        assert_eq!(record.features.get("external_dimension_score"), Some(&0.5));
+        assert_eq!(record.feature_count, 5);
+        assert_eq!(
+            record.visibility_status,
+            FEATURE_SNAPSHOT_STATUS_COVERAGE_OR_VISIBILITY_FAILED
+        );
+        assert_eq!(record.latest_visible_at, latest_visible_at);
+    }
 }
