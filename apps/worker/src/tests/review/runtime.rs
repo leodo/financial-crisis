@@ -90,6 +90,49 @@ fn release_review_structured_signal_counts_accept_relaxed_strict_p20d_mapping() 
 }
 
 #[test]
+fn release_review_actionable_diagnostic_uses_runtime_derived_strict_p20d_gate() {
+    let as_of_date = NaiveDate::from_ymd_opt(2023, 2, 20).unwrap();
+    let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+    let backtests = vec![synthetic_backtest_summary_with_window(
+        "scenario_runtime_derived_p20d",
+        "Runtime Derived P20D",
+        crisis_start,
+        NaiveDate::from_ymd_opt(2023, 3, 20).unwrap(),
+        None,
+        None,
+        None,
+        None,
+        0,
+    )];
+    let point = runtime_history_point_with_state(
+        as_of_date,
+        57.0,
+        0.02,
+        0.13,
+        0.11,
+        DecisionPosture::Prepare,
+        TimeToRiskBucket::Months,
+        45.0,
+        &["prepare_p60d_structural"],
+    );
+    let method = formal_main_audit_method_wire();
+    let history = vec![point];
+
+    let rows = build_release_review_scenario_focus_diagnostics(
+        &backtests, &backtests, &history, &history, &method, &method,
+    );
+
+    assert_eq!(rows.len(), 1);
+    let diagnostic = rows[0]
+        .baseline_first_runtime_floor_hit_without_l3_reason
+        .as_deref()
+        .expect("runtime floor hit should be blocked by strict review gate");
+    assert!(diagnostic.contains("p60d 11.0% < 25.0%"));
+    assert!(!diagnostic.contains("p20d 13.0% < 18.0%"));
+    assert!(!diagnostic.contains("p20d 13.0% < 12.0%"));
+}
+
+#[test]
 fn release_review_runtime_separation_comparison_highlights_60d_floor_gap() {
     let baseline = ReleaseRuntimeReviewDiagnostics {
         release_id: "baseline".to_string(),

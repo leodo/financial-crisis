@@ -384,7 +384,7 @@
    - [x] 已确认此前看到的 `false_positive_episode_days 5 -> 7` 主要来自两类混淆：一是本地 API 未重启时，review 仍在打旧二进制；二是 `release-review-fast` 与正式 `release-review` 过去会把同名产物互相覆盖。重启后再跑 `strict_rebuild`，`2023-08-21 ~ 2023-08-24` 这段由 runtime monotonic gap 抬起的 `60d` 已不再被算成 candidate 的 actionability false positive。
           - [x] 已把 `release-review` / `probability-slice` 的导出文件名加上 `history_mode` 后缀，避免 `default` 与 `strict_rebuild` 证据互相覆盖，后续复盘时可以直接区分“快速 triage”与“正式 go/no-go”。
           - [x] 已把 worker 与 API/backtest 的 strict `prepare p60d` 审计口径先对齐到 runtime floor 派生映射，并明确限制在 formal-main 路径；legacy / heuristic 仍保留旧 `18% / 45%` 口径。
-          - [ ] 继续复核 strict `prepare p20d` 是否也需要从 runtime policy 派生，而不是继续死写 `18%`。
+          - [x] 已复核 strict `prepare p20d` 不应继续死写 `18%`：formal-main 路径现在通过 `fc_domain::strict_prepare_p20d_threshold` 从 runtime `external_prepare_p20d` 派生，并钳制在 `12% ~ 18%`；worker release review 已新增回归测试，确认 focus diagnostic 不再把 runtime-derived `p20d=13%` 误报成旧 `18%` gap。
           - [ ] 继续专项复盘 `1990-1993 / 2000-2001 / 2007-2009 / 2023 regional banks` 的 posture continuity，确认 `timely_warning_rate` 卡住的主因到底是 `p20d` gate、posture continuity，还是 residual review clause。
           - [x] 已继续把 candidate 剩余短误报拆开做 formal compare：
             - `2023-02-01 ~ 2023-02-15`：candidate 在非正例窗口额外打出 `4` 个 `20d` hits，`avg delta p20d = +0.128`；主导差分集中在 `tail_neg__us_curve_10y2y_level__0`、`tail_pos__us_baa_10y_spread_level__2`、`us_curve_10y2y_level`，并伴随 `family_context__rate_shock__external_dimension_score` 与 `family_proxy__rate_shock` 的正向抬升。
@@ -680,7 +680,8 @@
      - 已完成全历史重建：`formal_v1_main_1990_daily:20260606Tfullhistorygatefix`
      - 实测范围已从旧版 `1998-01-05 -> 2026-05-31` 恢复为 `1990-01-02 -> 2026-05-31`，行数 `13296`
    - [ ] 重训 candidate release（下一轮重点不再是压误报，而是恢复可执行提前量）
-     - [ ] 先修 `strict p20d gate` 与 runtime floor 的映射，避免 `p20d_only` 长期压住 `L3` 转化
+     - [x] 先修 `strict p20d gate` 与 runtime floor 的映射，避免 `p20d_only` 长期压住 `L3` 转化
+       - 已补 worker focus diagnostic 回归测试，锁定 formal-main strict `p20d` 使用 runtime-derived `12% ~ 18%` floor；这只解决 review gate 口径错位，后续 `months_score_confirmation / posture continuity` 和重训仍继续推进。
      - [ ] 再修 `months_score_confirmation / posture continuity`，避免高 `p20d/p60d` 长期停在 `normal`
        - [x] 已修正 `prepare_reference_p60d` 误读 `60d final_probability` 的口径错位；`2026-06-07 strict_rebuild` 下 `1990-10-19` 已从 `normal` 恢复为 `prepare + prepare_probability_plateau`
        - [x] 已去掉 `prepare_continuity_bridge` 对独立 conviction gate 的额外依赖；`2026-06-07 strict_rebuild` 下 `2007-08-01` 已从 `months + normal` 恢复为 `prepare + prepare_continuity_bridge`

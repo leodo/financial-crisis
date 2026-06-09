@@ -326,9 +326,10 @@ export function ProbabilityTile({
         <span>{label}</span>
         <em>{thresholdDistance.label}</em>
       </div>
+      <span className="probability-value-label">当前正式概率</span>
       <strong>{formatProbabilityPercentExact(value)}</strong>
       <div className="probability-distance-summary">
-        <span>距离动作进入线</span>
+        <span>进入线完成度</span>
         <strong>{thresholdShareValue}</strong>
         <small>{thresholdDistance.note}</small>
       </div>
@@ -338,7 +339,7 @@ export function ProbabilityTile({
           <strong>{formatPercentPrecise(threshold)}</strong>
         </div>
         <div>
-          <span>触线倍数</span>
+          <span>触线所需放大</span>
           <strong>{thresholdMultipleValue}</strong>
         </div>
         <div>

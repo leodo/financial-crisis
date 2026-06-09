@@ -314,6 +314,14 @@
   line-height: 1;
 }
 
+.probability-value-label {
+  color: #52616c;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .probability-exact {
   color: #475660;
   font-size: 12px;
