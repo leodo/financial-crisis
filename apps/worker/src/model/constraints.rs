@@ -156,6 +156,15 @@ fn forward_crisis_coefficient_bounds(
             min: Some(0.30),
             max: Some(0.40),
         }),
+        // High USDJPY is allowed to matter as carry-pressure context, but it must
+        // not become a large negative suppressor that hides a possible unwind
+        // setup. Keep the high-level tail nonnegative and auxiliary.
+        (20, "tail_pos__us_usdjpy_level__145") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(0.0),
+                max: Some(0.18),
+            })
+        }
         (20, "interaction__external_dimension_score__us_usdjpy_level")
             if uses_family_context_features =>
         {

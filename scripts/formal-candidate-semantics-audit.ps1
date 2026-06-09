@@ -335,6 +335,15 @@ $guardrailRows = @(
         -MinAllowed 0.30 `
         -MaxAllowed 0.40
     New-GuardrailStatusRow `
+        -Item "USDJPY high-level tail band" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d tail_pos__us_usdjpy_level__145 must stay nonnegative and <= 0.18 so high USDJPY cannot become a large crisis-probability suppressor." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "tail_pos__us_usdjpy_level__145") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_pos__us_usdjpy_level__145") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.18
+    New-GuardrailStatusRow `
         -Item "USDJPY external interaction cap" `
         -Coverage "training_guardrail" `
         -EntryPoint "apps/worker/src/model/constraints.rs" `
@@ -431,6 +440,9 @@ if ((Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_neg__us_curve_1
 }
 if ((Get-CoefficientWeight -Map $candidateMap -FeatureName "us_usdjpy_level") -lt 0.30) {
     $takeaways += "candidate still pushes USDJPY base level below the current positive band; this is the blunt-suppression branch the audit is meant to avoid."
+}
+if ((Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_pos__us_usdjpy_level__145") -lt 0.0) {
+    $takeaways += "candidate still lets high USDJPY tail act as a negative suppressor on 20d; this can hide carry-unwind risk and should be rejected by the training guardrail."
 }
 if ((Get-CoefficientWeight -Map $candidateMap -FeatureName "interaction__external_dimension_score__us_usdjpy_level") -gt 0.58) {
     $takeaways += "candidate still over-expands the USDJPY external interaction; keep this semantics in constrained context space instead."

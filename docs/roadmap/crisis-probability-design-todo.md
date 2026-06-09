@@ -893,6 +893,15 @@
      - 前端已把 hover 改为吸附到最近折线点，并在 tooltip 里明确当前吸附期限、精确概率、bp、接口小数和较前点变化；
      - 决策页已新增风险时距摘要，把 `time_to_risk_bucket`、最接近动作线的触线完成度、`20d head` 偏冷状态前置展示；
      - 后续模型主线仍需继续审计当前 active release 的 `20d current=0.0067%` 与 `hedge floor=28.2%` 的巨大落差，不能通过 UI 文案替代训练 / 阈值 / cooldown 治理。
+   - `2026-06-10` 对当前 active release 的 20d runtime contribution 复核确认：最大压分项是 `tail_pos__us_usdjpy_level__145`，在 USDJPY `160`、tail raw `15.0` 时贡献约 `-9.02`，导致高 USDJPY 反而强力压低 20d 危机概率。
+     - 这与“日元套息交易可能成为风险放大器”的产品假设冲突，应归为 USDJPY / JPY carry feature semantics 缺陷，而不是前端显示问题；
+     - 已给 20d family-context 模型新增训练硬约束：`tail_pos__us_usdjpy_level__145` 必须 `>= 0` 且 `<= 0.18`，并接入 semantics audit；
+     - 重训候选 `us_formal_family_hybrid_20260609T200148` 后，semantics audit 已确认该尾部负权重消失，`tail_pos__us_usdjpy_level__145=0.0`。
+   - `2026-06-10` 对 `us_formal_family_hybrid_20260609T200148` 执行 `review-only publish + formal-candidate-screen` 后结论为 `no_go_offline`，不能激活：
+     - 2023 regional banks 正窗口命中率从 `80.0% -> 0.0%`，20d hits 从 `46 -> 7`，说明虽然平均概率抬高，但没有形成可用的连续触线；
+     - 20d final threshold 从 `28.2%` 被推到 `90.0%`，positive-window avg p20d `45.97%` 仍低于进入线，导致“离风险还有多远”继续表现为很小的触线完成度；
+     - 60d 正窗口保留严重塌陷，release review 标记为 `cold_across_all_regimes`，runtime floor hit count `91 -> 62`；
+     - 结论：这轮只固化 “高 USDJPY 不能作为 20d 强压分项” 的训练护栏；下一轮主线必须同时解决 `20d threshold policy`、`positive-window continuity` 与 `60d cold signal`，不能把该候选发布到生产。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 
