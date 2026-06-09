@@ -43,18 +43,24 @@ export interface GroupedBarChartModel {
 }
 
 type ProbabilityTrendMode = "calibrated" | "raw";
+const RECENT_PROBABILITY_WINDOW_POINTS = 90;
 
 export function buildProbabilityTrendModel(history: AssessmentHistoryPoint[]) {
   const mode = selectProbabilityTrendMode(history);
+  const chartHistory = selectProbabilityTrendWindow(history, mode);
   const baseNote =
     mode === "raw"
       ? "当前发布版正式概率被校准下限压得很平，这里改为展示原始概率轨迹，用来看风险是在升温还是降温；上方当前评估卡片仍以正式概率为准。"
       : "这里展示的是发布版正式概率轨迹；若三条线长期贴平，通常表示当前仍在低风险区，或正式概率暂时受校准下限约束。";
+  const windowNote =
+    chartHistory.length < history.length
+      ? `当前图表已缩放到最近 ${chartHistory.length} 条评估点，避免历史高峰把当前低位压成贴地线；完整历史仍用于回测和发布审计。`
+      : "";
   const sourceNote = buildProbabilityTrendSourceNote(history);
 
   return {
-    chart: buildProbabilityTrendChart(history, mode),
-    note: sourceNote ? `${baseNote} ${sourceNote}` : baseNote
+    chart: buildProbabilityTrendChart(chartHistory, mode),
+    note: [baseNote, windowNote, sourceNote].filter(Boolean).join(" ")
   };
 }
 
@@ -89,6 +95,36 @@ function probabilitySpread(values: number[]) {
   }
 
   return Math.max(...values) - Math.min(...values);
+}
+
+function selectProbabilityTrendWindow(
+  history: AssessmentHistoryPoint[],
+  mode: ProbabilityTrendMode
+) {
+  if (history.length <= RECENT_PROBABILITY_WINDOW_POINTS) {
+    return history;
+  }
+
+  const recentHistory = history.slice(-RECENT_PROBABILITY_WINDOW_POINTS);
+  const fullMax = maxProbabilityValue(history, mode);
+  const recentMax = maxProbabilityValue(recentHistory, mode);
+  if (fullMax >= 0.05 && recentMax <= 0.02) {
+    return recentHistory;
+  }
+
+  return history;
+}
+
+function maxProbabilityValue(
+  history: AssessmentHistoryPoint[],
+  mode: ProbabilityTrendMode
+) {
+  const values = history.flatMap((point) => [
+    probabilityValue(point, 5, mode),
+    probabilityValue(point, 20, mode),
+    probabilityValue(point, 60, mode)
+  ]);
+  return values.length > 0 ? Math.max(...values) : 0;
 }
 
 export function buildProbabilityAxisMax(probabilityMax: number) {

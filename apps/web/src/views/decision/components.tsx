@@ -2,6 +2,7 @@ import {
   describePostureClause,
   formatNumber,
   formatPercentPrecise,
+  formatProbabilityPercentExact,
   formatProbabilityPercent
 } from "../../format";
 import type { AssessmentSnapshot } from "../../types";
@@ -18,6 +19,10 @@ const POSTURE_STEPS: Array<{
   { id: "hedge", label: "保护性对冲", description: "未来几周风险升高，保护动作需要前置。" },
   { id: "defend", label: "防守优先", description: "短期窗口已打开，先保流动性和资本。 " }
 ];
+
+function formatPercentagePointGap(value: number): string {
+  return formatPercentPrecise(value).replace("%", " 个百分点");
+}
 
 function describeProbabilityBand(value: number) {
   if (value < 0.15) {
@@ -63,11 +68,18 @@ export function ProbabilityTile({
 }) {
   const band = describeProbabilityBand(value);
   const thresholdGap = Math.max(0, threshold - value);
+  const thresholdShare = threshold > 0 ? value / threshold : null;
   const thresholdCopy =
     thresholdGap === 0
       ? `已达到${thresholdLabel} ${formatPercentPrecise(threshold)}`
-      : `距${thresholdLabel} ${formatPercentPrecise(threshold)} 还差 ${formatPercentPrecise(
+      : `距${thresholdLabel} ${formatPercentPrecise(threshold)} 还差 ${formatPercentagePointGap(
           thresholdGap
+        )}`;
+  const exactCopy =
+    thresholdShare === null
+      ? `精确值 ${formatProbabilityPercentExact(value)}`
+      : `精确值 ${formatProbabilityPercentExact(value)} · 阈值占比 ${formatPercentPrecise(
+          thresholdShare
         )}`;
 
   return (
@@ -77,6 +89,7 @@ export function ProbabilityTile({
         <em>{band.label}</em>
       </div>
       <strong>{formatProbabilityPercent(value, { zeroLabel: "<0.01%" })}</strong>
+      <div className="probability-exact">{exactCopy}</div>
       <p>{hint}</p>
       <div className="probability-threshold">{thresholdCopy}</div>
       <small>{band.note}</small>

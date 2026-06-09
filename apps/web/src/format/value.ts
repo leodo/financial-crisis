@@ -75,6 +75,31 @@ export function formatProbabilityPercent(
   return `${(value * 100).toFixed(absolute < 0.1 ? 1 : 0)}%`;
 }
 
+export function formatProbabilityPercentExact(
+  value: number | null | undefined
+): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "—";
+  }
+  const percent = value * 100;
+  const absolutePercent = Math.abs(percent);
+  if (absolutePercent === 0) {
+    return "0%";
+  }
+  if (absolutePercent < 0.0001) {
+    return "<0.0001%";
+  }
+  const digits =
+    absolutePercent < 0.01
+      ? 4
+      : absolutePercent < 0.1
+        ? 3
+        : absolutePercent < 1
+          ? 2
+          : 1;
+  return `${trimTrailingZeros(percent.toFixed(digits))}%`;
+}
+
 export function formatCount(value: number | null | undefined, suffix = ""): string {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return "—";
