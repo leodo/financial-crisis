@@ -8,7 +8,7 @@ use crate::{format_dimension, parse_dimension, StorageError};
 use super::{
     format_alert_status, format_alert_type, format_datetime, format_risk_level, parse_alert_status,
     parse_alert_type, parse_date, parse_optional_date, parse_optional_datetime, parse_risk_level,
-    RawResponseRecord, SqliteStore,
+    IngestionRunRecord, RawResponseRecord, SqliteStore,
 };
 
 impl SqliteStore {
@@ -215,6 +215,7 @@ impl SqliteStore {
             r#"
             INSERT INTO raw_responses (
                 raw_payload_id,
+                run_id,
                 source_id,
                 dataset_id,
                 request_url,
@@ -225,8 +226,9 @@ impl SqliteStore {
                 raw_file_path,
                 fetched_at
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             ON CONFLICT(raw_payload_id) DO UPDATE SET
+                run_id = excluded.run_id,
                 response_hash = excluded.response_hash,
                 content_length = excluded.content_length,
                 raw_file_path = excluded.raw_file_path,
@@ -234,6 +236,7 @@ impl SqliteStore {
             "#,
         )
         .bind(record.raw_payload_id.to_string())
+        .bind(&record.run_id)
         .bind(&record.source_id)
         .bind(&record.dataset_id)
         .bind(&record.request_url)
@@ -243,6 +246,70 @@ impl SqliteStore {
         .bind(record.content_length)
         .bind(&record.raw_file_path)
         .bind(format_datetime(record.fetched_at))
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn insert_ingestion_run(
+        &self,
+        record: &IngestionRunRecord,
+    ) -> Result<(), StorageError> {
+        sqlx::query(
+            r#"
+            INSERT INTO ingest_runs (
+                run_id,
+                job_id,
+                source_id,
+                dataset_id,
+                target_id,
+                run_mode,
+                status,
+                started_at,
+                finished_at,
+                attempt,
+                watermark_before_json,
+                watermark_after_json,
+                records_read,
+                records_written,
+                error_type,
+                error_message
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+            ON CONFLICT(run_id) DO UPDATE SET
+                job_id = excluded.job_id,
+                source_id = excluded.source_id,
+                dataset_id = excluded.dataset_id,
+                target_id = excluded.target_id,
+                run_mode = excluded.run_mode,
+                status = excluded.status,
+                started_at = excluded.started_at,
+                finished_at = excluded.finished_at,
+                attempt = excluded.attempt,
+                watermark_before_json = excluded.watermark_before_json,
+                watermark_after_json = excluded.watermark_after_json,
+                records_read = excluded.records_read,
+                records_written = excluded.records_written,
+                error_type = excluded.error_type,
+                error_message = excluded.error_message
+            "#,
+        )
+        .bind(&record.run_id)
+        .bind(&record.job_id)
+        .bind(&record.source_id)
+        .bind(&record.dataset_id)
+        .bind(&record.target_id)
+        .bind(&record.run_mode)
+        .bind(&record.status)
+        .bind(format_datetime(record.started_at))
+        .bind(record.finished_at.map(format_datetime))
+        .bind(record.attempt)
+        .bind(&record.watermark_before_json)
+        .bind(&record.watermark_after_json)
+        .bind(record.records_read)
+        .bind(record.records_written)
+        .bind(&record.error_type)
+        .bind(&record.error_message)
         .execute(&self.pool)
         .await?;
         Ok(())

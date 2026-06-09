@@ -1,6 +1,8 @@
 use anyhow::{bail, Result};
+use chrono::{NaiveDate, Utc};
 use fc_ingestion::{Connector, FetchPlan, RunMode};
-use fc_storage::{ExternalIndicatorMapping, RawResponseRecord, SqliteStore};
+use fc_storage::{ExternalIndicatorMapping, IngestionRunRecord, RawResponseRecord, SqliteStore};
+use uuid::Uuid;
 
 use super::super::options::BackfillOptions;
 
@@ -52,6 +54,13 @@ pub(super) async fn backfill_mappings(
         }
 
         for (chunk_index, (chunk_start, chunk_end)) in chunks.iter().copied().enumerate() {
+            let run_id = Uuid::new_v4().to_string();
+            let started_at = Utc::now();
+            let watermark_before_json = watermark_state_json(watermark);
+            let job_id = format!(
+                "backfill:{}:{}:{}:{}",
+                source_id, dataset_id, mapping.indicator_id, mapping.external_code
+            );
             let plan = FetchPlan {
                 source_id: source_id.clone(),
                 dataset_id: dataset_id.to_string(),
@@ -72,8 +81,28 @@ pub(super) async fn backfill_mappings(
                 end = %chunk_end,
                 "fetching observations"
             );
+            store
+                .insert_ingestion_run(&IngestionRunRecord {
+                    run_id: run_id.clone(),
+                    job_id: Some(job_id.clone()),
+                    source_id: source_id.clone(),
+                    dataset_id: dataset_id.to_string(),
+                    target_id: Some(mapping.indicator_id.clone()),
+                    run_mode: run_mode_code(RunMode::Backfill).to_string(),
+                    status: "running".to_string(),
+                    started_at,
+                    finished_at: None,
+                    attempt: 1,
+                    watermark_before_json: watermark_before_json.clone(),
+                    watermark_after_json: None,
+                    records_read: 0,
+                    records_written: 0,
+                    error_type: None,
+                    error_message: None,
+                })
+                .await?;
 
-            let result: Result<usize> = async {
+            let result: Result<(usize, Option<NaiveDate>)> = async {
                 let payload = connector.fetch(&plan).await?;
                 let raw_path = crate::write_raw_payload(
                     &raw_root,
@@ -85,6 +114,7 @@ pub(super) async fn backfill_mappings(
                 store
                     .insert_raw_response(&RawResponseRecord {
                         raw_payload_id: payload.raw_payload_id,
+                        run_id: Some(run_id.clone()),
                         source_id: payload.source_id.clone(),
                         dataset_id: payload.dataset_id.clone(),
                         request_url: payload.request_url.clone(),
@@ -140,15 +170,58 @@ pub(super) async fn backfill_mappings(
                 for warning in batch.warnings.iter().take(3) {
                     tracing::warn!(%warning, indicator_id = %mapping.indicator_id, "parse warning");
                 }
-                Ok(written)
+                Ok((written, latest_date))
             }
             .await;
 
             match result {
-                Ok(written) => total_written += written,
+                Ok((written, latest_date)) => {
+                    store
+                        .insert_ingestion_run(&IngestionRunRecord {
+                            run_id,
+                            job_id: Some(job_id),
+                            source_id: source_id.clone(),
+                            dataset_id: dataset_id.to_string(),
+                            target_id: Some(mapping.indicator_id.clone()),
+                            run_mode: run_mode_code(RunMode::Backfill).to_string(),
+                            status: "success".to_string(),
+                            started_at,
+                            finished_at: Some(Utc::now()),
+                            attempt: 1,
+                            watermark_before_json,
+                            watermark_after_json: watermark_state_json(latest_date),
+                            records_read: written as i64,
+                            records_written: written as i64,
+                            error_type: None,
+                            error_message: None,
+                        })
+                        .await?;
+                    total_written += written;
+                }
                 Err(error) => {
+                    let error_message = format!("{error:#}");
+                    store
+                        .insert_ingestion_run(&IngestionRunRecord {
+                            run_id,
+                            job_id: Some(job_id),
+                            source_id: source_id.clone(),
+                            dataset_id: dataset_id.to_string(),
+                            target_id: Some(mapping.indicator_id.clone()),
+                            run_mode: run_mode_code(RunMode::Backfill).to_string(),
+                            status: "failed".to_string(),
+                            started_at,
+                            finished_at: Some(Utc::now()),
+                            attempt: 1,
+                            watermark_before_json,
+                            watermark_after_json: None,
+                            records_read: 0,
+                            records_written: 0,
+                            error_type: Some("backfill_chunk_failed".to_string()),
+                            error_message: Some(truncate_error_message(&error_message)),
+                        })
+                        .await?;
                     let failure = format!(
-                        "{} ({}) [{}..{}]: {error:#}",
+                        "{} ({}) [{}..{}]: {error_message}",
                         mapping.indicator_id, mapping.external_code, chunk_start, chunk_end
                     );
                     tracing::warn!(%failure, "backfill chunk failed");
@@ -188,4 +261,23 @@ pub(super) async fn backfill_mappings(
             failures.len()
         )
     }
+}
+
+pub(super) fn watermark_state_json(date: Option<NaiveDate>) -> Option<String> {
+    date.map(|date| serde_json::json!({ "last_successful_period": date.to_string() }).to_string())
+}
+
+pub(super) fn run_mode_code(run_mode: RunMode) -> &'static str {
+    match run_mode {
+        RunMode::Discover => "discover",
+        RunMode::Backfill => "backfill",
+        RunMode::Incremental => "incremental",
+        RunMode::Repair => "repair",
+        RunMode::MetadataRefresh => "metadata_refresh",
+    }
+}
+
+pub(super) fn truncate_error_message(message: &str) -> String {
+    const MAX_ERROR_MESSAGE_CHARS: usize = 1000;
+    message.chars().take(MAX_ERROR_MESSAGE_CHARS).collect()
 }

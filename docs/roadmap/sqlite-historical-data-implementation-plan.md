@@ -182,16 +182,19 @@ cargo run -p fc-worker -- backfill fred --start 1990-01-01 --end today
 2. 按 series 创建 FetchPlan。
 3. `FredConnector.fetch()` 获取 raw payload。
 4. raw 写入 `data/raw/fred/...`。
-5. raw index 写入 SQLite。
-6. `FredConnector.parse()` 生成 observations。
-7. observations upsert 到 `ts_indicator_observations`。
-8. 更新 watermark。
+5. 先写入 `ingest_runs(status=running)`，生成本次抓取的 `run_id`。
+6. raw index 写入 SQLite，并把 `raw_responses.run_id` 绑定到本次 `ingest_runs.run_id`。
+7. `FredConnector.parse()` 生成 observations。
+8. observations upsert 到 `ts_indicator_observations`。
+9. 更新 watermark。
+10. 成功时把 `ingest_runs` 更新为 `success`，失败时更新为 `failed` 并写入错误类型与错误信息；错误不得只写日志。
 
 验收：
 
 - 至少 10 个 FRED 指标回填成功。
 - 同一命令重复运行不产生重复记录。
 - 指标 `VIXCLS`、`BAMLH0A0HYM2`、`T10Y2Y` 可在 API 里形成真实历史分位。
+- `ingest_runs` 必须记录每个 market/event backfill 的 `running -> success/failed/skipped` 终态，且新增 raw payload 必须能通过 `raw_responses.run_id` 反查到对应 run。
 
 ### Phase 5：API SQLite mode
 

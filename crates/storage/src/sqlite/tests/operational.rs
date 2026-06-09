@@ -1,8 +1,10 @@
 use chrono::{NaiveDate, Utc};
 use fc_domain::{AlertEvent, AlertStatus, AlertType, RiskContributor, RiskDimension, RiskLevel};
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::sqlite::tests::in_memory_store;
+use crate::sqlite::{IngestionRunRecord, RawResponseRecord};
 
 #[tokio::test]
 async fn sqlite_store_round_trips_alerts() {
@@ -62,4 +64,65 @@ async fn sqlite_store_round_trips_alerts() {
         alerts[0].top_contributors[0].dimension,
         RiskDimension::EventsSentiment
     );
+}
+
+#[tokio::test]
+async fn sqlite_store_links_ingestion_run_to_raw_response() {
+    let store = in_memory_store().await;
+    let run_id = "run-fred-vix-20260609".to_string();
+    let finished_at = Utc::now();
+
+    store
+        .insert_ingestion_run(&IngestionRunRecord {
+            run_id: run_id.clone(),
+            job_id: Some("backfill:fred:VIXCLS".to_string()),
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            target_id: Some("us_market_vix_close".to_string()),
+            run_mode: "backfill".to_string(),
+            status: "success".to_string(),
+            started_at: finished_at,
+            finished_at: Some(finished_at),
+            attempt: 1,
+            watermark_before_json: Some(r#"{"last_successful_period":"2026-06-04"}"#.to_string()),
+            watermark_after_json: Some(r#"{"last_successful_period":"2026-06-05"}"#.to_string()),
+            records_read: 1,
+            records_written: 1,
+            error_type: None,
+            error_message: None,
+        })
+        .await
+        .unwrap();
+
+    store
+        .insert_raw_response(&RawResponseRecord {
+            raw_payload_id: Uuid::new_v4(),
+            run_id: Some(run_id.clone()),
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            request_url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS".to_string(),
+            request_params_hash: Some("hash".to_string()),
+            response_hash: "response".to_string(),
+            content_type: "text/csv".to_string(),
+            content_length: 42,
+            raw_file_path: "data/raw/fred/VIXCLS/test.csv".to_string(),
+            fetched_at: finished_at,
+        })
+        .await
+        .unwrap();
+
+    let run_row = sqlx::query("SELECT status, records_written FROM ingest_runs WHERE run_id = ?1")
+        .bind(&run_id)
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+    assert_eq!(run_row.try_get::<String, _>("status").unwrap(), "success");
+    assert_eq!(run_row.try_get::<i64, _>("records_written").unwrap(), 1);
+
+    let raw_row =
+        sqlx::query("SELECT run_id FROM raw_responses WHERE request_params_hash = 'hash'")
+            .fetch_one(&store.pool)
+            .await
+            .unwrap();
+    assert_eq!(raw_row.try_get::<String, _>("run_id").unwrap(), run_id);
 }

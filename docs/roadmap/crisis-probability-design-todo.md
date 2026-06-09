@@ -801,6 +801,21 @@
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 
+### 6.4.1 2026-06-09 免费数据抓取审计链路已补齐
+
+- [x] 已把 backfill 运行审计从“只有 raw payload 和 watermark”补成可追溯的 `ingest_runs -> raw_responses -> ts_indicator_observations` 链路。
+  - `crates/storage` 新增 `IngestionRunRecord` 与 `insert_ingestion_run`，`raw_responses.run_id` 现在会写入并受外键约束保护；
+  - market 型免费数据回填（FRED / Treasury / World Bank / BOJ / JPY carry 路径）会先写 `running`，结束后更新为 `success` 或 `failed`；
+  - 事件型回填（GDELT / SEC EDGAR）也同步使用同一套 `running -> success/failed/skipped` 终态；
+  - 失败不再只写日志，`error_type / error_message` 会落到 `ingest_runs`。
+- [x] 已用正式本地 SQLite 做单日 FRED/VIX 实测：
+  - 修复前新增 `raw_responses.run_id` 会触发外键失败，因为 run 尚未先写入；
+  - 修复后 `2026-06-05 VIXCLS` 单日回填成功，`ingest_runs.status=success`、`records_written=1`，新增 raw payload 可通过 `run_id` 反查到该 run；
+  - 对应观测 `us_market_vix_close / 2026-06-05 / 21.51` 已绑定新的 `raw_payload_id`。
+- 后续约束：
+  - 不允许新增抓取路径只写 `raw_responses` 或 watermark 而不写 `ingest_runs`；
+  - 页面数据可信度若要回答“这条数据从哪来”，优先从 run/raw/observation 三层链路取证，而不是只看最新观测值。
+
 ### 6.5 2026-06-01 Episode-native 第一阶段代码已落地
 
 本轮已经把第一阶段里最容易继续分叉的底层结构先收口：
