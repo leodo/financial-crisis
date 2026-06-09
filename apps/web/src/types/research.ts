@@ -7,7 +7,12 @@ import type {
 import type { FundingStressAuditArtifactSummary } from "./researchFundingStress";
 import type { LeadtimeAuditArtifactSummary } from "./researchLeadtime";
 
-export type { FundingStressAuditArtifactSummary, FundingStressFeatureGap } from "./researchFundingStress";
+export type {
+  FundingStressAuditArtifactSummary,
+  FundingStressBaseContribution,
+  FundingStressFeatureGap,
+  FundingStressOverlayContribution,
+} from "./researchFundingStress";
 export type { LeadtimeAuditArtifactSummary, LeadtimeFocusRow, LeadtimeRuntimeRow } from "./researchLeadtime";
 
 export interface ModelReleaseManifest {

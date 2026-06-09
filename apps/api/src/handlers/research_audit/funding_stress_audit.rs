@@ -93,6 +93,10 @@ pub(super) struct FundingStressDatasetEvidence {
     pub(super) avg_coverage_score: Option<f64>,
     pub(super) feature_name_count: usize,
     #[serde(default)]
+    pub(super) raw_feature_name_count: usize,
+    #[serde(default)]
+    pub(super) resolved_feature_name_count: usize,
+    #[serde(default)]
     pub(super) available_relevant_features: Vec<String>,
     #[serde(default)]
     pub(super) missing_relevant_features: Vec<String>,
@@ -130,9 +134,52 @@ pub(super) struct FundingStressFeatureGap {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(super) struct FundingStressBaseContribution {
+    pub(super) name: String,
+    pub(super) mean_raw_value: Option<f64>,
+    pub(super) mean_normalized_value: Option<f64>,
+    pub(super) mean_weight: Option<f64>,
+    pub(super) mean_contribution: Option<f64>,
+    pub(super) sum_contribution: Option<f64>,
+    pub(super) count: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(super) struct FundingStressOverlayContribution {
+    pub(super) family_id: String,
+    pub(super) gate_feature: String,
+    pub(super) mean_gate_value: Option<f64>,
+    pub(super) mean_gate: Option<f64>,
+    pub(super) mean_blend: Option<f64>,
+    pub(super) mean_overlay_probability: Option<f64>,
+    pub(super) mean_contribution: Option<f64>,
+    pub(super) sum_contribution: Option<f64>,
+    pub(super) count: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(super) struct FundingStressContributionGroup {
+    pub(super) label: String,
+    pub(super) horizon_days: u32,
+    pub(super) row_count: usize,
+    #[serde(default)]
+    pub(super) top_positive_base: Vec<FundingStressBaseContribution>,
+    #[serde(default)]
+    pub(super) top_negative_base: Vec<FundingStressBaseContribution>,
+    #[serde(default)]
+    pub(super) top_absolute_base: Vec<FundingStressBaseContribution>,
+    #[serde(default)]
+    pub(super) overlay_contributions: Vec<FundingStressOverlayContribution>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(super) struct FundingStressFeatureContext {
     #[serde(default)]
     pub(super) separation: BTreeMap<String, Vec<FundingStressFeatureGap>>,
+    #[serde(default)]
+    pub(super) candidate_resolved_relevant_features: Vec<FundingStressBaseContribution>,
+    #[serde(default)]
+    pub(super) candidate_absolute_contributions: BTreeMap<String, FundingStressContributionGroup>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -180,6 +227,8 @@ pub(super) struct FundingStressAuditArtifactWire {
     pub(super) generated_at: String,
     pub(super) compare_path: String,
     pub(super) slice_path: String,
+    #[serde(default)]
+    pub(super) candidate_scored_slice_path: Option<String>,
     pub(super) baseline_release_id: String,
     pub(super) candidate_release_id: String,
     pub(super) market_scope: String,
@@ -209,6 +258,7 @@ pub(super) struct FundingStressAuditArtifactSummary {
     pub(super) source: String,
     pub(super) compare_path: String,
     pub(super) slice_path: String,
+    pub(super) candidate_scored_slice_path: Option<String>,
     pub(super) baseline_release_id: String,
     pub(super) candidate_release_id: String,
     pub(super) market_scope: String,
@@ -278,6 +328,7 @@ pub(super) fn load_latest_funding_stress_audit_summary(
                     source: path.to_string_lossy().into_owned(),
                     compare_path: wire.compare_path,
                     slice_path: wire.slice_path,
+                    candidate_scored_slice_path: wire.candidate_scored_slice_path,
                     baseline_release_id: wire.baseline_release_id,
                     candidate_release_id: wire.candidate_release_id,
                     market_scope: wire.market_scope,

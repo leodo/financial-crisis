@@ -75,6 +75,10 @@ export const auditContent = {
     "先看诊断分类，再看 dataset 行数、标签和候选 20d/60d 命中。若已有大量命中但诊断为候选边际弱化，下一步应先查候选训练；若 2011 这类完全没有 runtime floor，才优先查 feature separation / family context。",
   fundingStressFeatureTableNote:
     "先看 positive window 相对 normal 的 standardized gap，再看它是否正好落在 funding、credit、curve、VIX 或 USDJPY 这些可解释维度。若缺 family proxy 且全是 evaluation split，下一步通常是训练拓扑和 family context，而不是直接降阈值。",
+  fundingStressContributionTableNote:
+    "这是候选模型在 2011 窗口里的绝对 base contribution，不是候选相对基线的差分。先看哪些特征在压低 20d，再决定是修 mixed-systemic proxy、训练拓扑，还是候选权重。",
+  fundingStressOverlayTableNote:
+    "Overlay 行只说明 family gate 是否实际参与了候选打分。若 gate value 或 blend 很低，说明 family context 还没有真正进入 runtime 信号。",
   leadtimeRuntimeTableNote:
     "先看候选是否已经有 early-warning separation，再看它离 runtime floor 和 strict review gate 还有多远。若 separation 已有但 timely warning 不升，问题通常在 posture continuity、p20d gate 或 sustained-hit 转化。",
   cooldownRuntimeTableNote:

@@ -608,7 +608,7 @@
             1. 先守住 `regional_banks` 的 `20d hits / positive_window hit rate / positive_window_avg_probability`；
             2. 再处理 `2023-02-03 ~ 2023-02-05`、`2023-02-14`、`2023-07-13` 等剩余 `20d` 误报点；
             3. 只有在不牺牲上述连续性的前提下，才允许小幅回调 `20d threshold`。
-         - [ ] 对 `mixed_systemic` 先重做 proxy 定义；当前 `gate_active_total=0`，继续训练 overlay 没有有效样本基础。
+         - [ ] 完成 `mixed_systemic` formal overlay 收口；早期 `gate_active_total=0` 已修复，但 2011 仍未形成正式 runtime floor 命中，下一步重点是训练拓扑、contribution 权重治理和 runtime continuity，而不是继续盲调 proxy。
            - [x] 已把 proxy 改成“信用利差 / 曲线 / NFCI”作为慢性压力锚点，`trigger / VIX / external` 只做确认，并把 overlay gate 从 `0.50` 收到 `0.38`。
            - [x] 已用真实 formal dataset 切片和 `formal-probability-compare` 复核 `2000 / 2011`：
              1. 真正的问题不只是 “gate_active_total=0”，还包括 `mixed_systemic proxy` 对
@@ -632,6 +632,8 @@
              2. `2011` 依然只到“有明显抬升但没形成正式命中”的状态；
              3. 下一步不再继续猜 proxy 权重，而是转向 strict gate / runtime floor /
                 continuity 的逐场景复核。
+             - `2026-06-09` 二轮 funding-stress 绝对贡献审计已确认：`mixed_systemic` proxy 不是缺失，而是已经在候选 scored slice 中活跃；`family_proxy__mixed_systemic` 的 2011 窗口均值约 `0.3206`，归一化均值约 `0.5610`，overlay gate 均值约 `0.3930`，blend 均值约 `0.0982`，overlay 平均贡献约 `+0.0219`。
+             - 同一审计显示，2011 绝对概率仍低，主要因为 base head 里一组特征在 20d 窗口把候选概率压低：`us_fed_funds_level`、`us_curve_10y2y_level`、`us_usdjpy_level`、`external_dimension_score × us_usdjpy_level`、`curve × fed_funds` 是主要负贡献；因此下一步不应直接降 runtime floor，而应验证这些负贡献是否来自 evaluation-only trainability、候选权重约束或 family/context 迁移不足。
          - [x] 已把 `jpy_carry` 继续维持为 proxy-only family，并补齐足以进入正式 overlay 训练的 protected / proxy rows 支持。
            - [x] `proxy-only audit` 现在会把 `protected_action_window` 和 gate-active carry rows 一并视为候选支持，不再和训练数据集构建口径脱节。
            - [x] overlay dataset builder 现在会在 formal main / ext_stress / ext_acute 叠加时合并重复 identity 行，保留更强的 `label/regime/protected_action_window`，不再让主数据集的弱标签覆盖扩展数据。
@@ -832,6 +834,10 @@
      - 自动跑该场景的 `formal-probability-compare` 与 formal dataset slice，并输出到 `artifacts/research/funding-stress-audit/*-funding-stress-audit.json`；
      - 把 split、protected/action episode、20d/60d runtime floor 距离、near-threshold 行数、mixed-systemic family proxy 是否存在、关键 funding/liquidity/curve/VIX/USDJPY feature separation 合到同一份 JSON；
      - 这一步只补证据链，不直接放宽阈值；若审计继续证明 2011 全部是 evaluation split 或缺 mixed-systemic proxy，下一步应先修训练拓扑 / family context，而不是先降 runtime floor。
+   - `2026-06-09` funding-stress 审计已升级为“scored slice + 绝对贡献”口径：
+     - 脚本现在会额外生成候选 scored slice，并在 JSON 中登记 `candidate_scored_slice_path`、raw/resolved feature 数、候选 resolved relevant features、20d/60d 分组的 base contribution 与 overlay contribution；
+     - 当前 `us_formal_family_hybrid_20260606T112926 -> us_formal_family_hybrid_20260608T173701` 结论已经从“可能缺 mixed-systemic proxy”更新为“proxy 活跃，但绝对概率被 base head 负贡献和训练拓扑压低”；
+     - 下一轮修复顺序必须先看 `train_topology / analogous mixed-systemic train rows / candidate weight governance`，再决定是否需要 runtime floor 微调；不得把这份审计结果解读为“直接降低对冲线即可”。
    - `2026-06-09` 已把这条专项审计接入 `/api/research/audit` 与前端“发布审计”页：
      - API 新增 `latest_prewarning_gap_audit`，从 `artifacts/research/prewarning-gap-audit/*-prewarning-gap-audit.json` 读取与当前 release review baseline/candidate 匹配的工件；
      - UI 新增“提前预警缺口审计”区块，直接展示 `candidate_margin_erosion / no_runtime_floor_signal / protected_context_signal_present` 分类、dataset 行数、20d/60d 命中与下一步建议；

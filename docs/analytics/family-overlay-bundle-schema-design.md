@@ -269,6 +269,14 @@ family_overlays == []
      2. `2011` 仍是“明显抬升但未正式命中”；
      3. 因此下一步重点已从“继续拍脑袋调 proxy”转成
         `strict gate / runtime floor / continuity facets` 的逐场景复核。
+   - `2026-06-09` funding-stress 专项审计进一步把 2011 的失败原因拆清：
+     1. 新增候选 scored slice 后，`mixed_systemic` 不再应归类为 proxy 缺失；2011 窗口里
+        `family_proxy__mixed_systemic` 已有有效 raw / normalized 值，overlay gate 也已打开；
+     2. 但 overlay 的平均增量仍小，base head 同时被 `fed_funds level`、`10y2y curve`、
+        `USDJPY level`、`external × USDJPY` 和 `curve × fed_funds` 等特征压低；
+     3. 这说明 2011 的下一步不是再单独降低 gate 或 floor，而是要验证：
+        这些负贡献是否来自 evaluation-only 样本不可训练、候选权重治理过强，
+        或本应迁入 `mixed_systemic / jpy_carry / rate_shock context` 的信号仍留在 base level。
 4. 对 `jpy_carry` 单独补 family proxy / protected stress 样本后再决定是否进入正式 overlay 训练；
    - `2026-06-06` 已把这条线继续前推到“真实可训练”：
      1. `proxy-only audit` 现在把 `protected_action_window` 和 gate-active carry rows

@@ -19,6 +19,10 @@ import {
   SurfaceHeader
 } from "../shared/panelHelpers";
 import { auditContent } from "./content";
+import type {
+  FundingStressBaseContribution,
+  FundingStressOverlayContribution
+} from "../../types";
 
 function diagnosisLabel(value: string): string {
   return (
@@ -30,7 +34,9 @@ function diagnosisLabel(value: string): string {
       mixed_systemic_proxy_missing: "缺 mixed-systemic proxy",
       mixed_systemic_proxy_present: "已有 mixed-systemic proxy",
       candidate_margin_erosion: "候选边际弱化",
-      candidate_margin_preserved_or_improved: "候选边际未弱化"
+      candidate_margin_preserved_or_improved: "候选边际未弱化",
+      mixed_systemic_proxy_active: "mixed-systemic proxy 活跃",
+      mixed_systemic_proxy_inactive: "mixed-systemic proxy 不活跃"
     }[value] ?? value
   );
 }
@@ -62,6 +68,17 @@ function featureLabel(feature: string): string {
       us_vix_change_5d: "VIX 5d 变化",
       us_usdjpy_level: "USDJPY",
       us_usdjpy_change_20d: "USDJPY 20d 变化",
+      us_fed_funds_level: "联邦基金利率",
+      us_housing_starts_level: "新屋开工",
+      family_proxy__mixed_systemic: "Mixed-systemic proxy",
+      family_proxy__systemic_credit: "Systemic-credit proxy",
+      family_proxy__rate_shock: "Rate-shock proxy",
+      family_proxy__jpy_carry: "JPY carry proxy",
+      family_proxy__acute_liquidity: "Acute-liquidity proxy",
+      interaction__external_dimension_score__us_usdjpy_level: "外部维度 × USDJPY",
+      interaction__us_curve_10y2y_level__us_fed_funds_level: "曲线 × 联邦基金利率",
+      tail_pos__us_usdjpy_level__145: "USDJPY 高位 tail",
+      tail_abs_pos__us_usdjpy_change_20d__4: "USDJPY 20d 变化 tail",
       external_dimension_score: "外部维度分",
       structural_score: "结构分",
       trigger_score: "触发分",
@@ -71,13 +88,23 @@ function featureLabel(feature: string): string {
 }
 
 function topFeatureRows(audit: NonNullable<ResearchAuditResponse["latest_funding_stress_audit"]>) {
-  const preferred = audit.feature_context.separation.positive_window_vs_normal_20d;
-  const fallback = audit.feature_context.separation.candidate_top20_vs_rest;
+  const separation = audit.feature_context?.separation ?? {};
+  const preferred = separation.positive_window_vs_normal_20d;
+  const fallback = separation.candidate_top20_vs_rest;
   return (preferred && preferred.length > 0 ? preferred : fallback ?? []).slice(0, 8);
 }
 
 function featureRowId(row: FundingStressFeatureGap, index: number): string {
   return `${row.left_group}-${row.right_group}-${row.feature}-${index}`;
+}
+
+function contributionRowId(
+  row: FundingStressBaseContribution | FundingStressOverlayContribution,
+  index: number
+): string {
+  return "name" in row
+    ? `${row.name}-${index}`
+    : `${row.family_id}-${row.gate_feature}-${index}`;
 }
 
 export function FundingStressAuditSection({ audit }: { audit: ResearchAuditResponse }) {
@@ -193,6 +220,23 @@ export function FundingStressAuditSection({ audit }: { audit: ResearchAuditRespo
     : [];
 
   const featureRows = latestFundingStressAudit ? topFeatureRows(latestFundingStressAudit) : [];
+  const contributionGroup =
+    latestFundingStressAudit?.feature_context?.candidate_absolute_contributions?.full_window_20d;
+  const positiveContributionRows = contributionGroup?.top_positive_base ?? [];
+  const negativeContributionRows = contributionGroup?.top_negative_base ?? [];
+  const contributionRows = contributionGroup
+    ? [
+        ...positiveContributionRows.slice(0, 6).map((row) => ({
+          ...row,
+          direction: "推高"
+        })),
+        ...negativeContributionRows.slice(0, 6).map((row) => ({
+          ...row,
+          direction: "压低"
+        }))
+      ]
+    : [];
+  const overlayRows = (contributionGroup?.overlay_contributions ?? []).slice(0, 6);
 
   return (
     <section className="surface">
@@ -232,6 +276,8 @@ export function FundingStressAuditSection({ audit }: { audit: ResearchAuditRespo
                 `regime20 ${countSummary(dataset.regime_20d_counts)}`,
                 `protected ${dataset.protected_row_count}`,
                 `coverage ${formatOptionalPercent(dataset.avg_coverage_score)}`,
+                `raw features ${dataset.raw_feature_name_count || dataset.feature_name_count}`,
+                `resolved features ${dataset.resolved_feature_name_count || 0}`,
                 dataset.missing_relevant_features.length > 0
                   ? `缺少 ${dataset.missing_relevant_features.slice(0, 4).join(" / ")}`
                   : "关键 family/context 特征齐全"
@@ -250,6 +296,42 @@ export function FundingStressAuditSection({ audit }: { audit: ResearchAuditRespo
                   <td>{`${row.left_group} vs ${row.right_group}`}</td>
                   <td>{row.mean_delta === null ? "—" : formatNumber(row.mean_delta)}</td>
                   <td>{row.standardized_gap === null ? "—" : formatNumber(row.standardized_gap)}</td>
+                </tr>
+              ))}
+            </ResponsiveTable>
+          ) : null}
+          {contributionRows.length > 0 ? (
+            <ResponsiveTable
+              className="wide-table xwide-table"
+              columns={["方向", "特征", "均值贡献", "raw / normalized", "权重"]}
+              note={auditContent.fundingStressContributionTableNote}
+            >
+              {contributionRows.map((row, index) => (
+                <tr key={contributionRowId(row, index)}>
+                  <td>{row.direction}</td>
+                  <StackedTableCell title={featureLabel(row.name)} details={row.name} />
+                  <td>{row.mean_contribution === null ? "—" : formatSignedNumber(row.mean_contribution, 4)}</td>
+                  <td>{`${formatNumber(row.mean_raw_value)} / ${formatNumber(row.mean_normalized_value)}`}</td>
+                  <td>{row.mean_weight === null ? "—" : formatSignedNumber(row.mean_weight, 4)}</td>
+                </tr>
+              ))}
+            </ResponsiveTable>
+          ) : null}
+          {overlayRows.length > 0 ? (
+            <ResponsiveTable
+              className="wide-table"
+              columns={["Overlay", "Gate", "Blend", "均值贡献"]}
+              note={auditContent.fundingStressOverlayTableNote}
+            >
+              {overlayRows.map((row, index) => (
+                <tr key={contributionRowId(row, index)}>
+                  <td>{row.family_id}</td>
+                  <StackedTableCell
+                    title={featureLabel(row.gate_feature)}
+                    details={`gate value ${formatNumber(row.mean_gate_value)} / gate ${formatNumber(row.mean_gate)}`}
+                  />
+                  <td>{formatPercent(row.mean_blend)}</td>
+                  <td>{row.mean_contribution === null ? "—" : formatSignedNumber(row.mean_contribution, 4)}</td>
                 </tr>
               ))}
             </ResponsiveTable>

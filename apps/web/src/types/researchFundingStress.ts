@@ -64,6 +64,8 @@ export interface FundingStressDatasetEvidence {
   hedge_episode_count: number;
   avg_coverage_score: number | null;
   feature_name_count: number;
+  raw_feature_name_count: number;
+  resolved_feature_name_count: number;
   available_relevant_features: string[];
   missing_relevant_features: string[];
 }
@@ -89,8 +91,42 @@ export interface FundingStressFeatureGap {
   standardized_gap: number | null;
 }
 
+export interface FundingStressBaseContribution {
+  name: string;
+  mean_raw_value: number | null;
+  mean_normalized_value: number | null;
+  mean_weight: number | null;
+  mean_contribution: number | null;
+  sum_contribution: number | null;
+  count: number;
+}
+
+export interface FundingStressOverlayContribution {
+  family_id: string;
+  gate_feature: string;
+  mean_gate_value: number | null;
+  mean_gate: number | null;
+  mean_blend: number | null;
+  mean_overlay_probability: number | null;
+  mean_contribution: number | null;
+  sum_contribution: number | null;
+  count: number;
+}
+
+export interface FundingStressContributionGroup {
+  label: string;
+  horizon_days: number;
+  row_count: number;
+  top_positive_base: FundingStressBaseContribution[];
+  top_negative_base: FundingStressBaseContribution[];
+  top_absolute_base: FundingStressBaseContribution[];
+  overlay_contributions: FundingStressOverlayContribution[];
+}
+
 export interface FundingStressFeatureContext {
   separation: Record<string, FundingStressFeatureGap[]>;
+  candidate_resolved_relevant_features: FundingStressBaseContribution[];
+  candidate_absolute_contributions: Record<string, FundingStressContributionGroup>;
 }
 
 export interface FundingStressScenarioSummary {
@@ -129,6 +165,7 @@ export interface FundingStressAuditArtifactSummary {
   source: string;
   compare_path: string;
   slice_path: string;
+  candidate_scored_slice_path: string | null;
   baseline_release_id: string;
   candidate_release_id: string;
   market_scope: string;

@@ -71,7 +71,8 @@ function Invoke-CargoWithFallback {
         [string]$Kind,
         [string]$TargetOutputDir,
         [string]$FromDate,
-        [string]$ToDate
+        [string]$ToDate,
+        [string]$ReleaseId = ""
     )
     $attempts = New-Object 'System.Collections.Generic.List[object]'
     foreach ($selector in (Resolve-DatasetSelectors)) {
@@ -92,6 +93,20 @@ function Invoke-CargoWithFallback {
                 "run", "-p", "fc-worker", "--",
                 "research", "dataset", "slice-main",
                 "--market-scope", $MarketScope,
+                "--scenario-id", $ScenarioId,
+                "--from", $FromDate,
+                "--to", $ToDate,
+                "--output-dir", $TargetOutputDir
+            )
+        } elseif ($Kind -eq "score-slice") {
+            if (-not $ReleaseId) {
+                throw "score-slice requires ReleaseId"
+            }
+            $args = @(
+                "run", "-p", "fc-worker", "--",
+                "research", "release", "formal-probability-slice",
+                "--market-scope", $MarketScope,
+                "--release-id", $ReleaseId,
                 "--scenario-id", $ScenarioId,
                 "--from", $FromDate,
                 "--to", $ToDate,
@@ -130,6 +145,12 @@ function Invoke-CargoWithFallback {
                 $pattern = "{0}-vs-{1}-{2}-{3}-formal-probability-compare-{4}.json" -f `
                     (Sanitize-FileComponent $BaselineReleaseId), `
                     (Sanitize-FileComponent $CandidateReleaseId), `
+                    (Sanitize-FileComponent $FromDate), `
+                    (Sanitize-FileComponent $ToDate), `
+                    (Sanitize-FileComponent $ScenarioId)
+            } elseif ($Kind -eq "score-slice") {
+                $pattern = "{0}-{1}-{2}-formal-probability-slice-{3}.json" -f `
+                    (Sanitize-FileComponent $ReleaseId), `
                     (Sanitize-FileComponent $FromDate), `
                     (Sanitize-FileComponent $ToDate), `
                     (Sanitize-FileComponent $ScenarioId)
@@ -186,11 +207,14 @@ $toDate = [string]$scenario.crisis_end
 $resolvedOutputDir = Join-Path $Root $OutputDir
 $compareOutputDir = Join-Path $resolvedOutputDir "compares"
 $sliceOutputDir = Join-Path $resolvedOutputDir "slices"
+$scoreSliceOutputDir = Join-Path $resolvedOutputDir "scored-slices"
 New-Item -ItemType Directory -Force -Path $compareOutputDir | Out-Null
 New-Item -ItemType Directory -Force -Path $sliceOutputDir | Out-Null
+New-Item -ItemType Directory -Force -Path $scoreSliceOutputDir | Out-Null
 Write-Host ("Auditing funding-stress scenario {0} ({1} -> {2})" -f $ScenarioId, $fromDate, $toDate)
 $compareResult = Invoke-CargoWithFallback -Kind "compare" -TargetOutputDir $compareOutputDir -FromDate $fromDate -ToDate $toDate
 $sliceResult = Invoke-CargoWithFallback -Kind "slice" -TargetOutputDir $sliceOutputDir -FromDate $fromDate -ToDate $toDate
+$candidateScoredSliceResult = Invoke-CargoWithFallback -Kind "score-slice" -TargetOutputDir $scoreSliceOutputDir -FromDate $fromDate -ToDate $toDate -ReleaseId $CandidateReleaseId
 $reportStem = "{0}-vs-{1}-{2}-funding-stress-audit" -f `
     (Sanitize-FileComponent $BaselineReleaseId), `
     (Sanitize-FileComponent $CandidateReleaseId), `
@@ -224,6 +248,7 @@ $manifest = [pscustomobject]@{
     }
     compare = $compareResult
     slice = $sliceResult
+    candidate_scored_slice = $candidateScoredSliceResult
 }
 $manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $manifestPath -Encoding utf8
 $analysisScript = @'
@@ -362,6 +387,126 @@ function featureSeparation(leftLabel, leftRows, rightLabel, rightRows, featureNa
     .filter(Boolean)
     .sort((left, right) => Math.abs(right.standardized_gap ?? 0) - Math.abs(left.standardized_gap ?? 0));
 }
+function scoredRowsFor(rows, scoredByDate) {
+  return rows
+    .map((row) => scoredByDate.get(row.as_of_date))
+    .filter(Boolean);
+}
+function baseDiagnostics(scoredRow, horizonDays) {
+  return scoredRow.base_model_diagnostics?.find((item) => Number(item.horizon_days) === horizonDays)?.base_model ?? null;
+}
+function horizonDiagnostics(scoredRow, horizonDays) {
+  return scoredRow.probability_diagnostics?.horizon_overlays?.find((item) => Number(item.horizon_days) === horizonDays) ?? null;
+}
+function collectContributionFeatureNames(scoredRows) {
+  const names = new Set();
+  for (const row of scoredRows) {
+    for (const diagnostic of row.base_model_diagnostics ?? []) {
+      for (const contribution of diagnostic.base_model?.feature_contributions ?? []) {
+        names.add(contribution.name);
+      }
+    }
+    for (const horizon of row.probability_diagnostics?.horizon_overlays ?? []) {
+      for (const contribution of horizon.contributions ?? []) {
+        if (contribution.gate_feature) names.add(contribution.gate_feature);
+      }
+    }
+  }
+  return [...names].sort();
+}
+function aggregateBaseContributions(scoredRows, horizonDays, featureFilter = null) {
+  const allowed = featureFilter ? new Set(featureFilter) : null;
+  const byName = new Map();
+  for (const row of scoredRows) {
+    const diagnostic = baseDiagnostics(row, horizonDays);
+    for (const contribution of diagnostic?.feature_contributions ?? []) {
+      if (allowed && !allowed.has(contribution.name)) continue;
+      const current = byName.get(contribution.name) ?? {
+        name: contribution.name,
+        raw_sum: 0,
+        normalized_sum: 0,
+        weight_sum: 0,
+        contribution_sum: 0,
+        count: 0
+      };
+      current.raw_sum += Number(contribution.raw_value) || 0;
+      current.normalized_sum += Number(contribution.normalized_value) || 0;
+      current.weight_sum += Number(contribution.weight) || 0;
+      current.contribution_sum += Number(contribution.contribution) || 0;
+      current.count += 1;
+      byName.set(contribution.name, current);
+    }
+  }
+  return [...byName.values()]
+    .map((item) => ({
+      name: item.name,
+      mean_raw_value: round(item.raw_sum / item.count, 6),
+      mean_normalized_value: round(item.normalized_sum / item.count, 6),
+      mean_weight: round(item.weight_sum / item.count, 6),
+      mean_contribution: round(item.contribution_sum / item.count, 6),
+      sum_contribution: round(item.contribution_sum, 6),
+      count: item.count
+    }))
+    .sort((left, right) => Math.abs(right.sum_contribution) - Math.abs(left.sum_contribution));
+}
+function aggregateOverlayContributions(scoredRows, horizonDays) {
+  const byKey = new Map();
+  for (const row of scoredRows) {
+    const horizon = horizonDiagnostics(row, horizonDays);
+    for (const contribution of horizon?.contributions ?? []) {
+      const key = `${contribution.family_id}:${contribution.gate_feature}`;
+      const current = byKey.get(key) ?? {
+        family_id: contribution.family_id,
+        gate_feature: contribution.gate_feature,
+        gate_value_sum: 0,
+        gate_sum: 0,
+        blend_sum: 0,
+        overlay_probability_sum: 0,
+        contribution_sum: 0,
+        count: 0
+      };
+      current.gate_value_sum += Number(contribution.gate_value) || 0;
+      current.gate_sum += Number(contribution.gate) || 0;
+      current.blend_sum += Number(contribution.blend) || 0;
+      current.overlay_probability_sum += Number(contribution.overlay_probability) || 0;
+      current.contribution_sum += Number(contribution.contribution) || 0;
+      current.count += 1;
+      byKey.set(key, current);
+    }
+  }
+  return [...byKey.values()]
+    .map((item) => ({
+      family_id: item.family_id,
+      gate_feature: item.gate_feature,
+      mean_gate_value: round(item.gate_value_sum / item.count, 6),
+      mean_gate: round(item.gate_sum / item.count, 6),
+      mean_blend: round(item.blend_sum / item.count, 6),
+      mean_overlay_probability: round(item.overlay_probability_sum / item.count, 6),
+      mean_contribution: round(item.contribution_sum / item.count, 6),
+      sum_contribution: round(item.contribution_sum, 6),
+      count: item.count
+    }))
+    .sort((left, right) => Math.abs(right.sum_contribution) - Math.abs(left.sum_contribution));
+}
+function contributionGroup(label, rows, horizonDays, scoredByDate) {
+  const scoredRows = scoredRowsFor(rows, scoredByDate);
+  const base = aggregateBaseContributions(scoredRows, horizonDays);
+  return {
+    label,
+    horizon_days: horizonDays,
+    row_count: scoredRows.length,
+    top_positive_base: base
+      .filter((item) => item.mean_contribution > 0)
+      .sort((left, right) => right.sum_contribution - left.sum_contribution)
+      .slice(0, 8),
+    top_negative_base: base
+      .filter((item) => item.mean_contribution < 0)
+      .sort((left, right) => left.sum_contribution - right.sum_contribution)
+      .slice(0, 8),
+    top_absolute_base: base.slice(0, 8),
+    overlay_contributions: aggregateOverlayContributions(scoredRows, horizonDays).slice(0, 8)
+  };
+}
 function summarizeGroup(label, rows, thresholds) {
   return {
     label,
@@ -386,13 +531,17 @@ function featureSnapshot(rows, featureNames) {
     .filter((feature) => rows.some((row) => getFeature(row, feature) != null))
     .map((feature) => ({ feature, mean: round(featureMean(rows, feature), 4) }));
 }
-function buildDiagnosis(rows, thresholds, featureNames) {
+function buildDiagnosis(rows, thresholds, featureNames, resolvedRelevantFeatures) {
   const candidateMax20 = maxWithDate(rows, "candidate_final_p_20d");
   const candidateMax60 = maxWithDate(rows, "candidate_final_p_60d");
   const allEvaluation = rows.length > 0 && rows.every((row) => row.split_name === "evaluation");
   const has20Hit = rows.some((row) => Boolean(row.candidate_hit_20d));
   const has60Hit = rows.some((row) => Boolean(row.candidate_hit_60d));
   const hasMixedProxy = featureNames.includes("family_proxy__mixed_systemic");
+  const mixedProxy = (resolvedRelevantFeatures ?? []).find((item) => item.name === "family_proxy__mixed_systemic");
+  const mixedProxyActive = mixedProxy
+    ? Math.abs(Number(mixedProxy.mean_raw_value) || 0) > 0.02 || Math.abs(Number(mixedProxy.mean_normalized_value) || 0) > 0.02
+    : false;
   const candidateBelowBaseline = average(rows.map((row) => row.delta_final_p_20d)) < 0;
   const reasons = [];
   const nextActions = [];
@@ -411,8 +560,11 @@ function buildDiagnosis(rows, thresholds, featureNames) {
     nextActions.push("Add train-topology repair or analogous trainable mixed-systemic funding-stress rows before expecting retraining to learn this window.");
   }
   if (!hasMixedProxy) {
-    reasons.push("family_proxy__mixed_systemic is absent from the active slice features, so mixed-systemic context is not explicitly represented as a family proxy here.");
+    reasons.push("family_proxy__mixed_systemic is absent from both raw slice features and candidate scored contributions, so mixed-systemic context is not explicitly represented as a family proxy here.");
     nextActions.push("Check whether mixed-systemic family context should be derived into the formal feature set for 2011-like funding stress.");
+  } else if (!mixedProxyActive) {
+    reasons.push("family_proxy__mixed_systemic is resolvable in candidate scoring, but its average value is near zero in this 2011 window.");
+    nextActions.push("Audit mixed-systemic proxy thresholds and underlying funding/liquidity features before changing runtime floors.");
   }
   if (candidateBelowBaseline) {
     reasons.push("Average candidate 20d probability is below baseline in this window, indicating margin erosion rather than only a high-threshold problem.");
@@ -421,7 +573,11 @@ function buildDiagnosis(rows, thresholds, featureNames) {
   return {
     primary_class: !has20Hit && !has60Hit ? "no_runtime_floor_signal" : "partial_runtime_signal",
     trainability_class: allEvaluation ? "evaluation_only_window" : "trainable_or_mixed_split_window",
-    family_context_class: hasMixedProxy ? "mixed_systemic_proxy_present" : "mixed_systemic_proxy_missing",
+    family_context_class: !hasMixedProxy
+      ? "mixed_systemic_proxy_missing"
+      : mixedProxyActive
+        ? "mixed_systemic_proxy_active"
+        : "mixed_systemic_proxy_inactive",
     candidate_margin_class: candidateBelowBaseline ? "candidate_margin_erosion" : "candidate_margin_preserved_or_improved",
     reasons,
     next_actions: [...new Set(nextActions)]
@@ -430,7 +586,11 @@ function buildDiagnosis(rows, thresholds, featureNames) {
 const manifest = readJson(manifestPath);
 const compare = readJson(manifest.compare.artifact_path);
 const slice = readJson(manifest.slice.artifact_path);
+const candidateScoredSlice = manifest.candidate_scored_slice?.artifact_path
+  ? readJson(manifest.candidate_scored_slice.artifact_path)
+  : { rows: [] };
 const compareByDate = new Map(compare.rows.map((row) => [row.as_of_date, row]));
+const candidateScoredByDate = new Map((candidateScoredSlice.rows ?? []).map((row) => [row.as_of_date, row]));
 const preserveSliceKeys = [
   "split_name",
   "primary_scenario_id",
@@ -456,13 +616,16 @@ const rows = slice.rows
     return merged;
   })
   .filter((row) => row.baseline_final_p_20d != null && row.candidate_final_p_20d != null);
+const candidateScoredRows = scoredRowsFor(rows, candidateScoredByDate);
 const thresholds = {
   baseline_20d: compare.baseline_thresholds.find((row) => row.horizon_days === 20)?.decision_threshold ?? null,
   candidate_20d: compare.candidate_thresholds.find((row) => row.horizon_days === 20)?.decision_threshold ?? null,
   baseline_60d: compare.baseline_thresholds.find((row) => row.horizon_days === 60)?.decision_threshold ?? null,
   candidate_60d: compare.candidate_thresholds.find((row) => row.horizon_days === 60)?.decision_threshold ?? null
 };
-const featureNames = [...new Set(slice.feature_names || rows.flatMap((row) => Object.keys(row.features || {})))].sort();
+const rawFeatureNames = [...new Set(slice.feature_names || rows.flatMap((row) => Object.keys(row.features || {})))].sort();
+const contributionFeatureNames = collectContributionFeatureNames(candidateScoredRows);
+const featureNames = [...new Set([...rawFeatureNames, ...contributionFeatureNames])].sort();
 const relevantFeatures = [
   "family_proxy__mixed_systemic",
   "family_proxy__systemic_credit",
@@ -496,10 +659,12 @@ const candidateTop20Rows = [...rows]
   .sort((left, right) => Number(right.candidate_final_p_20d) - Number(left.candidate_final_p_20d))
   .slice(0, Math.min(10, rows.length));
 const candidateRestRows = rows.filter((row) => !candidateTop20Rows.some((topRow) => topRow.as_of_date === row.as_of_date));
+const candidateResolvedRelevantFeatures = aggregateBaseContributions(candidateScoredRows, 20, relevantFeatures);
 const report = {
   generated_at: new Date().toISOString(),
   compare_path: manifest.compare.artifact_path,
   slice_path: manifest.slice.artifact_path,
+  candidate_scored_slice_path: manifest.candidate_scored_slice?.artifact_path ?? null,
   baseline_release_id: compare.baseline_release_id,
   candidate_release_id: compare.candidate_release_id,
   market_scope: compare.market_scope,
@@ -523,6 +688,8 @@ const report = {
     hedge_episode_count: rows.filter((row) => Number(row.hedge_episode_label) === 1).length,
     avg_coverage_score: average(rows.map((row) => row.coverage_score)),
     feature_name_count: featureNames.length,
+    raw_feature_name_count: rawFeatureNames.length,
+    resolved_feature_name_count: contributionFeatureNames.length,
     available_relevant_features: availableRelevantFeatures,
     missing_relevant_features: missingRelevantFeatures
   },
@@ -538,6 +705,7 @@ const report = {
   },
   feature_context: {
     full_window_means: featureSnapshot(rows, availableRelevantFeatures),
+    candidate_resolved_relevant_features: candidateResolvedRelevantFeatures,
     candidate_top_20d_dates: candidateTop20Rows.map((row) => ({
       as_of_date: row.as_of_date,
       candidate_p20d: round(row.candidate_final_p_20d),
@@ -546,6 +714,13 @@ const report = {
       action_level: row.primary_action_level,
       regime_20d: row.regime_20d
     })),
+    candidate_absolute_contributions: {
+      full_window_20d: contributionGroup("full_window_20d", rows, 20, candidateScoredByDate),
+      positive_window_20d: contributionGroup("positive_window_20d", positive20Rows, 20, candidateScoredByDate),
+      pre_warning_buffer_20d: contributionGroup("pre_warning_buffer_20d", prewarning20Rows, 20, candidateScoredByDate),
+      primary_phase_20d: contributionGroup("primary_phase_20d", primaryRows, 20, candidateScoredByDate),
+      full_window_60d: contributionGroup("full_window_60d", rows, 60, candidateScoredByDate)
+    },
     separation: {
       hedge_vs_prepare_primary: featureSeparation("hedge_primary", hedgePrimaryRows, "prepare_primary", preparePrimaryRows, availableRelevantFeatures).slice(0, 12),
       positive_window_vs_normal_20d: featureSeparation("positive_window_20d", positive20Rows, "normal_20d", normal20Rows, availableRelevantFeatures).slice(0, 12),
@@ -555,7 +730,7 @@ const report = {
     }
   }
 };
-report.diagnosis = buildDiagnosis(rows, thresholds, featureNames);
+report.diagnosis = buildDiagnosis(rows, thresholds, featureNames, candidateResolvedRelevantFeatures);
 fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));
 '@
@@ -570,6 +745,7 @@ Write-Host "  candidate: $CandidateReleaseId"
 Write-Host "  scenario : $ScenarioId"
 Write-Host "  compare  : $($report.compare_path)"
 Write-Host "  slice    : $($report.slice_path)"
+Write-Host "  scored   : $($manifest.candidate_scored_slice.artifact_path)"
 Write-Host "  output   : $reportPath"
 Write-Host ""
 Write-Host "Threshold gap"
