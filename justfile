@@ -156,6 +156,12 @@ formal-candidate-window-audit baseline_release_id candidate_release_id:
 formal-candidate-feature-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-feature-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 按 regime 聚合 formal-probability-compare 的 feature contribution，定位 positive-window 为什么输给 cooldown/normal。
+# 默认审计 `us_regional_banks_2023` 的 2023-02-01 -> 2023-05-15 窗口，覆盖正窗口和 cooldown，输出到 ignored artifacts 目录。
+# 用法：`just formal-candidate-regime-contribution-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260609T204721`
+formal-candidate-regime-contribution-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-regime-contribution-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
 # 进一步对齐 `curve / bond-spread / USDJPY / jpy carry / 20d threshold` 语义审计。
 # 会明确输出哪些约束已经在训练层落实，哪些还只是文档约束，以及最小代码入口在哪。
 # 用法：`just formal-candidate-semantics-audit us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`

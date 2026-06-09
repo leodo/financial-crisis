@@ -916,6 +916,12 @@
      - 20d 候选在 bundle evaluation 里 `positive_minus_cooldown_gap=+8.28pp`，但 runtime replay 变成 `-6.70pp`，说明训练评估到运行回放出现分布漂移；
      - 60d 候选在 runtime replay 中 `positive / cooldown / normal` 均约 `2%`，诊断为 `cold_across_all_regimes`；
      - 后续优先级应放在 train/runtime feature transfer、scenario-conditioned feature separation 和 positive-window continuity，而不是继续只调阈值。
+   - `2026-06-10` 已新增 `scripts/formal-candidate-regime-contribution-audit.ps1` 与 `just formal-candidate-regime-contribution-audit <baseline> <candidate>`：
+     - 它会复用或生成 `formal-probability-compare` 工件，并按 `20d / 60d`、`regime_20d / regime_60d` 聚合 baseline/candidate 平均概率、命中率、decision threshold 与 top feature contribution；
+     - 对 `us_formal_family_hybrid_20260606T112926 -> us_formal_family_hybrid_20260609T204721` 的 `us_regional_banks_2023` 窗口，确认 20d 候选正窗口均值虽升到 `76.48%`，但 `candidate threshold=90.00%`，因此 positive-window hit rate 仍是 `0%`；这解释了“概率看着不低但离触线很远”的一类异常；
+     - 同一审计确认 60d 不是阈值小问题，而是正窗口均值从 baseline `95.66%` 塌到 candidate `1.39%`，属于 `cold signal / feature transfer` 问题；
+     - 对 `2023-07` 常态窗口，20d candidate normal avg 已达 `56.63%`，占 `90%` threshold 的 `62.9%`；如果只下调阈值，会很容易把常态误报重新放出来；
+     - 重要边界：当前 formal compare 的 `regional_banks` 样本没有 normal/cooldown 行，无法单独解释 runtime `cooldown_bleed`；该脚本只能做 top feature delta 级 triage，下一步仍必须补 runtime replay contribution 证据。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 
