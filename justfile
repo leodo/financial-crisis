@@ -266,6 +266,10 @@ formal-train-family-overlay-tracked:
 formal-train-family-hybrid:
     ./scripts/formal-train-family-overlay.ps1 -ModelShape family_hybrid_v1
 
+# 使用 family-hybrid 模型形态做训练拓扑 dry-run，不训练、不写 bundle。
+formal-train-family-hybrid-dry-run:
+    ./scripts/formal-train-family-overlay.ps1 -DryRun -ModelShape family_hybrid_v1
+
 # 和 `formal-train-family-hybrid` 相同，但把 bundle / manifest 显式写到版本化 generated 目录。
 formal-train-family-hybrid-tracked:
     ./scripts/formal-train-family-overlay.ps1 -Tracked -ModelShape family_hybrid_v1
