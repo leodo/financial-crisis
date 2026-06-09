@@ -230,16 +230,31 @@ fn resolve_family_proxy_value(family: &str, features: &BTreeMap<String, f64>) ->
         "jpy_carry" => {
             let level_tail = scaled_tail_pos(features, FEATURE_US_USDJPY_LEVEL, 145.0, 20.0)?;
             let change_tail = scaled_tail_abs(features, FEATURE_US_USDJPY_CHANGE_20D, 4.0, 8.0)?;
-            let funding_tail = scaled_tail_pos(features, FEATURE_US_FED_FUNDS_LEVEL, 4.0, 3.0)?;
+            let strict_funding_tail =
+                scaled_tail_pos(features, FEATURE_US_FED_FUNDS_LEVEL, 5.5, 2.5)?;
             let external_tail =
                 scaled_tail_pos(features, FEATURE_EXTERNAL_DIMENSION_SCORE, 50.0, 35.0)?;
-            let stress_confirmation = change_tail.max(external_tail);
-            let confirmed_level = level_tail * (0.25 + 0.75 * stress_confirmation);
+            let credit_tail =
+                scaled_tail_pos(features, FEATURE_US_BAA_10Y_SPREAD_LEVEL, 2.0, 2.0).unwrap_or(0.0);
+            let liquidity_tail = scaled_tail_pos(features, FEATURE_US_STLFSI_LEVEL, 0.5, 2.0)
+                .unwrap_or(0.0)
+                .max(scaled_tail_pos(features, FEATURE_US_NFCI_LEVEL, 0.25, 1.0).unwrap_or(0.0));
+            let vix_tail =
+                scaled_tail_pos(features, FEATURE_US_VIX_LEVEL, 25.0, 20.0).unwrap_or(0.0);
+            let structural_tail =
+                scaled_tail_pos(features, FEATURE_STRUCTURAL_SCORE, 60.0, 25.0).unwrap_or(0.0);
+            let trigger_tail =
+                scaled_tail_pos(features, FEATURE_TRIGGER_SCORE, 55.0, 30.0).unwrap_or(0.0);
+            let market_context_tail = vix_tail.max(trigger_tail) * structural_tail;
+            let systemic_confirmation = strict_funding_tail
+                .max(credit_tail)
+                .max(liquidity_tail)
+                .max(market_context_tail);
             Some(
-                (0.45 * confirmed_level
-                    + 0.25 * change_tail
-                    + 0.15 * funding_tail * stress_confirmation
-                    + 0.15 * external_tail)
+                (0.65 * change_tail * systemic_confirmation
+                    + 0.20 * external_tail * systemic_confirmation
+                    + 0.10 * strict_funding_tail * change_tail
+                    + 0.05 * level_tail * change_tail * systemic_confirmation)
                     .clamp(0.0, 1.0),
             )
         }

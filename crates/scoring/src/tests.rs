@@ -1,7 +1,10 @@
 use chrono::{NaiveDate, Utc};
-use fc_domain::{Frequency, Indicator, Observation, RiskDimension, RiskDirection};
+use fc_domain::{
+    Frequency, Indicator, IndicatorRisk, Observation, QualityGrade, RiskDimension, RiskDirection,
+    RiskLevel,
+};
 
-use crate::{compute_signal, score_value};
+use crate::{compute_signal, explain_indicator, score_value};
 
 #[test]
 fn higher_is_riskier_uses_percentile() {
@@ -43,6 +46,38 @@ fn home_price_uses_yoy_signal_not_raw_level() {
     assert_eq!(signal.score_input_unit.as_deref(), Some("%"));
     assert!(signal.score_input_value.is_some());
     assert!(signal.score_input_value.unwrap() < 10.0);
+}
+
+#[test]
+fn indicator_explanation_names_two_sided_tail() {
+    let risk = IndicatorRisk {
+        indicator: Indicator {
+            indicator_id: "us_real_estate_home_price".to_string(),
+            display_name: "Case-Shiller 房价指数".to_string(),
+            dimension: RiskDimension::RealEstate,
+            description: String::new(),
+            unit: "index".to_string(),
+            frequency: Frequency::Monthly,
+            risk_direction: RiskDirection::TwoSided,
+            default_source_id: "fred".to_string(),
+            quality_tier: "core".to_string(),
+        },
+        latest_observation: None,
+        score: 80.6,
+        level: RiskLevel::Warning,
+        percentile: Some(19.4),
+        change_30d: None,
+        score_basis: "12m同比".to_string(),
+        score_input_value: Some(0.66),
+        score_input_unit: Some("%".to_string()),
+        quality_grade: QualityGrade::A,
+        contribution: 40.3,
+    };
+
+    let explanation = explain_indicator(&risk);
+
+    assert!(explanation.contains("低尾异常"));
+    assert!(explanation.contains("历史分位 19.4"));
 }
 
 #[test]

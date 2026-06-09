@@ -623,7 +623,8 @@
            - [x] 候选 `us_formal_family_hybrid_20260606T104037` 已证明 `jpy_carry` 真实进入 `5d/20d` overlay 训练：`configured=5`，并且 fast review `guard_passed=true`，`actionable_precision 75.2% -> 75.8%`，没有带来新的 bundle-level probability guard regression。
            - [x] 下一步继续做 scenario-level audit，确认 `1987 / 1990 / 2024` 这些高 FX 波动窗口里，`jpy_carry` overlay 的收益是否主要来自真正的 protected/pre-warning carry 压力，而不是被少量普通汇率尖峰误带。
              - 2026-06-09：新增 `just formal-candidate-jpy-carry-audit`，按正式 resolver 公式重算三段窗口的 `family_proxy__jpy_carry` 并输出结构化 JSON；首轮审计结果为 `needs_proxy_tightening`：`1987` gate-active `25/25` 有风险上下文，`1990` gate-active `45/45` 有风险上下文，但 `2024` JPY unwind watch window 出现 `29/29` ordinary gate-active，最高 proxy `0.562225 @ 2024-08-01`。
-           - [ ] 下一步不应直接把 `jpy_carry` overlay 当成干净风险放大器；需要先把 proxy 收紧为“高位 + 快速变化 + 外部/流动性确认”的更强组合，或在 overlay gate 中把 ordinary 2024 FX spike 单独压下去。
+           - [x] 已把 `jpy_carry` proxy 收紧为“快速 USDJPY 变化 + 严格资金/信用/流动性确认，或结构确认后的 VIX/trigger 压力”，不再让 external dimension 单独自我确认。
+             - 2026-06-09：复跑 `just formal-candidate-jpy-carry-audit` 后，`1987` gate-active `25/25` 仍全是 supported，`1990` gate-active `49/49` 仍全是 supported，`2024` ordinary gate-active 从 `29` 降到 `0`，最高 proxy 从 `0.562225` 降到 `0.267600 @ 2024-08-05`，总体结论转为 `supported_with_ordinary_spikes_suppressed`。
          - [x] 复核当前 active release 是否仍停在 review fail 的 family candidate；review 结束后已恢复 `us_formal_interaction_tail_extmix10_20260602T061401`。
 3. Raw PIT history replay 闭环
    - [x] 新增 historical replay run / point 存储结构

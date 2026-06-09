@@ -147,7 +147,7 @@ fn jpy_carry_features(active: bool) -> BTreeMap<String, f64> {
     if active {
         features.insert("us_usdjpy_level".to_string(), 158.0);
         features.insert("us_usdjpy_change_20d".to_string(), 10.0);
-        features.insert("us_fed_funds_level".to_string(), 5.0);
+        features.insert("us_fed_funds_level".to_string(), 6.8);
         features.insert("external_dimension_score".to_string(), 84.0);
     } else {
         features.insert("us_usdjpy_level".to_string(), 132.0);

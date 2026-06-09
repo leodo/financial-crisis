@@ -86,7 +86,13 @@ select
   json_extract(features_json, '$.us_usdjpy_level') as usdjpy_level,
   json_extract(features_json, '$.us_usdjpy_change_20d') as usdjpy_change_20d,
   json_extract(features_json, '$.us_fed_funds_level') as fed_funds_level,
-  json_extract(features_json, '$.external_dimension_score') as external_dimension_score
+  json_extract(features_json, '$.external_dimension_score') as external_dimension_score,
+  json_extract(features_json, '$.trigger_score') as trigger_score,
+  json_extract(features_json, '$.structural_score') as structural_score,
+  json_extract(features_json, '$.us_vix_level') as vix_level,
+  json_extract(features_json, '$.us_baa_10y_spread_level') as baa_10y_spread_level,
+  json_extract(features_json, '$.us_stlfsi_level') as stlfsi_level,
+  json_extract(features_json, '$.us_nfci_level') as nfci_level
 from analytics_formal_dataset_rows
 where dataset_key = '$datasetSql'
   and as_of_date between '$fromSql' and '$toSql'
@@ -207,31 +213,54 @@ function Resolve-JpyCarryProxy {
 
     $levelTail = Scaled-TailPos -FeatureName "us_usdjpy_level" -Value $Row.usdjpy_level -Threshold 145.0 -Scale 20.0
     $changeTail = Scaled-TailAbs -FeatureName "us_usdjpy_change_20d" -Value $Row.usdjpy_change_20d -Threshold 4.0 -Scale 8.0
-    $fundingTail = Scaled-TailPos -FeatureName "us_fed_funds_level" -Value $Row.fed_funds_level -Threshold 4.0 -Scale 3.0
+    $strictFundingTail = Scaled-TailPos -FeatureName "us_fed_funds_level" -Value $Row.fed_funds_level -Threshold 5.5 -Scale 2.5
     $externalTail = Scaled-TailPos -FeatureName "external_dimension_score" -Value $Row.external_dimension_score -Threshold 50.0 -Scale 35.0
-    if ($null -eq $levelTail -or $null -eq $changeTail -or $null -eq $fundingTail -or $null -eq $externalTail) {
+    if ($null -eq $levelTail -or $null -eq $changeTail -or $null -eq $strictFundingTail -or $null -eq $externalTail) {
         return [pscustomobject]@{
             proxy = $null
             level_tail = $levelTail
             change_tail = $changeTail
-            funding_tail = $fundingTail
+            strict_funding_tail = $strictFundingTail
             external_tail = $externalTail
+            systemic_confirmation = $null
         }
     }
 
-    $stressConfirmation = [math]::Max($changeTail, $externalTail)
-    $confirmedLevel = $levelTail * (0.25 + 0.75 * $stressConfirmation)
-    $proxy = 0.45 * $confirmedLevel +
-        0.25 * $changeTail +
-        0.15 * $fundingTail * $stressConfirmation +
-        0.15 * $externalTail
+    $creditTail = Scaled-TailPos -FeatureName "us_baa_10y_spread_level" -Value $Row.baa_10y_spread_level -Threshold 2.0 -Scale 2.0
+    $stlfsiTail = Scaled-TailPos -FeatureName "us_stlfsi_level" -Value $Row.stlfsi_level -Threshold 0.5 -Scale 2.0
+    $nfciTail = Scaled-TailPos -FeatureName "us_nfci_level" -Value $Row.nfci_level -Threshold 0.25 -Scale 1.0
+    $vixTail = Scaled-TailPos -FeatureName "us_vix_level" -Value $Row.vix_level -Threshold 25.0 -Scale 20.0
+    $structuralTail = Scaled-TailPos -FeatureName "structural_score" -Value $Row.structural_score -Threshold 60.0 -Scale 25.0
+    $triggerTail = Scaled-TailPos -FeatureName "trigger_score" -Value $Row.trigger_score -Threshold 55.0 -Scale 30.0
+    $liquidityTail = [math]::Max(
+        $(if ($null -eq $stlfsiTail) { 0.0 } else { $stlfsiTail }),
+        $(if ($null -eq $nfciTail) { 0.0 } else { $nfciTail })
+    )
+    $marketContextTail = [math]::Max(
+        $(if ($null -eq $vixTail) { 0.0 } else { $vixTail }),
+        $(if ($null -eq $triggerTail) { 0.0 } else { $triggerTail })
+    ) * $(if ($null -eq $structuralTail) { 0.0 } else { $structuralTail })
+    $systemicConfirmation = @(
+        $strictFundingTail,
+        $(if ($null -eq $creditTail) { 0.0 } else { $creditTail }),
+        $liquidityTail,
+        $marketContextTail
+    ) | Measure-Object -Maximum | Select-Object -ExpandProperty Maximum
+    $proxy = 0.65 * $changeTail * $systemicConfirmation +
+        0.20 * $externalTail * $systemicConfirmation +
+        0.10 * $strictFundingTail * $changeTail +
+        0.05 * $levelTail * $changeTail * $systemicConfirmation
 
     [pscustomobject]@{
         proxy = [math]::Max(0.0, [math]::Min(1.0, $proxy))
         level_tail = $levelTail
         change_tail = $changeTail
-        funding_tail = $fundingTail
+        strict_funding_tail = $strictFundingTail
         external_tail = $externalTail
+        credit_tail = $creditTail
+        liquidity_tail = $liquidityTail
+        market_context_tail = $marketContextTail
+        systemic_confirmation = $systemicConfirmation
     }
 }
 
@@ -312,10 +341,20 @@ function Analyze-Window {
             usdjpy_change_20d = Round-Safe -Value (To-NullableDouble -Value $row.usdjpy_change_20d)
             fed_funds_level = Round-Safe -Value (To-NullableDouble -Value $row.fed_funds_level)
             external_dimension_score = Round-Safe -Value (To-NullableDouble -Value $row.external_dimension_score)
+            trigger_score = Round-Safe -Value (To-NullableDouble -Value $row.trigger_score)
+            structural_score = Round-Safe -Value (To-NullableDouble -Value $row.structural_score)
+            vix_level = Round-Safe -Value (To-NullableDouble -Value $row.vix_level)
+            baa_10y_spread_level = Round-Safe -Value (To-NullableDouble -Value $row.baa_10y_spread_level)
+            stlfsi_level = Round-Safe -Value (To-NullableDouble -Value $row.stlfsi_level)
+            nfci_level = Round-Safe -Value (To-NullableDouble -Value $row.nfci_level)
             level_tail = Round-Safe -Value $proxy.level_tail
             change_tail = Round-Safe -Value $proxy.change_tail
-            funding_tail = Round-Safe -Value $proxy.funding_tail
+            strict_funding_tail = Round-Safe -Value $proxy.strict_funding_tail
             external_tail = Round-Safe -Value $proxy.external_tail
+            credit_tail = Round-Safe -Value $proxy.credit_tail
+            liquidity_tail = Round-Safe -Value $proxy.liquidity_tail
+            market_context_tail = Round-Safe -Value $proxy.market_context_tail
+            systemic_confirmation = Round-Safe -Value $proxy.systemic_confirmation
         }
     }
 
@@ -389,6 +428,8 @@ $overallConclusion = if ($ordinarySpikeWindows.Count -gt 0) {
     "needs_proxy_tightening"
 } elseif ($supportedWindows.Count -gt 0 -and $noGateWindows.Count -eq 0) {
     "supported_by_protected_or_prewarning_pressure"
+} elseif ($supportedWindows.Count -gt 0 -and $noGateWindows.Count -gt 0) {
+    "supported_with_ordinary_spikes_suppressed"
 } elseif ($supportedWindows.Count -gt 0) {
     "partially_supported_but_sparse"
 } else {
