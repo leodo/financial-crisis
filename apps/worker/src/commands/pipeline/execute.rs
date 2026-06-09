@@ -228,6 +228,21 @@ fn print_training_artifacts_summary(artifacts: &PipelineArtifacts, options: &Pip
                 diag.final_summary.normal_hit_count,
                 diag.final_summary.normal_row_count,
             );
+            println!(
+                "                   regime_hits base positive={}/{} cooldown={}/{} in_crisis={}/{} final positive={}/{} cooldown={}/{} in_crisis={}/{}",
+                diag.base_summary.positive_window_hit_count,
+                diag.base_summary.positive_window_row_count,
+                diag.base_summary.cooldown_hit_count,
+                diag.base_summary.cooldown_row_count,
+                diag.base_summary.in_crisis_hit_count,
+                diag.base_summary.in_crisis_row_count,
+                diag.final_summary.positive_window_hit_count,
+                diag.final_summary.positive_window_row_count,
+                diag.final_summary.cooldown_hit_count,
+                diag.final_summary.cooldown_row_count,
+                diag.final_summary.in_crisis_hit_count,
+                diag.final_summary.in_crisis_row_count,
+            );
             if let Some(early_evidence) = diag
                 .calibration_regime_evidence
                 .iter()
