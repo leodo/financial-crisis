@@ -112,6 +112,7 @@ pub(crate) use release_review::{
     classify_regime_separation, summarize_release_review_historical_audit_workstreams,
     summarize_release_runtime_regime_probabilities, summarize_release_runtime_regime_separation,
     ReleaseReviewHistoricalAuditAttributionSummary, ReleaseReviewHistoricalAuditWorkstreamSummary,
+    ReleaseRuntimeLatestProbabilitySnapshot,
 };
 pub(crate) use reporting::write_formal_dataset_summary_report;
 pub(crate) use scenario::{

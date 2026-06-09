@@ -226,6 +226,7 @@ fn test_runtime_review(
     crate::ReleaseRuntimeReviewDiagnostics {
         release_id: release_id.to_string(),
         history_point_count: 260,
+        latest_probability_snapshot: None,
         posture_distribution: vec![crate::release_review::ReleaseRuntimeCount {
             name: "normal".to_string(),
             count: 240,

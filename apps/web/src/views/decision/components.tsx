@@ -25,6 +25,22 @@ function formatPercentagePointGap(value: number): string {
   return formatPercentPrecise(value).replace("%", " 个百分点");
 }
 
+function formatThresholdMultiple(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "—";
+  }
+  if (value >= 1000) {
+    return `${Math.round(value).toLocaleString("zh-CN")} 倍`;
+  }
+  if (value >= 100) {
+    return `${Math.round(value)} 倍`;
+  }
+  if (value >= 10) {
+    return `${value.toFixed(1)} 倍`;
+  }
+  return `${value.toFixed(2)} 倍`;
+}
+
 function describeProbabilityBand(value: number) {
   if (value < 0.15) {
     return {
@@ -191,9 +207,13 @@ export function ProbabilityTile({
   const thresholdShareCopy =
     thresholdShare === null
       ? "未配置进入线"
-      : `进入线占比 ${formatPercentPrecise(thresholdShare)} · 进入线 ${formatPercentPrecise(
-          threshold
-        )}`;
+      : thresholdGap === 0
+        ? `已达到${thresholdLabel} · 进入线 ${formatPercentPrecise(threshold)}`
+        : value > 0
+          ? `当前仅为${thresholdLabel}的 ${formatPercentPrecise(
+              thresholdShare
+            )} · 触线约需当前值的 ${formatThresholdMultiple(threshold / value)}`
+          : `当前为 0 · 进入线 ${formatPercentPrecise(threshold)}`;
 
   return (
     <div className={`probability-tile ${band.className}`}>

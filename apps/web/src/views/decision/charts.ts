@@ -1,4 +1,4 @@
-import { formatDate, wrapTimelineLabel } from "../../format";
+import { formatDate, formatProbabilityPercentExact, wrapTimelineLabel } from "../../format";
 import type {
   AssessmentHistoryPoint,
   AssessmentSnapshot,
@@ -58,10 +58,11 @@ export function buildProbabilityTrendModel(history: AssessmentHistoryPoint[]) {
       : "";
   const sourceNote = buildProbabilityTrendSourceNote(history);
   const sanityNote = buildProbabilityTrendSanityNote(chartHistory, mode);
+  const scaleNote = buildProbabilityTrendScaleNote(chartHistory, mode);
 
   return {
     chart: buildProbabilityTrendChart(chartHistory, mode),
-    note: [baseNote, windowNote, sanityNote, sourceNote].filter(Boolean).join(" ")
+    note: [baseNote, windowNote, scaleNote, sanityNote, sourceNote].filter(Boolean).join(" ")
   };
 }
 
@@ -190,6 +191,45 @@ function buildProbabilityTrendSanityNote(
   }
 
   return "当前 20日窗口明显低于 5日和 60日，不是画图错误；它表示活跃正式模型的 20d head 在当前样本上输出偏冷，后续需要通过训练和 release review 修复，而不是在运行时硬抬概率。";
+}
+
+function buildProbabilityTrendScaleNote(
+  history: AssessmentHistoryPoint[],
+  mode: ProbabilityTrendMode
+) {
+  if (history.length < 2) {
+    return "";
+  }
+
+  const seriesStats = [
+    probabilitySeriesStats("5日窗口", history.map((point) => probabilityValue(point, 5, mode))),
+    probabilitySeriesStats("20日窗口", history.map((point) => probabilityValue(point, 20, mode))),
+    probabilitySeriesStats("60日窗口", history.map((point) => probabilityValue(point, 60, mode)))
+  ];
+  const yAxisMax = buildProbabilityAxisMax(
+    Math.max(...seriesStats.map((series) => series.maxValue), 0)
+  );
+  const compressedSeries = seriesStats.find(
+    (series) => series.label === "20日窗口" && series.maxValue > 0 && series.maxValue < yAxisMax * 0.12
+  );
+
+  if (!compressedSeries) {
+    return "";
+  }
+
+  return `${compressedSeries.label}近期不是一条真正的 0 线；最近窗口范围是 ${formatProbabilityPercentExact(
+    compressedSeries.minValue
+  )} 到 ${formatProbabilityPercentExact(
+    compressedSeries.maxValue
+  )}，但在线性坐标上只占纵轴很小一段，所以视觉上会贴近底部。`;
+}
+
+function probabilitySeriesStats(label: string, values: number[]) {
+  return {
+    label,
+    minValue: Math.min(...values),
+    maxValue: Math.max(...values)
+  };
 }
 
 function probabilityValue(

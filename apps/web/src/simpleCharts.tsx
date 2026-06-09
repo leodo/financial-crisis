@@ -50,7 +50,7 @@ export function SimpleLineChart({
   model: LineChartModel;
   height?: number;
 }) {
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [hoverState, setHoverState] = useState<{ index: number; svgY: number } | null>(null);
   const width = 920;
   const margins = { top: 14, right: 12, bottom: 56, left: 42 };
   const plotWidth = width - margins.left - margins.right;
@@ -66,14 +66,27 @@ export function SimpleLineChart({
   const y = (value: number) => margins.top + plotHeight - (Math.max(0, value) / yMax) * plotHeight;
 
   const ticks = Array.from({ length: 5 }, (_, index) => (yMax / 4) * index).reverse();
+  const hoverIndex = hoverState?.index ?? null;
   const hoverX = hoverIndex === null ? null : x(hoverIndex);
+  const hoverY = hoverState?.svgY ?? null;
+  const nearestSeriesLabel =
+    hoverIndex === null
+      ? null
+      : model.series.reduce<{ label: string; distance: number } | null>((nearest, series) => {
+          const distance = Math.abs(y(series.values[hoverIndex] ?? 0) - (hoverY ?? y(0)));
+          if (!nearest || distance < nearest.distance) {
+            return { label: series.label, distance };
+          }
+          return nearest;
+        }, null)?.label ?? null;
   const hoverRows =
     hoverIndex === null
       ? []
       : model.series.map((series) => ({
           label: series.label,
           color: series.color,
-          value: series.values[hoverIndex] ?? 0
+          value: series.values[hoverIndex] ?? 0,
+          isNearest: series.label === nearestSeriesLabel
         }));
   const tooltipStyle =
     hoverX === null
@@ -85,25 +98,30 @@ export function SimpleLineChart({
 
   const updateHoverIndex = (event: PointerEvent<SVGSVGElement>) => {
     if (model.categories.length === 0) {
-      setHoverIndex(null);
+      setHoverState(null);
       return;
     }
 
     const bounds = event.currentTarget.getBoundingClientRect();
     const svgX = ((event.clientX - bounds.left) / bounds.width) * width;
+    const svgY = ((event.clientY - bounds.top) / bounds.height) * height;
     const clampedX = Math.max(margins.left, Math.min(width - margins.right, svgX));
+    const clampedY = Math.max(margins.top, Math.min(margins.top + plotHeight, svgY));
     const nextIndex =
       pointCount === 1
         ? 0
         : Math.round(((clampedX - margins.left) / plotWidth) * (pointCount - 1));
-    setHoverIndex(Math.max(0, Math.min(model.categories.length - 1, nextIndex)));
+    setHoverState({
+      index: Math.max(0, Math.min(model.categories.length - 1, nextIndex)),
+      svgY: clampedY
+    });
   };
 
   return (
     <div className="simple-chart">
       <svg
         className="simple-chart-svg"
-        onPointerLeave={() => setHoverIndex(null)}
+        onPointerLeave={() => setHoverState(null)}
         onPointerMove={updateHoverIndex}
         preserveAspectRatio="none"
         viewBox={`0 0 ${width} ${height}`}
@@ -165,6 +183,18 @@ export function SimpleLineChart({
 
         {hoverIndex !== null && hoverX !== null ? (
           <g className="simple-chart-hover-layer">
+            {hoverY !== null ? (
+              <line
+                x1={margins.left}
+                x2={width - margins.right}
+                y1={hoverY}
+                y2={hoverY}
+                stroke="#27323a"
+                strokeDasharray="4 4"
+                strokeOpacity="0.38"
+                strokeWidth="1"
+              />
+            ) : null}
             <line
               x1={hoverX}
               x2={hoverX}
@@ -202,7 +232,14 @@ export function SimpleLineChart({
         <div className="simple-chart-tooltip" style={tooltipStyle}>
           <strong>{model.categories[hoverIndex]}</strong>
           {hoverRows.map((row) => (
-            <div className="simple-chart-tooltip-row" key={row.label}>
+            <div
+              className={
+                row.isNearest
+                  ? "simple-chart-tooltip-row simple-chart-tooltip-row-active"
+                  : "simple-chart-tooltip-row"
+              }
+              key={row.label}
+            >
               <span>
                 <i style={{ background: row.color }} />
                 {row.label}

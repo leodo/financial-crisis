@@ -355,6 +355,13 @@
   gap: 12px;
   font-size: 12px;
   line-height: 1.2;
+  border-radius: 5px;
+  margin: 0 -3px;
+  padding: 2px 3px;
+}
+
+.simple-chart-tooltip-row-active {
+  background: #f1f5f7;
 }
 
 .simple-chart-tooltip-row span {

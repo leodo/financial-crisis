@@ -160,6 +160,18 @@ fn render_release_runtime_review_markdown(
         diagnostics.history_point_count
     );
     let _ = writeln!(markdown, "- Note: {}", diagnostics.note);
+    if let Some(latest) = diagnostics.latest_probability_snapshot.as_ref() {
+        let _ = writeln!(
+            markdown,
+            "- Latest probabilities ({}): p5d={} / p20d={} / p60d={} / p20d_vs_p5d={} / p20d_vs_p60d={}",
+            latest.as_of_date,
+            format_runtime_probability(latest.p_5d),
+            format_runtime_probability(latest.p_20d),
+            format_runtime_probability(latest.p_60d),
+            crate::format_optional_ratio(latest.p20d_vs_p5d_ratio),
+            crate::format_optional_ratio(latest.p20d_vs_p60d_ratio),
+        );
+    }
     if let Some(thresholds) = diagnostics.runtime_thresholds.as_ref() {
         let _ = writeln!(
             markdown,
@@ -296,4 +308,22 @@ fn render_release_runtime_review_markdown(
             );
         }
     }
+}
+
+fn format_runtime_probability(value: f64) -> String {
+    let percent = value * 100.0;
+    let absolute = percent.abs();
+    if absolute == 0.0 {
+        return "0%".to_string();
+    }
+    if absolute < 0.0001 {
+        return format!("{percent:.6}%");
+    }
+    if absolute < 0.01 {
+        return format!("{percent:.4}%");
+    }
+    if absolute < 0.1 {
+        return format!("{percent:.3}%");
+    }
+    format!("{percent:.2}%")
 }

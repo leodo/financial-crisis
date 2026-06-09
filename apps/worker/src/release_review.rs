@@ -305,9 +305,23 @@ pub(crate) struct ReleaseRuntimeCount {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub(crate) struct ReleaseRuntimeLatestProbabilitySnapshot {
+    pub(crate) as_of_date: String,
+    pub(crate) p_5d: f64,
+    pub(crate) p_20d: f64,
+    pub(crate) p_60d: f64,
+    pub(crate) raw_p_5d: Option<f64>,
+    pub(crate) raw_p_20d: Option<f64>,
+    pub(crate) raw_p_60d: Option<f64>,
+    pub(crate) p20d_vs_p5d_ratio: Option<f64>,
+    pub(crate) p20d_vs_p60d_ratio: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct ReleaseRuntimeReviewDiagnostics {
     pub(crate) release_id: String,
     pub(crate) history_point_count: usize,
+    pub(crate) latest_probability_snapshot: Option<ReleaseRuntimeLatestProbabilitySnapshot>,
     pub(crate) posture_distribution: Vec<ReleaseRuntimeCount>,
     pub(crate) time_bucket_distribution: Vec<ReleaseRuntimeCount>,
     pub(crate) posture_trigger_distribution: Vec<ReleaseRuntimeClauseCount>,

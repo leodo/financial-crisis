@@ -333,6 +333,28 @@ pub(crate) fn compare_runtime_sanity_guardrails(
         }
     }
 
+    if latest_snapshot_has_cold_20d(candidate) {
+        if let Some(snapshot) = candidate.latest_probability_snapshot.as_ref() {
+            regressions.push(format!(
+                "candidate {} latest runtime point {} has incoherent 20d horizon: p20d={} vs p5d={} and p60d={}",
+                candidate.release_id,
+                snapshot.as_of_date,
+                format_probability_precise(snapshot.p_20d),
+                format_probability_precise(snapshot.p_5d),
+                format_probability_precise(snapshot.p_60d),
+            ));
+        }
+    }
+
+    if latest_snapshot_has_cold_20d(baseline) {
+        if let Some(snapshot) = baseline.latest_probability_snapshot.as_ref() {
+            regressions.push(format!(
+                "baseline {} latest runtime point {} is also 20d-cold, so relative guardrails alone are not a sufficient promotion test",
+                baseline.release_id, snapshot.as_of_date
+            ));
+        }
+    }
+
     if release_has_cold_runtime_history(candidate) {
         regressions.push(format!(
             "candidate {} stayed all-normal across {} history points, hit zero runtime probability floors, and still showed no usable early-warning regime separation",
@@ -358,6 +380,34 @@ fn runtime_separation_summary_for_horizon(
         .regime_separation_summaries
         .iter()
         .find(|summary| summary.horizon_days == horizon_days)
+}
+
+fn latest_snapshot_has_cold_20d(diagnostics: &crate::ReleaseRuntimeReviewDiagnostics) -> bool {
+    let Some(snapshot) = diagnostics.latest_probability_snapshot.as_ref() else {
+        return false;
+    };
+
+    (snapshot.p_5d > 0.0 || snapshot.p_60d > 0.0)
+        && snapshot.p_20d < snapshot.p_5d * 0.25
+        && snapshot.p_20d < snapshot.p_60d * 0.25
+}
+
+fn format_probability_precise(value: f64) -> String {
+    let percent = value * 100.0;
+    let absolute = percent.abs();
+    if absolute == 0.0 {
+        return "0%".to_string();
+    }
+    if absolute < 0.0001 {
+        return format!("{percent:.6}%");
+    }
+    if absolute < 0.01 {
+        return format!("{percent:.4}%");
+    }
+    if absolute < 0.1 {
+        return format!("{percent:.3}%");
+    }
+    format!("{percent:.2}%")
 }
 
 fn release_has_cold_runtime_history(diagnostics: &crate::ReleaseRuntimeReviewDiagnostics) -> bool {
@@ -470,6 +520,7 @@ mod tests {
         crate::ReleaseRuntimeReviewDiagnostics {
             release_id: release_id.to_string(),
             history_point_count: 100,
+            latest_probability_snapshot: None,
             posture_distribution: Vec::new(),
             time_bucket_distribution: Vec::new(),
             posture_trigger_distribution: Vec::new(),
@@ -517,6 +568,59 @@ mod tests {
                 "candidate regional_banks_candidate retained only 6.2% of 20d positive_window avg probability",
             )
         }));
+    }
+
+    fn latest_snapshot(
+        as_of_date: &str,
+        p_5d: f64,
+        p_20d: f64,
+        p_60d: f64,
+    ) -> crate::ReleaseRuntimeLatestProbabilitySnapshot {
+        crate::ReleaseRuntimeLatestProbabilitySnapshot {
+            as_of_date: as_of_date.to_string(),
+            p_5d,
+            p_20d,
+            p_60d,
+            raw_p_5d: Some(p_5d),
+            raw_p_20d: Some(p_20d),
+            raw_p_60d: Some(p_60d),
+            p20d_vs_p5d_ratio: Some(p_20d / p_5d),
+            p20d_vs_p60d_ratio: Some(p_20d / p_60d),
+        }
+    }
+
+    #[test]
+    fn runtime_sanity_guardrails_reject_latest_20d_horizon_incoherence() {
+        let mut baseline = runtime_review_with_20d_positive_window("baseline", 0.80);
+        baseline.latest_probability_snapshot =
+            Some(latest_snapshot("2026-06-09", 0.0010, 0.0005, 0.0012));
+        let mut candidate = runtime_review_with_20d_positive_window("candidate", 0.80);
+        candidate.latest_probability_snapshot =
+            Some(latest_snapshot("2026-06-09", 0.0014, 0.000067, 0.00076));
+
+        let regressions = compare_runtime_sanity_guardrails(&baseline, &candidate);
+
+        assert!(regressions.iter().any(|item| {
+            item.contains(
+                "candidate candidate latest runtime point 2026-06-09 has incoherent 20d horizon",
+            )
+        }));
+    }
+
+    #[test]
+    fn runtime_sanity_guardrails_allow_mild_latest_20d_neighbor_gap() {
+        let mut baseline = runtime_review_with_20d_positive_window("baseline", 0.80);
+        baseline.latest_probability_snapshot =
+            Some(latest_snapshot("2026-06-09", 0.0010, 0.0005, 0.0012));
+        let mut candidate = runtime_review_with_20d_positive_window("candidate", 0.80);
+        candidate.latest_probability_snapshot =
+            Some(latest_snapshot("2026-06-09", 0.0010, 0.00035, 0.0011));
+
+        let regressions = compare_runtime_sanity_guardrails(&baseline, &candidate);
+
+        assert!(!regressions
+            .iter()
+            .any(|item| item.contains("latest runtime point")));
     }
 }
 

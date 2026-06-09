@@ -94,6 +94,7 @@ fn release_review_runtime_separation_comparison_highlights_60d_floor_gap() {
     let baseline = ReleaseRuntimeReviewDiagnostics {
         release_id: "baseline".to_string(),
         history_point_count: 120,
+        latest_probability_snapshot: None,
         posture_distribution: Vec::new(),
         time_bucket_distribution: Vec::new(),
         posture_trigger_distribution: Vec::new(),
@@ -141,6 +142,7 @@ fn release_review_runtime_separation_comparison_highlights_60d_floor_gap() {
     let candidate = ReleaseRuntimeReviewDiagnostics {
         release_id: "candidate".to_string(),
         history_point_count: 120,
+        latest_probability_snapshot: None,
         posture_distribution: Vec::new(),
         time_bucket_distribution: Vec::new(),
         posture_trigger_distribution: Vec::new(),
