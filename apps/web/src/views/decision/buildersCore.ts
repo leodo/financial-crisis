@@ -14,6 +14,7 @@ import {
   freshnessLabel,
   pointInTimeModeLabel,
   postureLabel,
+  qualityDetailLabel,
   releaseIdLabel,
   releaseServingStatusLabel,
   runtimeThresholdLabel,
@@ -135,36 +136,77 @@ function actionEvidenceScore(assessment: AssessmentSnapshot): number {
 
 function actionEvidenceStatus(score: number): string {
   if (score >= 0.82) {
-    return "强证据";
+    return "强升级证据";
   }
   if (score >= 0.68) {
-    return "可升级";
+    return "可升级证据";
   }
   if (score >= 0.55) {
-    return "接近观察";
+    return "接近观察线";
   }
-  return "低位观察";
+  return "仅基础证据";
+}
+
+function actionEvidenceBreakdownCopy(assessment: AssessmentSnapshot): string {
+  const evidence = assessment.action_evidence;
+  if (!evidence) {
+    return `动作升级证据分 ${formatPercent(actionEvidenceScore(assessment))}，当前缺少后端拆解，只能作为过渡动作证据。`;
+  }
+
+  const breadthCopy =
+    evidence.breadth_component <= 0
+      ? "风险广度尚未贡献"
+      : `风险广度贡献 ${formatPercent(evidence.breadth_component)}`;
+  const agreementCopy = evidence.structural_trigger_agreement
+    ? `结构/触发共振贡献 ${formatPercent(evidence.agreement_component)}`
+    : `结构/触发未共振，仅保留基础贡献 ${formatPercent(evidence.agreement_component)}`;
+
+  return `动作升级证据分 ${formatPercent(evidence.score)} = 数据覆盖底座 ${formatPercent(evidence.data_quality_component)} + ${breadthCopy} + ${agreementCopy}。`;
 }
 
 function actionEvidenceHint(assessment: AssessmentSnapshot): string {
   const evidence = assessment.action_evidence;
   if (!evidence) {
-    return `原始证据分 ${formatPercent(actionEvidenceScore(assessment))}。这不是模型结论置信概率，而是风险广度和结构/触发共振是否足以升级动作。`;
+    return `${actionEvidenceBreakdownCopy(assessment)} 这不是模型结论置信概率，而是当前证据是否足以升级仓位动作。`;
   }
 
-  const agreementCopy = evidence.structural_trigger_agreement
-    ? `结构/触发已共振贡献 ${formatPercent(evidence.agreement_component)}`
-    : `结构/触发未共振，仅给基础贡献 ${formatPercent(evidence.agreement_component)}`;
-  const breadthCopy =
-    evidence.breadth_component < 0.08
-      ? `风险广度贡献 ${formatPercent(evidence.breadth_component)}，说明高风险维度还不够宽`
-      : `风险广度贡献 ${formatPercent(evidence.breadth_component)}`;
+  return [
+    actionEvidenceBreakdownCopy(assessment),
+    `当前状态为 ${actionEvidenceStatus(evidence.score)}。`,
+    "这不是模型结论置信概率，也不是危机发生概率；危机概率看 5/20/60 天三项。",
+    "如果风险广度没有打开、结构和触发没有共振，它会长期停在 50% 左右，含义是“数据可用，但还不足以升级仓位动作”。"
+  ].join(" ");
+}
+
+function decisionReliabilityLabel(assessment: AssessmentSnapshot): string {
+  if (assessment.runtime.demo_mode) {
+    return "演示数据";
+  }
+  if (assessment.method.release_status === "degraded") {
+    return "已降级";
+  }
+  if (assessment.data_trust.coverage_score >= 0.9 && !assessment.runtime.stale_warning) {
+    return qualityDetailLabel(assessment.data_trust.quality_grade);
+  }
+  if (assessment.data_trust.coverage_score >= 0.75) {
+    return "可用但需复核";
+  }
+  return "低覆盖复核";
+}
+
+function decisionReliabilityHint(assessment: AssessmentSnapshot): string {
+  const probabilityMode = describeProbabilityMode(assessment.method);
+  const releaseHealth = describeReleaseHealth(assessment.method.release_status);
+  const latestDataDate =
+    assessment.runtime.latest_key_indicator_at ?? assessment.runtime.latest_observation_at ?? "无最新日期";
+  const staleCopy = assessment.runtime.stale_warning
+    ? `存在滞后告警：${assessment.runtime.stale_warning}`
+    : "关键数据新鲜度未触发滞后告警。";
 
   return [
-    "这不是模型结论置信概率，也不是危机发生概率；危机概率看 5/20/60 天三项。",
-    `原始证据分 ${formatPercent(evidence.score)}，当前状态为 ${actionEvidenceStatus(evidence.score)}。`,
-    `当前由数据覆盖贡献 ${formatPercent(evidence.data_quality_component)}、${breadthCopy}、${agreementCopy} 加总得到。`,
-    "如果风险广度没有打开、结构和触发没有共振，它会长期停在 50% 左右，含义是“还不足以升级仓位动作”。"
+    `结论可靠性看数据覆盖、模型服务状态和关键数据日期，不看动作升级证据分。`,
+    `当前覆盖 ${formatPercent(assessment.data_trust.coverage_score)}，模型层 ${probabilityMode.label}，服务 ${releaseHealth}，最新关键数据 ${latestDataDate}。`,
+    staleCopy
   ].join(" ");
 }
 
@@ -273,7 +315,13 @@ export function buildHeroMetrics(assessment: AssessmentSnapshot): MetricItem[] {
   const evidenceScore = actionEvidenceScore(assessment);
   return [
     {
-      label: "执行证据状态",
+      label: "结论可靠性",
+      value: decisionReliabilityLabel(assessment),
+      hint: decisionReliabilityHint(assessment),
+      valueClassName: "metric-value-token"
+    },
+    {
+      label: "动作升级证据",
       value: actionEvidenceStatus(evidenceScore),
       hint: actionEvidenceHint(assessment),
       valueClassName: "metric-value-token"
@@ -462,8 +510,8 @@ export function buildSignalLayerRows(
   const actionabilitySource = actionSourceSummary(assessment).detail;
   const actionEvidence = assessment.action_evidence;
   const actionEvidenceDetail = actionEvidence
-    ? `原始证据分 ${formatPercent(actionEvidence.score)} = 数据覆盖 ${formatPercent(actionEvidence.data_quality_component)} + 风险广度 ${formatPercent(actionEvidence.breadth_component)} + 结构/触发${actionEvidence.structural_trigger_agreement ? "共振" : "未共振"} ${formatPercent(actionEvidence.agreement_component)}。它不是模型结论置信概率。`
-    : `原始证据分 ${formatPercent(actionEvidenceScore(assessment))}，当前缺少后端拆解，只能作为过渡动作证据。`;
+    ? `${actionEvidenceBreakdownCopy(assessment)} 它不是结论把握度；结论可靠性请看数据覆盖、模型服务状态和关键数据日期。`
+    : `${actionEvidenceBreakdownCopy(assessment)} 它不是结论把握度；结论可靠性请看数据覆盖、模型服务状态和关键数据日期。`;
   const priorDetail = probabilityDisplayNote(assessment);
   const priorThresholdSummary = `当前进入线：准备 ${formatPercent(method.runtime_thresholds.prepare_p60d)} / 对冲 ${formatPercent(method.runtime_thresholds.hedge_p20d)} / 防守 ${formatPercent(method.runtime_thresholds.defend_p5d)}`;
 
@@ -505,8 +553,8 @@ export function buildSignalLayerRows(
     },
     {
       id: "action-evidence",
-      title: "执行证据状态",
-      description: "看当前证据是否足以把仓位动作从观察推向准备、对冲或防守。",
+      title: "动作升级证据",
+      description: "看当前证据是否足以把仓位动作从观察推向准备、对冲或防守；它不是结论把握度。",
       value: actionEvidenceStatus(actionEvidenceScore(assessment)),
       detail: actionEvidenceDetail
     },

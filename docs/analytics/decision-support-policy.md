@@ -31,6 +31,12 @@ data_quality_grade
 historical_analogs
 ```
 
+字段边界：
+
+- `conviction_score` 是历史兼容字段，当前等价于 `action_evidence.score`，含义是“动作升级证据是否足够”，不是“系统对当前结论有多大把握”。
+- 结论可靠性应由 `data_trust.coverage_score`、`data_trust.quality_grade`、`method.probability_mode`、`method.release_status`、关键指标最新日期和 stale warning 共同解释。
+- 低风险、数据覆盖良好、但风险广度和结构/触发共振没有打开时，`conviction_score` 可能长期在 0.50 左右；这表示“数据可用但不足以升级仓位动作”，不表示系统只有 50% 把握。
+
 ## 4. 输出 posture
 
 ### 4.1 `normal`
@@ -110,6 +116,8 @@ or (p_20d very high and trigger_score high and conviction_score high)
 ```
 
 以上仅为第一阶段默认规则，最终阈值必须经回测校准。
+
+注意：这里的 `conviction_score high` 是动作升级门槛，用来避免在风险证据不宽、结构/触发未共振时过早进入 `defend`。它不是最终 posture 的置信概率。
 
 ## 6. 限制条件
 

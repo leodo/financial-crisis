@@ -79,6 +79,14 @@ entity_id
   "time_to_risk_bucket": "now",
   "posture": "defend",
   "conviction_score": 0.95,
+  "action_evidence": {
+    "score": 0.95,
+    "data_quality_component": 0.48,
+    "breadth_component": 0.34,
+    "agreement_component": 0.18,
+    "breadth_score": 67.0,
+    "structural_trigger_agreement": true
+  },
   "scores": {
     "overall_score": 63.1,
     "structural_score": 61.8,
@@ -236,6 +244,13 @@ entity_id
   }
 }
 ```
+
+兼容说明：
+
+- `conviction_score` 仍保留给旧调用方，但它是 `action_evidence.score` 的兼容别名。
+- `action_evidence.score` 表示“动作升级证据”，用于判断是否足以从观察推进到准备、对冲或防守。
+- 它不是“结论把握度”，也不是危机发生概率。结论可靠性应结合 `data_trust`、`method.probability_mode`、`method.release_status`、`runtime.latest_key_indicator_at` 和 `runtime.stale_warning` 解释。
+- 当数据覆盖高、风险广度低、结构/触发未共振时，该值可能稳定在 0.50 附近，含义是“数据可用但还不足以升级仓位动作”。
 
 ## 4.1 `method` 响应结构
 
