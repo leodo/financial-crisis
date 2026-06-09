@@ -157,8 +157,8 @@ just stop
 - 面板展示的是免费日频/周频风险数据，不是逐笔行情。解读单个数值前，先看 `data mode`、指标日期和 stale warning。
 - API 默认每 `60` 秒自动重载一次本地库；也可以从前端右上角刷新按钮触发即时 reload。
 - `just audit-report` 会从当前运行中的 API 拉取 assessment/backtests/method，并输出一份 JSON + Markdown 审计报告；如果 API 仍是旧进程，命令会退回本地内置压力窗口目录并给出 warning。
-- 在 `sqlite` 模式下，API 每次启动或 reload 时都会把当前 assessment 和历史轨迹同步写入 `analytics_prediction_snapshots`，用于后续 release 审计、方法复盘和历史对照。
-- 从这一步开始，`/api/assessment/history` 在 `sqlite` 模式下会优先复用已落库的 `prediction snapshots`，只在缺口日期补算，因此 reload 的响应速度会明显快于“每次全历史重算”。
+- 在 `sqlite` 模式下，formal bundle 的历史轨迹优先写入并复用 `analytics_historical_replay_runs / analytics_historical_assessment_points`；`analytics_prediction_snapshots` 只保留当前运行快照、heuristic/兼容路径和旧桥接审计用途。
+- `/api/assessment/history` 对 formal bundle 会先查 historical replay cache；若 cache 不可用，会按 raw observations + PIT feature snapshot 重建，而不是静默退回旧 `prediction snapshots`。
 - 如果要核对线上到底是在跑 heuristic 还是 formal bundle，可以直接打开前端“发布审计”页，或者访问 `GET /api/research/audit`。
 
 ### 2. 使用本地 SQLite 历史库

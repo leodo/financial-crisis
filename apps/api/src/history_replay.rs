@@ -44,7 +44,46 @@ fn feature_snapshot_matches_as_of_date(feature_snapshot_id: &str, as_of_date: Na
         .split(':')
         .nth(2)
         .and_then(|raw| NaiveDate::parse_from_str(raw, "%Y-%m-%d").ok())
-        .is_none_or(|snapshot_date| snapshot_date == as_of_date)
+        .is_some_and(|snapshot_date| snapshot_date == as_of_date)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pit_feature_history_source_only_marks_parseable_same_day_snapshots_as_replay() {
+        let as_of_date = NaiveDate::from_ymd_opt(2026, 6, 9).unwrap();
+
+        assert_eq!(
+            pit_feature_history_source(
+                Some("financial_system:us:2026-06-09:feature_formal_v1:best_effort"),
+                as_of_date,
+                HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
+            ),
+            HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY
+        );
+        assert_eq!(
+            pit_feature_history_source(
+                Some("financial_system:us:2026-06-08:feature_formal_v1:best_effort"),
+                as_of_date,
+                HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
+            ),
+            HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE
+        );
+        assert_eq!(
+            pit_feature_history_source(
+                Some("feature-snapshot-2026-06-09"),
+                as_of_date,
+                HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
+            ),
+            HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE
+        );
+        assert_eq!(
+            pit_feature_history_source(None, as_of_date, HISTORY_SOURCE_RAW_OBSERVATION_REPLAY),
+            HISTORY_SOURCE_RAW_OBSERVATION_REPLAY
+        );
+    }
 }
 
 #[derive(Debug)]

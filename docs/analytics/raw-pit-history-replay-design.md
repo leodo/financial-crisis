@@ -15,6 +15,7 @@
 - API runtime 现在还能在“已有同口径 PIT snapshot，但缺失当天 exact snapshot”时直接按当天 `best_effort PIT` 可见性规则重建同日 `feature_snapshot`，不再把最后一个日期静默记成 prior-snapshot reuse；
 - 本地 SQLite production reload 已实测达到 `2000/2000 raw_pit_feature_replay`，说明默认历史轨迹与 research audit 都已经不再保留 `raw_pit_feature_reuse` 点；
 - `analytics_prediction_snapshots` 因此进一步退回到“当前运行审计 + 兼容视图”的次要角色，但训练/运行两侧的 PIT helper 仍有一部分重复逻辑，尚未完全收敛到共享层。
+- PIT feature 证据等级已改为保守解析：只有能从标准 feature snapshot id 中解析出与评估日一致的日期，才会标记为 `raw_pit_feature_replay`；非标准 id、兼容 id 或解析失败的 id 只能标记为 `raw_pit_feature_reuse`，避免把桥接残留误认为正式 PIT 证据。
 
 ## 1. 目标
 
