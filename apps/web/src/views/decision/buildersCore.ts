@@ -6,6 +6,7 @@ import {
   formatDateTime,
   formatNumber,
   formatPercent,
+  formatPercentPrecise,
   formatPreciseNumber,
   formatProbabilityPercent,
   formatSignedNumber,
@@ -107,6 +108,13 @@ function probabilityDisplayNote(assessment: AssessmentSnapshot): string | null {
     : "当前 formal 先验仍低于 1%，属于低位区间，而不是零风险断言。";
 }
 
+function formatActionProbability(value: number, actionabilityEnabled: boolean): string {
+  if (value === 0) {
+    return actionabilityEnabled ? "0%" : "未触发";
+  }
+  return formatProbabilityPercent(value);
+}
+
 export function buildTriggerClauses(posture: PostureGuidance) {
   return posture.trigger_codes.map(describePostureClause);
 }
@@ -187,18 +195,27 @@ export function buildRiskHorizonActionMetrics(
   return [
     {
       label: prepareLabel,
-      value: formatProbabilityPercent(assessment.actionability.prepare),
-      hint: decisionContent.riskHorizon.actionHints.prepare
+      value: formatActionProbability(
+        assessment.actionability.prepare,
+        assessment.method.actionability_enabled
+      ),
+      hint: `${decisionContent.riskHorizon.actionHints.prepare} 当前值 ${formatPercentPrecise(assessment.actionability.prepare)}。`
     },
     {
       label: hedgeLabel,
-      value: formatProbabilityPercent(assessment.actionability.hedge),
-      hint: decisionContent.riskHorizon.actionHints.hedge
+      value: formatActionProbability(
+        assessment.actionability.hedge,
+        assessment.method.actionability_enabled
+      ),
+      hint: `${decisionContent.riskHorizon.actionHints.hedge} 当前值 ${formatPercentPrecise(assessment.actionability.hedge)}。`
     },
     {
       label: defendLabel,
-      value: formatProbabilityPercent(assessment.actionability.defend),
-      hint: decisionContent.riskHorizon.actionHints.defend
+      value: formatActionProbability(
+        assessment.actionability.defend,
+        assessment.method.actionability_enabled
+      ),
+      hint: `${decisionContent.riskHorizon.actionHints.defend} 当前值 ${formatPercentPrecise(assessment.actionability.defend)}。`
     },
     {
       label: "动作头来源",
@@ -286,8 +303,17 @@ export function buildSignalLayerRows(
       id: "actionability",
       title: "动作概率",
       description: "再看准备 / 对冲 / 防守，回答“现在该不该开始准备、加保护、保流动性”。",
-      value: `${formatProbabilityPercent(assessment.actionability.prepare)} / ${formatProbabilityPercent(assessment.actionability.hedge)} / ${formatProbabilityPercent(assessment.actionability.defend)}`,
-      detail: actionabilitySource
+      value: `${formatActionProbability(
+        assessment.actionability.prepare,
+        assessment.method.actionability_enabled
+      )} / ${formatActionProbability(
+        assessment.actionability.hedge,
+        assessment.method.actionability_enabled
+      )} / ${formatActionProbability(
+        assessment.actionability.defend,
+        assessment.method.actionability_enabled
+      )}`,
+      detail: `${actionabilitySource} 原始值：准备 ${formatPercentPrecise(assessment.actionability.prepare)} / 对冲 ${formatPercentPrecise(assessment.actionability.hedge)} / 防守 ${formatPercentPrecise(assessment.actionability.defend)}。`
     },
     {
       id: "posture",

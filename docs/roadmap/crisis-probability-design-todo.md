@@ -640,6 +640,7 @@
      - 已完成一部分：`research snapshot dataset` 与 `train-probability --dataset-source snapshot` 现在也会拒绝 `formal bundle release`；这条路径只保留给 heuristic/transitional research snapshots，legacy 无 manifest 的老快照也要求 `probability_mode=heuristic_mvp`
      - 已完成一部分：snapshot 过渡训练生成的 manifest 现在会标成 `candidate/shadow`；`release publish` 默认只接受 `approved/healthy` 正式 manifest，候选版必须显式 `--review-only` 才能入库，且 `release activate/publish --activate` 会拒绝直接激活 `candidate/*` 或 `*/shadow` release
      - 已完成一部分：API `/api/system/reload` 已新增 `runtime_purpose=production|review` 分流；默认 production reload 会把 `candidate/*` 或 `*/shadow` release 降级回 heuristic runtime，只有 release review / probability slice 显式带 `runtime_purpose=review` 时才允许临时装载 review-only bundle
+     - 已完成一部分：`/api/research/audit` 已新增 `prediction_snapshot_audit`，前端“发布审计”页也已把旧“历史预测快照”改成“运行快照 / 旧桥接视图”；用户现在能直接看到 active release 快照数、其他 release 快照数、formal 截面数和 heuristic / 降级截面数，并且页面明确说明这张表不是 formal history 主证据链
      - 当前剩余缺口：heuristic / 兼容路径仍允许复用 `prediction snapshots`，formal dataset / 长历史审计链也还没有完全摆脱 bridge 视图
 4. 美国扩展历史样本落地
    - [x] 把 `1994 / 1998 / 2000-2001 / 2011` 逐个纳入 extension/protected stress 数据集与 summary

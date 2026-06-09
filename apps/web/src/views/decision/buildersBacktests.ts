@@ -64,41 +64,45 @@ export { buildRollingAuditHistoryText, buildRollingAuditScopeText };
 export function buildRollingAuditMetrics(
   assessment: AssessmentSnapshot
 ): MetricItem[] {
+  const rollingAudit = assessment.backtest_summary.rolling_audit;
+  const hasActionSignals = rollingAudit.actionable_signal_count > 0;
+  const noSignalHint =
+    "当前滚动窗口没有发出准备/对冲/防守动作信号，所以这里不是命中率为 0，而是样本分母为 0。";
+
   return [
     {
       label: "动作信号精度",
-      value: formatPercent(assessment.backtest_summary.rolling_audit.actionable_precision)
+      value: hasActionSignals ? formatPercent(rollingAudit.actionable_precision) : "无动作信号",
+      hint: hasActionSignals ? undefined : noSignalHint
     },
     {
       label: "动作信号点",
-      value: formatCount(assessment.backtest_summary.rolling_audit.actionable_signal_count)
+      value: formatCount(rollingAudit.actionable_signal_count),
+      hint: hasActionSignals ? undefined : noSignalHint
     },
     {
       label: "危机前命中点",
-      value: formatCount(assessment.backtest_summary.rolling_audit.pre_crisis_signal_count)
+      value: formatCount(rollingAudit.pre_crisis_signal_count)
     },
     {
       label: "危机中信号点",
-      value: formatCount(assessment.backtest_summary.rolling_audit.in_crisis_signal_count)
+      value: formatCount(rollingAudit.in_crisis_signal_count)
     },
     {
       label: "受保护压力点",
-      value: formatCount(assessment.backtest_summary.rolling_audit.stress_window_signal_count)
+      value: formatCount(rollingAudit.stress_window_signal_count)
     },
     {
       label: "纯误报点",
-      value: formatCount(assessment.backtest_summary.rolling_audit.false_positive_signal_count)
+      value: formatCount(rollingAudit.false_positive_signal_count)
     },
     {
       label: "误报区间",
-      value: formatCount(assessment.backtest_summary.rolling_audit.false_positive_episode_count)
+      value: formatCount(rollingAudit.false_positive_episode_count)
     },
     {
       label: "最长误报区间",
-      value: formatCount(
-        assessment.backtest_summary.rolling_audit.longest_false_positive_episode_days,
-        "d"
-      )
+      value: formatCount(rollingAudit.longest_false_positive_episode_days, "d")
     }
   ];
 }

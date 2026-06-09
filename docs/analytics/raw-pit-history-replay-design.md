@@ -164,6 +164,12 @@ created_at
 - API 在 `bundle-backed formal release` 的 production runtime 刷新前，会先清掉该 release 已落库的旧历史 `prediction snapshots`，最终只保留最新 `as_of_date` 的当前运行审计快照；
 - release review / probability slice 触发的 `runtime_purpose=review` reload，当前会把 `runtime_purpose/history_mode/history_limit` 作为运行态配置保存在内存里，避免后台自动刷新把 review runtime 悄悄刷回 production 默认口径。
 
+补充边界（2026-06-09）：
+
+- `/api/research/audit` 已新增 `prediction_snapshot_audit`，把 `analytics_prediction_snapshots` 明确标成 `runtime_trace_and_legacy_bridge_only`；
+- 前端“发布审计”页已把“历史预测快照”改为“运行快照 / 旧桥接视图”，并展示 active release 快照数、其他 release 快照数、formal 截面数和 heuristic / 降级截面数；
+- 这一步不等于兼容路径已经完全移除，但已经把旧快照表从用户可见的 formal history 主证据链中降级为运行截面与桥接残留审计。
+
 明确禁止：
 
 - 不再把它作为 formal dataset builder 的正式输入；

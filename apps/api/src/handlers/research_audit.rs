@@ -37,6 +37,7 @@ struct ResearchAuditResponse {
     runtime_probability_mode: String,
     runtime_release_status: String,
     history_provenance: HistoryProvenanceSummary,
+    prediction_snapshot_audit: PredictionSnapshotAuditSummary,
     latest_snapshot_date: Option<NaiveDate>,
     latest_replay_run_id: Option<String>,
     latest_release_review: Option<ReleaseReviewArtifactSummary>,
@@ -48,6 +49,69 @@ struct ResearchAuditResponse {
     releases: Vec<fc_domain::ModelReleaseRecord>,
     replay_runs: Vec<fc_domain::HistoricalReplayRunRecord>,
     snapshots: Vec<fc_domain::PredictionSnapshotRecord>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PredictionSnapshotAuditSummary {
+    role: String,
+    active_release_snapshot_count: usize,
+    other_release_snapshot_count: usize,
+    formal_probability_snapshot_count: usize,
+    heuristic_probability_snapshot_count: usize,
+    note: String,
+}
+
+fn summarize_prediction_snapshot_audit(
+    snapshots: &[fc_domain::PredictionSnapshotRecord],
+    history_provenance: &HistoryProvenanceSummary,
+    active_release_id: Option<&str>,
+) -> PredictionSnapshotAuditSummary {
+    let active_release_snapshot_count = active_release_id
+        .map(|release_id| {
+            snapshots
+                .iter()
+                .filter(|snapshot| snapshot.release_id.as_deref() == Some(release_id))
+                .count()
+        })
+        .unwrap_or(0);
+    let other_release_snapshot_count = snapshots
+        .len()
+        .saturating_sub(active_release_snapshot_count);
+    let formal_probability_snapshot_count = snapshots
+        .iter()
+        .filter(|snapshot| snapshot.probability_mode.starts_with("formal"))
+        .count();
+    let heuristic_probability_snapshot_count = snapshots
+        .len()
+        .saturating_sub(formal_probability_snapshot_count);
+
+    let note = if snapshots.is_empty() {
+        "当前还没有落库的 prediction snapshots；正式历史证据应优先查看 replay run 与 history provenance。"
+            .to_string()
+    } else if history_provenance.snapshot_bridge_points > 0 {
+        format!(
+            "当前默认历史仍有 {}/{} 个点来自旧 snapshot bridge；这张表主要用于核对 bridge 残留和每天的运行截面，不应直接当成 formal history 审计证据。",
+            history_provenance.snapshot_bridge_points, history_provenance.total_points
+        )
+    } else if history_provenance.raw_observation_points > 0
+        || history_provenance.reused_feature_snapshot_points > 0
+    {
+        format!(
+            "当前默认历史已不再依赖旧 snapshot bridge，但仍存在 raw observation / reused PIT 过渡点；这张表只保留每天运行时落库的概率截面，用于审计降级、回退和桥接残留，不代表 formal history 主证据链。"
+        )
+    } else {
+        "当前默认历史已经由 replay / PIT provenance 支撑；这张表仅用于查看每天运行时落库的概率截面，以及核对旧 bridge 是否还在残留。"
+            .to_string()
+    };
+
+    PredictionSnapshotAuditSummary {
+        role: "runtime_trace_and_legacy_bridge_only".to_string(),
+        active_release_snapshot_count,
+        other_release_snapshot_count,
+        formal_probability_snapshot_count,
+        heuristic_probability_snapshot_count,
+        note,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -666,8 +730,10 @@ pub(crate) async fn research_audit(
                 &market_scope,
                 data.assessment.method.release_id.as_deref(),
             );
-            let latest_scenario_pack_audit =
-                load_latest_scenario_pack_audit_summary(&market_scope, latest_release_review.as_ref());
+            let latest_scenario_pack_audit = load_latest_scenario_pack_audit_summary(
+                &market_scope,
+                latest_release_review.as_ref(),
+            );
             let latest_workstream_audit = load_latest_workstream_audit_summary(
                 &market_scope,
                 data.assessment.method.release_id.as_deref(),
@@ -676,6 +742,12 @@ pub(crate) async fn research_audit(
             let latest_rate_shock_audit =
                 load_latest_rate_shock_audit_summary(latest_release_review.as_ref());
             let latest_dataset_summaries = load_latest_dataset_summaries(&market_scope);
+            let history_provenance = super::summarize_history_provenance(&data.assessment_history);
+            let prediction_snapshot_audit = summarize_prediction_snapshot_audit(
+                &snapshots,
+                &history_provenance,
+                data.assessment.method.release_id.as_deref(),
+            );
             ResearchAuditResponse {
                 supported: true,
                 storage_mode: "sqlite".to_string(),
@@ -683,7 +755,8 @@ pub(crate) async fn research_audit(
                 active_release_id: data.assessment.method.release_id.clone(),
                 runtime_probability_mode: data.assessment.method.probability_mode.clone(),
                 runtime_release_status: data.assessment.method.release_status.clone(),
-                history_provenance: super::summarize_history_provenance(&data.assessment_history),
+                history_provenance,
+                prediction_snapshot_audit,
                 latest_snapshot_date,
                 latest_replay_run_id,
                 latest_release_review,
@@ -697,46 +770,64 @@ pub(crate) async fn research_audit(
                 snapshots,
             }
         }
-        AppDataSource::Demo => ResearchAuditResponse {
-            supported: false,
-            storage_mode: "demo".to_string(),
-            market_scope,
-            active_release_id: data.assessment.method.release_id.clone(),
-            runtime_probability_mode: data.assessment.method.probability_mode.clone(),
-            runtime_release_status: data.assessment.method.release_status.clone(),
-            history_provenance: super::summarize_history_provenance(&data.assessment_history),
-            latest_snapshot_date: None,
-            latest_replay_run_id: None,
-            latest_release_review: None,
-            latest_scenario_pack_audit: None,
-            latest_workstream_audit: None,
-            latest_rate_shock_audit: None,
-            latest_dataset_summaries: Vec::new(),
-            note: "当前运行在 demo 模式，release registry、historical replay、prediction snapshot 审计不可用。切到 SQLite 后该页面会显示真实审计数据。".to_string(),
-            releases: Vec::new(),
-            replay_runs: Vec::new(),
-            snapshots: Vec::new(),
-        },
-        AppDataSource::Postgres { .. } => ResearchAuditResponse {
-            supported: false,
-            storage_mode: "postgres".to_string(),
-            market_scope,
-            active_release_id: data.assessment.method.release_id.clone(),
-            runtime_probability_mode: data.assessment.method.probability_mode.clone(),
-            runtime_release_status: data.assessment.method.release_status.clone(),
-            history_provenance: super::summarize_history_provenance(&data.assessment_history),
-            latest_snapshot_date: None,
-            latest_replay_run_id: None,
-            latest_release_review: None,
-            latest_scenario_pack_audit: None,
-            latest_workstream_audit: None,
-            latest_rate_shock_audit: None,
-            latest_dataset_summaries: Vec::new(),
-            note: "当前 Postgres 路径尚未接入本地 release registry、historical replay 与 prediction snapshot 审计，建议先通过 SQLite 研究链路完成模型训练、发布与复盘。".to_string(),
-            releases: Vec::new(),
-            replay_runs: Vec::new(),
-            snapshots: Vec::new(),
-        },
+        AppDataSource::Demo => {
+            let history_provenance = super::summarize_history_provenance(&data.assessment_history);
+            let prediction_snapshot_audit = summarize_prediction_snapshot_audit(
+                &[],
+                &history_provenance,
+                data.assessment.method.release_id.as_deref(),
+            );
+            ResearchAuditResponse {
+                supported: false,
+                storage_mode: "demo".to_string(),
+                market_scope,
+                active_release_id: data.assessment.method.release_id.clone(),
+                runtime_probability_mode: data.assessment.method.probability_mode.clone(),
+                runtime_release_status: data.assessment.method.release_status.clone(),
+                history_provenance,
+                prediction_snapshot_audit,
+                latest_snapshot_date: None,
+                latest_replay_run_id: None,
+                latest_release_review: None,
+                latest_scenario_pack_audit: None,
+                latest_workstream_audit: None,
+                latest_rate_shock_audit: None,
+                latest_dataset_summaries: Vec::new(),
+                note: "当前运行在 demo 模式，release registry、historical replay、prediction snapshot 审计不可用。切到 SQLite 后该页面会显示真实审计数据。".to_string(),
+                releases: Vec::new(),
+                replay_runs: Vec::new(),
+                snapshots: Vec::new(),
+            }
+        }
+        AppDataSource::Postgres { .. } => {
+            let history_provenance = super::summarize_history_provenance(&data.assessment_history);
+            let prediction_snapshot_audit = summarize_prediction_snapshot_audit(
+                &[],
+                &history_provenance,
+                data.assessment.method.release_id.as_deref(),
+            );
+            ResearchAuditResponse {
+                supported: false,
+                storage_mode: "postgres".to_string(),
+                market_scope,
+                active_release_id: data.assessment.method.release_id.clone(),
+                runtime_probability_mode: data.assessment.method.probability_mode.clone(),
+                runtime_release_status: data.assessment.method.release_status.clone(),
+                history_provenance,
+                prediction_snapshot_audit,
+                latest_snapshot_date: None,
+                latest_replay_run_id: None,
+                latest_release_review: None,
+                latest_scenario_pack_audit: None,
+                latest_workstream_audit: None,
+                latest_rate_shock_audit: None,
+                latest_dataset_summaries: Vec::new(),
+                note: "当前 Postgres 路径尚未接入本地 release registry、historical replay 与 prediction snapshot 审计，建议先通过 SQLite 研究链路完成模型训练、发布与复盘。".to_string(),
+                releases: Vec::new(),
+                replay_runs: Vec::new(),
+                snapshots: Vec::new(),
+            }
+        }
     };
 
     Ok(Json(json!(response)))

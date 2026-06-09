@@ -4,7 +4,7 @@ import {
   postureLabel,
   timeBucketLabel
 } from "../../format";
-import type { AssessmentSnapshot, PostureGuidance } from "../../types";
+import type { AssessmentMethodResponse, AssessmentSnapshot, PostureGuidance } from "../../types";
 import type { MetricItem } from "../shared/panelHelpers";
 import { MetricGrid, RuleBox, SurfaceHeader } from "../shared/panelHelpers";
 import { PostureLadder, ProbabilityTile } from "./components";
@@ -87,11 +87,13 @@ export function DecisionHeroSummary({
 
 export function DecisionRiskHorizon({
   assessment,
+  method,
   actionMetrics,
   timeBucketDescription,
   analogWindowDescription
 }: {
   assessment: AssessmentSnapshot;
+  method: AssessmentMethodResponse;
   actionMetrics: MetricItem[];
   timeBucketDescription: string;
   analogWindowDescription: string;
@@ -104,16 +106,22 @@ export function DecisionRiskHorizon({
           label="5 个交易日"
           value={assessment.probabilities.p_5d}
           hint={decisionContent.riskHorizon.tileHints.p5d}
+          threshold={method.runtime_thresholds.defend_p5d}
+          thresholdLabel="防守线"
         />
         <ProbabilityTile
           label="20 个交易日"
           value={assessment.probabilities.p_20d}
           hint={decisionContent.riskHorizon.tileHints.p20d}
+          threshold={method.runtime_thresholds.hedge_p20d}
+          thresholdLabel="对冲线"
         />
         <ProbabilityTile
           label="60 个交易日"
           value={assessment.probabilities.p_60d}
           hint={decisionContent.riskHorizon.tileHints.p60d}
+          threshold={method.runtime_thresholds.prepare_p60d}
+          thresholdLabel="准备线"
         />
       </div>
       <div className="legend-note">{decisionContent.riskHorizon.bandLegend}</div>

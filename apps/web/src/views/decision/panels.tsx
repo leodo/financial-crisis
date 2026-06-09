@@ -300,11 +300,17 @@ export function DecisionRollingAuditPanel({
   rollingAuditBoundaryText: string;
   rollingAuditEpisodes: DecisionRollingAuditEpisodeRow[];
 }) {
+  const rollingAudit = assessment.backtest_summary.rolling_audit;
+  const rollingAuditSummary =
+    rollingAudit.actionable_signal_count === 0
+      ? `全历史滚动审计覆盖 ${rollingAudit.history_start} 到 ${rollingAudit.history_end}；当前运行口径没有发出准备/对冲/防守动作信号，因此不能把“动作信号精度”解释为 0% 命中率，只能说明本窗口没有可评估的动作信号。`
+      : rollingAudit.summary;
+
   return (
     <section className="surface">
       <SurfaceHeader title="滚动审计与误报边界" icon={Database} />
       <RuleBox label="历史滚动审计结论">
-        {humanizeNarrativeCopy(assessment.backtest_summary.rolling_audit.summary)}
+        {humanizeNarrativeCopy(rollingAuditSummary)}
       </RuleBox>
       <MetricGrid items={rollingAuditMetrics} />
       <div className="surface-grid">

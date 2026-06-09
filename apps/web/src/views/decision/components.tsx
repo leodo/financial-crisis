@@ -1,6 +1,7 @@
 import {
   describePostureClause,
   formatNumber,
+  formatPercentPrecise,
   formatProbabilityPercent
 } from "../../format";
 import type { AssessmentSnapshot } from "../../types";
@@ -50,13 +51,24 @@ function describeProbabilityBand(value: number) {
 export function ProbabilityTile({
   label,
   value,
-  hint
+  hint,
+  threshold,
+  thresholdLabel
 }: {
   label: string;
   value: number;
   hint: string;
+  threshold: number;
+  thresholdLabel: string;
 }) {
   const band = describeProbabilityBand(value);
+  const thresholdGap = Math.max(0, threshold - value);
+  const thresholdCopy =
+    thresholdGap === 0
+      ? `已达到${thresholdLabel} ${formatPercentPrecise(threshold)}`
+      : `距${thresholdLabel} ${formatPercentPrecise(threshold)} 还差 ${formatPercentPrecise(
+          thresholdGap
+        )}`;
 
   return (
     <div className={`probability-tile ${band.className}`}>
@@ -66,6 +78,7 @@ export function ProbabilityTile({
       </div>
       <strong>{formatProbabilityPercent(value)}</strong>
       <p>{hint}</p>
+      <div className="probability-threshold">{thresholdCopy}</div>
       <small>{band.note}</small>
     </div>
   );

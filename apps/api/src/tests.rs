@@ -168,6 +168,12 @@ async fn research_audit_endpoint_returns_runtime_audit_shape() {
     assert!(json["history_provenance"]["evidence_tier"].is_string());
     assert!(json["history_provenance"]["dominant_source"].is_string());
     assert!(json["history_provenance"]["sources"].is_array());
+    assert!(json["prediction_snapshot_audit"]["role"].is_string());
+    assert!(json["prediction_snapshot_audit"]["active_release_snapshot_count"].is_number());
+    assert!(json["prediction_snapshot_audit"]["other_release_snapshot_count"].is_number());
+    assert!(json["prediction_snapshot_audit"]["formal_probability_snapshot_count"].is_number());
+    assert!(json["prediction_snapshot_audit"]["heuristic_probability_snapshot_count"].is_number());
+    assert!(json["prediction_snapshot_audit"]["note"].is_string());
     assert!(json["latest_replay_run_id"].is_null() || json["latest_replay_run_id"].is_string());
     assert!(
         json["latest_release_review"].is_null()

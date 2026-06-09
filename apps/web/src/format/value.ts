@@ -28,6 +28,26 @@ export function formatPercent(value: number | null | undefined, digits = 0): str
   return `${(value * 100).toFixed(digits)}%`;
 }
 
+export function formatPercentPrecise(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "—";
+  }
+  const absolute = Math.abs(value);
+  if (absolute === 0) {
+    return "0%";
+  }
+  if (absolute < 0.0001) {
+    return "<0.01%";
+  }
+  if (absolute < 0.01) {
+    return `${trimTrailingZeros((value * 100).toFixed(2))}%`;
+  }
+  if (absolute < 1) {
+    return `${trimTrailingZeros((value * 100).toFixed(1))}%`;
+  }
+  return `${trimTrailingZeros((value * 100).toFixed(0))}%`;
+}
+
 function trimTrailingZeros(value: string): string {
   return value.replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
 }

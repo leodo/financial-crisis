@@ -7,11 +7,11 @@ export const auditContent = {
     ["Dataset Evidence", "看 main / ext_stress / ext_acute 三套 formal dataset 到底有没有真实样本、哪些场景能训练、哪些只是类比。"],
     ["Residual Workstream", "看当前 residual workstream 到底有没有训练样本、落在哪些 dataset、标签和 regime 长什么样。"],
     ["Overlay 审计", "看当前 active release 是只有 family 审计元数据，还是已经有 overlay head 真正参与 runtime。"],
-    ["快照历史", "看每天落库的概率快照是否和当前生效版本对得上。"],
+    ["运行快照 / 旧桥接视图", "看每天落库的概率截面是否和当前生效版本对得上，并核对旧 snapshot bridge 是否还有残留。"],
     ["降级识别", "如果版本登记已经是正式版，但运行态退回启发式层，通常说明 bundle 加载或服务检查失败。"]
   ] as Array<[string, string]>,
   noteSummary:
-    "这页主要用来核对当前线上版本、release review、历史场景包审计、版本登记历史和历史预测快照是否一致；如果运行中的概率层和登记状态对不上，通常表示系统已经自动降级。",
+    "这页主要用来核对当前线上版本、release review、历史场景包审计、版本登记历史，以及运行快照 / 旧桥接视图是否一致；如果运行中的概率层和登记状态对不上，通常表示系统已经自动降级。",
   summaryNote:
     "先看版本总量、当前/已批准、回放批次、快照覆盖和当前默认历史的证据层，再进入下面的 release review 与版本明细。",
   provenanceNote:
@@ -65,5 +65,6 @@ export const auditContent = {
   unsupportedPrefix: "当前数据存储模式为",
   unsupportedSuffix: "，暂时没有可展示的本地版本 / 快照审计数据。",
   releaseTableNote: "小屏幕下这张表支持横向滚动，优先看版本、登记状态和训练区间。",
-  snapshotTableNote: "先看日期、版本和 5d/20d/60d，再看执行档位、新鲜度和覆盖度。"
+  snapshotTableNote:
+    "这张表不是 formal history 主证据链。先看日期、版本和 5d/20d/60d，再核对它和当前 active release 是否一致，以及旧 snapshot bridge 是否还有残留。"
 } as const;

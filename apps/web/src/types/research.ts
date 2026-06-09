@@ -108,6 +108,15 @@ export interface PredictionSnapshotRecord {
   recorded_at: string;
 }
 
+export interface PredictionSnapshotAuditSummary {
+  role: string;
+  active_release_snapshot_count: number;
+  other_release_snapshot_count: number;
+  formal_probability_snapshot_count: number;
+  heuristic_probability_snapshot_count: number;
+  note: string;
+}
+
 export interface ReleaseReviewAuditAttributionSummary {
   workstream: string;
   attribution: string;
@@ -515,6 +524,7 @@ export interface ResearchAuditResponse {
   runtime_probability_mode: string;
   runtime_release_status: string;
   history_provenance: HistoryProvenanceSummary;
+  prediction_snapshot_audit: PredictionSnapshotAuditSummary;
   latest_snapshot_date: string | null;
   latest_replay_run_id: string | null;
   latest_release_review: ReleaseReviewArtifactSummary | null;

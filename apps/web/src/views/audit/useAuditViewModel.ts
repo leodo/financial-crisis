@@ -161,6 +161,29 @@ export function useAuditViewModel({
       note: source.note,
       meta: `${source.count}`
     }));
+  const snapshotAuditMetrics: MetricItem[] = [
+    {
+      label: "当前 active",
+      value: `${audit.prediction_snapshot_audit.active_release_snapshot_count}`,
+      hint: "和当前 active release 对得上的运行快照条数。"
+    },
+    {
+      label: "其他 release",
+      value: `${audit.prediction_snapshot_audit.other_release_snapshot_count}`,
+      hint: "旧 release 保留下来的运行快照，仅用于对比轨迹或排查回退。"
+    },
+    {
+      label: "正式概率",
+      value: `${audit.prediction_snapshot_audit.formal_probability_snapshot_count}`,
+      hint: "这些仍只是运行时概率截面，不等于 formal history 证据。"
+    },
+    {
+      label: "启发式 / 降级",
+      value: `${audit.prediction_snapshot_audit.heuristic_probability_snapshot_count}`,
+      hint: "用于识别 bundle 加载失败后是否回退到启发式层。"
+    }
+  ];
+  const snapshotAuditNote = audit.prediction_snapshot_audit.note;
 
   const methodSummary = `当前运行的是 ${probabilityModeLabel(assessment.method.probability_mode)}，服务状态 ${releaseServingStatusLabel(assessment.method.release_status)}，对应版本 ${releaseIdLabel(assessment.method.release_id).value}。`;
   const {
@@ -653,6 +676,8 @@ export function useAuditViewModel({
     latestRateShockPhaseRows,
     latestRateShockActionRows,
     releaseRows,
+    snapshotAuditMetrics,
+    snapshotAuditNote,
     snapshotRows
   };
 }

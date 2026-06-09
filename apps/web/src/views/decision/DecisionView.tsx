@@ -202,6 +202,7 @@ export default function DecisionView({
         <div className="dashboard-column">
           <DecisionRiskHorizon
             assessment={assessment}
+            method={method}
             actionMetrics={riskHorizonActionMetrics}
             timeBucketDescription={timeBucketDescription}
             analogWindowDescription={analogWindowDescription}

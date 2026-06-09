@@ -699,6 +699,7 @@ GET /api/research/audit
 - `runtime_probability_mode`
 - `runtime_release_status`
 - `history_provenance`
+- `prediction_snapshot_audit`
 - `latest_snapshot_date`
 - `latest_replay_run_id`
 - `latest_release_review`
@@ -712,7 +713,26 @@ GET /api/research/audit
 
 - 核对当前 API 实际在跑 `heuristic_mvp` 还是 `formal_bundle_v1`
 - 直接查看当前默认历史轨迹到底是 `PIT feature-backed` 正式证据、`raw observation` 过渡口径，还是仍残留旧 `snapshot bridge`
+- 查看 `prediction snapshots` 当前只作为运行快照 / 旧桥接视图，而不是 formal history 主证据链
 - 查看本地 release registry 中有哪些 candidate / approved / active 版本
 - 查看最近一条 replay run 是否和当前 runtime / active release 对得上
 - 查看 `prediction snapshots` 是否跟 active release 对齐
 - 查看最近一次 release review 对应的固定美国历史场景包结论，直接区分稳定通过、共享漏报、共享无信号、执行连续性问题与严格门槛映射问题
+
+### 10.1 PredictionSnapshotAuditSummary
+
+```text
+role
+active_release_snapshot_count
+other_release_snapshot_count
+formal_probability_snapshot_count
+heuristic_probability_snapshot_count
+note
+```
+
+说明：
+
+- `role` 当前固定为 `runtime_trace_and_legacy_bridge_only`，表示 `analytics_prediction_snapshots` 只用于运行截面、降级识别和旧桥接残留审计；
+- `active_release_snapshot_count` / `other_release_snapshot_count` 用于检查快照是否和当前 active release 对齐；
+- `formal_probability_snapshot_count` / `heuristic_probability_snapshot_count` 用于识别正式概率截面和启发式降级截面；
+- `note` 必须明确提示这张表不是 `formal history` 主证据链，正式历史证据应优先看 `history_provenance` 与 `historical replay run / point`。

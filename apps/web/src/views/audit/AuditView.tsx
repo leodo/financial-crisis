@@ -62,6 +62,8 @@ export default function AuditView({
     latestRateShockPhaseRows,
     latestRateShockActionRows,
     releaseRows,
+    snapshotAuditMetrics,
+    snapshotAuditNote,
     snapshotRows
   } = useAuditViewModel({
     assessment,
@@ -475,7 +477,9 @@ export default function AuditView({
           </section>
 
           <section className="surface">
-            <SurfaceHeader title="历史预测快照" icon={Database} />
+            <SurfaceHeader title="运行快照 / 旧桥接视图" icon={Database} />
+            <RuleBox label="角色边界">{snapshotAuditNote}</RuleBox>
+            <MetricGrid items={snapshotAuditMetrics} className="audit-review-metrics" />
             <ResponsiveTable
               className="wide-table xwide-table"
               columns={[

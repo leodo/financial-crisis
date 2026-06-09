@@ -287,6 +287,17 @@
   line-height: 1.55;
 }
 
+.probability-threshold {
+  border: 1px solid #dde7ed;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #2f3d46;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  padding: 6px 8px;
+}
+
 .probability-tile small,
 .budget-note {
   display: block;
