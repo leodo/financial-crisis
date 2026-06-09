@@ -134,10 +134,10 @@ function indicatorSourceTimingLabel(
 ): string {
   if (item.indicator_id === "us_external_usdjpy_level") {
     if (item.source_id === "boj") {
-      return "BOJ 9:00 JST spot";
+      return "BOJ 9:00 JST 官方点位，非盘中价";
     }
     if (item.source_id === "fred") {
-      return "FRED DEXJPUS 日频";
+      return "FRED DEXJPUS 日频，非盘中价";
     }
   }
   return sourceLabel(item.source_id);
@@ -232,9 +232,21 @@ export function buildRuntimeCards(
 
 export function buildHeroMetrics(assessment: AssessmentSnapshot): MetricItem[] {
   return [
-    { label: "结论把握度", value: formatPercent(assessment.conviction_score) },
-    { label: "数据覆盖", value: formatPercent(assessment.data_trust.coverage_score) },
-    { label: "风险强度", value: formatNumber(assessment.scores.overall_score) }
+    {
+      label: "动作证据强度",
+      value: formatPercent(assessment.conviction_score),
+      hint: "不是“常态结论只有这点把握”。它衡量风险广度和结构/触发共振是否足以升级动作，低风险期会被压低。"
+    },
+    {
+      label: "数据覆盖",
+      value: formatPercent(assessment.data_trust.coverage_score),
+      hint: "衡量当前免费数据源覆盖度；这个才更接近数据可信程度。"
+    },
+    {
+      label: "风险强度",
+      value: formatNumber(assessment.scores.overall_score),
+      hint: "0-100 压力位置分，不等于危机概率。"
+    }
   ];
 }
 

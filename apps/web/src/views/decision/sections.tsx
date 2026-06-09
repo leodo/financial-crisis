@@ -60,6 +60,7 @@ export function DecisionPrelude({
             </div>
           ))}
         </div>
+        <div className="runtime-data-check">{decisionContent.prelude.dataCheckHint}</div>
       </section>
     </>
   );

@@ -541,7 +541,7 @@ td span,
 
 .runtime-card-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
 }
 
@@ -572,6 +572,17 @@ td span,
   color: #62707b;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.runtime-data-check {
+  margin-top: 10px;
+  border: 1px solid #dfe8ed;
+  border-radius: 8px;
+  background: #f8fbfc;
+  color: #46545e;
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 9px 11px;
 }
 
 .workspace {

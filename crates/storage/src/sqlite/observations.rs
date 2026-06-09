@@ -138,11 +138,77 @@ impl SqliteStore {
 
                 quality_flags_json
 
-            FROM ts_indicator_observations
+            FROM (
 
-            WHERE entity_id IN ({placeholders})
+                SELECT
 
-              AND as_of_date <= {date_placeholder}
+                    observation.indicator_id,
+
+                    observation.entity_id,
+
+                    observation.as_of_date,
+
+                    observation.period_start,
+
+                    observation.period_end,
+
+                    observation.frequency,
+
+                    observation.value,
+
+                    observation.unit,
+
+                    observation.source_id,
+
+                    observation.dataset_id,
+
+                    observation.revision_time,
+
+                    observation.publication_time,
+
+                    observation.quality_score,
+
+                    observation.quality_flags_json,
+
+                    ROW_NUMBER() OVER (
+
+                        PARTITION BY
+                            observation.indicator_id,
+                            observation.entity_id,
+                            observation.as_of_date,
+                            observation.frequency
+
+                        ORDER BY
+                            CASE
+                                WHEN indicator.default_source_id IS NOT NULL
+                                 AND observation.source_id = indicator.default_source_id
+                                    THEN 0
+                                ELSE 1
+                            END,
+                            COALESCE(mapping.priority, 9999),
+                            observation.quality_score DESC,
+                            COALESCE(observation.publication_time, '') DESC,
+                            observation.source_id
+
+                    ) AS source_rank
+
+                FROM ts_indicator_observations observation
+
+                LEFT JOIN metadata_indicators indicator
+                    ON indicator.indicator_id = observation.indicator_id
+
+                LEFT JOIN metadata_external_indicator_mappings mapping
+                    ON mapping.indicator_id = observation.indicator_id
+                   AND mapping.source_id = observation.source_id
+                   AND mapping.dataset_id = observation.dataset_id
+
+                WHERE observation.entity_id IN ({placeholders})
+
+                  AND observation.as_of_date <= {date_placeholder}
+
+            )
+
+            WHERE source_rank = 1
 
             ORDER BY indicator_id, entity_id, as_of_date
 
@@ -227,6 +293,12 @@ impl SqliteStore {
                 run.status AS run_status,
                 run.records_written
             FROM ts_indicator_observations observation
+            LEFT JOIN metadata_indicators indicator
+                ON indicator.indicator_id = observation.indicator_id
+            LEFT JOIN metadata_external_indicator_mappings mapping
+                ON mapping.indicator_id = observation.indicator_id
+               AND mapping.source_id = observation.source_id
+               AND mapping.dataset_id = observation.dataset_id
             LEFT JOIN raw_responses raw
                 ON raw.raw_payload_id = observation.raw_payload_id
             LEFT JOIN ingest_runs run
@@ -234,7 +306,18 @@ impl SqliteStore {
             WHERE observation.indicator_id = ?1
               AND observation.entity_id = ?2
               AND observation.as_of_date <= ?3
-            ORDER BY observation.as_of_date DESC
+            ORDER BY
+                observation.as_of_date DESC,
+                CASE
+                    WHEN indicator.default_source_id IS NOT NULL
+                     AND observation.source_id = indicator.default_source_id
+                        THEN 0
+                    ELSE 1
+                END,
+                COALESCE(mapping.priority, 9999),
+                observation.quality_score DESC,
+                COALESCE(observation.publication_time, '') DESC,
+                observation.source_id
             LIMIT 1
             "#,
         )

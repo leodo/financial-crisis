@@ -293,6 +293,17 @@
   line-height: 1.35;
 }
 
+.probability-reading-note {
+  border: 1px solid #dde8ee;
+  border-radius: 6px;
+  background: #f7fafb;
+  color: #41505a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  padding: 6px 8px;
+}
+
 .probability-tile p {
   margin: 0;
   color: #55636d;

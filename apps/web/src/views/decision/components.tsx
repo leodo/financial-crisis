@@ -72,6 +72,16 @@ function formatGateValue(value: number | null | undefined): string {
   return value.toFixed(3).replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
 }
 
+function gateSignalLabel(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "未返回";
+  }
+  if (value === 0) {
+    return "当前未触发";
+  }
+  return `proxy ${formatGateValue(value)}`;
+}
+
 function buildGateRows(diagnostic?: ProbabilityHorizonOverlayDiagnostics) {
   if (!diagnostic || diagnostic.contributions.length === 0) {
     return [];
@@ -86,12 +96,24 @@ function buildGateRows(diagnostic?: ProbabilityHorizonOverlayDiagnostics) {
     return {
       familyId: contribution.family_id,
       label: familyLabel(contribution.family_id),
-      value: formatGateValue(contribution.gate_value),
+      value: gateSignalLabel(contribution.gate_value),
       threshold: threshold === undefined ? "—" : formatGateValue(threshold),
       status: isActive ? "打开" : "未打开",
       className: isActive ? "gate-active" : "gate-quiet"
     };
   });
+}
+
+function probabilityReadingNote(value: number): string {
+  if (value === 0) {
+    return "当前接口精确返回 0，需要结合数据日期、release 状态和模型链路复核；它不等于市场风险被证明为零。";
+  }
+  if (value < 0.01) {
+    return `当前是低位小概率但不是 0；原始接口值为 ${formatProbabilityDecimal(
+      value
+    )}，也就是 ${formatProbabilityBasisPoints(value)}。`;
+  }
+  return "当前概率已高于 1%，应重点看是否接近对应进入线和动作档位。";
 }
 
 function ProbabilityDiagnosticsBlock({
@@ -129,7 +151,7 @@ function ProbabilityDiagnosticsBlock({
             <div className="probability-gate-row" key={row.familyId}>
               <strong>{row.label}</strong>
               <small>
-                proxy {row.value} / 入场 {row.threshold}
+                {row.value} / 入场 {row.threshold}
               </small>
               <em className={row.className}>{row.status}</em>
             </div>
@@ -184,6 +206,7 @@ export function ProbabilityTile({
       <div className="probability-raw">
         接口值 {formatProbabilityDecimal(value)} · {formatProbabilityBasisPoints(value)}
       </div>
+      <div className="probability-reading-note">{probabilityReadingNote(value)}</div>
       <p>{hint}</p>
       <div className="probability-threshold">{thresholdCopy}</div>
       <small>{band.note}</small>
