@@ -88,6 +88,14 @@ async fn assessment_current_includes_runtime_freshness_and_supporting_blocks() {
     assert_eq!(json["runtime"]["data_mode"], "demo");
     assert_eq!(json["runtime"]["demo_mode"], true);
     assert!(json["runtime"]["stale_warning"].is_string());
+    assert!(
+        json["runtime"]["latest_key_indicator_at"].is_null()
+            || json["runtime"]["latest_key_indicator_at"].is_string()
+    );
+    assert!(
+        json["runtime"]["latest_key_indicator_lag_days"].is_null()
+            || json["runtime"]["latest_key_indicator_lag_days"].is_number()
+    );
 
     let key_indicators = json["key_indicators"].as_array().unwrap();
     assert!(key_indicators.iter().any(|indicator| {

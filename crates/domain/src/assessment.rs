@@ -234,6 +234,8 @@ pub struct RuntimeMetadata {
     pub requested_as_of_date: NaiveDate,
     pub latest_observation_at: Option<NaiveDate>,
     pub latest_observation_lag_days: Option<i64>,
+    pub latest_key_indicator_at: Option<NaiveDate>,
+    pub latest_key_indicator_lag_days: Option<i64>,
     pub demo_mode: bool,
     pub stale_warning: Option<String>,
 }

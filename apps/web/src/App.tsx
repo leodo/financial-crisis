@@ -10,6 +10,7 @@ import {
 import {
   formatDateTime,
   dataModeLabel,
+  formatProbabilityPercent,
   qualityLabel,
   timeBucketLabel
 } from "./format";
@@ -140,8 +141,12 @@ export default function App() {
   const healthErrorText = formatErrorText(queries.systemHealth.error);
   const isAssessmentUnavailable = !assessment.data && queries.assessment.isError;
   const systemHealthOk = queries.systemHealth.data?.status === "ok";
-  const latestLagDays = assessment.data?.runtime.latest_observation_lag_days ?? null;
-  const hasDataLag = latestLagDays !== null && latestLagDays >= 5;
+  const latestLagDays =
+    assessment.data?.runtime.latest_key_indicator_lag_days ??
+    assessment.data?.runtime.latest_observation_lag_days ??
+    null;
+  const hasDataLag =
+    !!assessment.data?.runtime.stale_warning && !assessment.data?.runtime.demo_mode;
   const statusSummary = useMemo(() => {
     if (!assessment.data) {
       return null;
@@ -150,7 +155,7 @@ export default function App() {
     return [
       `风险时距 ${timeBucketLabel(assessment.data.time_to_risk_bucket)}`,
       `可信度 ${qualityLabel(assessment.data.data_trust.quality_grade)}`,
-      `最近数据 ${assessment.data.runtime.latest_observation_at ?? "—"}`
+      `关键数据 ${assessment.data.runtime.latest_key_indicator_at ?? assessment.data.runtime.latest_observation_at ?? "—"}`
     ];
   }, [assessment.data]);
 
@@ -213,7 +218,12 @@ export default function App() {
               <div className="meta-strip">
                 <span>评估日期 {assessment.data.as_of_date}</span>
                 <span>数据模式 {dataModeLabel(assessment.data.runtime.data_mode)}</span>
-                <span>最近数据 {assessment.data.runtime.latest_observation_at ?? "—"}</span>
+                <span>
+                  关键数据{" "}
+                  {assessment.data.runtime.latest_key_indicator_at ??
+                    assessment.data.runtime.latest_observation_at ??
+                    "—"}
+                </span>
                 <span>生成时间 {formatDateTime(assessment.data.runtime.generated_at)}</span>
                 <span>风险时距 {timeBucketLabel(assessment.data.time_to_risk_bucket)}</span>
                 <span>可信度 {qualityLabel(assessment.data.data_trust.quality_grade)}</span>
@@ -259,7 +269,7 @@ export default function App() {
         {assessment.data && hasDataLag && view !== "decision" && (
           <RecoveryPanel
             details={[
-              `当前评估依赖的最新观测值落后 ${latestLagDays} 天。`,
+              `当前评估依赖的关键市场指标最新日期落后 ${latestLagDays ?? "—"} 天。`,
               ...(statusSummary ?? []),
               "这套系统是免费日频/周频预警面板，不是盘中行情终端；近端风险判断必须保守解释。"
             ]}
@@ -272,7 +282,7 @@ export default function App() {
         )}
 
         {showDecisionWarmup && assessment.data && (
-          <section className="warmup-panel" aria-live="polite">
+        <section className="warmup-panel" aria-live="polite">
             <div className="warmup-head">
               <div className="loading-state-icon" aria-hidden="true">
                 <Activity size={18} />
@@ -294,9 +304,9 @@ export default function App() {
               <div className="warmup-metric">
                 <span>危机先验</span>
                 <strong>
-                  {Math.round(assessment.data.probabilities.p_5d * 100)}% /
-                  {Math.round(assessment.data.probabilities.p_20d * 100)}% /
-                  {Math.round(assessment.data.probabilities.p_60d * 100)}%
+                  {formatProbabilityPercent(assessment.data.probabilities.p_5d)} /
+                  {formatProbabilityPercent(assessment.data.probabilities.p_20d)} /
+                  {formatProbabilityPercent(assessment.data.probabilities.p_60d)}
                 </strong>
                 <small>5d / 20d / 60d</small>
               </div>
@@ -307,7 +317,11 @@ export default function App() {
               </div>
               <div className="warmup-metric">
                 <span>最新关键观测</span>
-                <strong>{assessment.data.runtime.latest_observation_at ?? "—"}</strong>
+                <strong>
+                  {assessment.data.runtime.latest_key_indicator_at ??
+                    assessment.data.runtime.latest_observation_at ??
+                    "—"}
+                </strong>
                 <small>
                   {assessment.data.runtime.stale_warning ?? "最新观测时间正常。"}
                 </small>

@@ -154,6 +154,8 @@ export interface RuntimeMetadata {
   requested_as_of_date: string;
   latest_observation_at: string | null;
   latest_observation_lag_days: number | null;
+  latest_key_indicator_at: string | null;
+  latest_key_indicator_lag_days: number | null;
   demo_mode: boolean;
   stale_warning: string | null;
 }

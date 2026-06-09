@@ -78,7 +78,8 @@ function probabilityDisplayNote(assessment: AssessmentSnapshot): string | null {
   if (peakProbability >= 0.01) {
     return null;
   }
-  const staleDays = assessment.runtime.latest_observation_lag_days;
+  const staleDays =
+    assessment.runtime.latest_key_indicator_lag_days ?? assessment.runtime.latest_observation_lag_days;
   if (peakProbability === 0) {
     return staleDays !== null && staleDays >= 7
       ? `当前 formal 先验低于展示精度，且关键观测已滞后 ${staleDays} 天；这代表“暂未看到足够证据支持主动防守”，不代表市场风险被证明为零。`
@@ -122,11 +123,15 @@ export function buildRuntimeCards(
   return [
     {
       label: "最新关键观测",
-      value: formatDate(assessment.runtime.latest_observation_at),
+      value: formatDate(assessment.runtime.latest_key_indicator_at ?? assessment.runtime.latest_observation_at),
       detail:
-        assessment.runtime.latest_observation_lag_days === null
+        (assessment.runtime.latest_key_indicator_lag_days ?? assessment.runtime.latest_observation_lag_days) ===
+        null
           ? "当前没有可用滞后信息。"
-          : `距离请求日滞后 ${assessment.runtime.latest_observation_lag_days} 天。`
+          : `距离请求日滞后 ${
+              assessment.runtime.latest_key_indicator_lag_days ??
+              assessment.runtime.latest_observation_lag_days
+            } 天。`
     },
     {
       label: "本次评估生成",

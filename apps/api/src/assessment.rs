@@ -102,8 +102,8 @@ pub fn build_assessment_snapshot(
         &data_trust,
         &jpy_carry,
     );
-    let runtime = build_runtime_metadata(data_mode, snapshot, observations);
     let key_indicators = build_key_indicator_statuses(observations, snapshot.as_of_date, data_mode);
+    let runtime = build_runtime_metadata(data_mode, snapshot, observations, &key_indicators);
     let probability_trace = build_probability_trace(
         snapshot,
         observations,

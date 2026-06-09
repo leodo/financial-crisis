@@ -61,12 +61,17 @@ if ((Get-NetTCPConnection -LocalPort 18080 -State Listen -ErrorAction SilentlyCo
         if (-not $latestObservationAt) {
             $latestObservationAt = "-"
         }
+        $latestKeyObservationAt = $assessment.runtime.latest_key_indicator_at
+        if (-not $latestKeyObservationAt) {
+            $latestKeyObservationAt = $latestObservationAt
+        }
 
         Write-Host ""
         Write-Host "API runtime summary:"
         Write-Host ("  Data mode : {0}" -f $assessment.runtime.data_mode)
         Write-Host ("  As of     : {0}" -f $assessment.as_of_date)
         Write-Host ("  Latest    : {0}" -f $latestObservationAt)
+        Write-Host ("  Key latest: {0}" -f $latestKeyObservationAt)
         Write-Host ("  Generated : {0}" -f $assessment.runtime.generated_at)
 
         if ($usdJpy) {
