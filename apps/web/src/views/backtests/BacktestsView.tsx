@@ -9,7 +9,6 @@ import type {
 import {
   GuideList,
   MetricGrid,
-  MetricPairsGrid,
   PillTableCell,
   ResponsiveTable,
   RuleBox,
@@ -50,12 +49,7 @@ export default function BacktestsView({
       <section className="band-grid">
         <section className="surface">
           <SurfaceHeader title="怎么看这页" icon={BadgeInfo} />
-          <MetricGrid
-            items={headlineMetrics.map(([label, value]) => ({
-              label,
-              value
-            }))}
-          />
+          <MetricGrid items={headlineMetrics} />
         </section>
 
         <section className="surface">
@@ -68,7 +62,7 @@ export default function BacktestsView({
         <section className="surface">
           <SurfaceHeader title="回测摘要" icon={History} />
           <p className="body-copy">{humanizeNarrativeCopy(assessment.backtest_summary.summary)}</p>
-          <MetricPairsGrid pairs={summaryMetrics} />
+          <MetricGrid items={summaryMetrics} />
           <RuleBox label="口径区分">{humanizeNarrativeCopy(coverageScopeText)}</RuleBox>
           <RuleBox label="场景回测历史窗口">{historyRange}</RuleBox>
         </section>
@@ -78,7 +72,7 @@ export default function BacktestsView({
           <p className="body-copy">
             {humanizeNarrativeCopy(assessment.backtest_summary.rolling_audit.summary)}
           </p>
-          <MetricPairsGrid pairs={rollingMetrics} />
+          <MetricGrid items={rollingMetrics} />
           <RuleBox label="滚动审计历史窗口">{rollingAuditHistoryRange}</RuleBox>
           <RuleBox label="口径区分">{humanizeNarrativeCopy(rollingAuditScopeText)}</RuleBox>
           <RuleBox label="审计口径">{backtestsContent.auditDefinition}</RuleBox>

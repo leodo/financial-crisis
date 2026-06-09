@@ -172,21 +172,17 @@ pub(crate) fn build_rolling_backtest_audit(
             .then_with(|| right.start_date.cmp(&left.start_date))
     });
     classified_episodes.truncate(ROLLING_AUDIT_EPISODE_LIMIT);
-    let summary = format!(
-        "全历史滚动审计覆盖 {} 到 {}；动作级信号共 {} 个评估点，其中危机前 {} 个、危机中 {} 个、受保护压力窗口 {} 个、纯误报 {} 个，形成 {} 段纯误报区间，动作信号精度约为 {:.0}%。",
-        history_start
-            .map(|date| date.to_string())
-            .unwrap_or_else(|| "未知起点".to_string()),
-        history_end
-            .map(|date| date.to_string())
-            .unwrap_or_else(|| "未知终点".to_string()),
+    let summary = rolling_audit_summary(
+        history_start,
+        history_end,
         actionable_signal_count,
         pre_crisis_signal_count,
         in_crisis_signal_count,
         stress_window_signal_count,
         false_positive_signal_count,
         false_positive_episode_count,
-        actionable_precision * 100.0
+        actionable_precision,
+        actionable_precision_denominator,
     );
 
     BacktestRollingAudit {
@@ -310,4 +306,60 @@ fn protected_stress_window_note(
 
 fn round3(value: f64) -> f64 {
     (value * 1000.0).round() / 1000.0
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rolling_audit_summary(
+    history_start: Option<NaiveDate>,
+    history_end: Option<NaiveDate>,
+    actionable_signal_count: u32,
+    pre_crisis_signal_count: u32,
+    in_crisis_signal_count: u32,
+    stress_window_signal_count: u32,
+    false_positive_signal_count: u32,
+    false_positive_episode_count: u32,
+    actionable_precision: f64,
+    actionable_precision_denominator: u32,
+) -> String {
+    let history_start = history_start
+        .map(|date| date.to_string())
+        .unwrap_or_else(|| "未知起点".to_string());
+    let history_end = history_end
+        .map(|date| date.to_string())
+        .unwrap_or_else(|| "未知终点".to_string());
+
+    if actionable_precision_denominator == 0 {
+        return format!(
+            "全历史滚动审计覆盖 {history_start} 到 {history_end}；当前运行口径没有发出准备/对冲/防守动作信号，因此不能把动作信号精度解释为 0% 命中率，只能说明本窗口没有可评估的动作信号。"
+        );
+    }
+
+    format!(
+        "全历史滚动审计覆盖 {} 到 {}；动作级信号共 {} 个评估点，其中危机前 {} 个、危机中 {} 个、受保护压力窗口 {} 个、纯误报 {} 个，形成 {} 段纯误报区间，动作信号精度约为 {:.0}%。",
+        history_start,
+        history_end,
+        actionable_signal_count,
+        pre_crisis_signal_count,
+        in_crisis_signal_count,
+        stress_window_signal_count,
+        false_positive_signal_count,
+        false_positive_episode_count,
+        actionable_precision * 100.0
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rolling_audit_summary_does_not_call_empty_denominator_zero_precision() {
+        let start = NaiveDate::from_ymd_opt(2026, 6, 1).expect("valid date");
+        let end = NaiveDate::from_ymd_opt(2026, 6, 9).expect("valid date");
+
+        let summary = rolling_audit_summary(Some(start), Some(end), 0, 0, 0, 0, 0, 0, 0.0, 0);
+
+        assert!(summary.contains("没有发出准备/对冲/防守动作信号"));
+        assert!(!summary.contains("精度约为 0%"));
+    }
 }

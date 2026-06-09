@@ -89,21 +89,22 @@ pub(crate) fn build_backtest_summary(
         ),
         _ => "这里的“本地覆盖场景 / 模板参照场景”按当前场景回测历史窗口统计；它回答的是危机场景目录里有多少样本能直接落在本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。".to_string(),
     };
+    let actionable_summary = actionable_warning_summary(timely_warning_rate);
     let summary = if fallback_scenario_count > 0 {
         format!(
-            "当前危机场景目录共 {} 个样本，其中 {} 个已被当前本地历史窗口直接覆盖，{} 个仍是模板参照；结构性抬升至少提前 7 天出现的比例约为 {:.0}%，可执行预警至少提前 7 天出现的比例约为 {:.0}%。",
+            "当前危机场景目录共 {} 个样本，其中 {} 个已被当前本地历史窗口直接覆盖，{} 个仍是模板参照；结构性抬升至少提前 7 天出现的比例约为 {:.0}%，{}",
             scenario_count,
             real_scenario_count,
             fallback_scenario_count,
             structural_warning_rate * 100.0,
-            timely_warning_rate * 100.0
+            actionable_summary
         )
     } else {
         format!(
-            "当前回测覆盖 {} 个真实危机样本；结构性抬升至少提前 7 天出现的比例约为 {:.0}%，可执行预警至少提前 7 天出现的比例约为 {:.0}%。",
+            "当前回测覆盖 {} 个真实危机样本；结构性抬升至少提前 7 天出现的比例约为 {:.0}%，{}",
             scenario_count,
             structural_warning_rate * 100.0,
-            timely_warning_rate * 100.0
+            actionable_summary
         )
     };
 
@@ -142,5 +143,37 @@ fn empty_rolling_audit() -> BacktestRollingAudit {
         actionable_precision: 0.0,
         classified_episodes: Vec::new(),
         summary: "当前尚未生成滚动审计结果。".to_string(),
+    }
+}
+
+fn actionable_warning_summary(timely_warning_rate: f64) -> String {
+    if timely_warning_rate == 0.0 {
+        "动作级预警暂未形成；这表示当前回测口径没有形成满足提前量要求的动作样本，不是采集失败。"
+            .to_string()
+    } else {
+        format!(
+            "可执行预警至少提前 7 天出现的比例约为 {:.0}%。",
+            timely_warning_rate * 100.0
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::actionable_warning_summary;
+
+    #[test]
+    fn actionable_summary_explains_zero_rate_as_no_action_sample() {
+        let summary = actionable_warning_summary(0.0);
+
+        assert!(summary.contains("动作级预警暂未形成"));
+        assert!(!summary.contains("0%"));
+    }
+
+    #[test]
+    fn actionable_summary_keeps_positive_rate_numeric() {
+        let summary = actionable_warning_summary(0.42);
+
+        assert!(summary.contains("42%"));
     }
 }

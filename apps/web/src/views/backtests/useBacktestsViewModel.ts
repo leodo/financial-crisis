@@ -14,7 +14,12 @@ import type {
   BacktestScenarioSummary,
   BacktestWindowPoint
 } from "../../types";
-import type { LineChartModel } from "../decision/charts";
+import {
+  buildBacktestSummaryMetrics,
+  buildRollingAuditMetrics
+} from "../decision/buildersBacktests";
+import { buildProbabilityAxisMax, type LineChartModel } from "../decision/charts";
+import type { MetricItem } from "../shared/panelHelpers";
 import {
   buildBacktestCoverageScopeText,
   buildBacktestHistoryCoverageText,
@@ -22,6 +27,10 @@ import {
   buildRollingAuditScopeText
 } from "../shared/backtestCopy";
 import { backtestsContent } from "./content";
+
+function formatOptionalDays(value: number | null | undefined) {
+  return value === null || value === undefined ? "—" : `${value}d`;
+}
 
 export function useBacktestsViewModel({
   assessment,
@@ -32,9 +41,11 @@ export function useBacktestsViewModel({
   backtests: BacktestScenarioSummary[];
   timeline: BacktestWindowPoint[];
 }) {
+  const probabilityValues = timeline.flatMap((point) => [point.p_5d, point.p_20d, point.p_60d]);
+  const probabilityMax = probabilityValues.length > 0 ? Math.max(...probabilityValues) : 0;
   const chart: LineChartModel = {
     categories: timeline.map((point) => formatDate(point.as_of_date)),
-    maxValue: 1,
+    maxValue: buildProbabilityAxisMax(probabilityMax),
     valueType: "percent",
     series: [
       { label: "5日窗口", color: "#b45309", values: timeline.map((point) => point.p_5d) },
@@ -48,30 +59,8 @@ export function useBacktestsViewModel({
     ]
   };
 
-  const summaryMetrics = [
-    ["结构抬升率", formatPercent(assessment.backtest_summary.structural_warning_rate)],
-    ["可执行预警率", formatPercent(assessment.backtest_summary.timely_warning_rate)],
-    ["漏报率", formatPercent(assessment.backtest_summary.missed_rate)],
-    ["平均结构提前量", formatNumber(assessment.backtest_summary.avg_structural_lead_time_days, "d")],
-    ["平均动作提前量", formatNumber(assessment.backtest_summary.avg_lead_time_days, "d")],
-    ["预警折返", formatCount(assessment.backtest_summary.total_false_positive_count)],
-    ["本地覆盖场景", formatCount(assessment.backtest_summary.real_scenario_count)],
-    ["模板参照场景", formatCount(assessment.backtest_summary.fallback_scenario_count)]
-  ] as Array<[string, string]>;
-
-  const rollingMetrics = [
-    ["动作信号精度", formatPercent(assessment.backtest_summary.rolling_audit.actionable_precision)],
-    ["动作信号点", formatCount(assessment.backtest_summary.rolling_audit.actionable_signal_count)],
-    ["危机前命中点", formatCount(assessment.backtest_summary.rolling_audit.pre_crisis_signal_count)],
-    ["危机中信号点", formatCount(assessment.backtest_summary.rolling_audit.in_crisis_signal_count)],
-    ["受保护压力点", formatCount(assessment.backtest_summary.rolling_audit.stress_window_signal_count)],
-    ["纯误报点", formatCount(assessment.backtest_summary.rolling_audit.false_positive_signal_count)],
-    ["误报区间", formatCount(assessment.backtest_summary.rolling_audit.false_positive_episode_count)],
-    [
-      "最长误报区间",
-      formatCount(assessment.backtest_summary.rolling_audit.longest_false_positive_episode_days, "d")
-    ]
-  ] as Array<[string, string]>;
+  const summaryMetrics = buildBacktestSummaryMetrics(assessment);
+  const rollingMetrics = buildRollingAuditMetrics(assessment);
 
   const historyRange = buildBacktestHistoryCoverageText(assessment.backtest_summary);
   const coverageScopeText = buildBacktestCoverageScopeText(assessment.backtest_summary);
@@ -83,23 +72,47 @@ export function useBacktestsViewModel({
   );
 
   const currentPosture = postureLabel(assessment.posture);
-  const headlineMetrics = [
-    ["动作命中", formatPercent(assessment.backtest_summary.timely_warning_rate)],
-    ["纯误报区间", formatCount(assessment.backtest_summary.rolling_audit.false_positive_episode_count)],
-    [
-      "最长误报",
-      formatCount(assessment.backtest_summary.rolling_audit.longest_false_positive_episode_days, "d")
-    ],
-    ["当前执行节奏", currentPosture]
-  ] as Array<[string, string]>;
+  const hasActionSignals = assessment.backtest_summary.rolling_audit.actionable_signal_count > 0;
+  const headlineMetrics: MetricItem[] = [
+    {
+      label: "动作命中",
+      value:
+        assessment.backtest_summary.timely_warning_rate === 0
+          ? "未形成动作预警"
+          : formatPercent(assessment.backtest_summary.timely_warning_rate),
+      hint:
+        assessment.backtest_summary.timely_warning_rate === 0
+          ? "当前回测口径没有形成满足提前量要求的动作级预警，不等于采集失败。"
+          : undefined
+    },
+    {
+      label: "动作信号",
+      value: hasActionSignals
+        ? formatCount(assessment.backtest_summary.rolling_audit.actionable_signal_count)
+        : "无",
+      hint: hasActionSignals
+        ? undefined
+        : "当前滚动窗口没有准备/对冲/防守动作信号，精度没有可评估分母。"
+    },
+    {
+      label: "纯误报区间",
+      value: hasActionSignals
+        ? formatCount(assessment.backtest_summary.rolling_audit.false_positive_episode_count)
+        : "无"
+    },
+    {
+      label: "当前执行节奏",
+      value: currentPosture
+    }
+  ];
 
   const scenarioRows = backtests.map((scenario) => ({
     id: scenario.scenario_id,
     name: scenario.name,
     signalSource: backtestSignalSourceLabel(scenario.signal_source),
     crisisRange: `${formatDate(scenario.crisis_start)} - ${formatDate(scenario.crisis_end)}`,
-    leadTime: `${scenario.lead_time_days ?? "—"}d`,
-    actionableLeadTime: `${scenario.actionable_lead_time_days ?? "—"}d`,
+    leadTime: formatOptionalDays(scenario.lead_time_days),
+    actionableLeadTime: formatOptionalDays(scenario.actionable_lead_time_days),
     peakScore: formatNumber(scenario.max_score),
     falsePositives: formatCount(scenario.false_positive_count),
     note: humanizeNarrativeCopy(scenario.note)

@@ -91,7 +91,7 @@ function probabilitySpread(values: number[]) {
   return Math.max(...values) - Math.min(...values);
 }
 
-function buildProbabilityAxisMax(probabilityMax: number) {
+export function buildProbabilityAxisMax(probabilityMax: number) {
   if (probabilityMax <= 0) {
     return 0.02;
   }
