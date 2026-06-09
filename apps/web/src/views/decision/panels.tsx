@@ -135,7 +135,7 @@ export function DecisionActionPlanPanel({
       <p className="body-copy">{humanizeNarrativeCopy(assessment.position_guidance.action_summary)}</p>
       <MetricGrid items={actionPlanMetrics} />
       <RuleBox label="执行节奏">{humanizeNarrativeCopy(assessment.position_guidance.execution_urgency)}</RuleBox>
-      <RuleBox label="可信度门槛">{humanizeNarrativeCopy(assessment.position_guidance.confidence_gate)}</RuleBox>
+      <RuleBox label="执行确认门槛">{humanizeNarrativeCopy(assessment.position_guidance.confidence_gate)}</RuleBox>
       {assessment.position_guidance.capital_preservation_overlay_enabled ? (
         <RuleBox label="资本保全叠加已打开">
           {decisionContent.panels.actionPlanCapitalPreservation}

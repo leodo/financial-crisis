@@ -1,6 +1,63 @@
 use super::super::*;
 
 #[test]
+fn posture_guidance_describes_low_conviction_as_action_evidence_not_reliability() {
+    let snapshot = RiskSnapshot {
+        as_of_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+        entity_id: "us".to_string(),
+        market_scope: "financial_system".to_string(),
+        overall_score: 36.8,
+        overall_level: RiskLevel::Normal,
+        structural_score: 38.4,
+        trigger_score: 35.0,
+        level_reason: "test".to_string(),
+        dimensions: Vec::new(),
+        top_contributors: Vec::new(),
+        data_quality_summary: DataQualitySummary {
+            overall_score: 91.0,
+            grade: QualityGrade::A,
+            stale_indicator_count: 0,
+            low_quality_indicator_count: 0,
+            prototype_source_count: 0,
+            blocked_indicator_count: 0,
+        },
+        generated_at: Utc::now(),
+        method_version: "test".to_string(),
+    };
+    let probabilities = ProbabilityBlock {
+        p_5d: 0.001,
+        p_20d: 0.001,
+        p_60d: 0.001,
+    };
+    let posture = build_posture_guidance(
+        &snapshot,
+        &probabilities,
+        None,
+        None,
+        None,
+        0.10,
+        &test_data_trust(QualityGrade::A),
+        29.0,
+        14.0,
+        &[],
+        &quiet_jpy_carry(20.0),
+        &quiet_event_assessment(18.0),
+        &neutral_preferences(),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.57,
+            hedge_p20d: 0.28,
+            defend_p5d: 0.05,
+        },
+    );
+
+    assert_eq!(posture.posture, DecisionPosture::Normal);
+    let reason_text = posture.reasons.join(" ");
+    assert!(reason_text.contains("动作升级证据不足"));
+    assert!(reason_text.contains("风险广度、压力或共振尚未打开"));
+    assert!(!reason_text.contains("可信度一般"));
+}
+
+#[test]
 fn posture_guidance_blocks_prepare_external_without_probability_companion() {
     let snapshot = RiskSnapshot {
         as_of_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),

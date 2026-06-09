@@ -204,7 +204,10 @@ pub(in super::super) fn build_posture_guidance(
         reasons.push("美日短端利差仍偏高，套息资金在风险释放阶段更容易形成拥挤平仓。".to_string());
     }
     if conviction_score < 0.55 {
-        reasons.push("当前信号可信度一般，仓位动作应保留二次确认。".to_string());
+        reasons.push(
+            "当前动作升级证据不足，仓位动作应保留二次确认；低分含义是风险广度、压力或共振尚未打开。"
+                .to_string(),
+        );
     }
     if let Some(analog) = analogs.first() {
         reasons.push(format!(
