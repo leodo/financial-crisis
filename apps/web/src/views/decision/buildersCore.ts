@@ -14,7 +14,6 @@ import {
   freshnessLabel,
   pointInTimeModeLabel,
   postureLabel,
-  qualityDetailLabel,
   releaseIdLabel,
   releaseServingStatusLabel,
   runtimeThresholdLabel,
@@ -39,6 +38,7 @@ import type {
   DecisionSignalLayerRowModel
 } from "./builderTypes";
 import { decisionContent } from "./content";
+import { decisionReliabilityHint, decisionReliabilityLabel } from "./decisionReliability";
 import {
   RISK_SCORE_BANDS,
   describeProbabilityMode,
@@ -206,38 +206,6 @@ function actionEvidenceHint(assessment: AssessmentSnapshot): string {
   ].join(" ");
 }
 
-function decisionReliabilityLabel(assessment: AssessmentSnapshot): string {
-  if (assessment.runtime.demo_mode) {
-    return "演示数据";
-  }
-  if (assessment.method.release_status === "degraded") {
-    return "已降级";
-  }
-  if (assessment.data_trust.coverage_score >= 0.9 && !assessment.runtime.stale_warning) {
-    return qualityDetailLabel(assessment.data_trust.quality_grade);
-  }
-  if (assessment.data_trust.coverage_score >= 0.75) {
-    return "可用但需复核";
-  }
-  return "低覆盖复核";
-}
-
-function decisionReliabilityHint(assessment: AssessmentSnapshot): string {
-  const probabilityMode = describeProbabilityMode(assessment.method);
-  const releaseHealth = describeReleaseHealth(assessment.method.release_status);
-  const latestDataDate =
-    assessment.runtime.latest_key_indicator_at ?? assessment.runtime.latest_observation_at ?? "无最新日期";
-  const staleCopy = assessment.runtime.stale_warning
-    ? `存在滞后告警：${assessment.runtime.stale_warning}`
-    : "关键数据新鲜度未触发滞后告警。";
-
-  return [
-    `结论可靠性看数据覆盖、模型服务状态和关键数据日期，不看动作升级证据分。`,
-    `当前覆盖 ${formatPercent(assessment.data_trust.coverage_score)}，模型层 ${probabilityMode.label}，服务 ${releaseHealth}，最新关键数据 ${latestDataDate}。`,
-    staleCopy
-  ].join(" ");
-}
-
 function indicatorSourceTimingLabel(
   item: AssessmentSnapshot["key_indicators"][number]
 ): string {
@@ -353,7 +321,7 @@ export function buildHeroMetrics(assessment: AssessmentSnapshot): MetricItem[] {
       valueClassName: "metric-value-token"
     },
     {
-      label: "数据/服务状态",
+      label: "结论可靠性",
       value: decisionReliabilityLabel(assessment),
       hint: decisionReliabilityHint(assessment),
       valueClassName: "metric-value-token"
@@ -543,8 +511,8 @@ export function buildSignalLayerRows(
   const actionabilitySource = actionSourceSummary(assessment).detail;
   const actionEvidence = assessment.action_evidence;
   const actionEvidenceDetail = actionEvidence
-    ? `${actionEvidenceBreakdownCopy(assessment)} 它不是模型结论置信概率；数据/服务状态请看数据覆盖、模型服务状态和关键数据日期。`
-    : `${actionEvidenceBreakdownCopy(assessment)} 它不是模型结论置信概率；数据/服务状态请看数据覆盖、模型服务状态和关键数据日期。`;
+    ? `${actionEvidenceBreakdownCopy(assessment)} 它不是模型结论置信概率；结论可靠性请看数据覆盖、模型服务状态和关键数据日期。`
+    : `${actionEvidenceBreakdownCopy(assessment)} 它不是模型结论置信概率；结论可靠性请看数据覆盖、模型服务状态和关键数据日期。`;
   const priorDetail = probabilityDisplayNote(assessment);
   const priorAnomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
   const priorThresholdSummary = `当前进入线：准备 ${formatPercent(method.runtime_thresholds.prepare_p60d)} / 对冲 ${formatPercent(method.runtime_thresholds.hedge_p20d)} / 防守 ${formatPercent(method.runtime_thresholds.defend_p5d)}`;

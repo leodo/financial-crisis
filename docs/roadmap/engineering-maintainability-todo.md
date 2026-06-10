@@ -293,6 +293,7 @@
   - 2026-06-10：本轮触及 `scripts/formal-candidate-semantics-audit.ps1` 只为把 USDJPY high-level tail 训练护栏纳入候选语义审计，避免 active release 中 `tail_pos__us_usdjpy_level__145` 把高 USDJPY 误当成 20d 强压分信号。该脚本仍属于治理热点，后续若继续增加成组语义规则，应先拆出 guardrail registry / renderer，而不是继续堆单文件。
   - 2026-06-10：本轮触及 `apps/web/src/views/decision/buildersCore.ts` 是为把 P0 MVP 风险状态接到已有 hero metrics / signal layer 唯一拼装入口，避免 formal `audit_only` 概率继续被解释成可用时距；触及 `apps/api/src/history_builder/tests.rs` 只是给 `AssessmentSnapshot` 测试 fixture 补新增字段默认值。两处都没有新增新的大块业务分支；后续若继续扩展 MVP 文案或 signal layer，应优先把 `mvpRiskState` 展示 helper 拆到独立模块，而不是继续扩大 `buildersCore.ts`。
   - 2026-06-10：本轮继续触及 `apps/web/src/views/decision/buildersCore.ts` 只为收紧已接入的 MVP 审计态文案和信号层摘要；同时已新增 `apps/web/src/views/decision/mvpRiskState.ts`，把 MVP fallback、标点清洗和证据/限制/下一步拼装从热点文件与 `sections.tsx` 中抽离。后续若继续扩展 MVP 风险状态展示，应优先扩展该 helper 或再拆子模块，不能把文案格式化逻辑重新塞回 `buildersCore.ts`。
+  - 2026-06-10：本轮再次触及 `apps/web/src/views/decision/buildersCore.ts` 是为把首屏“数据/服务状态”替换为用户可理解的“结论可靠性”；实际可靠性公式、audit-only 封顶和解释文案已放入新模块 `apps/web/src/views/decision/decisionReliability.ts`，`buildersCore.ts` 只保留接线。后续如果继续扩展可靠性评分，应优先把公式下沉到 API contract 或继续扩展该 helper，不要把计算重新塞回热点文件。
 - [x] 生成工件进入 Git 前，必须说明它属于：
   - 正式 release 工件；
   - 基线对照证据；
