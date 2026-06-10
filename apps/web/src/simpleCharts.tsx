@@ -100,6 +100,10 @@ export function SimpleLineChart({
           isNearest: series.label === nearestSeriesLabel
         }));
   const focusedHoverRow = hoverRows.find((row) => row.isNearest) ?? hoverRows[0] ?? null;
+  const focusedHoverAxisLabel =
+    focusedHoverRow === null
+      ? null
+      : chartValueLabel(focusedHoverRow.value, model.valueType, yMax);
   const tooltipStyle =
     hoverX === null
       ? undefined
@@ -107,6 +111,19 @@ export function SimpleLineChart({
           left: `${(hoverX / width) * 100}%`,
           transform: hoverX > width * 0.72 ? "translateX(-100%)" : "translateX(0)"
         };
+  const crosshairXLabelWidth = 92;
+  const crosshairXLabelX =
+    hoverX === null
+      ? 0
+      : Math.max(
+          margins.left,
+          Math.min(width - margins.right - crosshairXLabelWidth, hoverX - crosshairXLabelWidth / 2)
+        );
+  const crosshairYLabelWidth = 74;
+  const crosshairYLabelY =
+    snappedHoverY === null
+      ? 0
+      : Math.max(margins.top, Math.min(margins.top + plotHeight - 20, snappedHoverY - 10));
 
   const updateHoverIndex = (event: PointerEvent<SVGSVGElement>) => {
     if (model.categories.length === 0) {
@@ -227,6 +244,36 @@ export function SimpleLineChart({
                 strokeWidth="2"
               />
             ))}
+            {focusedHoverAxisLabel !== null && snappedHoverY !== null ? (
+              <g className="simple-chart-crosshair-label">
+                <rect
+                  height="20"
+                  rx="5"
+                  width={crosshairYLabelWidth}
+                  x={margins.left}
+                  y={crosshairYLabelY}
+                />
+                <text x={margins.left + 7} y={crosshairYLabelY + 14}>
+                  {focusedHoverAxisLabel}
+                </text>
+              </g>
+            ) : null}
+            <g className="simple-chart-crosshair-label">
+              <rect
+                height="20"
+                rx="5"
+                width={crosshairXLabelWidth}
+                x={crosshairXLabelX}
+                y={margins.top + plotHeight + 8}
+              />
+              <text
+                textAnchor="middle"
+                x={crosshairXLabelX + crosshairXLabelWidth / 2}
+                y={margins.top + plotHeight + 22}
+              >
+                {model.categories[hoverIndex]}
+              </text>
+            </g>
           </g>
         ) : null}
 

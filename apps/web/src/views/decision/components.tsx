@@ -196,7 +196,7 @@ function probabilityReadingNote(
   anomaly: ProbabilityDiagnosticAnomaly | null
 ): string {
   if (anomaly) {
-    return "当前概率数值来自 active release，但该期限命中语义异常；不要把低概率直接解释成风险很远或风险为零。";
+    return "当前概率数值来自 active release，但该期限命中语义异常；这张卡只把它作为模型审计证据展示，不把低概率解释成风险很远或风险为零。";
   }
   if (value === 0) {
     return "当前接口精确返回 0，需要结合数据日期、release 状态和模型链路复核；它不等于市场风险被证明为零。";
@@ -356,6 +356,9 @@ export function ProbabilityTile({
   const thresholdShareValue =
     thresholdShare === null ? "—" : formatProbabilityPercentExact(thresholdShare);
   const distanceJudgmentDisabled = anomaly !== null;
+  const valueLabel = distanceJudgmentDisabled
+    ? "正式概率（待审计，不用于距离结论）"
+    : "当前正式概率";
   const distanceHeadline = distanceJudgmentDisabled
     ? "距离判断禁用"
     : thresholdGap === 0
@@ -376,9 +379,9 @@ export function ProbabilityTile({
     thresholdShare === null
       ? null
       : distanceJudgmentDisabled
-        ? `审计比例 ${thresholdShareValue}，比例小数 ${formatProbabilityDecimal(
+        ? `机械审计比例 ${thresholdShareValue}，比例小数 ${formatProbabilityDecimal(
             thresholdShare
-          )}；该期限先按模型待审计处理，禁用触线倍数和时距结论。`
+          )}；这只是 active release 输出和动作线的机械比值，禁用触线倍数和时距结论。`
         : `触线仍需约 ${thresholdMultipleValue}；机械完成度 ${thresholdShareValue}，不是剩余天数。`;
   const thresholdCopy =
     distanceJudgmentDisabled
@@ -397,8 +400,11 @@ export function ProbabilityTile({
         <span>{label}</span>
         <em>{thresholdDistance.label}</em>
       </div>
-      <span className="probability-value-label">当前正式概率</span>
+      <span className="probability-value-label">{valueLabel}</span>
       <strong>{formatProbabilityPercentExact(value)}</strong>
+      {distanceJudgmentDisabled ? (
+        <div className="probability-reading-status">模型待审计：当前数值不参与风险时距判断</div>
+      ) : null}
       {anomaly ? (
         <div className="probability-model-warning">
           <strong>{anomaly.title}</strong>
@@ -417,8 +423,8 @@ export function ProbabilityTile({
           <strong>{formatPercentPrecise(threshold)}</strong>
         </div>
         <div>
-          <span>{distanceJudgmentDisabled ? "机械审计比例" : "触线所需放大"}</span>
-          <strong>{distanceJudgmentDisabled ? thresholdShareValue : thresholdMultipleValue}</strong>
+          <span>{distanceJudgmentDisabled ? "模型状态" : "触线所需放大"}</span>
+          <strong>{distanceJudgmentDisabled ? "待修复" : thresholdMultipleValue}</strong>
         </div>
         <div>
           <span>{distanceJudgmentDisabled ? "距离判断" : "差值"}</span>

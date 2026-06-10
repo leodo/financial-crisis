@@ -239,11 +239,19 @@ function buildProbabilityTrendScaleNote(
     return "";
   }
 
-  return `${compressedSeries.label}近期不是一条真正的 0 线；最近窗口范围是 ${formatProbabilityPercentExact(
+  const axisShare = yAxisMax > 0 ? compressedSeries.maxValue / yAxisMax : 0;
+  const rangeCopy = `${formatProbabilityPercentExact(
     compressedSeries.minValue
-  )} 到 ${formatProbabilityPercentExact(
-    compressedSeries.maxValue
-  )}，但在线性坐标上只占纵轴很小一段，所以视觉上会贴近底部。`;
+  )} 到 ${formatProbabilityPercentExact(compressedSeries.maxValue)}`;
+  const spreadCopy = formatProbabilityPercentExact(compressedSeries.spread);
+
+  if (isProbabilitySeriesEffectivelyFlat(compressedSeries)) {
+    return `${compressedSeries.label}最近窗口几乎没有变化，范围是 ${rangeCopy}，波动只有 ${spreadCopy}；这时局部放大图也会接近直线，说明数据本身近似常数。`;
+  }
+
+  return `${compressedSeries.label}不是一条真正的 0 线，最近窗口范围是 ${rangeCopy}，波动 ${spreadCopy}；但它在主图线性坐标上只占纵轴 ${formatPercentPrecise(
+    axisShare
+  )}，所以视觉上会贴近底部。`;
 }
 
 function probabilitySeriesStats(label: string, values: number[]) {
@@ -254,6 +262,29 @@ function probabilitySeriesStats(label: string, values: number[]) {
     latestValue: values.at(-1) ?? 0,
     spread: probabilitySpread(values)
   };
+}
+
+function isProbabilitySeriesEffectivelyFlat(series: ReturnType<typeof probabilitySeriesStats>) {
+  if (series.maxValue <= 0) {
+    return true;
+  }
+
+  return series.spread <= Math.max(series.maxValue * 0.03, 0.000005);
+}
+
+function probabilityTrendCompressionCopy(
+  series: ReturnType<typeof probabilitySeriesStats>,
+  axisShare: number
+) {
+  if (isProbabilitySeriesEffectivelyFlat(series)) {
+    return "波动近似为常数，局部放大也会很平";
+  }
+
+  if (axisShare > 0 && axisShare < 0.12) {
+    return `纵轴占比 ${formatPercentPrecise(axisShare)}，主图视觉上会贴底`;
+  }
+
+  return `纵轴占比 ${formatPercentPrecise(axisShare)}`;
 }
 
 function probabilityValue(
@@ -354,10 +385,7 @@ function buildProbabilityTrendSummaryMetrics(
 
   return stats.map((series) => {
     const axisShare = yAxisMax > 0 ? series.maxValue / yAxisMax : 0;
-    const compressionCopy =
-      axisShare > 0 && axisShare < 0.12
-        ? `纵轴占比 ${formatPercentPrecise(axisShare)}，视觉上会贴底`
-        : `纵轴占比 ${formatPercentPrecise(axisShare)}`;
+    const compressionCopy = probabilityTrendCompressionCopy(series, axisShare);
 
     return {
       label: series.label,

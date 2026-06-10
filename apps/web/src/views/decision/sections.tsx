@@ -230,12 +230,12 @@ function buildRiskDistanceSummary(
       ? "未捕捉临近窗口"
       : "读数可解释";
   const modelStatusWithAnomaly =
-    anomalyHorizons.length > 0 ? "读数待审计" : modelStatus;
+    anomalyHorizons.length > 0 ? "概率模型待修复" : modelStatus;
   const modelDetail =
     anomalyHorizons.length > 0
       ? `${anomalyHorizons
           .map((row) => `${row.horizonDays}d`)
-          .join(" / ")} 命中 USDJPY 高位 tail 压低概率的语义异常；这些小数只能说明 active release 当前输出偏冷，不能当成风险已远离。`
+          .join(" / ")} 命中 USDJPY 高位 tail 压低概率的语义异常；这些小数只能说明 active release 当前输出偏冷，不能当成风险已远离，也不能用于离场/对冲时距结论。`
       : twentyDayIsCold
         ? `20d 只有 ${formatProbabilityPercentExact(p20d)}，明显低于 5d ${formatProbabilityPercentExact(
             p5d
@@ -259,7 +259,7 @@ function buildRiskDistanceSummary(
           : "未配置",
     nearestDetail:
       anomalyHorizons.length > 0
-        ? `当前存在模型方向异常，不能用机械触线比例判断“离风险还有多远”。机械比例只保留为审计证据，不参与动作距离判断：${mechanicalDistanceCopy}。`
+        ? `当前存在模型方向异常，不能用机械触线比例判断“离风险还有多远”。页面保留机械比例只是为了审计模型为什么偏冷，不参与动作距离判断，也不代表风险很远：${mechanicalDistanceCopy}。`
         : nearest
           ? `${nearest.label} 最接近；还差 ${formatPercentagePointGap(
               nearest.gap

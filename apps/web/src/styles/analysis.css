@@ -333,6 +333,16 @@
   pointer-events: none;
 }
 
+.simple-chart-crosshair-label rect {
+  fill: rgba(28, 39, 48, 0.9);
+}
+
+.simple-chart-crosshair-label text {
+  fill: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .simple-chart-tooltip {
   position: absolute;
   top: 12px;
