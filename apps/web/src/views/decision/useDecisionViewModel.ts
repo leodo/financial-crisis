@@ -168,8 +168,8 @@ export function useDecisionViewModel({
     [assessment, method, posture]
   );
   const analogRows = useMemo(
-    () => buildAnalogRows(assessment.historical_analogs),
-    [assessment.historical_analogs]
+    () => buildAnalogRows(assessment),
+    [assessment]
   );
   const actionPlanMetrics = useMemo(
     () => buildActionPlanMetrics(assessment),

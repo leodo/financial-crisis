@@ -111,18 +111,27 @@ export function DecisionAnalogPanel({
   return (
     <section className="surface">
       <SurfaceHeader title="历史类比" icon={GitCompareArrows} />
-      <SimpleGroupedBarChart model={analogChart} height={300} />
+      <SimpleGroupedBarChart model={analogChart} height={320} />
       <div className="legend-note">
-        蓝柱表示当前总风险强度，橙柱表示对应历史场景的压力峰值。先看当前距离历史峰值还有多远，再看下面每个样本给过多长提前量。
+        蓝柱表示当前总风险强度，橙柱表示对应历史场景的压力峰值。这里固定对比美国核心历史压力样本，先看相似度，再看历史上是否给过结构或动作提前量。
       </div>
-      <DetailRows
-        items={analogRows.map((analog) => ({
-          id: analog.id,
-          title: analog.title,
-          detail: analog.detail,
-          meta: analog.score
-        }))}
-      />
+      <ResponsiveTable
+        columns={["历史场景", "相似度", "结构提前", "动作提前", "证据差异"]}
+        className="wide-table"
+      >
+        {analogRows.map((analog) => (
+          <tr key={analog.id}>
+            <td>
+              <strong>{analog.title}</strong>
+              <span>{analog.detail}</span>
+            </td>
+            <td className="table-nowrap">{analog.similarity}</td>
+            <td className="table-nowrap">{analog.structuralLead}</td>
+            <td className="table-nowrap">{analog.actionLead}</td>
+            <td>{analog.evidenceDifference}</td>
+          </tr>
+        ))}
+      </ResponsiveTable>
     </section>
   );
 }

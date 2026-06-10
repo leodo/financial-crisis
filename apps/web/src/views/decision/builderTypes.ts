@@ -36,8 +36,11 @@ export interface DecisionSignalLayerRowModel {
 export interface DecisionAnalogRow {
   id: string;
   title: string;
+  similarity: string;
+  structuralLead: string;
+  actionLead: string;
+  evidenceDifference: string;
   detail: string;
-  score: string;
 }
 
 export interface DecisionRollingAuditEpisodeRow {

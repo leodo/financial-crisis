@@ -47,10 +47,6 @@ import {
 import { currentMvpRiskState, mvpRiskStateDetail } from "./mvpRiskState";
 import { probabilityDiagnosticAnomalyHorizons } from "./probabilityDiagnostics";
 
-function formatOptionalNumber(value: number | null, unit?: string) {
-  return value === null ? "—" : formatNumber(value, unit);
-}
-
 function formatLagSummary(
   calendarLagDays: number | null | undefined,
   businessLagDays: number | null | undefined
@@ -597,17 +593,35 @@ export function buildSignalLayerRows(
   ];
 }
 
-export function buildAnalogRows(
-  historicalAnalogs: AssessmentSnapshot["historical_analogs"]
-): DecisionAnalogRow[] {
-  return historicalAnalogs.map((analog) => ({
+export function buildAnalogRows(assessment: AssessmentSnapshot): DecisionAnalogRow[] {
+  return assessment.historical_analogs.map((analog) => ({
     id: analog.scenario_id,
     title: analog.name,
-    detail: humanizeNarrativeCopy(
-      `相似度 ${formatNumber(analog.similarity_score)} · 结构抬升 ${formatOptionalNumber(analog.lead_time_days, "d")} · 可执行预警 ${formatOptionalNumber(analog.actionable_lead_time_days, "d")} · ${analog.note}`
+    similarity: formatNumber(analog.similarity_score),
+    structuralLead: formatOptionalLeadTime(analog.lead_time_days, "无稳定结构信号"),
+    actionLead: formatOptionalLeadTime(analog.actionable_lead_time_days, "未形成动作预警"),
+    evidenceDifference: historicalEvidenceDifference(
+      assessment.scores.overall_score,
+      analog.peak_score
     ),
-    score: formatNumber(analog.similarity_score)
+    detail: humanizeNarrativeCopy(analog.note)
   }));
+}
+
+function formatOptionalLeadTime(value: number | null, emptyLabel: string): string {
+  return value === null ? emptyLabel : `提前 ${Math.round(value).toLocaleString("zh-CN")} 天`;
+}
+
+function historicalEvidenceDifference(currentScore: number, historicalPeakScore: number): string {
+  const gap = historicalPeakScore - currentScore;
+  const absoluteGap = formatNumber(Math.abs(gap));
+  if (Math.abs(gap) < 0.05) {
+    return `接近历史峰值 ${formatNumber(historicalPeakScore)}`;
+  }
+  if (gap > 0) {
+    return `低于历史峰值 ${absoluteGap} 分`;
+  }
+  return `高于历史峰值 ${absoluteGap} 分`;
 }
 
 export function buildActionPlanMetrics(

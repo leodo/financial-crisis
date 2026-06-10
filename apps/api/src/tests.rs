@@ -62,6 +62,25 @@ async fn assessment_current_includes_jpy_carry_funding_fields() {
     assert!(json["mvp_risk_state"]["primary_evidence"].is_array());
     assert!(json["mvp_risk_state"]["blockers"].is_array());
     assert!(json["mvp_risk_state"]["next_actions"].is_array());
+    let analogs = json["historical_analogs"]
+        .as_array()
+        .expect("historical_analogs should be an array");
+    for scenario_id in [
+        "us_black_monday_1987",
+        "us_dotcom_unwind_2000",
+        "us_gfc_2008",
+        "us_funding_stress_2011",
+        "us_covid_liquidity_2020",
+        "us_rate_shock_2022",
+        "us_regional_banks_2023",
+    ] {
+        assert!(
+            analogs
+                .iter()
+                .any(|analog| analog["scenario_id"].as_str() == Some(scenario_id)),
+            "missing historical analog {scenario_id}"
+        );
+    }
     assert!(json["position_guidance"]["action_playbook_version"].is_string());
     assert!(json["position_guidance"]["execution_urgency"].is_string());
     assert!(json["position_guidance"]["confidence_gate"].is_string());
