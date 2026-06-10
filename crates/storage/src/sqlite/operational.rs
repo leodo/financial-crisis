@@ -8,7 +8,7 @@ use crate::{format_dimension, parse_dimension, StorageError};
 use super::{
     format_alert_status, format_alert_type, format_datetime, format_risk_level, parse_alert_status,
     parse_alert_type, parse_date, parse_optional_date, parse_optional_datetime, parse_risk_level,
-    IngestionRunRecord, RawResponseRecord, SqliteStore,
+    IngestionRunRecord, IngestionSourceHealthSummary, RawResponseRecord, SqliteStore,
 };
 
 impl SqliteStore {
@@ -313,6 +313,117 @@ impl SqliteStore {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    pub async fn load_ingestion_source_health_summaries(
+        &self,
+    ) -> Result<Vec<IngestionSourceHealthSummary>, StorageError> {
+        let rows = sqlx::query(
+            r#"
+            WITH source_summary AS (
+                SELECT
+                    source_id,
+                    COUNT(*) AS total_run_count,
+                    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successful_run_count,
+                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_run_count,
+                    MAX(CASE WHEN status = 'success' THEN finished_at END) AS last_success_at
+                FROM ingest_runs
+                GROUP BY source_id
+            ),
+            latest_run AS (
+                SELECT
+                    source_id,
+                    dataset_id,
+                    target_id,
+                    status,
+                    started_at,
+                    finished_at,
+                    error_message
+                FROM (
+                    SELECT
+                        source_id,
+                        dataset_id,
+                        target_id,
+                        status,
+                        started_at,
+                        finished_at,
+                        error_message,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY source_id
+                            ORDER BY started_at DESC, run_id DESC
+                        ) AS row_number
+                    FROM ingest_runs
+                )
+                WHERE row_number = 1
+            ),
+            watermark_summary AS (
+                SELECT
+                    source_id,
+                    MAX(last_successful_period) AS last_successful_period
+                FROM ingest_watermarks
+                GROUP BY source_id
+            )
+            SELECT
+                summary.source_id,
+                latest.dataset_id AS latest_dataset_id,
+                latest.target_id AS latest_target_id,
+                latest.status AS latest_status,
+                latest.started_at AS latest_started_at,
+                latest.finished_at AS latest_finished_at,
+                summary.last_success_at,
+                watermark.last_successful_period,
+                summary.total_run_count,
+                summary.successful_run_count,
+                summary.failed_run_count,
+                (
+                    SELECT COUNT(*)
+                    FROM ingest_runs failures
+                    WHERE failures.source_id = summary.source_id
+                      AND failures.status = 'failed'
+                      AND (
+                          summary.last_success_at IS NULL
+                          OR failures.started_at > summary.last_success_at
+                      )
+                ) AS failures_after_last_success,
+                latest.error_message AS latest_error_message
+            FROM source_summary summary
+            LEFT JOIN latest_run latest
+                ON latest.source_id = summary.source_id
+            LEFT JOIN watermark_summary watermark
+                ON watermark.source_id = summary.source_id
+            ORDER BY summary.source_id
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok(IngestionSourceHealthSummary {
+                    source_id: row.try_get("source_id")?,
+                    latest_dataset_id: row.try_get("latest_dataset_id")?,
+                    latest_target_id: row.try_get("latest_target_id")?,
+                    latest_status: row.try_get("latest_status")?,
+                    latest_started_at: parse_optional_datetime(
+                        row.try_get::<Option<String>, _>("latest_started_at")?,
+                    )?,
+                    latest_finished_at: parse_optional_datetime(
+                        row.try_get::<Option<String>, _>("latest_finished_at")?,
+                    )?,
+                    last_success_at: parse_optional_datetime(
+                        row.try_get::<Option<String>, _>("last_success_at")?,
+                    )?,
+                    last_successful_period: parse_optional_date(
+                        row.try_get::<Option<String>, _>("last_successful_period")?,
+                    )?,
+                    total_run_count: row.try_get("total_run_count")?,
+                    successful_run_count: row.try_get("successful_run_count")?,
+                    failed_run_count: row.try_get("failed_run_count")?,
+                    failures_after_last_success: row.try_get("failures_after_last_success")?,
+                    latest_error_message: row.try_get("latest_error_message")?,
+                })
+            })
+            .collect()
     }
 
     pub async fn upsert_watermark(

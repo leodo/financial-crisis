@@ -126,3 +126,85 @@ async fn sqlite_store_links_ingestion_run_to_raw_response() {
             .unwrap();
     assert_eq!(raw_row.try_get::<String, _>("run_id").unwrap(), run_id);
 }
+
+#[tokio::test]
+async fn sqlite_store_summarizes_ingestion_source_health() {
+    let store = in_memory_store().await;
+    let first_finished_at = Utc::now() - chrono::Duration::minutes(30);
+    let latest_finished_at = Utc::now();
+
+    store
+        .insert_ingestion_run(&IngestionRunRecord {
+            run_id: "run-fred-success".to_string(),
+            job_id: Some("backfill:fred:fred_series_observations:VIXCLS".to_string()),
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            target_id: Some("us_market_vix_close".to_string()),
+            run_mode: "backfill".to_string(),
+            status: "success".to_string(),
+            started_at: first_finished_at,
+            finished_at: Some(first_finished_at),
+            attempt: 1,
+            watermark_before_json: None,
+            watermark_after_json: Some(r#"{"last_successful_period":"2026-06-05"}"#.to_string()),
+            records_read: 1,
+            records_written: 1,
+            error_type: None,
+            error_message: None,
+        })
+        .await
+        .unwrap();
+    store
+        .upsert_watermark(
+            "fred",
+            "fred_series_observations",
+            "us_market_vix_close",
+            NaiveDate::from_ymd_opt(2026, 6, 5).unwrap(),
+        )
+        .await
+        .unwrap();
+    store
+        .insert_ingestion_run(&IngestionRunRecord {
+            run_id: "run-fred-failed".to_string(),
+            job_id: Some("backfill:fred:fred_series_observations:BAMLH0A0HYM2".to_string()),
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            target_id: Some("us_credit_high_yield_spread".to_string()),
+            run_mode: "backfill".to_string(),
+            status: "failed".to_string(),
+            started_at: latest_finished_at,
+            finished_at: Some(latest_finished_at),
+            attempt: 1,
+            watermark_before_json: None,
+            watermark_after_json: None,
+            records_read: 0,
+            records_written: 0,
+            error_type: Some("backfill_chunk_failed".to_string()),
+            error_message: Some("temporary upstream error".to_string()),
+        })
+        .await
+        .unwrap();
+
+    let summaries = store
+        .load_ingestion_source_health_summaries()
+        .await
+        .unwrap();
+    let fred = summaries
+        .iter()
+        .find(|summary| summary.source_id == "fred")
+        .expect("fred source health summary");
+
+    assert_eq!(fred.total_run_count, 2);
+    assert_eq!(fred.successful_run_count, 1);
+    assert_eq!(fred.failed_run_count, 1);
+    assert_eq!(fred.failures_after_last_success, 1);
+    assert_eq!(fred.latest_status.as_deref(), Some("failed"));
+    assert_eq!(
+        fred.last_successful_period,
+        Some(NaiveDate::from_ymd_opt(2026, 6, 5).unwrap())
+    );
+    assert_eq!(
+        fred.latest_error_message.as_deref(),
+        Some("temporary upstream error")
+    );
+}

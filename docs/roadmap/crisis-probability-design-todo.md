@@ -1165,8 +1165,14 @@ MVP 当前判定：
      - `audit_only` 时可靠性分数会封顶并明确提示“不能解释成模型结论已经很有把握”；
      - 后续仍可把该公式下沉到 API contract，避免前端长期独占解释口径。
 3. P1 免费数据可靠性：
-   - [ ] 固化日频刷新任务、失败重试和抓取日志；
-   - [ ] 对 FRED/BOJ/Treasury/SEC/GDELT/公开市场数据分别显示最新日期、免费可得性和替代源；
+   - [~] 固化日频刷新任务、失败重试和抓取日志；
+     - 2026-06-10：已新增 `SqliteStore::load_ingestion_source_health_summaries`，按 source 汇总 `ingest_runs` 的最后成功抓取时间、最后成功数据期、总运行数、成功数、失败数和最后错误；
+     - 2026-06-10：API SQLite runtime 的 `/api/sources` 已改用真实 `ingest_runs` 摘要，不再用当前时间伪装 `last_success_at`；有连续失败时会标为 `partial_failure` 并显示失败计数；
+     - 2026-06-10：worker 新增 `cargo run -p fc-worker -- refresh status`，justfile 新增 `just refresh-status`，用于刷新后立刻核对免费数据是否真的成功落库；
+     - 后续仍需做系统级定时任务/cron 配置、失败自动重试策略和告警推送，本轮只完成“状态可见、不能误导”的 MVP 最小闭环。
+   - [~] 对 FRED/BOJ/Treasury/SEC/GDELT/公开市场数据分别显示最新日期、免费可得性和替代源；
+     - 已完成 sources 页状态标签补齐，支持 `partial_failure / failed / disabled` 的中文解释；
+     - 后续还需把替代源路径整理成机器可读 catalog，而不是只写在说明文案里。
    - [ ] 对缺失或滞后的关键指标降权，而不是静默沿用旧值。
 4. P2 正式概率模型修复：
    - [ ] 先完成 raw point-in-time feature store 与训练样本可行性审计，再决定是否继续重训；

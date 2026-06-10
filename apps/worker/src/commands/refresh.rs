@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use fc_ingestion::BojDataset;
+use fc_storage::IngestionSourceHealthSummary;
 
 use super::backfill::{
     backfill_boj_with_options, backfill_fred_with_options, backfill_gdelt_with_options,
@@ -84,6 +85,7 @@ impl RefreshLatestOptions {
 pub(crate) async fn handle_refresh_command(action: &str, rest: &[String]) -> Result<()> {
     match action {
         "latest-free" => refresh_latest_free(rest).await,
+        "status" => refresh_status(rest).await,
         _ => {
             super::print_help();
             bail!("unknown refresh command: {action}")
@@ -242,4 +244,80 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn refresh_status(args: &[String]) -> Result<()> {
+    if !args.is_empty() {
+        bail!("refresh status does not accept options yet");
+    }
+
+    let store = crate::open_sqlite_store().await?;
+    store.migrate().await?;
+    let summaries = store.load_ingestion_source_health_summaries().await?;
+    if summaries.is_empty() {
+        println!(
+            "No ingestion runs found in {}. Run `just refresh-latest` or a backfill command first.",
+            crate::sqlite_path()
+        );
+        return Ok(());
+    }
+
+    println!("Free-data refresh status from {}", crate::sqlite_path());
+    println!(
+        "{:<12} {:<12} {:<24} {:<12} {:<8} {}",
+        "source", "latest", "last_success", "data_period", "failures", "message"
+    );
+    for summary in summaries {
+        println!("{}", render_status_row(&summary));
+    }
+    Ok(())
+}
+
+fn render_status_row(summary: &IngestionSourceHealthSummary) -> String {
+    let latest = summary
+        .latest_status
+        .as_deref()
+        .unwrap_or("unknown")
+        .to_string();
+    let last_success = summary
+        .last_success_at
+        .map(|timestamp| timestamp.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_else(|| "never".to_string());
+    let data_period = summary
+        .last_successful_period
+        .map(|period| period.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    let message = summary
+        .latest_error_message
+        .as_deref()
+        .map(truncate_status_message)
+        .unwrap_or_else(|| {
+            format!(
+                "{} run(s), {} success",
+                summary.total_run_count, summary.successful_run_count
+            )
+        });
+
+    format!(
+        "{:<12} {:<12} {:<24} {:<12} {:<8} {}",
+        summary.source_id,
+        latest,
+        last_success,
+        data_period,
+        summary.failures_after_last_success,
+        message
+    )
+}
+
+fn truncate_status_message(message: &str) -> String {
+    const MAX_STATUS_MESSAGE_CHARS: usize = 96;
+    let truncated = message
+        .chars()
+        .take(MAX_STATUS_MESSAGE_CHARS)
+        .collect::<String>();
+    if message.chars().count() > MAX_STATUS_MESSAGE_CHARS {
+        format!("{truncated}...")
+    } else {
+        truncated
+    }
 }

@@ -154,6 +154,9 @@ fn print_help() {
   cargo run -p fc-worker -- refresh latest-free [--fast-lookback-days N] [--slow-lookback-years N] [--fred-chunk-days N] [--skip-world-bank] [--include-gdelt] [--no-reload-api] [--api-reload-url URL]
       Refresh the latest free-source data set for the dashboard, then optionally POST /api/system/reload.
 
+  cargo run -p fc-worker -- refresh status
+      Print latest local ingestion success/failure status by free data source.
+
   cargo run -p fc-worker -- backfill fred [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--chunk-days N] [--indicator ID] [--external-code CODE]
       Fetch FRED public graph CSV observations into SQLite. No API key required. Graph CSV is chunked by default.
 

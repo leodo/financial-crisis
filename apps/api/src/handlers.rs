@@ -10,8 +10,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 mod research_audit;
+mod source_status;
 
 pub(crate) use research_audit::research_audit;
+pub(crate) use source_status::sources;
 
 use crate::{
     data_source::{AssessmentHistoryBuildMode, ServingRuntimePurpose},
@@ -295,11 +297,6 @@ pub async fn indicator_detail(
 pub async fn alerts(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let data = state.data().await;
     Json(json!(data.alerts))
-}
-
-pub async fn sources(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
-    let data = state.data().await;
-    Json(json!(data.sources))
 }
 
 pub async fn backtests(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {

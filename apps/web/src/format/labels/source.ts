@@ -49,9 +49,12 @@ export function sourceTypeLabel(sourceType: string): string {
 const SOURCE_HEALTH_STATUS_LABELS: Record<string, string> = {
   healthy: "正常",
   delayed: "延迟",
+  partial_failure: "部分失败",
+  failed: "失败",
+  prototype: "原型",
+  disabled: "停用",
   stale: "陈旧",
   degraded: "降级",
-  prototype: "原型",
   failing: "失败",
   missing: "缺失"
 };

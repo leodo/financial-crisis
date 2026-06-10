@@ -6,10 +6,10 @@ use thiserror::Error;
 mod sqlite;
 
 pub use sqlite::{
-    ExternalIndicatorMapping, IngestionRunRecord, ObservationLineageRecord, RawResponseRecord,
-    SqliteStore, BOJ_FX_DATASET_ID, BOJ_MONEY_MARKET_DATASET_ID, FRED_DATASET_ID,
-    GDELT_DOC_DATASET_ID, SEC_EVENTS_DATASET_ID, SEC_SUBMISSIONS_DATASET_ID,
-    TREASURY_YIELD_DATASET_ID, WORLD_BANK_DATASET_ID,
+    ExternalIndicatorMapping, IngestionRunRecord, IngestionSourceHealthSummary,
+    ObservationLineageRecord, RawResponseRecord, SqliteStore, BOJ_FX_DATASET_ID,
+    BOJ_MONEY_MARKET_DATASET_ID, FRED_DATASET_ID, GDELT_DOC_DATASET_ID, SEC_EVENTS_DATASET_ID,
+    SEC_SUBMISSIONS_DATASET_ID, TREASURY_YIELD_DATASET_ID, WORLD_BANK_DATASET_ID,
 };
 
 #[derive(Debug, Error)]

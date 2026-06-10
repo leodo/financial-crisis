@@ -101,6 +101,23 @@ pub struct IngestionRunRecord {
 }
 
 #[derive(Debug, Clone)]
+pub struct IngestionSourceHealthSummary {
+    pub source_id: String,
+    pub latest_dataset_id: Option<String>,
+    pub latest_target_id: Option<String>,
+    pub latest_status: Option<String>,
+    pub latest_started_at: Option<DateTime<Utc>>,
+    pub latest_finished_at: Option<DateTime<Utc>>,
+    pub last_success_at: Option<DateTime<Utc>>,
+    pub last_successful_period: Option<NaiveDate>,
+    pub total_run_count: i64,
+    pub successful_run_count: i64,
+    pub failed_run_count: i64,
+    pub failures_after_last_success: i64,
+    pub latest_error_message: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ObservationLineageRecord {
     pub indicator_id: String,
     pub entity_id: String,

@@ -35,7 +35,9 @@ export function useSourcesViewModel({
   ] as Array<[string, string]>;
 
   const delayedOrMissingCount = sources.filter((source) =>
-    ["delayed", "stale", "missing", "failing"].includes(source.health.status)
+    ["delayed", "partial_failure", "failed", "stale", "missing", "failing"].includes(
+      source.health.status
+    )
   ).length;
   const researchOnlyCount = sources.filter((source) => !source.production_allowed).length;
 

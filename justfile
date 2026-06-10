@@ -362,6 +362,11 @@ db-seed:
 db-check:
     cargo run -p fc-worker -- db check
 
+# 查看本地免费数据源最近是否真的抓取成功，以及最后成功的数据期。
+# 页面数字异常时，先跑这个命令确认数据源是否新鲜、是否有连续失败。
+refresh-status:
+    cargo run -p fc-worker -- refresh status
+
 # 一键刷新最近一段免费高频数据，并在 API 运行时自动触发 /api/system/reload。
 # 默认跳过 World Bank 年频慢变量，保证日常刷新能在几分钟内完成。
 # 这是日常维护本地评估库的首选入口；需要慢变量时再单独运行 `just backfill-world-bank`。
