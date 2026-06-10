@@ -27,6 +27,11 @@ import {
   SurfaceHeader,
   type MetricItem
 } from "../shared/panelHelpers";
+import {
+  actionBoundarySourceCopy,
+  buildActionBoundaryRows,
+  currentActionBoundaryPosture
+} from "./actionBoundaries";
 import { BudgetBar } from "./components";
 import { decisionContent } from "./content";
 import type { GroupedBarChartModel } from "./charts";
@@ -129,11 +134,42 @@ export function DecisionActionPlanPanel({
   assessment: AssessmentSnapshot;
   actionPlanMetrics: MetricItem[];
 }) {
+  const actionBoundaryRows = buildActionBoundaryRows(assessment);
+  const currentActionBoundary = currentActionBoundaryPosture(assessment);
+
   return (
     <section className="surface">
       <SurfaceHeader title="组合动作建议" icon={ChartColumnIncreasing} />
       <p className="body-copy">{humanizeNarrativeCopy(assessment.position_guidance.action_summary)}</p>
       <MetricGrid items={actionPlanMetrics} />
+      <RuleBox label="四档动作边界">{actionBoundarySourceCopy(assessment)}</RuleBox>
+      <ResponsiveTable
+        columns={["档位", "风险资产上限", "现金目标", "对冲覆盖", "期权保护", "杠杆上限", "执行窗口"]}
+        className="wide-table action-boundary-table"
+        note="这张表是系统级风险预算边界，不是自动交易指令；当前档位的实际预算会叠加你的风险偏好。"
+      >
+        {actionBoundaryRows.map((row) => (
+          <tr
+            className={row.id === currentActionBoundary ? "action-boundary-row active" : "action-boundary-row"}
+            key={row.id}
+          >
+            <td>
+              <div className="action-boundary-stage">
+                <strong>{row.label}</strong>
+                {row.id === currentActionBoundary ? <span>当前</span> : null}
+              </div>
+              <small>{row.summary}</small>
+              {row.currentBudget ? <em>当前预算：{row.currentBudget}</em> : null}
+            </td>
+            <td className="table-nowrap">{row.riskAssetRange}</td>
+            <td className="table-nowrap">{row.cashRange}</td>
+            <td className="table-nowrap">{row.hedgeRange}</td>
+            <td className="table-nowrap">{row.optionRange}</td>
+            <td className="table-nowrap">{row.leverageCap}</td>
+            <td className="table-nowrap">{row.executionWindow}</td>
+          </tr>
+        ))}
+      </ResponsiveTable>
       <RuleBox label="执行节奏">{humanizeNarrativeCopy(assessment.position_guidance.execution_urgency)}</RuleBox>
       <RuleBox label="执行确认门槛">{humanizeNarrativeCopy(assessment.position_guidance.confidence_gate)}</RuleBox>
       {assessment.position_guidance.capital_preservation_overlay_enabled ? (

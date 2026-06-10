@@ -574,6 +574,50 @@ tbody strong {
   margin-bottom: 3px;
 }
 
+.action-boundary-table {
+  margin-top: 10px;
+}
+
+.action-boundary-row.active td {
+  background: #f7fbff;
+}
+
+.action-boundary-stage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.action-boundary-stage strong {
+  margin-bottom: 0;
+}
+
+.action-boundary-stage span {
+  border: 1px solid #c8d8e6;
+  border-radius: 999px;
+  color: #245ea8;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 4px 7px;
+}
+
+.action-boundary-row small,
+.action-boundary-row em {
+  display: block;
+  color: #566672;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.action-boundary-row em {
+  color: #1f5f75;
+  font-weight: 700;
+  margin-top: 6px;
+}
+
 .version-list {
   gap: 10px;
 }

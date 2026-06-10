@@ -139,6 +139,14 @@ function validateMvpAuditState(snapshot) {
       "audit_only API summary should state formal probabilities do not drive the main conclusion"
     );
     assert(
+      summary.includes("审计读数"),
+      "audit_only API summary should explicitly call formal probabilities audit readings"
+    );
+    assert(
+      summary.includes("不能解释成风险已经远离"),
+      "audit_only API summary should prevent low formal probabilities from being read as risk is far away"
+    );
+    assert(
       !summary.includes("当前仍偏常态区间"),
       "audit_only API summary must not say the current state is simply normal"
     );
@@ -151,10 +159,69 @@ function validateMvpAuditState(snapshot) {
   }
 }
 
+function validatePositionGuidance(snapshot) {
+  const guidance = snapshot.position_guidance ?? {};
+  const governance = guidance.governance ?? {};
+  const preferences = snapshot.user_preferences ?? {};
+
+  for (const [field, label] of [
+    ["target_equity_exposure_pct", "risk asset cap"],
+    ["target_cash_pct", "cash target"],
+    ["hedge_ratio_pct", "hedge ratio"],
+    ["leverage_cap_pct", "leverage cap"],
+    ["option_overlay_pct", "option overlay"]
+  ]) {
+    assert(numberOrNull(guidance[field]) !== null, `position guidance ${label} is missing`);
+  }
+
+  const equityCap = numberOrNull(guidance.target_equity_exposure_pct);
+  const maxEquity = numberOrNull(preferences.max_equity_cap_pct);
+  if (equityCap !== null && maxEquity !== null) {
+    assert(equityCap <= maxEquity, `risk asset cap ${equityCap} exceeds user max equity ${maxEquity}`);
+  }
+
+  const cashTarget = numberOrNull(guidance.target_cash_pct);
+  const cashFloor = numberOrNull(preferences.cash_floor_pct);
+  if (cashTarget !== null && cashFloor !== null) {
+    assert(cashTarget >= cashFloor, `cash target ${cashTarget} is below user cash floor ${cashFloor}`);
+  }
+
+  const leverageCap = numberOrNull(guidance.leverage_cap_pct);
+  const maxLeverage = numberOrNull(preferences.max_leverage_pct);
+  if (leverageCap !== null && maxLeverage !== null) {
+    assert(leverageCap <= maxLeverage, `leverage cap ${leverageCap} exceeds user max leverage ${maxLeverage}`);
+  }
+
+  const optionOverlay = numberOrNull(guidance.option_overlay_pct);
+  const optionPreference = numberOrNull(preferences.option_overlay_preference_pct);
+  if (optionOverlay !== null && optionPreference !== null) {
+    assert(
+      optionOverlay >= optionPreference,
+      `option overlay ${optionOverlay} is below user preference ${optionPreference}`
+    );
+  }
+
+  assert(guidance.action_summary, "position guidance action_summary is missing");
+  assert(Array.isArray(guidance.actions) && guidance.actions.length > 0, "position guidance actions are missing");
+  assert(
+    Array.isArray(guidance.forbidden_actions) && guidance.forbidden_actions.length > 0,
+    "position guidance forbidden_actions are missing"
+  );
+  assert(governance.system_budget_only === true, "position guidance should be marked as system budget only");
+  assert(governance.auto_execution_allowed === false, "MVP must not allow automatic execution");
+  assert(governance.manual_confirmation_required === true, "MVP should require manual confirmation");
+  assert(
+    governance.policy_change_requires_release_review === true,
+    "policy changes should require release review"
+  );
+  assert(governance.policy_change_requires_go_no_go === true, "policy changes should require Go/No-Go");
+}
+
 const snapshot = await fetchJson("/api/assessment/current");
 validateRuntimeMode(snapshot);
 validateKeyIndicators(snapshot);
 validateMvpAuditState(snapshot);
+validatePositionGuidance(snapshot);
 
 if (failures.length > 0) {
   console.error("MVP runtime regression check failed:");
