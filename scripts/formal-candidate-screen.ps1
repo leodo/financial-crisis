@@ -256,19 +256,30 @@ Write-Host "  candidate: $CandidateReleaseId"
 Write-Host "  scope    : $MarketScope"
 Write-Host ""
 
-Write-Host "[1/6] Regional banks scenario window"
+Write-Host "[1/7] Regional banks scenario window"
 Invoke-FormalCompare -From "2022-12-01" -To "2023-03-15" -Scenario $ScenarioId
 Write-Host ""
 
-Write-Host "[2/6] February false-positive window"
+Write-Host "[2/7] February false-positive window"
 Invoke-FormalCompare -From "2023-02-01" -To "2023-02-15" -Scenario ""
 Write-Host ""
 
-Write-Host "[3/6] July false-positive window"
+Write-Host "[3/7] July false-positive window"
 Invoke-FormalCompare -From "2023-07-01" -To "2023-07-20" -Scenario ""
 Write-Host ""
 
-Write-Host "[4/6] Release-review cooldown / false-positive governance"
+Write-Host "[4/7] 20d cross-window separation audit"
+& (Join-Path $PSScriptRoot "formal-candidate-separation-audit.ps1") `
+    -BaselineReleaseId $BaselineReleaseId `
+    -CandidateReleaseId $CandidateReleaseId `
+    -MarketScope $MarketScope `
+    -ScenarioId $ScenarioId
+if ($LASTEXITCODE -ne 0) {
+    throw "formal-candidate-separation-audit failed"
+}
+Write-Host ""
+
+Write-Host "[5/7] Release-review cooldown / false-positive governance"
 $releaseReviewEnvelope = Load-ReleaseReviewJson
 $releaseReview = $releaseReviewEnvelope.doc
 Write-Host ("  release review artifact: {0}" -f $releaseReviewEnvelope.path)
@@ -483,7 +494,7 @@ Write-Host ""
 Write-Host "Tracked 20d weight deltas"
 $trackedRows | Format-Table -AutoSize
 Write-Host ""
-Write-Host "[5/6] Curve / USDJPY / threshold semantics audit"
+Write-Host "[6/7] Curve / USDJPY / threshold semantics audit"
 & (Join-Path $PSScriptRoot "formal-candidate-semantics-audit.ps1") `
     -BaselineReleaseId $BaselineReleaseId `
     -CandidateReleaseId $CandidateReleaseId `
@@ -492,7 +503,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "formal-candidate-semantics-audit failed"
 }
 Write-Host ""
-Write-Host "[6/6] US history scenario-pack audit"
+Write-Host "[7/7] US history scenario-pack audit"
 & (Join-Path $PSScriptRoot "formal-candidate-scenario-pack-audit.ps1") `
     -BaselineReleaseId $BaselineReleaseId `
     -CandidateReleaseId $CandidateReleaseId

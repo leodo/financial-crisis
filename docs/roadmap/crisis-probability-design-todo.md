@@ -964,6 +964,9 @@
      - 但 candidate 仍是 `no_go_offline`：regional banks `20d` positive-window hit rate `80.0% -> 0.0%`，actionable precision `69.8% -> 33.3%`，runtime floor hit count `91 -> 41`，并继续命中 `20d cooldown_bleed` 与 `60d cold_across_all_regimes`；
      - separation audit 显示 regional positive-window avg p20d `72.48%` 低于 `90.00%` threshold，而 February false-positive avg/max 已达 `80.10% / 87.20%`；`curve/fed-funds interaction`、`trigger_score`、`external_dimension_score` 仍是正例与误报耦合抬升的主因；
      - 结论：本轮护栏可以保留为“禁止错误语义退化”的训练约束，但不能发布候选；下一步必须做 `20d threshold policy`、family/context gating 与正例/误报分离，而不是继续单点增加 USDJPY 或 curve/fed-funds cap。
+   - `formal-candidate-screen` 已把 `formal-candidate-separation-audit` 接入标准 7 步筛选流程：
+     - 三段窗口 compare 之后会自动生成 20d cross-window separation JSON；
+     - 后续候选第一轮筛选会同时输出正例、2023-02 与 2023-07 误报窗口的耦合抬升特征，不再依赖人工额外记得跑 separation audit。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 
