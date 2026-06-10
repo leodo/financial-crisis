@@ -43,11 +43,16 @@ export function buildNumberAuditRows(assessment: AssessmentSnapshot): DecisionNu
       title: `MVP 风险状态 · ${mvpState.label}`,
       detail: mvpState.summary,
       meta: "主结论",
-      note: compactListCopy(
+      note: `${auditTrailCopy(
+        "API mvp_risk_state / MVP 规则层",
+        "风险状态",
+        assessment.as_of_date,
+        mvpState.probability_input_status === "audit_only" ? "正式概率待审计" : "正式概率可参与"
+      )} ${compactListCopy(
         "阻断项",
         mvpState.blockers,
         "当前没有阻断项；仍需按数据新鲜度、事件确认和历史类比复核。"
-      )
+      )}`
     },
     {
       id: "probability-snapshot",
@@ -65,7 +70,12 @@ export function buildNumberAuditRows(assessment: AssessmentSnapshot): DecisionNu
       )}（${formatProbabilityBasisPoints(assessment.probabilities.p_60d)}）`,
       meta: auditOnly ? "不作主决策输入" : "可参与判断",
       note: auditOnly
-        ? `接口原始值 ${formatProbabilityDecimal(
+        ? `${auditTrailCopy(
+            "active release formal probabilities",
+            "概率 / bp / 接口小数",
+            assessment.as_of_date,
+            "审计读数"
+          )} 接口原始值 ${formatProbabilityDecimal(
             assessment.probabilities.p_5d
           )} / ${formatProbabilityDecimal(
             assessment.probabilities.p_20d
@@ -74,7 +84,12 @@ export function buildNumberAuditRows(assessment: AssessmentSnapshot): DecisionNu
           )}。异常期限 ${anomalyHorizons.join(
             " / "
           ) || "已由 MVP 降级"}；这些小概率只用于模型审计，不参与风险时距、减仓或对冲结论。`
-        : "正式概率可作为风险时距输入之一，但仍需要事件确认、数据新鲜度和历史类比共同支持。"
+        : `${auditTrailCopy(
+            "active release formal probabilities",
+            "概率 / bp / 接口小数",
+            assessment.as_of_date,
+            "可参与判断"
+          )} 正式概率可作为风险时距输入之一，但仍需要事件确认、数据新鲜度和历史类比共同支持。`
     },
     {
       id: "usdjpy",
@@ -102,7 +117,12 @@ export function buildNumberAuditRows(assessment: AssessmentSnapshot): DecisionNu
       meta: assessment.runtime.stale_warning ? "需降级解释" : "可用",
       note:
         assessment.runtime.stale_warning ??
-        `关键指标自然日滞后 ${assessment.runtime.latest_key_indicator_lag_days ?? "—"} 天，工作日滞后 ${
+        `${auditTrailCopy(
+          "runtime freshness guard",
+          "日期 / 滞后天数 / 覆盖率",
+          assessment.runtime.generated_at,
+          assessment.runtime.stale_warning ? "需降级解释" : "可用"
+        )} 关键指标自然日滞后 ${assessment.runtime.latest_key_indicator_lag_days ?? "—"} 天，工作日滞后 ${
           assessment.runtime.latest_key_indicator_lag_business_days ?? "—"
         } 天；数据覆盖 ${formatPercent(assessment.data_trust.coverage_score)}，质量等级 ${
           assessment.data_trust.quality_grade.toUpperCase()
@@ -121,9 +141,18 @@ export function buildNumberAuditRows(assessment: AssessmentSnapshot): DecisionNu
         assessment.position_guidance.option_overlay_pct / 100
       )}`,
       meta: assessment.position_guidance.governance.auto_execution_allowed ? "需复核" : "非自动交易",
-      note: `${assessment.position_guidance.action_summary} 该建议只给仓位预算边界，执行前仍需人工确认流动性、税务、账户和持仓结构。`
+      note: `${auditTrailCopy(
+        "API position_guidance",
+        "百分比预算",
+        assessment.as_of_date,
+        assessment.position_guidance.governance.auto_execution_allowed ? "需人工复核" : "禁止自动执行"
+      )} ${assessment.position_guidance.action_summary} 该建议只给仓位预算边界，执行前仍需人工确认流动性、税务、账户和持仓结构。`
     }
   ];
+}
+
+function auditTrailCopy(source: string, unit: string, date: string, status: string): string {
+  return `来源：${source}；单位：${unit}；日期：${formatDate(date)}；状态：${status}。`;
 }
 
 function compactListCopy(label: string, items: string[], emptyText: string): string {

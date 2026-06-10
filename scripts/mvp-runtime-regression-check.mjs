@@ -355,6 +355,13 @@ async function validateUserFacingUiCopy() {
     numberAudit.includes("mvpProbabilityInputIsAuditOnly"),
     "number audit checklist should mark formal probabilities with the shared audit-only predicate"
   );
+  assert(
+    numberAudit.includes("来源：") &&
+      numberAudit.includes("单位：") &&
+      numberAudit.includes("日期：") &&
+      numberAudit.includes("状态："),
+    "number audit checklist should show source, unit, date, and status for key homepage numbers"
+  );
 
   const dataSourceReliability = await readFile(
     new URL("../apps/web/src/views/decision/dataSourceReliability.ts", import.meta.url),
