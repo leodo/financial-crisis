@@ -993,6 +993,11 @@
      - 但候选仍是 `no_go_offline`：regional banks positive-window hit rate `80.0% -> 0.0%`，20d threshold 仍为 `90.00%`，candidate 20d touchline 只有 `0.59273`；
      - false-positive separation 仍不安全：February false-positive max p20d `79.79%` 是 regional positive-window avg `74.90%` 的 `106.5%`，不能用简单下调 20d threshold 解决；
      - 60d 继续退化为 `cold_across_all_regimes`，当前点 candidate 60d 只有 `1.6087% < 12.00%`，touchline `0.134058`；下一步必须做 20d family/context gating 与 60d feature transfer，而不是发布该候选。
+   - `2026-06-10` 已把下一轮候选训练的约束推进到两条更直接的修复线：
+     - `60d` tail sign repair：`tail_pos__*` / `tail_neg__*` 现在会跨 forward-crisis horizons 继承底层风险语义，避免 `tail_pos__us_baa_10y_spread_level__2`、`tail_pos__overall_score__55` 这类高位风险 tail 在 `60d` 里变成强负 suppressor；唯一保留的例外是 `20d tail_neg__us_curve_10y2y_level__0`，因为此前审计显示强行非负会重新打开 normal-window 噪声。
+     - `20d` broad-score-to-family-context transfer：family-context heads 里 `trigger_score / external_dimension_score / tail_pos__trigger_score__50 / tail_pos__external_dimension_score__50` 的上限进一步收紧为 `0.45 / 0.30 / 0.18 / 0.12`，并新增 `systemic_credit`、`mixed_systemic` proxy/context 下限，迫使正例信号更多通过系统性信用与混合系统性上下文，而不是继续用泛化 broad score 同时抬高正例和 February/July 误报窗口。
+     - `formal-candidate-semantics-audit` 已同步这些新护栏，并把 bond-spread high-tail suppressor 从 `doc_only` 升级为 `training_guardrail`；下一步只能重训 review-only candidate，再用 `formal-candidate-screen`、runtime contribution audit 和 release review 判断是否仍为 No-Go。
+     - 当前 active release 不变；决策面板上 `5d / 20d / 60d` 极小概率仍应按“模型待审计”解释，不应当成“离风险很远”。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 
