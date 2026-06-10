@@ -12,6 +12,7 @@ import {
   buildLayerScoreChart,
   buildProbabilityTrendModel
 } from "./charts";
+import { buildHeroMetrics } from "./heroMetrics";
 import {
   buildActionPlanMetrics,
   buildBacktestCoverageScopeText,
@@ -20,7 +21,6 @@ import {
   buildBacktestSummaryMetrics,
   buildBlockerClauses,
   buildDataTrustMetrics,
-  buildHeroMetrics,
   buildJpyCarryMetrics,
   buildKeyIndicatorRows,
   buildPostureThresholdMetrics,

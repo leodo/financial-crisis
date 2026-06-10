@@ -192,7 +192,7 @@ function describeThresholdDistance(
   if (anomaly && value < threshold) {
     return {
       label: "模型待审计",
-      note: `${anomaly.title}；触线完成度只代表当前 active release 的机械输出，不能当成“离危机很远”的证明。`
+      note: `${anomaly.title}；该读数只代表当前 active release 的机械输出，不能当成“离危机很远”的证明。`
     };
   }
   if (value >= threshold) {
@@ -307,7 +307,8 @@ export function ProbabilityTile({
   hint,
   threshold,
   thresholdLabel,
-  diagnostic
+  diagnostic,
+  forceAuditOnly = false
 }: {
   label: string;
   value: number;
@@ -315,17 +316,27 @@ export function ProbabilityTile({
   threshold: number;
   thresholdLabel: string;
   diagnostic?: ProbabilityHorizonOverlayDiagnostics;
+  forceAuditOnly?: boolean;
 }) {
   const band = describeProbabilityBand(value);
   const anomaly = findProbabilityDiagnosticAnomaly(diagnostic);
   const thresholdGap = Math.max(0, threshold - value);
   const thresholdShare = threshold > 0 ? value / threshold : null;
   const thresholdDistance = describeThresholdDistance(value, threshold, thresholdLabel, anomaly);
+  const displayThresholdDistance =
+    forceAuditOnly && !anomaly
+      ? {
+          label: "模型待审计",
+          note: "MVP 已把 formal 概率降级为审计读数；这一期限不单独计算风险时距或触线完成度。"
+        }
+      : thresholdDistance;
   const thresholdShareValue =
     thresholdShare === null ? "—" : formatProbabilityPercentExact(thresholdShare);
-  const distanceJudgmentDisabled = anomaly !== null;
+  const distanceJudgmentDisabled = forceAuditOnly || anomaly !== null;
   const valueLabel = distanceJudgmentDisabled
-    ? "正式概率读数异常"
+    ? anomaly
+      ? "正式概率读数异常"
+      : "正式概率待审计"
     : "当前正式概率";
   const primaryValue = distanceJudgmentDisabled ? "待审计" : formatProbabilityPercentExact(value);
   const distanceHeadline = distanceJudgmentDisabled
@@ -348,13 +359,13 @@ export function ProbabilityTile({
     thresholdShare === null
       ? null
       : distanceJudgmentDisabled
-        ? "该期限命中模型方向异常，系统不计算触线比例、放大倍数或风险时距；下方接口值和模型链路只用于排查 active release 为什么偏冷。"
+        ? "正式概率当前只作为审计读数，系统不计算触线比例、放大倍数或风险时距；下方接口值和模型链路只用于排查 active release 为什么偏冷。"
         : `触线仍需约 ${thresholdMultipleValue}；机械完成度 ${thresholdShareValue}，不是剩余天数。`;
   const thresholdCopy =
     distanceJudgmentDisabled
       ? `${thresholdLabel} ${formatPercentPrecise(
           threshold
-        )} 仅作为审计参照；该期限读数被标记为模型待审计，不输出距离结论。`
+        )} 仅作为审计参照；formal 概率当前被标记为模型待审计，不输出距离结论。`
       : thresholdGap === 0
       ? `已达到${thresholdLabel} ${formatPercentPrecise(threshold)}`
       : `距${thresholdLabel} ${formatPercentPrecise(threshold)} 还差 ${formatPercentagePointGap(
@@ -365,10 +376,14 @@ export function ProbabilityTile({
     : band.note;
 
   return (
-    <div className={`probability-tile ${band.className}${anomaly ? " model-anomaly" : ""}`}>
+    <div
+      className={`probability-tile ${band.className}${
+        distanceJudgmentDisabled ? " model-anomaly" : ""
+      }`}
+    >
       <div className="tile-head">
         <span>{label}</span>
-        <em>{thresholdDistance.label}</em>
+        <em>{displayThresholdDistance.label}</em>
       </div>
       <span className="probability-value-label">{valueLabel}</span>
       <strong>{primaryValue}</strong>
@@ -388,7 +403,7 @@ export function ProbabilityTile({
         <span>{distanceLabel}</span>
         <strong>{distanceHeadline}</strong>
         {distanceDetail ? <small>{distanceDetail}</small> : null}
-        <small>{thresholdDistance.note}</small>
+        <small>{displayThresholdDistance.note}</small>
       </div>
       <div className="probability-distance-grid">
         <div>

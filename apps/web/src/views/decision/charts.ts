@@ -4,6 +4,8 @@ import {
   formatProbabilityBasisPoints,
   formatProbabilityDecimal,
   formatProbabilityPercentExact,
+  postureLabel,
+  timeBucketLabel,
   wrapTimelineLabel
 } from "../../format";
 import type {
@@ -321,6 +323,20 @@ function formatProbabilityDelta(value: number): string {
   return `${sign}${formatProbabilityPercentExact(value)}`;
 }
 
+function historySourceLabel(source: AssessmentHistoryPoint["history_source"]): string {
+  if (!source) {
+    return "未返回";
+  }
+  const labels: Record<string, string> = {
+    raw_pit_feature_replay: "当天 PIT 特征回放",
+    raw_pit_feature_reuse: "沿用 PIT 特征",
+    raw_observation_rebuild: "原始观测重建",
+    raw_observation_replay: "原始观测回放",
+    transitional_snapshot_bridge: "过渡快照桥接"
+  };
+  return labels[source] ?? source;
+}
+
 function buildProbabilityPointDetails(
   history: AssessmentHistoryPoint[],
   horizon: 5 | 20 | 60,
@@ -341,9 +357,11 @@ function buildProbabilityPointDetails(
 
     return {
       valueLabel: `${formatProbabilityPercentExact(value)} · ${formatProbabilityBasisPoints(value)}`,
-      detail: `${modeCopy} ${formatProbabilityDecimal(
+      detail: `${formatDate(point.as_of_date)} · ${timeBucketLabel(
+        point.time_to_risk_bucket
+      )} · ${postureLabel(point.posture)} · ${modeCopy} ${formatProbabilityDecimal(
         value
-      )} · ${counterpartCopy} · ${deltaCopy}`
+      )} · ${counterpartCopy} · ${deltaCopy} · 来源 ${historySourceLabel(point.history_source)}`
     };
   });
 }
@@ -396,7 +414,11 @@ function buildRelativePointDetails(
     const value = probabilityValue(point, horizon, mode);
     return {
       valueLabel: `${normalizedValues[index].toFixed(0)} / 100`,
-      detail: `原始概率 ${formatProbabilityPercentExact(value)} · ${formatProbabilityBasisPoints(value)}`
+      detail: `${formatDate(point.as_of_date)} · ${timeBucketLabel(
+        point.time_to_risk_bucket
+      )} · ${postureLabel(point.posture)} · 原始概率 ${formatProbabilityPercentExact(
+        value
+      )} · ${formatProbabilityBasisPoints(value)} · 来源 ${historySourceLabel(point.history_source)}`
     };
   });
 }

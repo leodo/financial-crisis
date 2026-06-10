@@ -146,7 +146,7 @@ export function DecisionRiskHorizon({
           <small>{riskDistanceSummary.bucketDetail}</small>
         </div>
         <div>
-          <span>最接近的动作线</span>
+          <span>{riskDistanceSummary.nearestLabel}</span>
           <strong>{riskDistanceSummary.nearestValue}</strong>
           <small>{riskDistanceSummary.nearestDetail}</small>
         </div>
@@ -167,6 +167,7 @@ export function DecisionRiskHorizon({
           threshold={method.runtime_thresholds.defend_p5d}
           thresholdLabel="防守线"
           diagnostic={horizonDiagnostic(5)}
+          forceAuditOnly={probabilityAuditActive}
         />
         <ProbabilityTile
           label="20 个交易日"
@@ -175,6 +176,7 @@ export function DecisionRiskHorizon({
           threshold={method.runtime_thresholds.hedge_p20d}
           thresholdLabel="对冲线"
           diagnostic={horizonDiagnostic(20)}
+          forceAuditOnly={probabilityAuditActive}
         />
         <ProbabilityTile
           label="60 个交易日"
@@ -183,6 +185,7 @@ export function DecisionRiskHorizon({
           threshold={method.runtime_thresholds.prepare_p60d}
           thresholdLabel="准备线"
           diagnostic={horizonDiagnostic(60)}
+          forceAuditOnly={probabilityAuditActive}
         />
       </div>
       {riskHorizonSanityNote ? (
@@ -193,8 +196,16 @@ export function DecisionRiskHorizon({
         {decisionContent.riskHorizon.priorVsAction.body}
       </RuleBox>
       <MetricGrid items={actionMetrics} />
-      <RuleBox label="时距判断">{timeBucketDescription}</RuleBox>
-      <RuleBox label="历史参照">{analogWindowDescription}</RuleBox>
+      <RuleBox label="时距判断">
+        {probabilityAuditActive
+          ? "正式概率当前处于审计状态，页面暂停输出“数月 / 数周 / 当下”的仓位时距结论；当前只按 MVP 规则层判断是否需要观察、准备、对冲或防守。"
+          : timeBucketDescription}
+      </RuleBox>
+      <RuleBox label="历史参照">
+        {probabilityAuditActive
+          ? `${analogWindowDescription} 当前历史类比只作为结构参照，不把异常偏低的 formal 概率解释成风险已经远离。`
+          : analogWindowDescription}
+      </RuleBox>
     </section>
   );
 }
@@ -233,6 +244,13 @@ function buildRiskDistanceSummary(
     .filter((value): value is number => value !== null);
   const allFarBelowEntry = allShares.length === 3 && allShares.every((share) => share < 0.03);
   const twentyDayIsCold = p20d > 0 && p20d < p5d * 0.25 && p20d < p60d * 0.25;
+  const auditOnly = anomalyHorizons.length > 0;
+  const mvpBlockers = mvpRiskState.blockers.length
+    ? mvpRiskState.blockers.join("；")
+    : "MVP 规则层尚未看到足够证据支持动作升级。";
+  const mvpNextActions = mvpRiskState.next_actions.length
+    ? mvpRiskState.next_actions.join("；")
+    : "继续观察关键指标、事件确认和历史类比是否共振。";
 
   const bucketDetail: Record<AssessmentSnapshot["time_to_risk_bucket"], string> = {
     normal: "当前没有形成数月、数周或当下风险窗口；这不是零风险证明。",
@@ -262,18 +280,19 @@ function buildRiskDistanceSummary(
           : "当前概率和动作进入线之间没有明显显示层异常。";
 
   return {
-    bucketLabel: anomalyHorizons.length > 0 ? mvpRiskState.label : timeBucketLabel(assessment.time_to_risk_bucket),
+    bucketLabel: auditOnly ? mvpRiskState.label : timeBucketLabel(assessment.time_to_risk_bucket),
     bucketDetail:
-      anomalyHorizons.length > 0
+      auditOnly
         ? `${mvpRiskState.summary} 原模型桶是 ${timeBucketLabel(
             assessment.time_to_risk_bucket
           )}，但 ${anomalyHorizons
             .map((row) => `${row.horizonDays}d`)
             .join(" / ")} 概率读数命中方向异常，系统暂停输出“数月/数周/当下”的距离判断。`
         : bucketDetail[assessment.time_to_risk_bucket],
+    nearestLabel: auditOnly ? "下一阶段还差" : "最接近的动作线",
     nearestValue:
-      anomalyHorizons.length > 0
-        ? "按 MVP 口径"
+      auditOnly
+        ? "证据共振"
         : nearest
           ? nearest.gap === 0
             ? "已触线"
@@ -282,8 +301,8 @@ function buildRiskDistanceSummary(
               : "无法计算"
           : "未配置",
     nearestDetail:
-      anomalyHorizons.length > 0
-        ? `${mvpRiskStateDetail(assessment)} 当前存在模型方向异常，不能用机械触线比例判断“离风险还有多远”。下方卡片只保留接口值、raw/calibrated/runtime 链路和 base 头贡献，用来审计 active release 为什么偏冷；这些读数不参与离场、对冲或仓位时距结论。`
+      auditOnly
+        ? `当前不看机械触线比例，也不输出“还差多少倍”。阻断项：${mvpBlockers} 下一步：${mvpNextActions}`
         : nearest
           ? `${nearest.label} 最接近；还差 ${formatPercentagePointGap(
               nearest.gap

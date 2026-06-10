@@ -116,6 +116,17 @@ function validateMvpAuditState(snapshot) {
   const mvp = snapshot.mvp_risk_state ?? {};
   const summary = stringValue(snapshot.summary);
   const userFacingMvpCopy = collectUserFacingMvpCopy(snapshot);
+  const probabilities = snapshot.probabilities ?? {};
+  const p5d = numberOrNull(probabilities.p_5d);
+  const p20d = numberOrNull(probabilities.p_20d);
+  const p60d = numberOrNull(probabilities.p_60d);
+  const twentyDayCold =
+    p5d !== null &&
+    p20d !== null &&
+    p60d !== null &&
+    p20d > 0 &&
+    p20d < p5d * 0.25 &&
+    p20d < p60d * 0.25;
 
   assert(typeof mvp.code === "string", "mvp_risk_state.code is missing");
   assert(typeof mvp.label === "string", "mvp_risk_state.label is missing");
@@ -155,6 +166,22 @@ function validateMvpAuditState(snapshot) {
         !userFacingMvpCopy.includes("formal 读数") &&
         !userFacingMvpCopy.includes("formal 风险"),
       "user-facing MVP copy still contains old formal wording"
+    );
+  }
+
+  if (twentyDayCold) {
+    assert(
+      mvp.probability_input_status === "audit_only",
+      "20d is materially colder than 5d/60d, but MVP did not downgrade formal probabilities to audit_only"
+    );
+    assert(
+      Array.isArray(mvp.blockers) &&
+        mvp.blockers.some((blocker) => stringValue(blocker).includes("语义异常")),
+      "20d cold state should expose a model semantic anomaly blocker"
+    );
+    assert(
+      summary.includes("不能解释成风险已经远离"),
+      "20d cold audit state must prevent low probabilities from being read as risk is far away"
     );
   }
 }
