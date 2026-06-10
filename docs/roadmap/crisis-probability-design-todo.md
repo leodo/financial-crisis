@@ -988,6 +988,11 @@
      - 新增单测固定这个训练目标顺序，防止后续重新把前置缓冲区抬得比真正危机正窗口更强；
      - 这一步只改变下一轮候选训练的目标函数，不改变当前 active release，也不允许绕过 `formal-candidate-screen`、semantics audit、runtime contribution audit 和 release review；
      - 后续必须重训 review-only 候选并验证：`20d` positive-window hit rate 是否恢复、cooldown 是否低于 positive-window、February/July false-positive 是否不会因 threshold 下调重新放出、`60d cold_across_all_regimes` 是否没有恶化。
+   - 已重训 review-only 候选 `us_formal_family_hybrid_20260610T035217` 验证 positive-window 优先 pairwise 目标：
+     - 当前点 runtime contribution audit 显示 USDJPY 高位 tail 与 signed 20d change 负贡献已从 candidate 中清掉，`20d` 当前概率从 baseline `0.0067%` 升到 candidate `53.3457%`，说明页面极小值确实来自旧 active release 的语义异常；
+     - 但候选仍是 `no_go_offline`：regional banks positive-window hit rate `80.0% -> 0.0%`，20d threshold 仍为 `90.00%`，candidate 20d touchline 只有 `0.59273`；
+     - false-positive separation 仍不安全：February false-positive max p20d `79.79%` 是 regional positive-window avg `74.90%` 的 `106.5%`，不能用简单下调 20d threshold 解决；
+     - 60d 继续退化为 `cold_across_all_regimes`，当前点 candidate 60d 只有 `1.6087% < 12.00%`，touchline `0.134058`；下一步必须做 20d family/context gating 与 60d feature transfer，而不是发布该候选。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 
