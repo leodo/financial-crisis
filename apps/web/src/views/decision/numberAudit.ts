@@ -18,7 +18,7 @@ import {
   keyIndicatorSourceTimingCopy,
   sourceAccessTag
 } from "./dataSourceReliability";
-import { currentMvpRiskState } from "./mvpRiskState";
+import { currentMvpRiskState, mvpProbabilityInputIsAuditOnly } from "./mvpRiskState";
 import { probabilityDiagnosticAnomalyHorizons } from "./probabilityDiagnostics";
 
 export interface DecisionNumberAuditRow {
@@ -31,7 +31,7 @@ export interface DecisionNumberAuditRow {
 
 export function buildNumberAuditRows(assessment: AssessmentSnapshot): DecisionNumberAuditRow[] {
   const mvpState = currentMvpRiskState(assessment);
-  const auditOnly = mvpState.probability_input_status === "audit_only";
+  const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   const anomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
   const usdJpy = assessment.key_indicators.find(
     (indicator) => indicator.indicator_id === "us_external_usdjpy_level"

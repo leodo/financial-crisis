@@ -24,7 +24,11 @@ import type {
   DecisionRuntimeCard,
   DecisionRuntimeNotice
 } from "./useDecisionViewModel";
-import { currentMvpRiskState, mvpRiskStateDetail } from "./mvpRiskState";
+import {
+  currentMvpRiskState,
+  mvpProbabilityInputIsAuditOnly,
+  mvpRiskStateDetail
+} from "./mvpRiskState";
 
 export function DecisionPrelude({
   runtimeNotice,
@@ -88,8 +92,12 @@ export function DecisionHeroSummary({
   heroMetrics: MetricItem[];
 }) {
   const anomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
-  const probabilityAuditActive = anomalyHorizons.length > 0;
   const mvpRiskState = currentMvpRiskState(assessment);
+  const probabilityAuditActive = mvpProbabilityInputIsAuditOnly(assessment);
+  const auditReason =
+    anomalyHorizons.length > 0
+      ? `${anomalyHorizons.join(" / ")} 正式概率读数命中模型方向异常`
+      : "后端已将正式概率降级为审计态";
   const heroClassName = `hero-surface ${postureClass(assessment.posture)}${
     probabilityAuditActive ? " probability-audit" : ""
   }`;
@@ -98,9 +106,7 @@ export function DecisionHeroSummary({
     ? `当前 MVP 风险状态；正式风险窗口待审计（原模型桶：${timeBucketLabel(assessment.time_to_risk_bucket)}）`
     : `风险窗口判断：${timeBucketLabel(assessment.time_to_risk_bucket)}`;
   const heroSummary = probabilityAuditActive
-    ? `${mvpRiskState.summary}${anomalyHorizons.join(
-        " / "
-      )} 正式概率读数命中模型方向异常；当前不输出“离风险还有多远”的仓位结论，原执行节奏只作为非概率层参考。`
+    ? `${mvpRiskState.summary}${auditReason}；当前不输出“离风险还有多远”的仓位结论，原执行节奏只作为非概率层参考。`
     : posture.summary;
 
   return (
@@ -133,7 +139,7 @@ export function DecisionRiskHorizon({
     );
   const riskDistanceSummary = buildRiskDistanceSummary(assessment, method);
   const riskHorizonSanityNote = buildRiskHorizonSanityNote(assessment, method);
-  const probabilityAuditActive = probabilityDiagnosticAnomalyHorizons(assessment).length > 0;
+  const probabilityAuditActive = mvpProbabilityInputIsAuditOnly(assessment);
 
   return (
     <section className="surface">
@@ -243,7 +249,7 @@ function buildRiskDistanceSummary(
     .filter((value): value is number => value !== null);
   const allFarBelowEntry = allShares.length === 3 && allShares.every((share) => share < 0.03);
   const twentyDayIsCold = p20d > 0 && p20d < p5d * 0.25 && p20d < p60d * 0.25;
-  const auditOnly = anomalyHorizons.length > 0;
+  const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   const mvpBlockers = mvpRiskState.blockers.length
     ? mvpRiskState.blockers.join("；")
     : "MVP 规则层尚未看到足够证据支持动作升级。";
@@ -263,13 +269,14 @@ function buildRiskDistanceSummary(
     : allFarBelowEntry
       ? "未捕捉临近窗口"
       : "读数可解释";
-  const modelStatusWithAnomaly =
-    anomalyHorizons.length > 0 ? "正式概率待审计" : modelStatus;
+  const modelStatusWithAnomaly = auditOnly ? "正式概率待审计" : modelStatus;
   const modelDetail =
-    anomalyHorizons.length > 0
+    auditOnly && anomalyHorizons.length > 0
       ? `${anomalyHorizons
           .map((row) => `${row.horizonDays}d`)
           .join(" / ")} 命中 USDJPY 高位 tail 压低概率的语义异常；这些小数只能说明 active release 当前输出偏冷，不能当成风险已远离，也不能用于离场/对冲时距结论。`
+      : auditOnly
+        ? "后端 MVP 状态已把正式概率降级为审计读数；这些小数不能当成风险时距、减仓或对冲结论。"
       : twentyDayIsCold
         ? `20d 只有 ${formatProbabilityPercentExact(p20d)}，明显低于 5d ${formatProbabilityPercentExact(
             p5d
@@ -284,9 +291,11 @@ function buildRiskDistanceSummary(
       auditOnly
         ? `${mvpRiskState.summary} 原模型桶是 ${timeBucketLabel(
             assessment.time_to_risk_bucket
-          )}，但 ${anomalyHorizons
-            .map((row) => `${row.horizonDays}d`)
-            .join(" / ")} 概率读数命中方向异常，系统暂停输出“数月/数周/当下”的距离判断。`
+          )}，但 ${
+            anomalyHorizons.length > 0
+              ? `${anomalyHorizons.map((row) => `${row.horizonDays}d`).join(" / ")} 概率读数命中方向异常`
+              : "正式概率已被后端标记为审计态"
+          }，系统暂停输出“数月/数周/当下”的距离判断。`
         : bucketDetail[assessment.time_to_risk_bucket],
     nearestLabel: auditOnly ? "下一阶段还差" : "最接近的动作线",
     nearestValue:
@@ -326,6 +335,7 @@ function buildRiskHorizonSanityNote(
   const allFarBelowEntry =
     thresholdShares.length === 3 && thresholdShares.every((share) => share < 0.03);
   const twentyDayIsCold = p20d > 0 && p20d < p5d * 0.25 && p20d < p60d * 0.25;
+  const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   const anomalyHorizons = assessment.probability_diagnostics.horizon_overlays
     .map((diagnostic) => ({
       horizonDays: diagnostic.horizon_days,
@@ -343,6 +353,10 @@ function buildRiskHorizonSanityNote(
         ? "阈值占比在异常状态下已从主结论隐藏，避免把模型偏冷误读成可决策时距。"
         : ""
     }`;
+  }
+
+  if (auditOnly) {
+    return "正式概率已被 MVP 降级为审计读数；页面不把低概率、小数或阈值占比解释成“离风险很远”，当前主结论看规则层、关键数据、事件确认和历史类比。";
   }
 
   if (twentyDayIsCold && allFarBelowEntry) {

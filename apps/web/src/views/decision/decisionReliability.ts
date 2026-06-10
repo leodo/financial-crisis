@@ -1,17 +1,14 @@
 import { formatPercent } from "../../format";
 import type { AssessmentSnapshot } from "../../types";
 import { describeProbabilityMode, describeReleaseHealth } from "./logic";
-import { currentMvpRiskState } from "./mvpRiskState";
-import { probabilityDiagnosticAnomalyHorizons } from "./probabilityDiagnostics";
+import { currentMvpRiskState, mvpProbabilityInputIsAuditOnly } from "./mvpRiskState";
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
 function modelReliabilityComponent(assessment: AssessmentSnapshot): number {
-  const auditOnly =
-    currentMvpRiskState(assessment).probability_input_status === "audit_only" ||
-    probabilityDiagnosticAnomalyHorizons(assessment).length > 0;
+  const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   if (assessment.runtime.demo_mode) {
     return 0.1;
   }
@@ -51,9 +48,7 @@ function freshnessReliabilityComponent(assessment: AssessmentSnapshot): number {
 
 export function decisionModelReliabilityLabel(assessment: AssessmentSnapshot): string {
   const score = modelReliabilityComponent(assessment);
-  const auditOnly =
-    currentMvpRiskState(assessment).probability_input_status === "audit_only" ||
-    probabilityDiagnosticAnomalyHorizons(assessment).length > 0;
+  const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   if (assessment.runtime.demo_mode) {
     return `演示 ${formatPercent(score)}`;
   }
@@ -72,9 +67,7 @@ export function decisionModelReliabilityLabel(assessment: AssessmentSnapshot): s
 export function decisionModelReliabilityHint(assessment: AssessmentSnapshot): string {
   const probabilityMode = describeProbabilityMode(assessment.method);
   const releaseHealth = describeReleaseHealth(assessment.method.release_status);
-  const auditOnly =
-    currentMvpRiskState(assessment).probability_input_status === "audit_only" ||
-    probabilityDiagnosticAnomalyHorizons(assessment).length > 0;
+  const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   return [
     `模型层当前是 ${probabilityMode.label}，服务状态 ${releaseHealth}。`,
     auditOnly
@@ -144,7 +137,7 @@ function rawReliabilityScore(assessment: AssessmentSnapshot): number {
 }
 
 export function decisionReliabilityScore(assessment: AssessmentSnapshot): number {
-  const auditOnly = currentMvpRiskState(assessment).probability_input_status === "audit_only";
+  const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   const score = rawReliabilityScore(assessment);
   if (assessment.runtime.demo_mode) {
     return Math.min(score, 0.4);
@@ -153,7 +146,7 @@ export function decisionReliabilityScore(assessment: AssessmentSnapshot): number
     return Math.min(score, 0.5);
   }
   if (auditOnly) {
-    return Math.min(score, 0.62);
+    return Math.min(score, 0.45);
   }
   if (assessment.runtime.stale_warning) {
     return Math.min(score, 0.65);
@@ -169,8 +162,8 @@ export function decisionReliabilityLabel(assessment: AssessmentSnapshot): string
   if (assessment.method.release_status === "degraded") {
     return `降级 ${formatPercent(score)}`;
   }
-  if (currentMvpRiskState(assessment).probability_input_status === "audit_only") {
-    return `审计中 ${formatPercent(score)}`;
+  if (mvpProbabilityInputIsAuditOnly(assessment)) {
+    return `审计上限 ${formatPercent(score)}`;
   }
   if (score >= 0.8) {
     return `高可信 ${formatPercent(score)}`;
@@ -198,7 +191,7 @@ export function decisionReliabilityHint(assessment: AssessmentSnapshot): string 
     ...assessment.historical_analogs.map((analog) => analog.similarity_score)
   );
   const capCopy =
-    mvpState.probability_input_status === "audit_only"
+    mvpProbabilityInputIsAuditOnly(assessment)
       ? "正式概率当前待审计，可靠性分数会被封顶，不能解释成模型结论已经很有把握。"
       : "正式概率当前可作为主输入之一，但仍需结合事件确认和数据新鲜度。";
 

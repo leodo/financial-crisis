@@ -15,6 +15,10 @@ import {
   timeBucketLabel
 } from "./format";
 import { probabilityDiagnosticAnomalyHorizons } from "./views/decision/probabilityDiagnostics";
+import {
+  currentMvpRiskState,
+  mvpProbabilityInputIsAuditOnly
+} from "./views/decision/mvpRiskState";
 import { useConsoleData, type ConsoleReadyData, type ConsoleDataSnapshot } from "./useConsoleData";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { RecoveryPanel } from "./components/RecoveryPanel";
@@ -154,17 +158,22 @@ export default function App() {
     () => (assessment.data ? probabilityDiagnosticAnomalyHorizons(assessment.data) : []),
     [assessment.data]
   );
-  const mvpRiskState = assessment.data?.mvp_risk_state;
+  const probabilityAuditOnly = assessment.data
+    ? mvpProbabilityInputIsAuditOnly(assessment.data)
+    : false;
+  const mvpRiskState = assessment.data ? currentMvpRiskState(assessment.data) : null;
   const riskWindowDisplayLabel = assessment.data
-    ? probabilityAnomalyHorizons.length > 0
-      ? mvpRiskState?.label ?? `待审计（${probabilityAnomalyHorizons.join(" / ")}）`
+    ? probabilityAuditOnly
+      ? mvpRiskState?.label ?? "正式概率待审计"
       : timeBucketLabel(assessment.data.time_to_risk_bucket)
     : "—";
   const riskWindowSummaryLabel =
-    probabilityAnomalyHorizons.length > 0
-      ? `MVP 风险状态 ${mvpRiskState?.label ?? "概率待审计"}（${probabilityAnomalyHorizons.join(
-          " / "
-        )} 正式读数异常）`
+    probabilityAuditOnly
+      ? `MVP 风险状态 ${mvpRiskState?.label ?? "概率待审计"}（${
+          probabilityAnomalyHorizons.length > 0
+            ? `${probabilityAnomalyHorizons.join(" / ")} 正式读数异常`
+            : "正式概率审计态"
+        }）`
       : assessment.data
         ? `风险时距 ${timeBucketLabel(assessment.data.time_to_risk_bucket)}`
         : "风险时距 —";
@@ -325,14 +334,14 @@ export default function App() {
               <div className="warmup-metric">
                 <span>危机先验</span>
                 <strong>
-                  {probabilityAnomalyHorizons.length > 0
+                  {probabilityAuditOnly
                     ? "正式概率待审计"
                     : `${formatProbabilityPercentExact(assessment.data.probabilities.p_5d)} /
                   ${formatProbabilityPercentExact(assessment.data.probabilities.p_20d)} /
                   ${formatProbabilityPercentExact(assessment.data.probabilities.p_60d)}`}
                 </strong>
                 <small>
-                  {probabilityAnomalyHorizons.length > 0
+                  {probabilityAuditOnly
                     ? `${formatProbabilityPercentExact(
                         assessment.data.probabilities.p_5d
                       )} / ${formatProbabilityPercentExact(
@@ -346,12 +355,12 @@ export default function App() {
               <div className="warmup-metric">
                 <span>当前执行节奏</span>
                 <strong>
-                  {probabilityAnomalyHorizons.length > 0
+                  {probabilityAuditOnly
                     ? mvpRiskState?.label ?? "风险时距待审计"
                     : timeBucketLabel(assessment.data.time_to_risk_bucket)}
                 </strong>
                 <small>
-                  {probabilityAnomalyHorizons.length > 0
+                  {probabilityAuditOnly
                     ? mvpRiskState?.summary ??
                       `${probabilityAnomalyHorizons.join(
                         " / "

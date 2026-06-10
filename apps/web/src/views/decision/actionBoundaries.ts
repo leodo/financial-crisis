@@ -1,4 +1,5 @@
 import type { AssessmentSnapshot, DecisionPosture, MvpRiskStateCode } from "../../types";
+import { currentMvpRiskState, mvpProbabilityInputIsAuditOnly } from "./mvpRiskState";
 
 export interface ActionBoundaryRow {
   id: DecisionPosture;
@@ -68,8 +69,8 @@ function postureFromMvpState(code: MvpRiskStateCode): DecisionPosture {
 }
 
 export function currentActionBoundaryPosture(assessment: AssessmentSnapshot): DecisionPosture {
-  const mvpRiskState = assessment.mvp_risk_state;
-  if (mvpRiskState?.probability_input_status === "audit_only") {
+  const mvpRiskState = currentMvpRiskState(assessment);
+  if (mvpProbabilityInputIsAuditOnly(assessment)) {
     return postureFromMvpState(mvpRiskState.code);
   }
   return assessment.posture;
@@ -111,7 +112,7 @@ export function buildActionBoundaryRows(assessment: AssessmentSnapshot): ActionB
 }
 
 export function actionBoundarySourceCopy(assessment: AssessmentSnapshot): string {
-  if (assessment.mvp_risk_state?.probability_input_status === "audit_only") {
+  if (mvpProbabilityInputIsAuditOnly(assessment)) {
     return "当前正式概率待审计，四档高亮按 MVP 规则层决定；正式 5d/20d/60d 只保留为模型审计读数。";
   }
   return "当前四档高亮按正式 posture 决定，并已叠加用户风险偏好生成下方预算条。";

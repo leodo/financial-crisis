@@ -29,6 +29,13 @@ export function currentMvpRiskState(assessment: AssessmentSnapshot): MvpRiskStat
   };
 }
 
+export function mvpProbabilityInputIsAuditOnly(assessment: AssessmentSnapshot): boolean {
+  return (
+    currentMvpRiskState(assessment).probability_input_status === "audit_only" ||
+    probabilityDiagnosticAnomalyHorizons(assessment).length > 0
+  );
+}
+
 export function mvpRiskStateDetail(assessment: AssessmentSnapshot): string {
   const state = currentMvpRiskState(assessment);
   return [

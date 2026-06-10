@@ -308,6 +308,53 @@ async function validateUserFacingUiCopy() {
     decisionView.includes("关键免费数据源是否可信"),
     "decision dashboard should include the key free data reliability section"
   );
+  assert(
+    decisionView.includes("mvpProbabilityInputIsAuditOnly"),
+    "probability trajectory should use the shared MVP audit-only predicate"
+  );
+
+  const mvpRiskState = await readFile(
+    new URL("../apps/web/src/views/decision/mvpRiskState.ts", import.meta.url),
+    "utf8"
+  );
+  assert(
+    mvpRiskState.includes("mvpProbabilityInputIsAuditOnly"),
+    "decision UI should expose one shared audit-only predicate"
+  );
+
+  const decisionReliability = await readFile(
+    new URL("../apps/web/src/views/decision/decisionReliability.ts", import.meta.url),
+    "utf8"
+  );
+  assert(
+    decisionReliability.includes("审计上限") && decisionReliability.includes("Math.min(score, 0.45)"),
+    "decision reliability should be visibly capped when formal probabilities are audit-only"
+  );
+
+  const decisionSections = await readFile(
+    new URL("../apps/web/src/views/decision/sections.tsx", import.meta.url),
+    "utf8"
+  );
+  assert(
+    decisionSections.includes("mvpProbabilityInputIsAuditOnly") &&
+      decisionSections.includes("当前不计算阈值占比、放大倍数或仓位时距"),
+    "risk horizon section should hide mechanical distance math in audit-only mode"
+  );
+
+  const decisionApp = await readFile(new URL("../apps/web/src/App.tsx", import.meta.url), "utf8");
+  assert(
+    decisionApp.includes("mvpProbabilityInputIsAuditOnly"),
+    "top-level loading and meta UI should use the shared MVP audit-only predicate"
+  );
+
+  const numberAudit = await readFile(
+    new URL("../apps/web/src/views/decision/numberAudit.ts", import.meta.url),
+    "utf8"
+  );
+  assert(
+    numberAudit.includes("mvpProbabilityInputIsAuditOnly"),
+    "number audit checklist should mark formal probabilities with the shared audit-only predicate"
+  );
 
   const dataSourceReliability = await readFile(
     new URL("../apps/web/src/views/decision/dataSourceReliability.ts", import.meta.url),

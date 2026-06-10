@@ -50,6 +50,7 @@ import {
   DecisionPrelude,
   DecisionRiskHorizon
 } from "./sections";
+import { mvpProbabilityInputIsAuditOnly } from "./mvpRiskState";
 import { probabilityDiagnosticAnomalyHorizons } from "./probabilityDiagnostics";
 import { useDecisionViewModel } from "./useDecisionViewModel";
 
@@ -297,9 +298,10 @@ export default function DecisionView({
 function buildProbabilityTrajectoryAuditNote(assessment: AssessmentSnapshot): string | null {
   const { p_5d: p5d, p_20d: p20d, p_60d: p60d } = assessment.probabilities;
   const anomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
+  const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   const twentyDayIsCold = p20d > 0 && p20d < p5d * 0.25 && p20d < p60d * 0.25;
 
-  if (anomalyHorizons.length === 0 && !twentyDayIsCold) {
+  if (!auditOnly && anomalyHorizons.length === 0 && !twentyDayIsCold) {
     return null;
   }
 
@@ -314,6 +316,10 @@ function buildProbabilityTrajectoryAuditNote(assessment: AssessmentSnapshot): st
     return `${twentyDayCopy}，明显低于 ${comparisonCopy}。这不是图表渲染把 20d 画错，而是 active release 的 ${anomalyHorizons.join(
       " / "
     )} 概率命中 USDJPY 高位 tail 压低读数的语义异常；折线和极小概率只作为模型审计证据保留，不参与“离风险还有多远”、减仓或对冲时距判断。`;
+  }
+
+  if (auditOnly) {
+    return `正式概率当前已被 MVP 降级为审计读数；折线保留用于排查模型和数据链路，不参与“离风险还有多远”、减仓或对冲时距判断。`;
   }
 
   return `${twentyDayCopy}，明显低于 ${comparisonCopy}。主图使用统一纵轴时 20d 会贴近底部；下方 20d 局部放大图用于确认它是否真的在变化。当前先按 20d head 偏冷处理，不在运行时硬抬概率。`;
