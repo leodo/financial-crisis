@@ -1034,6 +1034,17 @@
   - 决策面板“关键指标是否最新”现在会直接显示 `run+raw / raw / 仅观测` 追溯标签、抓取时间和写入记录数；
   - 当前本地库实测：VIX 已有完整 `run + raw + observation` 链路，USDJPY / BOJ 利率 / EFFR 等历史 raw 记录会诚实显示为 `raw_observation`，不再伪装成完整 run 证据。
 
+### 6.4.2 2026-06-10 MVP 止血版优先级
+
+用户复核后，当前优先级从“继续扩大 formal candidate 研究”临时收敛为“先交付不误导用户的最小可用决策面板”：
+
+- [x] API 增加 `mvp_risk_state`，在 formal 概率命中 USDJPY 高位 tail 语义异常时，把概率状态降级为 `audit_only`，主结论改由保守规则层输出 `observe / prepare / hedge / defend`。
+- [x] API `summary` 在 `audit_only` 时不再输出“当前仍偏常态区间”作为主结论，而是明确写成 “MVP 风险状态 + formal 概率审计读数”。
+- [x] 决策面板首屏、启动占位、信号层和“离风险还有多远”模块在概率异常时优先展示 `mvp_risk_state.label / summary`，formal 5d/20d/60d 只保留为模型审计证据。
+- [x] “离风险还有多远”在异常时禁用机械触线距离，避免把 active release 偏冷误读成风险很远。
+- [x] 已完成浏览器验收：首屏显示 `观察为主（概率待审计）`，概率卡显示 `模型待审计 / 审计读数`，风险时距模块显示 `MVP 决策口径`。
+- [x] formal 模型研究恢复前，页面主结论、API summary、warmup 面板和方法说明页都不能把 `audit_only` 概率当成可用危机概率；本轮已完成这些入口的口径修正。
+
 ### 6.5 2026-06-01 Episode-native 第一阶段代码已落地
 
 本轮已经把第一阶段里最容易继续分叉的底层结构先收口：

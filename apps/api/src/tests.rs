@@ -55,6 +55,13 @@ async fn assessment_current_includes_jpy_carry_funding_fields() {
     assert!(json["method"]["release_status"].is_string());
     assert!(json["method"]["action_playbook_version"].is_string());
     assert!(json["method"]["point_in_time_mode"].is_string());
+    assert!(json["mvp_risk_state"]["code"].is_string());
+    assert!(json["mvp_risk_state"]["label"].is_string());
+    assert!(json["mvp_risk_state"]["probability_input_status"].is_string());
+    assert!(json["mvp_risk_state"]["summary"].is_string());
+    assert!(json["mvp_risk_state"]["primary_evidence"].is_array());
+    assert!(json["mvp_risk_state"]["blockers"].is_array());
+    assert!(json["mvp_risk_state"]["next_actions"].is_array());
     assert!(json["position_guidance"]["action_playbook_version"].is_string());
     assert!(json["position_guidance"]["execution_urgency"].is_string());
     assert!(json["position_guidance"]["confidence_gate"].is_string());

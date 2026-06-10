@@ -5,9 +5,9 @@ use fc_domain::{
     ActionEvidenceBreakdown, AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot,
     BacktestPerformanceSummary, BacktestRollingAudit, DataMode, DataQualitySummary, DataTrust,
     DecisionPosture, EventAssessment, EventConfirmationState, JpyCarrySnapshot, JpyCarryState,
-    ModelReleaseManifest, ModelReleaseRecord, PositionGuidance, PositionGuidanceGovernance,
-    ProbabilityBlock, ProbabilityDiagnostics, QualityGrade, RuntimeMetadata, TimeToRiskBucket,
-    UserRiskPreferences, UserRiskProfile,
+    ModelReleaseManifest, ModelReleaseRecord, MvpRiskState, PositionGuidance,
+    PositionGuidanceGovernance, ProbabilityBlock, ProbabilityDiagnostics, QualityGrade,
+    RuntimeMetadata, TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
 };
 
 fn test_release_record(
@@ -74,6 +74,7 @@ fn test_assessment_snapshot(
         probability_diagnostics: ProbabilityDiagnostics::default(),
         time_to_risk_bucket,
         posture,
+        mvp_risk_state: MvpRiskState::default(),
         conviction_score: 0.52,
         action_evidence: ActionEvidenceBreakdown::default(),
         scores: AssessmentScores {

@@ -6,9 +6,10 @@ use fc_domain::{
     BacktestPerformanceSummary, BacktestRollingAudit, DataMode, DataQualitySummary, DataTrust,
     DecisionPosture, EventAssessment, EventConfirmationState, FeatureSnapshotRecord,
     HistoricalAssessmentPointRecord, HistoricalReplayRunRecord, JpyCarrySnapshot, JpyCarryState,
-    ModelReleaseManifest, ModelReleaseRecord, PositionGuidance, PositionGuidanceGovernance,
-    PostureGuidance, PredictionSnapshotRecord, ProbabilityBlock, ProbabilityBundle,
-    ProbabilityDiagnostics, QualityGrade, RuntimeMetadata, UserRiskPreferences, UserRiskProfile,
+    ModelReleaseManifest, ModelReleaseRecord, MvpRiskState, PositionGuidance,
+    PositionGuidanceGovernance, PostureGuidance, PredictionSnapshotRecord, ProbabilityBlock,
+    ProbabilityBundle, ProbabilityDiagnostics, QualityGrade, RuntimeMetadata, UserRiskPreferences,
+    UserRiskProfile,
 };
 use fc_storage::SqliteStore;
 
@@ -212,6 +213,7 @@ fn history_test_assessment(
         probability_diagnostics: ProbabilityDiagnostics::default(),
         time_to_risk_bucket,
         posture,
+        mvp_risk_state: MvpRiskState::default(),
         conviction_score: 0.6,
         action_evidence: ActionEvidenceBreakdown {
             score: 0.6,

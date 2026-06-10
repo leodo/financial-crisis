@@ -154,14 +154,17 @@ export default function App() {
     () => (assessment.data ? probabilityDiagnosticAnomalyHorizons(assessment.data) : []),
     [assessment.data]
   );
+  const mvpRiskState = assessment.data?.mvp_risk_state;
   const riskWindowDisplayLabel = assessment.data
     ? probabilityAnomalyHorizons.length > 0
-      ? `待审计（${probabilityAnomalyHorizons.join(" / ")}）`
+      ? mvpRiskState?.label ?? `待审计（${probabilityAnomalyHorizons.join(" / ")}）`
       : timeBucketLabel(assessment.data.time_to_risk_bucket)
     : "—";
   const riskWindowSummaryLabel =
     probabilityAnomalyHorizons.length > 0
-      ? `风险时距 待审计（${probabilityAnomalyHorizons.join(" / ")} 概率读数异常）`
+      ? `MVP 风险状态 ${mvpRiskState?.label ?? "概率待审计"}（${probabilityAnomalyHorizons.join(
+          " / "
+        )} formal 读数异常）`
       : assessment.data
         ? `风险时距 ${timeBucketLabel(assessment.data.time_to_risk_bucket)}`
         : "风险时距 —";
@@ -322,22 +325,35 @@ export default function App() {
               <div className="warmup-metric">
                 <span>危机先验</span>
                 <strong>
-                  {formatProbabilityPercentExact(assessment.data.probabilities.p_5d)} /
-                  {formatProbabilityPercentExact(assessment.data.probabilities.p_20d)} /
-                  {formatProbabilityPercentExact(assessment.data.probabilities.p_60d)}
+                  {probabilityAnomalyHorizons.length > 0
+                    ? "正式概率待审计"
+                    : `${formatProbabilityPercentExact(assessment.data.probabilities.p_5d)} /
+                  ${formatProbabilityPercentExact(assessment.data.probabilities.p_20d)} /
+                  ${formatProbabilityPercentExact(assessment.data.probabilities.p_60d)}`}
                 </strong>
-                <small>5d / 20d / 60d</small>
+                <small>
+                  {probabilityAnomalyHorizons.length > 0
+                    ? `${formatProbabilityPercentExact(
+                        assessment.data.probabilities.p_5d
+                      )} / ${formatProbabilityPercentExact(
+                        assessment.data.probabilities.p_20d
+                      )} / ${formatProbabilityPercentExact(
+                        assessment.data.probabilities.p_60d
+                      )} 仅作审计读数`
+                    : "5d / 20d / 60d"}
+                </small>
               </div>
               <div className="warmup-metric">
                 <span>当前执行节奏</span>
                 <strong>
                   {probabilityAnomalyHorizons.length > 0
-                    ? "风险时距待审计"
+                    ? mvpRiskState?.label ?? "风险时距待审计"
                     : timeBucketLabel(assessment.data.time_to_risk_bucket)}
                 </strong>
                 <small>
                   {probabilityAnomalyHorizons.length > 0
-                    ? `${probabilityAnomalyHorizons.join(
+                    ? mvpRiskState?.summary ??
+                      `${probabilityAnomalyHorizons.join(
                         " / "
                       )} 概率读数异常；完整面板会显示模型审计说明。`
                     : assessment.data.posture_reason}

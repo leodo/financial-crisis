@@ -291,6 +291,7 @@
   - 2026-06-09：已新增 `scripts/hotspot-status.ps1`，并接到 `just verify` / `just hotspot-status`；当前如果直接改到仓库前几位的大源码文件，会在本地门禁里显式失败，除非先拆模块，或用 `ALLOW_HOTSPOT_TOUCH=1` 带着说明有意识地放行。
   - 2026-06-10：本轮触及 `scripts/formal-candidate-funding-stress-audit.ps1` 只为修正 funding-stress 诊断文案：dry-run 已证明 topology repair 已存在，脚本不能继续暗示“尚未补训练拓扑”。这次未新增结构逻辑；后续如果继续扩展该审计脚本，应先拆分再加功能。
   - 2026-06-10：本轮触及 `scripts/formal-candidate-semantics-audit.ps1` 只为把 USDJPY high-level tail 训练护栏纳入候选语义审计，避免 active release 中 `tail_pos__us_usdjpy_level__145` 把高 USDJPY 误当成 20d 强压分信号。该脚本仍属于治理热点，后续若继续增加成组语义规则，应先拆出 guardrail registry / renderer，而不是继续堆单文件。
+  - 2026-06-10：本轮触及 `apps/web/src/views/decision/buildersCore.ts` 是为把 P0 MVP 风险状态接到已有 hero metrics / signal layer 唯一拼装入口，避免 formal `audit_only` 概率继续被解释成可用时距；触及 `apps/api/src/history_builder/tests.rs` 只是给 `AssessmentSnapshot` 测试 fixture 补新增字段默认值。两处都没有新增新的大块业务分支；后续若继续扩展 MVP 文案或 signal layer，应优先把 `mvpRiskState` 展示 helper 拆到独立模块，而不是继续扩大 `buildersCore.ts`。
 - [x] 生成工件进入 Git 前，必须说明它属于：
   - 正式 release 工件；
   - 基线对照证据；

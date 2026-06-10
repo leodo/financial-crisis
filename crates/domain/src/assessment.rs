@@ -27,6 +27,22 @@ pub enum DecisionPosture {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum MvpRiskStateCode {
+    Observe,
+    Prepare,
+    Hedge,
+    Defend,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MvpProbabilityInputStatus {
+    Usable,
+    AuditOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum JpyCarryState {
     Quiet,
     Building,
@@ -80,6 +96,31 @@ pub struct ActionabilityBlock {
     pub prepare: f64,
     pub hedge: f64,
     pub defend: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MvpRiskState {
+    pub code: MvpRiskStateCode,
+    pub label: String,
+    pub probability_input_status: MvpProbabilityInputStatus,
+    pub summary: String,
+    pub primary_evidence: Vec<String>,
+    pub blockers: Vec<String>,
+    pub next_actions: Vec<String>,
+}
+
+impl Default for MvpRiskState {
+    fn default() -> Self {
+        Self {
+            code: MvpRiskStateCode::Observe,
+            label: "观察为主".to_string(),
+            probability_input_status: MvpProbabilityInputStatus::Usable,
+            summary: "MVP 规则层尚未计算，不能替代正式风险判断。".to_string(),
+            primary_evidence: Vec::new(),
+            blockers: Vec::new(),
+            next_actions: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -393,6 +434,8 @@ pub struct AssessmentSnapshot {
     pub probability_diagnostics: ProbabilityDiagnostics,
     pub time_to_risk_bucket: TimeToRiskBucket,
     pub posture: DecisionPosture,
+    #[serde(default)]
+    pub mvp_risk_state: MvpRiskState,
     pub conviction_score: f64,
     #[serde(default)]
     pub action_evidence: ActionEvidenceBreakdown,

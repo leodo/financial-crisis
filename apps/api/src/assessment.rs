@@ -7,6 +7,7 @@ use fc_domain::{
 mod common;
 mod context;
 mod market_context;
+mod mvp_state;
 mod posture;
 mod probability;
 mod runtime_policy;
@@ -25,6 +26,7 @@ use market_context::{
     build_action_evidence_breakdown, build_data_trust, build_jpy_carry_snapshot,
     build_relief_drivers, high_risk_breadth,
 };
+use mvp_state::build_mvp_risk_state;
 use posture::{
     build_position_guidance, build_posture_guidance, build_summary, build_time_to_risk_bucket,
 };
@@ -117,6 +119,12 @@ pub fn build_assessment_snapshot(
     );
     let probabilities = probability_trace.calibrated_probabilities.clone();
     let actionability = probability_trace.actionability.clone();
+    let scores = AssessmentScores {
+        overall_score: snapshot.overall_score,
+        structural_score: snapshot.structural_score,
+        trigger_score: snapshot.trigger_score,
+        external_shock_score,
+    };
     let actionability_trigger = probability_trace
         .actionability_enabled
         .then_some(&actionability);
@@ -147,6 +155,13 @@ pub fn build_assessment_snapshot(
         action_thresholds,
     );
     let event_assessment = build_event_assessment(snapshot, alerts);
+    let mvp_risk_state = build_mvp_risk_state(
+        &scores,
+        &data_trust,
+        &jpy_carry,
+        &event_assessment,
+        &probability_trace.probability_diagnostics,
+    );
     let backtest_summary = build_backtest_summary(backtests, rolling_audit);
     let posture_guidance = build_posture_guidance(
         snapshot,
@@ -217,6 +232,7 @@ pub fn build_assessment_snapshot(
         &probabilities,
         time_to_risk_bucket,
         &posture_guidance,
+        &mvp_risk_state,
     );
 
     (
@@ -229,14 +245,10 @@ pub fn build_assessment_snapshot(
             probability_diagnostics: probability_trace.probability_diagnostics.clone(),
             time_to_risk_bucket,
             posture: posture_guidance.posture,
+            mvp_risk_state,
             conviction_score,
             action_evidence,
-            scores: AssessmentScores {
-                overall_score: snapshot.overall_score,
-                structural_score: snapshot.structural_score,
-                trigger_score: snapshot.trigger_score,
-                external_shock_score,
-            },
+            scores,
             summary,
             posture_reason: posture_guidance.summary.clone(),
             top_risk_drivers,

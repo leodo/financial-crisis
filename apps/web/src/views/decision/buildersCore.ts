@@ -27,6 +27,7 @@ import {
 import type {
   AssessmentMethodResponse,
   AssessmentSnapshot,
+  MvpRiskState,
   PostureGuidance
 } from "../../types";
 import type { MetricItem } from "../shared/panelHelpers";
@@ -128,6 +129,34 @@ function probabilitySnapshotValue(probabilities: AssessmentSnapshot["probabiliti
   ].join(" / ");
 }
 
+function mvpRiskState(assessment: AssessmentSnapshot): MvpRiskState {
+  return assessment.mvp_risk_state ?? {
+    code: "observe",
+    label: "观察为主（MVP 未返回）",
+    probability_input_status: probabilityDiagnosticAnomalyHorizons(assessment).length > 0
+      ? "audit_only"
+      : "usable",
+    summary: "当前 API 未返回 MVP 风险状态，页面仅保留兼容显示；主结论仍应先复核数据和模型状态。",
+    primary_evidence: [],
+    blockers: ["API 未返回 mvp_risk_state。"],
+    next_actions: ["先刷新 API 并确认后端版本已经包含 MVP 风险状态。"]
+  };
+}
+
+function mvpRiskStateDetail(assessment: AssessmentSnapshot): string {
+  const state = mvpRiskState(assessment);
+  const evidence = state.primary_evidence.length > 0
+    ? `主要证据：${state.primary_evidence.join("；")}。`
+    : "";
+  const blockers = state.blockers.length > 0
+    ? `限制：${state.blockers.join("；")}。`
+    : "";
+  const nextActions = state.next_actions.length > 0
+    ? `下一步：${state.next_actions.join("；")}。`
+    : "";
+  return [state.summary, evidence, blockers, nextActions].filter(Boolean).join(" ");
+}
+
 function probabilitySnapshotDetail(assessment: AssessmentSnapshot): string {
   const anomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
   if (anomalyHorizons.length > 0) {
@@ -135,7 +164,7 @@ function probabilitySnapshotDetail(assessment: AssessmentSnapshot): string {
       assessment.probabilities
     )}；${anomalyHorizons.join(
       " / "
-    )} 命中模型方向异常，这些小概率只作为审计证据，不作为风险时距或离场/对冲结论。`;
+    )} 命中模型方向异常，这些小概率只作为审计证据，不作为风险时距或离场/对冲结论。${mvpRiskState(assessment).label} 是当前主显示口径。`;
   }
 
   const allZero =
@@ -343,9 +372,16 @@ export function buildRuntimeCards(
 
 export function buildHeroMetrics(assessment: AssessmentSnapshot): MetricItem[] {
   const evidenceScore = actionEvidenceScore(assessment);
+  const state = mvpRiskState(assessment);
   return [
     {
-      label: "结论可靠性",
+      label: "MVP 风险状态",
+      value: state.label,
+      hint: mvpRiskStateDetail(assessment),
+      valueClassName: "metric-value-token"
+    },
+    {
+      label: "数据/服务状态",
       value: decisionReliabilityLabel(assessment),
       hint: decisionReliabilityHint(assessment),
       valueClassName: "metric-value-token"
@@ -360,11 +396,6 @@ export function buildHeroMetrics(assessment: AssessmentSnapshot): MetricItem[] {
       label: "数据覆盖",
       value: formatPercent(assessment.data_trust.coverage_score),
       hint: "衡量当前免费数据源覆盖度；这个才更接近数据可信程度。"
-    },
-    {
-      label: "风险强度",
-      value: formatNumber(assessment.scores.overall_score),
-      hint: "0-100 压力位置分，不等于危机概率。"
     }
   ];
 }
@@ -545,6 +576,7 @@ export function buildSignalLayerRows(
   const priorDetail = probabilityDisplayNote(assessment);
   const priorAnomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
   const priorThresholdSummary = `当前进入线：准备 ${formatPercent(method.runtime_thresholds.prepare_p60d)} / 对冲 ${formatPercent(method.runtime_thresholds.hedge_p20d)} / 防守 ${formatPercent(method.runtime_thresholds.defend_p5d)}`;
+  const state = mvpRiskState(assessment);
 
   return [
     {
@@ -598,17 +630,20 @@ export function buildSignalLayerRows(
     },
     {
       id: "posture",
-      title: "最终执行节奏",
-      description: "最后再叠加数据可信度、事件确认、日元套息放大器和用户偏好，压成一档执行节奏。",
+      title: priorAnomalyHorizons.length > 0 ? "MVP 主结论" : "最终执行节奏",
+      description:
+        priorAnomalyHorizons.length > 0
+          ? "formal 概率待审计时，先用规则层、数据质量、事件确认和日元套息状态给出保守 MVP 结论。"
+          : "最后再叠加数据可信度、事件确认、日元套息放大器和用户偏好，压成一档执行节奏。",
       value:
         priorAnomalyHorizons.length > 0
-          ? `${postureLabel(assessment.posture)} / 风险时距待审计`
+          ? state.label
           : `${postureLabel(assessment.posture)} / ${timeBucketLabel(assessment.time_to_risk_bucket)}`,
       detail:
         priorAnomalyHorizons.length > 0
           ? `${priorAnomalyHorizons.join(
               " / "
-            )} 正式概率读数命中模型方向异常；当前执行节奏只保留为非概率层参考，不能把“常态”理解成风险已经远离。${posture.summary}`
+            )} 正式概率读数命中模型方向异常；当前执行节奏按 MVP 风险状态展示，不能把 formal 低概率理解成风险已经远离。${mvpRiskStateDetail(assessment)}`
           : posture.summary
     }
   ];

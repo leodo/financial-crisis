@@ -1,8 +1,8 @@
 use fc_domain::{
     DataTrust, DecisionPosture, EventAssessment, EventConfirmationState, JpyCarrySnapshot,
-    ModelReleaseRecord, PositionGuidance, PositionGuidanceGovernance, PostureGuidance,
-    ProbabilityBlock, QualityGrade, RiskSnapshot, TimeToRiskBucket, UserRiskPreferences,
-    UserRiskProfile,
+    ModelReleaseRecord, MvpProbabilityInputStatus, MvpRiskState, PositionGuidance,
+    PositionGuidanceGovernance, PostureGuidance, ProbabilityBlock, QualityGrade, RiskSnapshot,
+    TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
 };
 
 use super::super::common::format_probability_percent;
@@ -286,7 +286,23 @@ pub(in super::super) fn build_summary(
     probabilities: &ProbabilityBlock,
     time_to_risk_bucket: TimeToRiskBucket,
     posture: &PostureGuidance,
+    mvp_risk_state: &MvpRiskState,
 ) -> String {
+    if matches!(
+        mvp_risk_state.probability_input_status,
+        MvpProbabilityInputStatus::AuditOnly
+    ) {
+        return format!(
+            "MVP 风险状态：{}。{} formal 5d / 20d / 60d 概率审计读数分别为 {} / {} / {}；这些读数当前不参与主结论，也不能解释成风险已经远离。当前 posture 仅作为非概率层参考：{}。",
+            mvp_risk_state.label,
+            mvp_risk_state.summary,
+            format_probability_percent(probabilities.p_5d),
+            format_probability_percent(probabilities.p_20d),
+            format_probability_percent(probabilities.p_60d),
+            posture_label(posture.posture)
+        );
+    }
+
     let horizon_text = match time_to_risk_bucket {
         TimeToRiskBucket::Normal => "当前仍偏常态区间",
         TimeToRiskBucket::Months => "未来数月进入高风险阶段的概率已抬升",

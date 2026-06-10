@@ -26,6 +26,34 @@ import type {
   DecisionRuntimeNotice
 } from "./useDecisionViewModel";
 
+function currentMvpRiskState(assessment: AssessmentSnapshot) {
+  return assessment.mvp_risk_state ?? {
+    code: "observe",
+    label: "观察为主（MVP 未返回）",
+    probability_input_status: probabilityDiagnosticAnomalyHorizons(assessment).length > 0
+      ? "audit_only"
+      : "usable",
+    summary: "当前 API 未返回 MVP 风险状态，页面仅保留兼容显示；请先刷新后端并复核模型状态。",
+    primary_evidence: [] as string[],
+    blockers: ["API 未返回 mvp_risk_state。"],
+    next_actions: ["先确认后端已更新到包含 MVP 风险状态的版本。"]
+  };
+}
+
+function mvpRiskStateRuleText(assessment: AssessmentSnapshot): string {
+  const state = currentMvpRiskState(assessment);
+  const evidence = state.primary_evidence.length > 0
+    ? `主要证据：${state.primary_evidence.join("；")}。`
+    : "";
+  const blockers = state.blockers.length > 0
+    ? `限制：${state.blockers.join("；")}。`
+    : "";
+  const nextActions = state.next_actions.length > 0
+    ? `下一步：${state.next_actions.join("；")}。`
+    : "";
+  return [state.summary, evidence, blockers, nextActions].filter(Boolean).join(" ");
+}
+
 export function DecisionPrelude({
   runtimeNotice,
   runtimeChipLabel,
@@ -89,22 +117,23 @@ export function DecisionHeroSummary({
 }) {
   const anomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
   const probabilityAuditActive = anomalyHorizons.length > 0;
+  const mvpRiskState = currentMvpRiskState(assessment);
   const heroClassName = `hero-surface ${postureClass(assessment.posture)}${
     probabilityAuditActive ? " probability-audit" : ""
   }`;
-  const heroValue = probabilityAuditActive ? "概率待审计" : postureLabel(assessment.posture);
+  const heroValue = probabilityAuditActive ? mvpRiskState.label : postureLabel(assessment.posture);
   const heroSubtitle = probabilityAuditActive
-    ? `风险窗口判断：待审计（原模型桶：${timeBucketLabel(assessment.time_to_risk_bucket)}）`
+    ? `当前 MVP 风险状态；formal 风险窗口待审计（原模型桶：${timeBucketLabel(assessment.time_to_risk_bucket)}）`
     : `风险窗口判断：${timeBucketLabel(assessment.time_to_risk_bucket)}`;
   const heroSummary = probabilityAuditActive
-    ? `${anomalyHorizons.join(
+    ? `${mvpRiskState.summary} ${anomalyHorizons.join(
         " / "
-      )} 正式概率读数命中模型方向异常；当前不输出“离风险还有多远”的仓位结论，原执行节奏只作为非概率层参考。${posture.summary}`
+      )} 正式概率读数命中模型方向异常；当前不输出“离风险还有多远”的仓位结论，原执行节奏只作为非概率层参考。`
     : posture.summary;
 
   return (
     <section className={heroClassName}>
-      <span className="kicker">{probabilityAuditActive ? "当前模型状态" : "当前执行节奏"}</span>
+      <span className="kicker">{probabilityAuditActive ? "当前 MVP 风险状态" : "当前执行节奏"}</span>
       <div className="hero-value">{heroValue}</div>
       <div className="hero-subtitle">{heroSubtitle}</div>
       <p>{heroSummary}</p>
@@ -132,6 +161,7 @@ export function DecisionRiskHorizon({
     );
   const riskDistanceSummary = buildRiskDistanceSummary(assessment, method);
   const riskHorizonSanityNote = buildRiskHorizonSanityNote(assessment, method);
+  const probabilityAuditActive = probabilityDiagnosticAnomalyHorizons(assessment).length > 0;
 
   return (
     <section className="surface">
@@ -153,6 +183,9 @@ export function DecisionRiskHorizon({
           <small>{riskDistanceSummary.modelDetail}</small>
         </div>
       </div>
+      {probabilityAuditActive ? (
+        <RuleBox label="MVP 决策口径">{mvpRiskStateRuleText(assessment)}</RuleBox>
+      ) : null}
       <div className="probability-grid">
         <ProbabilityTile
           label="5 个交易日"
@@ -197,6 +230,7 @@ function buildRiskDistanceSummary(
   assessment: AssessmentSnapshot,
   method: AssessmentMethodResponse
 ) {
+  const mvpRiskState = currentMvpRiskState(assessment);
   const { p_5d: p5d, p_20d: p20d, p_60d: p60d } = assessment.probabilities;
   const thresholds = method.runtime_thresholds;
   const anomalyHorizons = assessment.probability_diagnostics.horizon_overlays
@@ -240,7 +274,7 @@ function buildRiskDistanceSummary(
       ? "未捕捉临近窗口"
       : "读数可解释";
   const modelStatusWithAnomaly =
-    anomalyHorizons.length > 0 ? "概率模型待修复" : modelStatus;
+    anomalyHorizons.length > 0 ? "正式概率待审计" : modelStatus;
   const modelDetail =
     anomalyHorizons.length > 0
       ? `${anomalyHorizons
@@ -255,10 +289,10 @@ function buildRiskDistanceSummary(
           : "当前概率和动作进入线之间没有明显显示层异常。";
 
   return {
-    bucketLabel: anomalyHorizons.length > 0 ? "待审计" : timeBucketLabel(assessment.time_to_risk_bucket),
+    bucketLabel: anomalyHorizons.length > 0 ? mvpRiskState.label : timeBucketLabel(assessment.time_to_risk_bucket),
     bucketDetail:
       anomalyHorizons.length > 0
-        ? `原模型桶是 ${timeBucketLabel(
+        ? `${mvpRiskState.summary} 原模型桶是 ${timeBucketLabel(
             assessment.time_to_risk_bucket
           )}，但 ${anomalyHorizons
             .map((row) => `${row.horizonDays}d`)
@@ -266,7 +300,7 @@ function buildRiskDistanceSummary(
         : bucketDetail[assessment.time_to_risk_bucket],
     nearestValue:
       anomalyHorizons.length > 0
-        ? "距离判断禁用"
+        ? "按 MVP 口径"
         : nearest
           ? nearest.gap === 0
             ? "已触线"
@@ -276,7 +310,7 @@ function buildRiskDistanceSummary(
           : "未配置",
     nearestDetail:
       anomalyHorizons.length > 0
-        ? "当前存在模型方向异常，不能用机械触线比例判断“离风险还有多远”。下方卡片只保留接口值、raw/calibrated/runtime 链路和 base 头贡献，用来审计 active release 为什么偏冷；这些读数不参与离场、对冲或仓位时距结论。"
+        ? `${mvpRiskStateRuleText(assessment)} 当前存在模型方向异常，不能用机械触线比例判断“离风险还有多远”。下方卡片只保留接口值、raw/calibrated/runtime 链路和 base 头贡献，用来审计 active release 为什么偏冷；这些读数不参与离场、对冲或仓位时距结论。`
         : nearest
           ? `${nearest.label} 最接近；还差 ${formatPercentagePointGap(
               nearest.gap

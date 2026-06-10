@@ -75,6 +75,19 @@ export interface AssessmentScores {
   external_shock_score: number;
 }
 
+export type MvpRiskStateCode = "observe" | "prepare" | "hedge" | "defend";
+export type MvpProbabilityInputStatus = "usable" | "audit_only";
+
+export interface MvpRiskState {
+  code: MvpRiskStateCode;
+  label: string;
+  probability_input_status: MvpProbabilityInputStatus;
+  summary: string;
+  primary_evidence: string[];
+  blockers: string[];
+  next_actions: string[];
+}
+
 export interface HistoricalAnalog {
   scenario_id: string;
   name: string;
@@ -258,6 +271,7 @@ export interface AssessmentSnapshot {
   probability_diagnostics: ProbabilityDiagnostics;
   time_to_risk_bucket: TimeToRiskBucket;
   posture: DecisionPosture;
+  mvp_risk_state?: MvpRiskState;
   conviction_score: number;
   action_evidence?: ActionEvidenceBreakdown;
   scores: AssessmentScores;
