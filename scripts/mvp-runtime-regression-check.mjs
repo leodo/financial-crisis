@@ -80,13 +80,13 @@ function validateRuntimeMode(snapshot) {
 
 function validateKeyIndicators(snapshot) {
   const requiredIndicators = [
-    ["us_external_usdjpy_level", "USDJPY"],
-    ["us_market_vix_close", "VIX"],
-    ["us_liquidity_effr", "EFFR"],
-    ["jp_rates_call_rate", "JPY call rate"]
+    ["us_external_usdjpy_level", "USDJPY", "boj", "boj_fx_daily"],
+    ["us_market_vix_close", "VIX", "fred", "fred_series_observations"],
+    ["us_liquidity_effr", "EFFR", "fred", "fred_series_observations"],
+    ["jp_rates_call_rate", "JPY call rate", "boj", "boj_money_market_rates"]
   ];
 
-  for (const [indicatorId, label] of requiredIndicators) {
+  for (const [indicatorId, label, expectedSourceId, expectedDatasetId] of requiredIndicators) {
     const indicator = keyIndicatorById(snapshot, indicatorId);
     assert(indicator, `${label} key indicator is missing`);
     if (!indicator) {
@@ -95,6 +95,14 @@ function validateKeyIndicators(snapshot) {
     assert(numberOrNull(indicator.latest_value) !== null, `${label} latest_value is not numeric`);
     assert(stringValue(indicator.latest_as_of_date), `${label} latest_as_of_date is missing`);
     assert(stringValue(indicator.source_id), `${label} source_id is missing`);
+    assert(
+      indicator.source_id === expectedSourceId,
+      `${label} should use source ${expectedSourceId}, got ${indicator.source_id ?? "<missing>"}`
+    );
+    assert(
+      indicator.dataset_id === expectedDatasetId,
+      `${label} should use dataset ${expectedDatasetId}, got ${indicator.dataset_id ?? "<missing>"}`
+    );
     assert(
       indicator.status === "fresh" || indicator.status === "stale",
       `${label} status should be fresh/stale, got ${indicator.status ?? "<missing>"}`
@@ -111,6 +119,32 @@ function validateKeyIndicators(snapshot) {
       `USDJPY key indicator ${indicatorValue} does not match jpy_carry.usdjpy_level ${carryValue}`
     );
   }
+}
+
+function sourceById(sources, sourceId) {
+  return sources?.find((source) => source.source_id === sourceId);
+}
+
+function validateSourceCatalogRuntime(sources) {
+  assert(Array.isArray(sources) && sources.length > 0, "source catalog endpoint returned no sources");
+
+  for (const sourceId of ["fred", "boj", "sec_edgar", "world_bank"]) {
+    const source = sourceById(sources, sourceId);
+    assert(source, `${sourceId} source catalog entry is missing`);
+    if (!source) {
+      continue;
+    }
+    assert(source.production_allowed === true, `${sourceId} should be production allowed`);
+    assert(stringValue(source.license_note), `${sourceId} license note is missing`);
+    assert(source.health && typeof source.health === "object", `${sourceId} health block is missing`);
+    assert(stringValue(source.health?.status), `${sourceId} health status is missing`);
+  }
+
+  const fred = sourceById(sources, "fred");
+  assert(
+    stringValue(fred?.license_note).toLowerCase().includes("no-key"),
+    "FRED source catalog should document the no-key free CSV path"
+  );
 }
 
 function validateMvpAuditState(snapshot) {
@@ -270,11 +304,26 @@ async function validateUserFacingUiCopy() {
     decisionView.includes("当前数字可信度清单"),
     "decision dashboard should include the current number audit checklist"
   );
+  assert(
+    decisionView.includes("关键免费数据源是否可信"),
+    "decision dashboard should include the key free data reliability section"
+  );
+
+  const dataSourceReliability = await readFile(
+    new URL("../apps/web/src/views/decision/dataSourceReliability.ts", import.meta.url),
+    "utf8"
+  );
+  assert(
+    dataSourceReliability.includes("替代路径"),
+    "free data reliability section should explain fallback/source alternatives"
+  );
 }
 
 const snapshot = await fetchJson("/api/assessment/current");
+const sources = await fetchJson("/api/sources");
 validateRuntimeMode(snapshot);
 validateKeyIndicators(snapshot);
+validateSourceCatalogRuntime(sources);
 validateMvpAuditState(snapshot);
 validatePositionGuidance(snapshot);
 await validateUserFacingUiCopy();

@@ -9,11 +9,15 @@ import {
   formatProbabilityDecimal,
   formatProbabilityPercentExact,
   freshnessLabel,
-  humanizeNarrativeCopy,
   sourceLabel,
   unitLabel
 } from "../../format";
 import type { AssessmentSnapshot } from "../../types";
+import {
+  keyIndicatorLineageCopy,
+  keyIndicatorSourceTimingCopy,
+  sourceAccessTag
+} from "./dataSourceReliability";
 import { currentMvpRiskState } from "./mvpRiskState";
 import { probabilityDiagnosticAnomalyHorizons } from "./probabilityDiagnostics";
 
@@ -82,9 +86,9 @@ export function buildNumberAuditRows(assessment: AssessmentSnapshot): DecisionNu
         : "当前接口没有返回 USDJPY 关键指标。",
       meta: usdJpy ? sourceAccessTag(usdJpy.source_id) : "缺失",
       note: usdJpy
-        ? `${sourceTimingCopy(usdJpy)} dataset=${usdJpy.dataset_id ?? "—"}；${humanizeNarrativeCopy(
+        ? `${keyIndicatorSourceTimingCopy(usdJpy)} dataset=${usdJpy.dataset_id ?? "—"}；${
             usdJpy.note
-          )}${lineageCopy(usdJpy.lineage)}`
+          } ${keyIndicatorLineageCopy(usdJpy.lineage, { includeEvidenceLevel: true })}`
         : "缺少 USDJPY 时，日元套息风险只能降级解释，不能给出高置信结论。"
     },
     {
@@ -126,42 +130,5 @@ function compactListCopy(label: string, items: string[], emptyText: string): str
   if (items.length === 0) {
     return emptyText;
   }
-  return `${label}：${items.map(humanizeNarrativeCopy).join("；")}`;
-}
-
-function sourceAccessTag(sourceId: string | null): string {
-  const officialFreeSources = new Set(["fred", "treasury", "world_bank", "boj", "sec_edgar"]);
-  if (!sourceId) {
-    return "来源缺失";
-  }
-  if (officialFreeSources.has(sourceId)) {
-    return "免费官方";
-  }
-  if (sourceId === "gdelt") {
-    return "免费公开";
-  }
-  return "需复核授权";
-}
-
-function sourceTimingCopy(indicator: AssessmentSnapshot["key_indicators"][number]): string {
-  if (indicator.indicator_id === "us_external_usdjpy_level" && indicator.source_id === "boj") {
-    return "BOJ 免费官方日频点位，适合日频风险评估，不等同盘中实时价。";
-  }
-  if (indicator.source_id === "fred") {
-    return "FRED 免费公开图表/序列数据，适合日频或低频风险评估。";
-  }
-  return `${sourceLabel(indicator.source_id)} 来源用于当前关键指标。`;
-}
-
-function lineageCopy(
-  lineage: AssessmentSnapshot["key_indicators"][number]["lineage"]
-): string {
-  if (!lineage) {
-    return "";
-  }
-  const fetchedAt = lineage.fetched_at ? ` 抓取 ${formatDateTime(lineage.fetched_at)}。` : "";
-  const raw = lineage.raw_payload_id ? ` raw=${lineage.raw_payload_id.slice(0, 8)}。` : "";
-  return ` 追溯级别 ${lineage.evidence_level}；${humanizeNarrativeCopy(
-    lineage.note
-  )}${fetchedAt}${raw}`;
+  return `${label}：${items.join("；")}`;
 }

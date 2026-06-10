@@ -89,7 +89,7 @@ export default function DecisionView({
     historyEvidenceMetrics,
     historyEvidenceNote,
     postureThresholdMetrics,
-    keyIndicatorRows,
+    freeDataReliabilityRows,
     signalLayerRows,
     analogRows,
     actionPlanMetrics,
@@ -174,9 +174,9 @@ export default function DecisionView({
           </section>
 
           <section className="surface">
-            <SurfaceHeader title="关键指标是否最新" icon={Database} />
+            <SurfaceHeader title="关键免费数据源是否可信" icon={Database} />
             <DetailRows
-              items={keyIndicatorRows.map((item) => ({
+              items={freeDataReliabilityRows.map((item) => ({
                 id: item.id,
                 title: item.title,
                 detail: item.detail,

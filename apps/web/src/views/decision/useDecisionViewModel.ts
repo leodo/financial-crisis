@@ -13,6 +13,7 @@ import {
   buildProbabilityTrendModel
 } from "./charts";
 import { buildHeroMetrics } from "./heroMetrics";
+import { buildFreeDataReliabilityRows } from "./freeDataReliability";
 import { buildNumberAuditRows } from "./numberAudit";
 import {
   buildActionPlanMetrics,
@@ -23,7 +24,6 @@ import {
   buildBlockerClauses,
   buildDataTrustMetrics,
   buildJpyCarryMetrics,
-  buildKeyIndicatorRows,
   buildPostureThresholdMetrics,
   buildRiskHorizonActionMetrics,
   buildRollingAuditBoundaryText,
@@ -161,8 +161,8 @@ export function useDecisionViewModel({
     () => buildPostureThresholdMetrics(method),
     [method]
   );
-  const keyIndicatorRows = useMemo(
-    () => buildKeyIndicatorRows(assessment.key_indicators),
+  const freeDataReliabilityRows = useMemo(
+    () => buildFreeDataReliabilityRows(assessment.key_indicators),
     [assessment.key_indicators]
   );
   const signalLayerRows = useMemo(
@@ -235,7 +235,7 @@ export function useDecisionViewModel({
     historyEvidenceMetrics,
     historyEvidenceNote,
     postureThresholdMetrics,
-    keyIndicatorRows,
+    freeDataReliabilityRows,
     signalLayerRows,
     analogRows,
     actionPlanMetrics,
