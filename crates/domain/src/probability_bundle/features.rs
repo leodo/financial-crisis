@@ -97,6 +97,8 @@ pub const FAMILY_CONDITIONAL_DERIVED_FEATURES: &[&str] = &[
     "family_proxy__acute_liquidity",
     "family_proxy__jpy_carry",
     "family_context__systemic_credit__structural_score",
+    "family_context__systemic_credit__trigger_score",
+    "family_context__systemic_credit__external_dimension_score",
     "family_context__mixed_systemic__trigger_score",
     "family_context__rate_shock__external_dimension_score",
     "family_context__acute_liquidity__trigger_score",

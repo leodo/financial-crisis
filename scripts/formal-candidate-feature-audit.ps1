@@ -22,6 +22,10 @@ $TrackedFeatures = @(
     "interaction__external_dimension_score__us_usdjpy_level",
     "family_context__jpy_carry__external_dimension_score",
     "family_context__rate_shock__external_dimension_score",
+    "family_proxy__systemic_credit",
+    "family_context__systemic_credit__structural_score",
+    "family_context__systemic_credit__trigger_score",
+    "family_context__systemic_credit__external_dimension_score",
     "us_fed_funds_level",
     "interaction__structural_score__trigger_score"
 )

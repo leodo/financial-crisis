@@ -32,6 +32,10 @@ fn family_conditional_transform_appends_family_features() {
     assert!(expanded.len() > base.len() + INTERACTION_TAIL_DERIVED_FEATURES.len());
     assert!(expanded.contains(&"interaction__overall_score__us_vix_level".to_string()));
     assert!(expanded.contains(&"family_proxy__systemic_credit".to_string()));
+    assert!(expanded.contains(&"family_context__systemic_credit__trigger_score".to_string()));
+    assert!(
+        expanded.contains(&"family_context__systemic_credit__external_dimension_score".to_string())
+    );
     assert!(expanded.contains(&"family_context__jpy_carry__external_dimension_score".to_string()));
 }
 
@@ -111,11 +115,23 @@ fn derived_feature_resolver_handles_family_conditional_features() {
         &features,
     )
     .unwrap();
+    let systemic_trigger_context = resolve_probability_feature_value(
+        "family_context__systemic_credit__trigger_score",
+        &features,
+    )
+    .unwrap();
+    let systemic_external_context = resolve_probability_feature_value(
+        "family_context__systemic_credit__external_dimension_score",
+        &features,
+    )
+    .unwrap();
 
     assert!(systemic > 0.70 && systemic <= 1.0);
     assert!(mixed > 0.70 && mixed <= 1.0);
     assert!(carry > 0.35 && carry <= 1.0);
     assert!((carry_context - carry * 65.0).abs() < 1e-9);
+    assert!((systemic_trigger_context - systemic * 70.0).abs() < 1e-9);
+    assert!((systemic_external_context - systemic * 65.0).abs() < 1e-9);
 }
 
 #[test]

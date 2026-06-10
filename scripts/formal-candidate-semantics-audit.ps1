@@ -40,6 +40,8 @@ $FamilyFeatureNames = @(
     "family_context__jpy_carry__external_dimension_score",
     "family_proxy__systemic_credit",
     "family_context__systemic_credit__structural_score",
+    "family_context__systemic_credit__trigger_score",
+    "family_context__systemic_credit__external_dimension_score",
     "family_proxy__mixed_systemic",
     "family_context__mixed_systemic__trigger_score"
 )
@@ -456,6 +458,24 @@ $guardrailRows = @(
         -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "family_context__systemic_credit__structural_score") `
         -MinAllowed 0.04 `
         -MaxAllowed 0.24
+    New-GuardrailStatusRow `
+        -Item "systemic-credit trigger context floor" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d family_context__systemic_credit__trigger_score should stay in 0.06..0.22 so near-term trigger stress is gated through systemic-credit context." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "family_context__systemic_credit__trigger_score") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "family_context__systemic_credit__trigger_score") `
+        -MinAllowed 0.06 `
+        -MaxAllowed 0.22
+    New-GuardrailStatusRow `
+        -Item "systemic-credit external context floor" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d family_context__systemic_credit__external_dimension_score should stay in 0.04..0.18 so external stress only lifts 20d risk when systemic-credit context is present." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "family_context__systemic_credit__external_dimension_score") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "family_context__systemic_credit__external_dimension_score") `
+        -MinAllowed 0.04 `
+        -MaxAllowed 0.18
     New-GuardrailStatusRow `
         -Item "mixed-systemic proxy floor" `
         -Coverage "training_guardrail" `

@@ -430,6 +430,8 @@ $TrackedFeatures = @(
     "family_context__rate_shock__external_dimension_score",
     "family_proxy__systemic_credit",
     "family_context__systemic_credit__structural_score",
+    "family_context__systemic_credit__trigger_score",
+    "family_context__systemic_credit__external_dimension_score",
     "family_proxy__mixed_systemic",
     "family_context__mixed_systemic__trigger_score",
     "us_fed_funds_level"

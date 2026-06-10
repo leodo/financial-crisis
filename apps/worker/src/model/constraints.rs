@@ -164,6 +164,20 @@ fn forward_crisis_coefficient_bounds(
                 max: Some(0.24),
             })
         }
+        (20, "family_context__systemic_credit__trigger_score") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(0.06),
+                max: Some(0.22),
+            })
+        }
+        (20, "family_context__systemic_credit__external_dimension_score")
+            if uses_family_context_features =>
+        {
+            Some(CoefficientBounds {
+                min: Some(0.04),
+                max: Some(0.18),
+            })
+        }
         (20, "family_proxy__mixed_systemic") if uses_family_context_features => {
             Some(CoefficientBounds {
                 min: Some(0.04),
