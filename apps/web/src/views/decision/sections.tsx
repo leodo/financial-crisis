@@ -10,14 +10,16 @@ import type { AssessmentMethodResponse, AssessmentSnapshot, PostureGuidance } fr
 import type { MetricItem } from "../shared/panelHelpers";
 import { MetricGrid, RuleBox, SurfaceHeader } from "../shared/panelHelpers";
 import {
-  findProbabilityDiagnosticAnomaly,
   formatPercentagePointGap,
   formatThresholdMultiple,
   PostureLadder,
   ProbabilityTile
 } from "./components";
-import type { ProbabilityDiagnosticAnomaly } from "./components";
 import { decisionContent } from "./content";
+import {
+  findProbabilityDiagnosticAnomaly,
+  type ProbabilityDiagnosticAnomaly
+} from "./probabilityDiagnostics";
 import type {
   DecisionRuntimeCard,
   DecisionRuntimeNotice

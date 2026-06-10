@@ -44,6 +44,7 @@ import {
   describeProbabilityMode,
   describeReleaseHealth
 } from "./logic";
+import { findProbabilityDiagnosticAnomaly } from "./probabilityDiagnostics";
 
 function formatOptionalNumber(value: number | null, unit?: string) {
   return value === null ? "—" : formatNumber(value, unit);
@@ -87,6 +88,15 @@ function actionSourceSummary(assessment: AssessmentSnapshot) {
 }
 
 function probabilityDisplayNote(assessment: AssessmentSnapshot): string | null {
+  const anomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
+  if (anomalyHorizons.length > 0) {
+    return `当前 ${anomalyHorizons.join(
+      " / "
+    )} 概率命中 USDJPY 高位 tail 压低读数的语义异常；正式概率 ${probabilitySnapshotValue(
+      assessment.probabilities
+    )} 只保留为模型审计证据，不能解释成“风险很远”，也不能用于离场/对冲时距结论。`;
+  }
+
   const peakProbability = Math.max(
     assessment.probabilities.p_5d,
     assessment.probabilities.p_20d,
@@ -108,6 +118,12 @@ function probabilityDisplayNote(assessment: AssessmentSnapshot): string | null {
   return staleDays !== null && staleDays >= 7
     ? `当前 formal 先验仍低于 1%，且关键观测按工作日口径已滞后约 ${staleDays} 天；短期判断应保守解释。`
     : "当前 formal 先验仍低于 1%，属于低位区间，而不是零风险断言。";
+}
+
+function probabilityDiagnosticAnomalyHorizons(assessment: AssessmentSnapshot): string[] {
+  return assessment.probability_diagnostics.horizon_overlays
+    .filter((diagnostic) => findProbabilityDiagnosticAnomaly(diagnostic) !== null)
+    .map((diagnostic) => `${diagnostic.horizon_days}d`);
 }
 
 function probabilitySnapshotValue(probabilities: AssessmentSnapshot["probabilities"]): string {
@@ -521,6 +537,7 @@ export function buildSignalLayerRows(
     ? `${actionEvidenceBreakdownCopy(assessment)} 它不是模型结论置信概率；结论可靠性请看数据覆盖、模型服务状态和关键数据日期。`
     : `${actionEvidenceBreakdownCopy(assessment)} 它不是模型结论置信概率；结论可靠性请看数据覆盖、模型服务状态和关键数据日期。`;
   const priorDetail = probabilityDisplayNote(assessment);
+  const priorAnomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
   const priorThresholdSummary = `当前进入线：准备 ${formatPercent(method.runtime_thresholds.prepare_p60d)} / 对冲 ${formatPercent(method.runtime_thresholds.hedge_p20d)} / 防守 ${formatPercent(method.runtime_thresholds.defend_p5d)}`;
 
   return [
@@ -528,7 +545,14 @@ export function buildSignalLayerRows(
       id: "prior",
       title: "危机先验",
       description: "先看未来 5d / 20d / 60d 进入风险窗口的概率，回答“离风险还有多远”。",
-      value: `${formatProbabilityPercentExact(assessment.probabilities.p_5d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_20d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_60d)}`,
+      value:
+        priorAnomalyHorizons.length > 0
+          ? "正式概率待审计"
+          : `${formatProbabilityPercentExact(
+              assessment.probabilities.p_5d
+            )} / ${formatProbabilityPercentExact(
+              assessment.probabilities.p_20d
+            )} / ${formatProbabilityPercentExact(assessment.probabilities.p_60d)}`,
       detail: priorDetail ? `${priorThresholdSummary} · ${priorDetail}` : priorThresholdSummary
     },
     {
