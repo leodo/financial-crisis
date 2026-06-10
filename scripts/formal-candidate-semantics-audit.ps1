@@ -42,7 +42,9 @@ $FamilyFeatureNames = @(
 
 $BroadScoreFeatureNames = @(
     "trigger_score",
-    "external_dimension_score"
+    "external_dimension_score",
+    "tail_pos__trigger_score__50",
+    "tail_pos__external_dimension_score__50"
 )
 
 function Resolve-ArtifactPath {
@@ -414,6 +416,24 @@ $guardrailRows = @(
         -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "external_dimension_score") `
         -MinAllowed 0.0 `
         -MaxAllowed 0.42
+    New-GuardrailStatusRow `
+        -Item "trigger high-tail broad-lift cap" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d tail_pos__trigger_score__50 should stay <= 0.35 in family-context heads so high trigger pressure cannot bypass the base broad-score cap." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "tail_pos__trigger_score__50") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_pos__trigger_score__50") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.35
+    New-GuardrailStatusRow `
+        -Item "external-dimension high-tail broad-lift cap" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d tail_pos__external_dimension_score__50 should stay <= 0.25 in family-context heads so external pressure remains contextual even through high-tail features." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "tail_pos__external_dimension_score__50") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_pos__external_dimension_score__50") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.25
     New-GuardrailStatusRow `
         -Item "USDJPY signed 20d change neutralization" `
         -Coverage "training_guardrail" `

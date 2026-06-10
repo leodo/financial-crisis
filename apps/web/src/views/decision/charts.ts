@@ -27,6 +27,7 @@ export interface LineChartPointDetail {
 
 export interface LineChartModel {
   categories: string[];
+  minValue?: number;
   maxValue: number;
   series: LineChartSeriesModel[];
   valueType: "percent" | "score";
@@ -327,15 +328,47 @@ function buildProbabilityPointDetails(
 ): LineChartPointDetail[] {
   return history.map((point, index) => {
     const value = probabilityValue(point, horizon, mode);
+    const formalValue = probabilityValue(point, horizon, "calibrated");
+    const rawValue = probabilityValue(point, horizon, "raw");
     const previous = index > 0 ? probabilityValue(history[index - 1], horizon, mode) : null;
     const deltaCopy =
       previous === null ? "首个点" : `较前点 ${formatProbabilityDelta(value - previous)}`;
+    const modeCopy = mode === "raw" ? "原始" : "正式";
+    const counterpartCopy =
+      mode === "raw"
+        ? `正式 ${formatProbabilityPercentExact(formalValue)}`
+        : `原始 ${formatProbabilityPercentExact(rawValue)}`;
 
     return {
       valueLabel: `${formatProbabilityPercentExact(value)} · ${formatProbabilityBasisPoints(value)}`,
-      detail: `接口 ${formatProbabilityDecimal(value)} · ${deltaCopy}`
+      detail: `${modeCopy} ${formatProbabilityDecimal(
+        value
+      )} · ${counterpartCopy} · ${deltaCopy}`
     };
   });
+}
+
+function buildLocalProbabilityAxis(values: number[]) {
+  if (values.length === 0) {
+    return { minValue: 0, maxValue: 0.02 };
+  }
+
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const spread = maxValue - minValue;
+  if (spread <= 0) {
+    const padding = Math.max(maxValue * 0.35, 0.00002);
+    return {
+      minValue: Math.max(0, minValue - padding),
+      maxValue: Math.max(0.00004, maxValue + padding)
+    };
+  }
+
+  const padding = Math.max(spread * 0.25, maxValue * 0.08, 0.00001);
+  return {
+    minValue: Math.max(0, minValue - padding),
+    maxValue: maxValue + padding
+  };
 }
 
 function normalizedProbabilityValues(values: number[]): number[] {
@@ -442,11 +475,12 @@ function buildTwentyDayZoomChart(
   mode: ProbabilityTrendMode
 ): LineChartModel {
   const values = history.map((point) => probabilityValue(point, 20, mode));
-  const probabilityMax = values.length > 0 ? Math.max(...values) : 0;
+  const axis = buildLocalProbabilityAxis(values);
 
   return {
     categories: history.map((point) => formatDate(point.as_of_date)),
-    maxValue: buildProbabilityAxisMax(probabilityMax),
+    minValue: axis.minValue,
+    maxValue: axis.maxValue,
     valueType: "percent",
     series: [
       {

@@ -113,16 +113,24 @@ export function SimpleLineChart({
   const plotWidth = width - margins.left - margins.right;
   const plotHeight = height - margins.top - margins.bottom;
   const pointCount = Math.max(model.categories.length, 1);
-  const yMax = model.maxValue <= 0 ? 1 : model.maxValue;
+  const yMin = model.minValue ?? 0;
+  const yMax = model.maxValue <= yMin ? yMin + 1 : model.maxValue;
+  const yRange = yMax - yMin;
   const labelStep = Math.max(1, Math.ceil(model.categories.length / 6));
 
   const x = (index: number) =>
     pointCount === 1
       ? margins.left + plotWidth / 2
       : margins.left + (index / (pointCount - 1)) * plotWidth;
-  const y = (value: number) => margins.top + plotHeight - (Math.max(0, value) / yMax) * plotHeight;
+  const y = (value: number) => {
+    const boundedValue = Math.max(yMin, Math.min(yMax, value));
+    return margins.top + plotHeight - ((boundedValue - yMin) / yRange) * plotHeight;
+  };
 
-  const ticks = Array.from({ length: 5 }, (_, index) => (yMax / 4) * index).reverse();
+  const ticks = Array.from(
+    { length: 5 },
+    (_, index) => yMin + (yRange / 4) * index
+  ).reverse();
   const hoverIndex = hoverState?.index ?? null;
   const hoverX = hoverIndex === null ? null : x(hoverIndex);
   const hoverY = hoverState?.svgY ?? null;
@@ -248,9 +256,10 @@ export function SimpleLineChart({
 
         {model.series.map((series) => {
           const points = series.values.map((value, index) => `${x(index)},${y(value)}`).join(" ");
+          const baselineY = y(yMin);
           const areaPath = `${series.values
             .map((value, index) => `${index === 0 ? "M" : "L"} ${x(index)} ${y(value)}`)
-            .join(" ")} L ${x(series.values.length - 1)} ${margins.top + plotHeight} L ${x(0)} ${margins.top + plotHeight} Z`;
+            .join(" ")} L ${x(series.values.length - 1)} ${baselineY} L ${x(0)} ${baselineY} Z`;
 
           return (
             <g key={series.label}>

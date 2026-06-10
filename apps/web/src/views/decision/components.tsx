@@ -325,8 +325,9 @@ export function ProbabilityTile({
     thresholdShare === null ? "—" : formatProbabilityPercentExact(thresholdShare);
   const distanceJudgmentDisabled = anomaly !== null;
   const valueLabel = distanceJudgmentDisabled
-    ? "正式概率（待审计，不用于距离结论）"
+    ? "正式概率读数异常"
     : "当前正式概率";
+  const primaryValue = distanceJudgmentDisabled ? "待审计" : formatProbabilityPercentExact(value);
   const distanceHeadline = distanceJudgmentDisabled
     ? "距离判断禁用"
     : thresholdGap === 0
@@ -359,6 +360,9 @@ export function ProbabilityTile({
       : `距${thresholdLabel} ${formatPercentPrecise(threshold)} 还差 ${formatPercentagePointGap(
           thresholdGap
         )}`;
+  const bandNote = distanceJudgmentDisabled
+    ? "当前处于模型审计状态，不按低位、准备区、对冲区或防守区解释。"
+    : band.note;
 
   return (
     <div className={`probability-tile ${band.className}${anomaly ? " model-anomaly" : ""}`}>
@@ -367,9 +371,12 @@ export function ProbabilityTile({
         <em>{thresholdDistance.label}</em>
       </div>
       <span className="probability-value-label">{valueLabel}</span>
-      <strong>{formatProbabilityPercentExact(value)}</strong>
+      <strong>{primaryValue}</strong>
       {distanceJudgmentDisabled ? (
-        <div className="probability-reading-status">模型待审计：当前数值不参与风险时距判断</div>
+        <div className="probability-reading-status">
+          审计读数 {formatProbabilityPercentExact(value)} · {formatProbabilityBasisPoints(value)}；
+          当前数值不参与风险时距判断
+        </div>
       ) : null}
       {anomaly ? (
         <div className="probability-model-warning">
@@ -409,7 +416,7 @@ export function ProbabilityTile({
       <div className="probability-reading-note">{probabilityReadingNote(value, anomaly)}</div>
       <p>{hint}</p>
       <div className="probability-threshold">{thresholdCopy}</div>
-      <small>{band.note}</small>
+      <small>{bandNote}</small>
       <ProbabilityDiagnosticsBlock diagnostic={diagnostic} />
     </div>
   );

@@ -160,6 +160,24 @@ fn forward_crisis_coefficient_bounds(
                 max: Some(0.42),
             })
         }
+        // The broad-score caps must include their high-tail variants. The
+        // 2026-06-10 021404 candidate obeyed trigger_score <= 0.65 but routed
+        // the same generic pressure through tail_pos__trigger_score__50=1.20,
+        // which preserved false-positive lift while collapsing regional-bank
+        // continuity. Keep the tail auxiliary instead of letting it bypass the
+        // base broad-score cap.
+        (20, "tail_pos__trigger_score__50") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(0.0),
+                max: Some(0.35),
+            })
+        }
+        (20, "tail_pos__external_dimension_score__50") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(0.0),
+                max: Some(0.25),
+            })
+        }
         // The best current family-hybrid candidate keeps USDJPY level as a real
         // positive driver. The failed 064930 / 064040 branch only looked cleaner
         // because it pushed the base level down toward 0.22 while simultaneously

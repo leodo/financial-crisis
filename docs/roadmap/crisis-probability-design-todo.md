@@ -974,6 +974,15 @@
      - `trigger_score` 与 `external_dimension_score` 会同时抬高 regional positive-window 和 2023-02 / 2023-07 误报窗口，不能让它们在 family-hybrid `20d` head 中继续成为泛化主驱动；
      - 新 guardrail 只在 family-context 特征集的 `20d forward-crisis` head 生效：`trigger_score <= 0.65`、`external_dimension_score <= 0.42`；
      - `formal-candidate-semantics-audit` 现在会输出 `Broad score weights`，并把这两项列为 `training_guardrail`；`formal-candidate-screen` 也把它们加入 tracked features，后续候选筛选会直接看到是否重新膨胀。
+   - `2026-06-10` 继续复核 `021404` 后发现 broad-score cap 仍有 tail 绕行路径：
+     - 该候选虽然满足 `trigger_score=0.65`，但 `tail_pos__trigger_score__50` 从 baseline `0.27` 膨胀到 `1.20`，等价于把高触发压力通过 tail 派生项重新变成泛化 `20d` driver；
+     - 已把 family-context `20d forward-crisis` 的 broad-score tail 加入训练护栏：`tail_pos__trigger_score__50 <= 0.35`、`tail_pos__external_dimension_score__50 <= 0.25`；
+     - `formal-candidate-semantics-audit` 的 `Broad score weights` 与 `formal-candidate-screen` 的 tracked features 现在都会输出这两项，后续候选不能只看 base `trigger_score / external_dimension_score` 是否合规。
+   - 已重训 review-only 候选 `us_formal_family_hybrid_20260610T030736` 验证 broad-score tail 护栏：
+     - semantics audit 显示 `tail_pos__trigger_score__50=0.35`、`tail_pos__external_dimension_score__50=0.221149`，新护栏全部 `ok`；旧候选 `021404` 则会被标为 `trigger high-tail broad-lift cap violated`；
+     - screen 仍为 `no_go_offline`：regional banks positive-window hit rate `80.0% -> 0.0%`、runtime floor hit count `91 -> 41`、actionable precision `69.8% -> 0.0%`，并继续命中 `20d cooldown_bleed`、`60d cold_across_all_regimes`；
+     - 本轮改善了误报强度但没有解决核心矛盾：February false-positive max p20d 从旧候选约 `87.2%` 降到 `82.07%`，但 regional positive-window avg p20d 仍只有 `74.27%`，低于 candidate threshold `90.00%`；
+     - separation audit 仍显示 `interaction__us_curve_10y2y_level__us_fed_funds_level`、`tail_pos__trigger_score__50`、`trigger_score` 是正例/误报耦合抬升主因。下一步不能继续只加 broad cap，而应做 context gating 或训练目标层的 positive-window vs false-positive separation。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 

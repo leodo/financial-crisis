@@ -173,7 +173,7 @@ export default function DecisionView({
               <div className="probability-trend-relative">
                 <div className="section-subhead">
                   <strong>20日局部放大</strong>
-                  <span>只重画 20d，使用 20d 自身量级的纵轴；用来判断它是不是一条真正的直线。</span>
+                  <span>只重画 20d，使用 20d 自身范围的纵轴；用来判断它是不是一条真正的直线。</span>
                 </div>
                 <SimpleLineChart model={probabilityTrend.twentyDayZoomChart} height={190} />
               </div>

@@ -59,9 +59,11 @@ fn forward_crisis_broad_score_family_caps_only_apply_when_family_context_exists(
     let family_feature_names = vec![
         "trigger_score".to_string(),
         "external_dimension_score".to_string(),
+        "tail_pos__trigger_score__50".to_string(),
+        "tail_pos__external_dimension_score__50".to_string(),
         "family_proxy__rate_shock".to_string(),
     ];
-    let mut family_weights_20d = vec![0.90, 0.60, 0.05];
+    let mut family_weights_20d = vec![0.90, 0.60, 1.20, 0.40, 0.05];
     crate::project_forward_crisis_sign_constraints(
         &mut family_weights_20d,
         &family_feature_names,
@@ -70,9 +72,11 @@ fn forward_crisis_broad_score_family_caps_only_apply_when_family_context_exists(
     );
     assert_eq!(family_weights_20d[0], 0.65);
     assert_eq!(family_weights_20d[1], 0.42);
-    assert_eq!(family_weights_20d[2], 0.05);
+    assert_eq!(family_weights_20d[2], 0.35);
+    assert_eq!(family_weights_20d[3], 0.25);
+    assert_eq!(family_weights_20d[4], 0.05);
 
-    let mut family_weights_60d = vec![0.90, 0.60, 0.05];
+    let mut family_weights_60d = vec![0.90, 0.60, 1.20, 0.40, 0.05];
     crate::project_forward_crisis_sign_constraints(
         &mut family_weights_60d,
         &family_feature_names,
@@ -81,13 +85,17 @@ fn forward_crisis_broad_score_family_caps_only_apply_when_family_context_exists(
     );
     assert_eq!(family_weights_60d[0], 0.90);
     assert_eq!(family_weights_60d[1], 0.60);
-    assert_eq!(family_weights_60d[2], 0.05);
+    assert_eq!(family_weights_60d[2], 1.20);
+    assert_eq!(family_weights_60d[3], 0.40);
+    assert_eq!(family_weights_60d[4], 0.05);
 
     let plain_feature_names = vec![
         "trigger_score".to_string(),
         "external_dimension_score".to_string(),
+        "tail_pos__trigger_score__50".to_string(),
+        "tail_pos__external_dimension_score__50".to_string(),
     ];
-    let mut plain_weights_20d = vec![0.90, 0.60];
+    let mut plain_weights_20d = vec![0.90, 0.60, 1.20, 0.40];
     crate::project_forward_crisis_sign_constraints(
         &mut plain_weights_20d,
         &plain_feature_names,
@@ -96,6 +104,8 @@ fn forward_crisis_broad_score_family_caps_only_apply_when_family_context_exists(
     );
     assert_eq!(plain_weights_20d[0], 0.90);
     assert_eq!(plain_weights_20d[1], 0.60);
+    assert_eq!(plain_weights_20d[2], 1.20);
+    assert_eq!(plain_weights_20d[3], 0.40);
 }
 
 #[test]
@@ -396,9 +406,11 @@ fn forward_crisis_broad_score_family_cap_gradient_only_activates_for_family_cont
     let family_feature_names = vec![
         "trigger_score".to_string(),
         "external_dimension_score".to_string(),
+        "tail_pos__trigger_score__50".to_string(),
+        "tail_pos__external_dimension_score__50".to_string(),
         "family_proxy__rate_shock".to_string(),
     ];
-    let family_weights = vec![0.90, 0.60, 0.05];
+    let family_weights = vec![0.90, 0.60, 1.20, 0.40, 0.05];
     let mut family_gradients = vec![0.0; family_weights.len()];
 
     crate::apply_forward_crisis_coefficient_bound_gradient(
@@ -412,13 +424,17 @@ fn forward_crisis_broad_score_family_cap_gradient_only_activates_for_family_cont
 
     assert!(family_gradients[0] > 0.0);
     assert!(family_gradients[1] > 0.0);
-    assert_eq!(family_gradients[2], 0.0);
+    assert!(family_gradients[2] > 0.0);
+    assert!(family_gradients[3] > 0.0);
+    assert_eq!(family_gradients[4], 0.0);
 
     let plain_feature_names = vec![
         "trigger_score".to_string(),
         "external_dimension_score".to_string(),
+        "tail_pos__trigger_score__50".to_string(),
+        "tail_pos__external_dimension_score__50".to_string(),
     ];
-    let plain_weights = vec![0.90, 0.60];
+    let plain_weights = vec![0.90, 0.60, 1.20, 0.40];
     let mut plain_gradients = vec![0.0; plain_weights.len()];
 
     crate::apply_forward_crisis_coefficient_bound_gradient(
@@ -432,6 +448,8 @@ fn forward_crisis_broad_score_family_cap_gradient_only_activates_for_family_cont
 
     assert_eq!(plain_gradients[0], 0.0);
     assert_eq!(plain_gradients[1], 0.0);
+    assert_eq!(plain_gradients[2], 0.0);
+    assert_eq!(plain_gradients[3], 0.0);
 }
 
 #[test]

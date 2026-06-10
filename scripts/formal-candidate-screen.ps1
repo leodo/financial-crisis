@@ -420,6 +420,8 @@ function Get-CoefficientWeight {
 $TrackedFeatures = @(
     "trigger_score",
     "external_dimension_score",
+    "tail_pos__trigger_score__50",
+    "tail_pos__external_dimension_score__50",
     "tail_neg__us_curve_10y2y_level__0",
     "tail_pos__us_baa_10y_spread_level__2",
     "us_usdjpy_level",
