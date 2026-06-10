@@ -388,16 +388,33 @@ $guardrailRows = @(
         -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "family_context__jpy_carry__external_dimension_score") `
         -MinAllowed 0.0 `
         -MaxAllowed 0.10
-    [pscustomobject]@{
-        item = "USDJPY 20d change semantic migration"
-        coverage = "doc_only"
-        entry_point = "crates/domain/src/probability_bundle/features.rs ; apps/worker/src/model/constraints.rs"
-        rule = "Move toward high-level + change/vol + external confirmation semantics; no hard bound exists yet."
-        baseline = "base=$([math]::Round((Get-CoefficientWeight -Map $baselineMap -FeatureName 'us_usdjpy_change_20d'), 6)); tail=$([math]::Round((Get-CoefficientWeight -Map $baselineMap -FeatureName 'tail_abs_pos__us_usdjpy_change_20d__4'), 6)); trigger_x_change=$([math]::Round((Get-CoefficientWeight -Map $baselineMap -FeatureName 'interaction__trigger_score__us_usdjpy_change_20d'), 6))"
-        candidate = "base=$([math]::Round((Get-CoefficientWeight -Map $candidateMap -FeatureName 'us_usdjpy_change_20d'), 6)); tail=$([math]::Round((Get-CoefficientWeight -Map $candidateMap -FeatureName 'tail_abs_pos__us_usdjpy_change_20d__4'), 6)); trigger_x_change=$([math]::Round((Get-CoefficientWeight -Map $candidateMap -FeatureName 'interaction__trigger_score__us_usdjpy_change_20d'), 6))"
-        status = "doc_only"
-        notes = "still needs an explicit modeling guardrail or a dedicated derived-feature redesign"
-    }
+    New-GuardrailStatusRow `
+        -Item "USDJPY signed 20d change neutralization" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "Signed us_usdjpy_change_20d must stay pinned at 0; carry-speed risk should flow through absolute-change tail and jpy_carry family proxy." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "us_usdjpy_change_20d") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "us_usdjpy_change_20d") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.0
+    New-GuardrailStatusRow `
+        -Item "USDJPY signed trigger-change interaction neutralization" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "Signed interaction__trigger_score__us_usdjpy_change_20d must stay pinned at 0 to avoid turning carry direction into a suppressor." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "interaction__trigger_score__us_usdjpy_change_20d") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "interaction__trigger_score__us_usdjpy_change_20d") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.0
+    New-GuardrailStatusRow `
+        -Item "USDJPY absolute 20d change tail cap" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "tail_abs_pos__us_usdjpy_change_20d__4 should stay nonnegative and auxiliary, capped at 0.22." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "tail_abs_pos__us_usdjpy_change_20d__4") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_abs_pos__us_usdjpy_change_20d__4") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.22
     [pscustomobject]@{
         item = "bond-spread suppressor prohibition"
         coverage = "doc_only"

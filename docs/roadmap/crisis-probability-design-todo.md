@@ -937,6 +937,17 @@
      - 候选 `us_formal_family_hybrid_20260609T230426` 继续验证 base / family-context 通用护栏：runtime contribution audit 中 5d/20d/60d 的 `usdjpy_high_tail_negative` 均已从 candidate anomalies 消失；当前点候选概率为 5d `2.1657%`、20d `56.7713%`、60d `1.6579%`，触线完成度分别为 `56.99% / 63.08% / 59.21%`。
      - `230426` 仍是 `no_go_offline`，不能激活：regional banks 20d positive-window hit rate `80.0% -> 0.0%`，runtime floor hit count `91 -> 62`，20d `cooldown_bleed`，60d `cold_across_all_regimes`；下一步不能继续单点修 USDJPY tail，必须转向 `us_usdjpy_change_20d` 语义迁移、20d threshold/continuity 与 60d feature transfer。
      - 下一步必须重训候选并跑 runtime contribution audit、semantics audit、candidate screen 和 release review；只有候选同时解决 USDJPY 语义、20d threshold/continuity 与 60d cold signal，才能进入 Go/No-Go。
+   - `2026-06-10` 已开始 `us_usdjpy_change_20d` 语义迁移的第一步训练护栏：
+     - signed `us_usdjpy_change_20d` 与 signed `interaction__trigger_score__us_usdjpy_change_20d` 方向有歧义：上涨可能代表 carry build-up，下跌也可能代表 unwind，因此不能让它们成为强负向 suppressor 或强方向性 driver；
+     - 新 guardrail 把这两个 signed 权重在 `5d / 20d / 60d` 全部固定为 `0.0`，并把 `tail_abs_pos__us_usdjpy_change_20d__4` 约束为非负、上限 `0.22`；
+     - `formal-candidate-semantics-audit` 已把该项从 `doc_only` 升级为 `training_guardrail`，后续候选会自动检查 base / trigger interaction / abs tail 是否越界；
+     - 该补丁仍只影响下一轮候选训练，不改变当前 active release；是否可发布仍必须看 runtime contribution audit、candidate screen 和 release review。
+   - `2026-06-10` 已重训候选 `us_formal_family_hybrid_20260609T234038` 验证该 guardrail：
+     - semantics audit 显示 `us_usdjpy_change_20d=-0.600932 -> 0`、`interaction__trigger_score__us_usdjpy_change_20d=0.440880 -> 0`、`tail_abs_pos__us_usdjpy_change_20d__4=-0.049667 -> 0`，三项 guardrail 均为 `ok`；
+     - runtime contribution audit 当前点显示 candidate 的 `5d / 20d / 60d` 均无 `usdjpy_high_tail_negative` 与 `usdjpy_change_negative` anomaly，说明 USDJPY/Jpy carry 语义异常已被本轮候选清掉；
+     - 但 candidate 仍不能激活：20d runtime `54.7972% < 90.0000%`，touchline `0.608858`；60d runtime `1.6087% < 2.8000%`，touchline `0.574536`；
+     - candidate screen 仍为 `no_go_offline`：regional banks 20d positive-window hit rate `80.0% -> 0.0%`，20d hits `46 -> 0`，runtime floor hit count `91 -> 41`，actionable precision `69.8% -> 33.3%`，并继续命中 `20d cooldown_bleed`、`60d cold_across_all_regimes`；
+     - 结论：USDJPY 语义修复是必要但不充分条件；下一步优先级应转向 `20d positive-window continuity`、`threshold 90% 过高的根因`、`60d cold signal / feature transfer`，而不是继续加单点 USDJPY guardrail。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 

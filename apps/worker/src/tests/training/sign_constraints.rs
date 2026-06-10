@@ -48,7 +48,7 @@ fn forward_crisis_sign_projection_clips_wrong_direction_coefficients() {
     assert_eq!(weights[0], 0.0);
     assert_eq!(weights[1], 0.0);
     assert_eq!(weights[2], 0.0);
-    assert_eq!(weights[3], -0.7);
+    assert_eq!(weights[3], 0.0);
 }
 
 #[test]

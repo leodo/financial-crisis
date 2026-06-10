@@ -167,6 +167,22 @@ fn forward_crisis_coefficient_bounds(
                 _ => 0.18,
             }),
         }),
+        // USDJPY 20d change is a signed carry-speed feature: a positive move can
+        // mean carry build-up, while a negative move can mean unwind. Do not let
+        // this ambiguous signed feature become a strong suppressor or driver;
+        // keep the directional semantics in the absolute-change tail and
+        // jpy_carry family proxy instead.
+        (5 | 20 | 60, "us_usdjpy_change_20d")
+        | (5 | 20 | 60, "interaction__trigger_score__us_usdjpy_change_20d") => {
+            Some(CoefficientBounds {
+                min: Some(0.0),
+                max: Some(0.0),
+            })
+        }
+        (5 | 20 | 60, "tail_abs_pos__us_usdjpy_change_20d__4") => Some(CoefficientBounds {
+            min: Some(0.0),
+            max: Some(0.22),
+        }),
         (20, "interaction__external_dimension_score__us_usdjpy_level")
             if uses_family_context_features =>
         {

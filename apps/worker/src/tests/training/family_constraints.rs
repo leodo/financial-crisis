@@ -222,6 +222,29 @@ fn forward_crisis_usdjpy_tail_cap_keeps_high_level_tail_auxiliary() {
 }
 
 #[test]
+fn forward_crisis_usdjpy_signed_change_is_neutralized_across_horizons() {
+    let feature_names = vec![
+        "us_usdjpy_change_20d".to_string(),
+        "interaction__trigger_score__us_usdjpy_change_20d".to_string(),
+        "tail_abs_pos__us_usdjpy_change_20d__4".to_string(),
+    ];
+
+    for horizon_days in [5, 20, 60] {
+        let mut weights = vec![-0.80, 0.40, 0.35];
+        crate::project_forward_crisis_sign_constraints(
+            &mut weights,
+            &feature_names,
+            horizon_days,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        );
+
+        assert_eq!(weights[0], 0.0);
+        assert_eq!(weights[1], 0.0);
+        assert_eq!(weights[2], 0.22);
+    }
+}
+
+#[test]
 fn forward_crisis_usdjpy_interaction_family_cap_only_applies_when_family_context_exists() {
     let family_feature_names = vec![
         "interaction__external_dimension_score__us_usdjpy_level".to_string(),
@@ -470,6 +493,32 @@ fn forward_crisis_usdjpy_tail_cap_gradient_applies_across_feature_sets() {
     );
 
     assert!(plain_gradients[0] < 0.0);
+}
+
+#[test]
+fn forward_crisis_usdjpy_change_bounds_gradient_pushes_signed_features_to_neutral() {
+    let feature_names = vec![
+        "us_usdjpy_change_20d".to_string(),
+        "interaction__trigger_score__us_usdjpy_change_20d".to_string(),
+        "tail_abs_pos__us_usdjpy_change_20d__4".to_string(),
+        "tail_abs_pos__us_usdjpy_change_20d__4".to_string(),
+    ];
+    let weights = vec![-0.50, 0.30, -0.10, 0.35];
+    let mut gradients = vec![0.0; weights.len()];
+
+    crate::apply_forward_crisis_coefficient_bound_gradient(
+        &mut gradients,
+        &weights,
+        &feature_names,
+        100.0,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert!(gradients[0] < 0.0);
+    assert!(gradients[1] > 0.0);
+    assert!(gradients[2] < 0.0);
+    assert!(gradients[3] > 0.0);
 }
 
 #[test]
