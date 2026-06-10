@@ -246,6 +246,20 @@ export function SimpleLineChart({
             <strong>{model.categories[hoverIndex]}</strong>
             {focusedHoverRow ? <span>吸附 {focusedHoverRow.label}</span> : null}
           </div>
+          {focusedHoverRow ? (
+            <div className="simple-chart-tooltip-focus">
+              <span>
+                <i style={{ background: focusedHoverRow.color }} />
+                当前十字星
+              </span>
+              <em>
+                {focusedHoverRow.label}：
+                {focusedHoverRow.valueLabel ??
+                  chartValueLabel(focusedHoverRow.value, model.valueType, yMax)}
+              </em>
+              {focusedHoverRow.detail ? <small>{focusedHoverRow.detail}</small> : null}
+            </div>
+          ) : null}
           {hoverRows.map((row) => (
             <div
               className={
@@ -264,7 +278,9 @@ export function SimpleLineChart({
             </div>
           ))}
           {nearestSeriesLabel ? (
-            <small className="simple-chart-tooltip-hint">移动鼠标可按十字星查看每个日期的折线明细</small>
+            <small className="simple-chart-tooltip-hint">
+              竖线选日期，横线吸附到最近折线；下方同时列出该日期所有折线读数。
+            </small>
           ) : null}
         </div>
       ) : null}

@@ -355,16 +355,19 @@ export function ProbabilityTile({
   const thresholdDistance = describeThresholdDistance(value, threshold, thresholdLabel, anomaly);
   const thresholdShareValue =
     thresholdShare === null ? "—" : formatProbabilityPercentExact(thresholdShare);
-  const distanceHeadline = anomaly
-    ? "不作距离结论"
+  const distanceJudgmentDisabled = anomaly !== null;
+  const distanceHeadline = distanceJudgmentDisabled
+    ? "距离判断禁用"
     : thresholdGap === 0
       ? "已触线"
       : `还差 ${formatPercentagePointGap(thresholdGap)}`;
-  const distanceLabel = anomaly ? "模型审计状态" : "距离动作线";
+  const distanceLabel = distanceJudgmentDisabled ? "模型审计状态" : "距离动作线";
   const thresholdMultipleValue =
     thresholdShare === null
       ? "—"
-      : thresholdGap === 0
+      : distanceJudgmentDisabled
+        ? "不适用"
+        : thresholdGap === 0
         ? "已触线"
         : value > 0
           ? formatThresholdMultiple(threshold / value)
@@ -372,13 +375,17 @@ export function ProbabilityTile({
   const distanceDetail =
     thresholdShare === null
       ? null
-      : anomaly
+      : distanceJudgmentDisabled
         ? `审计比例 ${thresholdShareValue}，比例小数 ${formatProbabilityDecimal(
             thresholdShare
-          )}；该期限先按模型待审计处理，不把比例当距离结论。`
+          )}；该期限先按模型待审计处理，禁用触线倍数和时距结论。`
         : `触线仍需约 ${thresholdMultipleValue}；机械完成度 ${thresholdShareValue}，不是剩余天数。`;
   const thresholdCopy =
-    thresholdGap === 0
+    distanceJudgmentDisabled
+      ? `${thresholdLabel} ${formatPercentPrecise(
+          threshold
+        )} 仅作为审计参照；该期限读数被标记为模型待审计，不输出距离结论。`
+      : thresholdGap === 0
       ? `已达到${thresholdLabel} ${formatPercentPrecise(threshold)}`
       : `距${thresholdLabel} ${formatPercentPrecise(threshold)} 还差 ${formatPercentagePointGap(
           thresholdGap
@@ -410,12 +417,18 @@ export function ProbabilityTile({
           <strong>{formatPercentPrecise(threshold)}</strong>
         </div>
         <div>
-          <span>{anomaly ? "机械放大倍数" : "触线所需放大"}</span>
-          <strong>{thresholdMultipleValue}</strong>
+          <span>{distanceJudgmentDisabled ? "机械审计比例" : "触线所需放大"}</span>
+          <strong>{distanceJudgmentDisabled ? thresholdShareValue : thresholdMultipleValue}</strong>
         </div>
         <div>
-          <span>差值</span>
-          <strong>{thresholdGap === 0 ? "已触线" : formatPercentagePointGap(thresholdGap)}</strong>
+          <span>{distanceJudgmentDisabled ? "距离判断" : "差值"}</span>
+          <strong>
+            {distanceJudgmentDisabled
+              ? "不适用"
+              : thresholdGap === 0
+                ? "已触线"
+                : formatPercentagePointGap(thresholdGap)}
+          </strong>
         </div>
       </div>
       <div className="probability-raw">

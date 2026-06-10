@@ -932,6 +932,7 @@
      - 结论：当前 No-Go 不是前端显示问题，也不能靠运行时硬抬概率解决；下一步必须做多日期 runtime regime attribution，并把 `USDJPY/Jpy carry semantics`、`20d threshold policy`、`positive-window continuity`、`60d cold signal` 一起纳入训练和 release review。
    - `2026-06-10` 用户再次复核后确认：决策面板十字星 hover 能给出日期、三条线精确概率、bp、接口小数和较前点变化；20d 主图贴底不是绘图 bug，而是 active release 当前 20d head 只有 `0.0067%`，最近窗口 `0.0031% -> 0.023%`，在共用纵轴上被压缩。
      - `离风险还有多远` 的极小数来自 active release 的机械触线完成度：`5d=2.842% / 20d=0.0238% / 60d=0.1333%`，且三期限都命中 USDJPY 高位 tail 负贡献；这些数只能作为审计证据，不能解释成“风险离得很远”。
+     - UI 约束已进一步收紧：图表 hover 直接前置“当前十字星”吸附折线读数；风险距离卡在模型语义异常时禁用触线倍数和时距结论，只展示机械审计比例，避免把 `20d` 的极小比例或几千倍机械反推误写成可执行距离。
      - 已把 `tail_pos__us_usdjpy_level__145` 训练护栏从 20d family-context 扩展为 base / family-context 通用的 `5d / 20d / 60d` 约束：5d 上限 `0.12`，20d/60d 上限 `0.18`，三期限下限均为 `0.0`；这只影响下一轮候选训练，不改变当前 active release。
      - 候选 `us_formal_family_hybrid_20260609T224315` 验证了 5d/20d tail 负贡献会消失，但 60d 仍保留 `tail_pos__us_usdjpy_level__145=-7.10`，说明只把护栏挂在 family-context 形态上还不够。
      - 候选 `us_formal_family_hybrid_20260609T230426` 继续验证 base / family-context 通用护栏：runtime contribution audit 中 5d/20d/60d 的 `usdjpy_high_tail_negative` 均已从 candidate anomalies 消失；当前点候选概率为 5d `2.1657%`、20d `56.7713%`、60d `1.6579%`，触线完成度分别为 `56.99% / 63.08% / 59.21%`。

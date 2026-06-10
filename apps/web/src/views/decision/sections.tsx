@@ -208,8 +208,7 @@ function buildRiskDistanceSummary(
       if (row.share === null) {
         return `${row.label} 未配置`;
       }
-      const multipleCopy = row.multiple ? ` / 需 ${formatThresholdMultiple(row.multiple)}` : "";
-      return `${row.label} 审计比例 ${formatProbabilityPercentExact(row.share)}${multipleCopy}`;
+      return `${row.label} 审计比例 ${formatProbabilityPercentExact(row.share)}`;
     })
     .join("；");
   const allShares = rows
@@ -250,7 +249,7 @@ function buildRiskDistanceSummary(
     bucketDetail: bucketDetail[assessment.time_to_risk_bucket],
     nearestValue:
       anomalyHorizons.length > 0
-        ? "不作距离结论"
+        ? "距离判断禁用"
         : nearest
           ? nearest.gap === 0
             ? "已触线"
@@ -260,7 +259,7 @@ function buildRiskDistanceSummary(
           : "未配置",
     nearestDetail:
       anomalyHorizons.length > 0
-        ? `当前存在模型方向异常，不能用机械触线比例判断“离风险还有多远”。机械值只保留为审计证据：${mechanicalDistanceCopy}。`
+        ? `当前存在模型方向异常，不能用机械触线比例判断“离风险还有多远”。机械比例只保留为审计证据，不参与动作距离判断：${mechanicalDistanceCopy}。`
         : nearest
           ? `${nearest.label} 最接近；还差 ${formatPercentagePointGap(
               nearest.gap
@@ -305,15 +304,14 @@ function buildRiskHorizonSanityNote(
     );
 
   if (anomalyHorizons.length > 0) {
+    const mechanicalShareCopy = thresholdShares
+      .map((share, index) => `${[5, 20, 60][index]}d ${formatProbabilityPercentExact(share)}`)
+      .join("、");
     return `当前 ${anomalyHorizons
       .map((row) => `${row.horizonDays}日`)
       .join(" / ")} 概率命中模型语义异常：高 USDJPY tail 在 active release 中反而压低概率。页面保留正式输出用于审计，但这些极小数不应被解释成“离风险很远”；下一步应修训练约束和 release review，而不是在运行时硬抬概率。${
-      hasAllThresholdMultiples
-        ? `按当前进入线机械反推，触线仍需 5d ${formatThresholdMultiple(
-            thresholdMultiples[0]
-          )}、20d ${formatThresholdMultiple(thresholdMultiples[1])}、60d ${formatThresholdMultiple(
-            thresholdMultiples[2]
-          )} 的同期限概率放大。`
+      thresholdShares.length === 3
+        ? `机械触线比例仅供审计：${mechanicalShareCopy}，不能换算成可决策时距。`
         : ""
     }`;
   }
