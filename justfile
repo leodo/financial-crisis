@@ -150,6 +150,12 @@ formal-probability-compare baseline_release_id candidate_release_id scenario_id 
 formal-candidate-window-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-window-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 横向对比 `regional_banks` 正窗口与 2023-02 / 2023-07 误报窗口的 20d 特征贡献。
+# 适合判断候选为什么把 20d threshold 顶得过高：是正例独有信号，还是同一组特征也在抬误报窗口。
+# 用法：`just formal-candidate-separation-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260609T234038`
+formal-candidate-separation-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-separation-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
 # 对比两个候选在指定 horizon 的阈值、regime 概率分布和关键特征权重差异。
 # 适合在 window audit 之后快速判断“到底是 threshold 变了，还是 curve / USDJPY / family context 权重变了”。
 # 用法：`just formal-candidate-feature-audit us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`

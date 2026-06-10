@@ -949,6 +949,12 @@
      - 但 candidate 仍不能激活：20d runtime `54.7972% < 90.0000%`，touchline `0.608858`；60d runtime `1.6087% < 2.8000%`，touchline `0.574536`；
      - candidate screen 仍为 `no_go_offline`：regional banks 20d positive-window hit rate `80.0% -> 0.0%`，20d hits `46 -> 0`，runtime floor hit count `91 -> 41`，actionable precision `69.8% -> 33.3%`，并继续命中 `20d cooldown_bleed`、`60d cold_across_all_regimes`；
      - 结论：USDJPY 语义修复是必要但不充分条件；下一步优先级应转向 `20d positive-window continuity`、`threshold 90% 过高的根因`、`60d cold signal / feature transfer`，而不是继续加单点 USDJPY guardrail。
+   - `2026-06-10` 已新增 `scripts/formal-candidate-separation-audit.ps1` 与 `just formal-candidate-separation-audit <baseline> <candidate>`：
+     - 它把 `us_regional_banks_2023` 的 `20d positive_window` 与 `2023-02`、`2023-07` 两段误报压力窗口放到同一份 JSON 里，横向比较 candidate feature contribution / delta contribution；
+     - 这一步专门服务 `20d threshold=90%` 根因分析：如果同一批特征同时抬高正例和误报窗口，就不能靠继续降低 threshold 解决；
+     - 输出会标记 `false_positive_coupled_lift`、`false_positive_only_lift`、`regional_preferential_lift`、`regional_suppression`，作为下一轮训练约束或 family gating 改动的证据入口。
+     - 对 `us_formal_family_hybrid_20260609T234038` 实跑显示：regional positive-window candidate avg p20d `73.74%`，但 February false-positive max p20d `87.20%`，二者都低于 candidate threshold `90.00%`；这证明“直接降 20d threshold”会重新放出 2 月误报。
+     - 同一审计把当前首批耦合抬升特征锁定为 `interaction__us_curve_10y2y_level__us_fed_funds_level`、`trigger_score`、`external_dimension_score`：这些特征在误报窗口的 delta lift 接近或超过 regional positive-window，应优先做 gating/context 约束，而不是继续调 runtime floor。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 
