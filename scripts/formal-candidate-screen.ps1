@@ -16,6 +16,15 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location -LiteralPath $Root
 
+. (Join-Path $PSScriptRoot "review-active-release-lock.ps1")
+$ReviewActiveReleaseLockOwner = "formal-candidate-screen"
+$ReviewActiveReleaseLock = Enter-ReviewActiveReleaseLock -Owner $ReviewActiveReleaseLockOwner
+trap {
+    Exit-ReviewActiveReleaseLock -Mutex $ReviewActiveReleaseLock -Owner $ReviewActiveReleaseLockOwner
+    $ReviewActiveReleaseLock = $null
+    throw
+}
+
 function Invoke-FormalCompare {
     param(
         [string]$From,
@@ -722,3 +731,6 @@ Write-Host "[7/7] US history scenario-pack audit"
 if ($LASTEXITCODE -ne 0) {
     throw "formal-candidate-scenario-pack-audit failed"
 }
+
+Exit-ReviewActiveReleaseLock -Mutex $ReviewActiveReleaseLock -Owner $ReviewActiveReleaseLockOwner
+$ReviewActiveReleaseLock = $null

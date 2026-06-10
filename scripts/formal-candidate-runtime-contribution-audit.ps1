@@ -23,6 +23,15 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location -LiteralPath $Root
 
+. (Join-Path $PSScriptRoot "review-active-release-lock.ps1")
+$ReviewActiveReleaseLockOwner = "formal-candidate-runtime-contribution-audit"
+$ReviewActiveReleaseLock = Enter-ReviewActiveReleaseLock -Owner $ReviewActiveReleaseLockOwner
+trap {
+    Exit-ReviewActiveReleaseLock -Mutex $ReviewActiveReleaseLock -Owner $ReviewActiveReleaseLockOwner
+    $ReviewActiveReleaseLock = $null
+    throw
+}
+
 if ([string]::IsNullOrWhiteSpace($From) -or [string]::IsNullOrWhiteSpace($To)) {
     $current = Invoke-RestMethod "http://127.0.0.1:18080/api/assessment/current"
     if ([string]::IsNullOrWhiteSpace($From)) {
@@ -497,3 +506,6 @@ $python | python - $Root $baselinePath $candidatePath $outputDirectory $TopCount
 if ($LASTEXITCODE -ne 0) {
     throw "runtime contribution audit failed"
 }
+
+Exit-ReviewActiveReleaseLock -Mutex $ReviewActiveReleaseLock -Owner $ReviewActiveReleaseLockOwner
+$ReviewActiveReleaseLock = $null

@@ -1003,6 +1003,15 @@
      - 候选仍为 `no_go_offline`，不能激活：regional banks `20d` positive-window hit rate `80.0% -> 75.0%`，但 `20d` hits `46 -> 30`、runtime floor hit count `91 -> 84`，且 `60d` positive-window avg probability 只保留 `4.3%`。
      - Threshold 仍不安全：regional positive-window avg p20d `85.42%` 低于 candidate threshold `88.00%`，February false-positive max p20d `89.81%` 是 regional avg 的 `105.1%`，July false-positive max p20d `83.02%` 是 regional avg 的 `97.2%`；不能靠继续下调 `20d` threshold 解决。
      - 下一步优先级应转向 `curve/fed-funds interaction` 的 context gating、`60d` feature transfer/threshold 语义修复，以及 episode-native 动作头质量，而不是激活 `043016` 或继续在运行时硬抬概率。
+   - `2026-06-10` 已继续重训 review-only 候选 `us_formal_family_hybrid_20260610T053555`，验证新增 `systemic_credit` trigger/external context 下限：
+     - 新增特征和训练护栏生效，semantics audit 显示 USDJPY 高位 tail、signed 20d change、trigger-change interaction 的负向/错误语义已从 candidate 中清掉；
+     - 当前点 runtime contribution audit 显示 `20d` 从 baseline `0.0067%` 升到 candidate `59.9069%`，进一步确认用户在页面看到的 `20d` 贴底直线是 active release 语义缺陷，不是前端折线渲染 bug；
+     - 候选仍为 `no_go_offline`，不能激活：regional banks `20d` positive-window hit rate `80.0% -> 75.0%`，`20d` hits `46 -> 30`，runtime floor hit count `91 -> 85`，且 `60d` positive-window avg probability 只保留 `4.3%`；
+     - Threshold 仍是硬阻塞：candidate `20d` threshold 为 `87.80%`，regional positive-window avg p20d `85.02%` 仍低于 threshold；February false-positive max p20d `89.59%` 是 regional avg 的 `105.4%`，July false-positive max p20d `82.90%` 是 regional avg 的 `97.5%`；
+     - 结论：`systemic_credit` context transfer 是必要护栏，但仍不能解决正例/误报耦合和 `60d cold_across_all_regimes`。下一步必须做 `curve/fed-funds interaction` context gating、`60d` feature transfer/threshold 语义修复和 episode-native actionability，而不是发布该候选或简单下调 `20d` threshold。
+   - `2026-06-10` 补充候选审计运行治理：
+     - `formal-candidate-screen` 与 `formal-candidate-runtime-contribution-audit` 都会临时切换 API active release；这些脚本现在通过 `scripts/review-active-release-lock.ps1` 串行化，避免并发审计时互相覆盖恢复状态，把 review-only No-Go candidate 留在线上；
+     - 本轮已把 active release 恢复为 `us_formal_family_hybrid_20260606T112926` 并 reload API；页面继续按“模型待审计”展示 `5d / 20d / 60d` 极小正式概率，不把这些小数解释成风险很远。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 
