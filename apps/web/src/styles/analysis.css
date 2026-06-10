@@ -343,6 +343,28 @@
   font-weight: 800;
 }
 
+.simple-chart-value-callout {
+  pointer-events: none;
+}
+
+.simple-chart-value-callout rect {
+  fill: rgba(255, 255, 255, 0.96);
+  stroke: rgba(39, 50, 58, 0.18);
+  stroke-width: 1;
+  filter: drop-shadow(0 4px 10px rgba(28, 39, 48, 0.12));
+}
+
+.simple-chart-value-callout-active rect {
+  fill: #f7fafb;
+  stroke: rgba(28, 39, 48, 0.32);
+}
+
+.simple-chart-value-callout text {
+  fill: #1c2730;
+  font-size: 11px;
+  font-weight: 850;
+}
+
 .simple-chart-tooltip {
   position: absolute;
   top: 12px;

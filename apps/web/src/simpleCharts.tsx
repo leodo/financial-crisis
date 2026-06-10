@@ -49,6 +49,57 @@ function chartValueLabel(
   return valueType === "percent" ? percentLabel(value, yMax) : scoreLabel(value);
 }
 
+function conciseSeriesLabel(label: string) {
+  if (label.includes("5日")) {
+    return "5d";
+  }
+  if (label.includes("20日")) {
+    return "20d";
+  }
+  if (label.includes("60日")) {
+    return "60d";
+  }
+  return label.replace(/（.*?）/g, "").replace("局部放大", "").replace("窗口", "").trim();
+}
+
+function layoutHoverValueCallouts<T extends { y: number }>(
+  rows: T[],
+  minY: number,
+  maxY: number,
+  height: number,
+  gap: number
+): Array<T & { top: number }> {
+  const sortedRows = rows
+    .map((row) => ({
+      ...row,
+      top: Math.max(minY, Math.min(maxY - height, row.y - height / 2))
+    }))
+    .sort((left, right) => left.top - right.top);
+
+  for (let index = 1; index < sortedRows.length; index += 1) {
+    const previous = sortedRows[index - 1];
+    const current = sortedRows[index];
+    current.top = Math.max(current.top, previous.top + height + gap);
+  }
+
+  const overflow = sortedRows.at(-1)
+    ? sortedRows[sortedRows.length - 1].top + height - maxY
+    : 0;
+  if (overflow > 0) {
+    for (const row of sortedRows) {
+      row.top = Math.max(minY, row.top - overflow);
+    }
+  }
+
+  for (let index = sortedRows.length - 2; index >= 0; index -= 1) {
+    const next = sortedRows[index + 1];
+    const current = sortedRows[index];
+    current.top = Math.min(current.top, next.top - height - gap);
+  }
+
+  return sortedRows;
+}
+
 export function SimpleLineChart({
   model,
   height = 300
@@ -124,6 +175,29 @@ export function SimpleLineChart({
     snappedHoverY === null
       ? 0
       : Math.max(margins.top, Math.min(margins.top + plotHeight - 20, snappedHoverY - 10));
+  const hoverCalloutWidth = 158;
+  const hoverCalloutHeight = 22;
+  const hoverCalloutX =
+    hoverX === null
+      ? 0
+      : hoverX > width * 0.66
+        ? Math.max(margins.left, hoverX - hoverCalloutWidth - 12)
+        : Math.min(width - margins.right - hoverCalloutWidth, hoverX + 12);
+  const hoverValueCallouts =
+    hoverIndex === null || hoverX === null
+      ? []
+      : layoutHoverValueCallouts(
+          hoverRows.map((row) => ({
+            ...row,
+            shortLabel: conciseSeriesLabel(row.label),
+            valueText: row.valueLabel ?? chartValueLabel(row.value, model.valueType, yMax),
+            y: y(row.value)
+          })),
+          margins.top,
+          margins.top + plotHeight,
+          hoverCalloutHeight,
+          4
+        );
 
   const updateHoverIndex = (event: PointerEvent<SVGSVGElement>) => {
     if (model.categories.length === 0) {
@@ -243,6 +317,23 @@ export function SimpleLineChart({
                 stroke={series.color}
                 strokeWidth="2"
               />
+            ))}
+            {hoverValueCallouts.map((row) => (
+              <g
+                className={
+                  row.isNearest
+                    ? "simple-chart-value-callout simple-chart-value-callout-active"
+                    : "simple-chart-value-callout"
+                }
+                key={`${row.label}-callout`}
+                transform={`translate(${hoverCalloutX}, ${row.top})`}
+              >
+                <rect height={hoverCalloutHeight} rx="6" width={hoverCalloutWidth} />
+                <circle cx="10" cy={hoverCalloutHeight / 2} fill={row.color} r="3.5" />
+                <text x="18" y="15">
+                  {row.shortLabel} {row.valueText}
+                </text>
+              </g>
             ))}
             {focusedHoverAxisLabel !== null && snappedHoverY !== null ? (
               <g className="simple-chart-crosshair-label">

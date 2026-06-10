@@ -205,14 +205,6 @@ function buildRiskDistanceSummary(
     .filter((row): row is typeof row & { share: number } => row.share !== null)
     .sort((left, right) => right.share - left.share);
   const nearest = rankedRows[0];
-  const mechanicalDistanceCopy = rows
-    .map((row) => {
-      if (row.share === null) {
-        return `${row.label} 未配置`;
-      }
-      return `${row.label} 审计比例 ${formatProbabilityPercentExact(row.share)}`;
-    })
-    .join("；");
   const allShares = rows
     .map((row) => row.share)
     .filter((value): value is number => value !== null);
@@ -261,7 +253,7 @@ function buildRiskDistanceSummary(
           : "未配置",
     nearestDetail:
       anomalyHorizons.length > 0
-        ? `当前存在模型方向异常，不能用机械触线比例判断“离风险还有多远”。页面保留机械比例只是为了审计模型为什么偏冷，不参与动作距离判断，也不代表风险很远：${mechanicalDistanceCopy}。`
+        ? "当前存在模型方向异常，不能用机械触线比例判断“离风险还有多远”。下方卡片只保留接口值、raw/calibrated/runtime 链路和 base 头贡献，用来审计 active release 为什么偏冷；这些读数不参与离场、对冲或仓位时距结论。"
         : nearest
           ? `${nearest.label} 最接近；还差 ${formatPercentagePointGap(
               nearest.gap
@@ -306,14 +298,11 @@ function buildRiskHorizonSanityNote(
     );
 
   if (anomalyHorizons.length > 0) {
-    const mechanicalShareCopy = thresholdShares
-      .map((share, index) => `${[5, 20, 60][index]}d ${formatProbabilityPercentExact(share)}`)
-      .join("、");
     return `当前 ${anomalyHorizons
       .map((row) => `${row.horizonDays}日`)
       .join(" / ")} 概率命中模型语义异常：高 USDJPY tail 在 active release 中反而压低概率。页面保留正式输出用于审计，但这些极小数不应被解释成“离风险很远”；下一步应修训练约束和 release review，而不是在运行时硬抬概率。${
       thresholdShares.length === 3
-        ? `机械触线比例仅供审计：${mechanicalShareCopy}，不能换算成可决策时距。`
+        ? "机械触线比例在异常状态下已从主结论隐藏，避免把模型偏冷误读成可决策时距。"
         : ""
     }`;
   }

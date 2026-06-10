@@ -347,9 +347,7 @@ export function ProbabilityTile({
     thresholdShare === null
       ? null
       : distanceJudgmentDisabled
-        ? `机械审计比例 ${thresholdShareValue}，比例小数 ${formatProbabilityDecimal(
-            thresholdShare
-          )}；这只是 active release 输出和动作线的机械比值，禁用触线倍数和时距结论。`
+        ? "该期限命中模型方向异常，系统不计算触线比例、放大倍数或风险时距；下方接口值和模型链路只用于排查 active release 为什么偏冷。"
         : `触线仍需约 ${thresholdMultipleValue}；机械完成度 ${thresholdShareValue}，不是剩余天数。`;
   const thresholdCopy =
     distanceJudgmentDisabled
