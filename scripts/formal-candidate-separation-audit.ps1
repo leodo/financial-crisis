@@ -81,8 +81,12 @@ function Invoke-FormalCompare {
         $args += @("--scenario-id", $Scenario)
     }
 
-    & cargo @args
-    if ($LASTEXITCODE -ne 0) {
+    $output = & cargo @args 2>&1
+    $exitCode = $LASTEXITCODE
+    foreach ($line in $output) {
+        Write-Host $line
+    }
+    if ($exitCode -ne 0) {
         throw "formal-probability-compare failed for $From -> $To"
     }
 }

@@ -59,8 +59,14 @@ function Invoke-ProbabilitySlice {
         "--history-limit", ([string]$HistoryLimit)
     )
 
-    $output = & cargo @args 2>&1
-    $exitCode = $LASTEXITCODE
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & cargo @args 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     foreach ($line in $output) {
         Write-Host $line
     }

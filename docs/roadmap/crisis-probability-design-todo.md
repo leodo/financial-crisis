@@ -955,6 +955,15 @@
      - 输出会标记 `false_positive_coupled_lift`、`false_positive_only_lift`、`regional_preferential_lift`、`regional_suppression`，作为下一轮训练约束或 family gating 改动的证据入口。
      - 对 `us_formal_family_hybrid_20260609T234038` 实跑显示：regional positive-window candidate avg p20d `73.74%`，但 February false-positive max p20d `87.20%`，二者都低于 candidate threshold `90.00%`；这证明“直接降 20d threshold”会重新放出 2 月误报。
      - 同一审计把当前首批耦合抬升特征锁定为 `interaction__us_curve_10y2y_level__us_fed_funds_level`、`trigger_score`、`external_dimension_score`：这些特征在误报窗口的 delta lift 接近或超过 regional positive-window，应优先做 gating/context 约束，而不是继续调 runtime floor。
+   - `2026-06-10` 已把 `20d interaction__us_curve_10y2y_level__us_fed_funds_level` 的 family-context 训练护栏收紧为 `0.18..0.46`：
+     - 目的不是运行时硬抬概率，而是防止该交互项塌到 `0` 后丢掉高利率 + 曲线窗口里的 stabilizer 语义；
+     - `formal-candidate-semantics-audit` 已把该项升级为 `curve/fed-funds interaction stabilizer band`，后续候选会自动检查。
+   - 已重训 review-only 候选 `us_formal_family_hybrid_20260610T004609` 验证该护栏：
+     - semantics audit 全部通过，USDJPY 高位 tail 负贡献与 signed 20d change 负贡献在 candidate 中均已清掉；
+     - runtime contribution 当前点显示 candidate 概率为 `5d=3.7533% / 20d=54.3004% / 60d=1.6087%`，对应触线完成度 `1.2511 / 0.603338 / 0.574536`；这验证了 active release 的极小数确实来自旧模型语义异常，不是前端 bug；
+     - 但 candidate 仍是 `no_go_offline`：regional banks `20d` positive-window hit rate `80.0% -> 0.0%`，actionable precision `69.8% -> 33.3%`，runtime floor hit count `91 -> 41`，并继续命中 `20d cooldown_bleed` 与 `60d cold_across_all_regimes`；
+     - separation audit 显示 regional positive-window avg p20d `72.48%` 低于 `90.00%` threshold，而 February false-positive avg/max 已达 `80.10% / 87.20%`；`curve/fed-funds interaction`、`trigger_score`、`external_dimension_score` 仍是正例与误报耦合抬升的主因；
+     - 结论：本轮护栏可以保留为“禁止错误语义退化”的训练约束，但不能发布候选；下一步必须做 `20d threshold policy`、family/context gating 与正例/误报分离，而不是继续单点增加 USDJPY 或 curve/fed-funds cap。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 

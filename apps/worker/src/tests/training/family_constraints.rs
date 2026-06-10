@@ -72,6 +72,17 @@ fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
     assert_eq!(family_weights_20d[1], 0.46);
     assert_eq!(family_weights_20d[2], 0.05);
 
+    let mut low_interaction_family_weights_20d = vec![-0.60, 0.02, 0.05];
+    crate::project_forward_crisis_sign_constraints(
+        &mut low_interaction_family_weights_20d,
+        &family_feature_names,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert_eq!(low_interaction_family_weights_20d[0], -0.60);
+    assert_eq!(low_interaction_family_weights_20d[1], 0.18);
+    assert_eq!(low_interaction_family_weights_20d[2], 0.05);
+
     let mut family_weights_60d = vec![-0.90, 0.60, 0.05];
     crate::project_forward_crisis_sign_constraints(
         &mut family_weights_60d,
@@ -96,6 +107,16 @@ fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
     );
     assert_eq!(plain_weights_20d[0], -0.90);
     assert_eq!(plain_weights_20d[1], 0.60);
+
+    let mut low_interaction_plain_weights_20d = vec![-0.60, 0.02];
+    crate::project_forward_crisis_sign_constraints(
+        &mut low_interaction_plain_weights_20d,
+        &plain_feature_names,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert_eq!(low_interaction_plain_weights_20d[0], -0.60);
+    assert_eq!(low_interaction_plain_weights_20d[1], 0.02);
 }
 
 #[test]
@@ -370,6 +391,22 @@ fn forward_crisis_curve_family_cap_gradient_only_activates_for_family_context_se
     assert!(family_gradients[0] < 0.0);
     assert!(family_gradients[1] > 0.0);
     assert_eq!(family_gradients[2], 0.0);
+
+    let low_interaction_family_weights = vec![-0.60, 0.02, 0.05];
+    let mut low_interaction_family_gradients = vec![0.0; low_interaction_family_weights.len()];
+
+    crate::apply_forward_crisis_coefficient_bound_gradient(
+        &mut low_interaction_family_gradients,
+        &low_interaction_family_weights,
+        &family_feature_names,
+        100.0,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert_eq!(low_interaction_family_gradients[0], 0.0);
+    assert!(low_interaction_family_gradients[1] < 0.0);
+    assert_eq!(low_interaction_family_gradients[2], 0.0);
 
     let plain_feature_names = vec![
         "us_curve_10y2y_level".to_string(),

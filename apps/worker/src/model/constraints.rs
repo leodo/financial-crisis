@@ -198,8 +198,14 @@ fn forward_crisis_coefficient_bounds(
         (20, "interaction__us_curve_10y2y_level__us_fed_funds_level")
             if uses_family_context_features =>
         {
+            // Separation audit 2026-06-10 showed that letting this interaction
+            // collapse to zero removes a stabilizing offset in high-rate curve
+            // inversion windows: false-positive windows were lifted as much as
+            // the 2023 regional-banks positive window. Keep a small positive
+            // floor so the negative normalized interaction can still suppress
+            // generic rate-shock noise, while retaining the existing cap.
             Some(CoefficientBounds {
-                min: Some(0.0),
+                min: Some(0.18),
                 max: Some(0.46),
             })
         }

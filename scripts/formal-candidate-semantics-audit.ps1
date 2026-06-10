@@ -317,13 +317,13 @@ $guardrailRows = @(
         -MinAllowed 0.0 `
         -MaxAllowed 0.0
     New-GuardrailStatusRow `
-        -Item "curve/fed-funds interaction cap" `
+        -Item "curve/fed-funds interaction stabilizer band" `
         -Coverage "training_guardrail" `
         -EntryPoint "apps/worker/src/model/constraints.rs" `
-        -Rule "20d interaction__us_curve_10y2y_level__us_fed_funds_level should stay <= 0.46." `
+        -Rule "20d interaction__us_curve_10y2y_level__us_fed_funds_level should stay in 0.18..0.46 so high-rate inversion keeps a stabilizing offset without becoming too broad." `
         -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "interaction__us_curve_10y2y_level__us_fed_funds_level") `
         -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "interaction__us_curve_10y2y_level__us_fed_funds_level") `
-        -MinAllowed 0.0 `
+        -MinAllowed 0.18 `
         -MaxAllowed 0.46
     New-GuardrailStatusRow `
         -Item "USDJPY base-level band" `
