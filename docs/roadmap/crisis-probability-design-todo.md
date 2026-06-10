@@ -998,6 +998,11 @@
      - `20d` broad-score-to-family-context transfer：family-context heads 里 `trigger_score / external_dimension_score / tail_pos__trigger_score__50 / tail_pos__external_dimension_score__50` 的上限进一步收紧为 `0.45 / 0.30 / 0.18 / 0.12`，并新增 `systemic_credit`、`mixed_systemic` proxy/context 下限，迫使正例信号更多通过系统性信用与混合系统性上下文，而不是继续用泛化 broad score 同时抬高正例和 February/July 误报窗口。
      - `formal-candidate-semantics-audit` 已同步这些新护栏，并把 bond-spread high-tail suppressor 从 `doc_only` 升级为 `training_guardrail`；下一步只能重训 review-only candidate，再用 `formal-candidate-screen`、runtime contribution audit 和 release review 判断是否仍为 No-Go。
      - 当前 active release 不变；决策面板上 `5d / 20d / 60d` 极小概率仍应按“模型待审计”解释，不应当成“离风险很远”。
+   - 已重训 review-only 候选 `us_formal_family_hybrid_20260610T043016` 验证上述约束：
+     - 当前点 runtime contribution audit 显示 USDJPY 高位 tail / signed 20d change 负贡献已清掉；`20d` 当前概率从 baseline `0.0067%` 升到 candidate `60.0664%`，进一步确认页面旧读数是 active release 语义缺陷，不是 UI 画图错误。
+     - 候选仍为 `no_go_offline`，不能激活：regional banks `20d` positive-window hit rate `80.0% -> 75.0%`，但 `20d` hits `46 -> 30`、runtime floor hit count `91 -> 84`，且 `60d` positive-window avg probability 只保留 `4.3%`。
+     - Threshold 仍不安全：regional positive-window avg p20d `85.42%` 低于 candidate threshold `88.00%`，February false-positive max p20d `89.81%` 是 regional avg 的 `105.1%`，July false-positive max p20d `83.02%` 是 regional avg 的 `97.2%`；不能靠继续下调 `20d` threshold 解决。
+     - 下一步优先级应转向 `curve/fed-funds interaction` 的 context gating、`60d` feature transfer/threshold 语义修复，以及 episode-native 动作头质量，而不是激活 `043016` 或继续在运行时硬抬概率。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 
