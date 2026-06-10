@@ -968,6 +968,8 @@
    - `formal-candidate-screen` 已把 `formal-candidate-separation-audit` 接入标准 7 步筛选流程：
      - 三段窗口 compare 之后会自动生成 20d cross-window separation JSON；
      - 后续候选第一轮筛选会同时输出正例、2023-02 与 2023-07 误报窗口的耦合抬升特征，不再依赖人工额外记得跑 separation audit。
+     - `2026-06-10` 已继续把 separation audit 下沉成 screen 内置的 `20d threshold policy blockers`：当 regional positive-window 均值仍低于候选 threshold，且 February/July false-positive max 接近或超过 regional 均值时，会输出 `threshold_lowering_unsafe` hard blocker，并写入 ignored 的 `artifacts/research/candidate-screen/*-candidate-screen.json`。
+     - 对 `112926 -> 004609` 的实测 screen 现在会把 `february_false_positive max p20d 87.20% is 120.3% of regional positive-window avg 72.48%` 直接加入 No-Go reason，避免后续再把“直接降低 20d threshold”当成安全修复路径。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 

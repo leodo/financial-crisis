@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$CandidateReleaseId,
     [string]$MarketScope = "financial_system",
-    [string]$ScenarioId = "us_regional_banks_2023"
+    [string]$ScenarioId = "us_regional_banks_2023",
+    [string]$OutputDir = "artifacts/research/candidate-screen"
 )
 
 $ErrorActionPreference = "Stop"
@@ -154,6 +155,182 @@ function Load-ReleaseReviewJson {
     }
 }
 
+function Resolve-SeparationAuditPath {
+    param(
+        [string]$Baseline,
+        [string]$Candidate
+    )
+
+    $reportDirectory = Join-Path $Root "artifacts/research/separation-audit"
+    $pattern = "$Baseline-vs-$Candidate-20d-separation-audit.json"
+    $match = Get-ChildItem -LiteralPath $reportDirectory -Filter $pattern -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if ($match) {
+        return $match.FullName
+    }
+
+    return $null
+}
+
+function Load-SeparationAuditJson {
+    $path = Resolve-SeparationAuditPath -Baseline $BaselineReleaseId -Candidate $CandidateReleaseId
+    if (-not $path) {
+        throw "Expected separation audit artifact was not found after formal-candidate-separation-audit."
+    }
+
+    [pscustomobject]@{
+        path = $path
+        doc = Get-Content -LiteralPath $path | ConvertFrom-Json
+    }
+}
+
+function Convert-ToNullableDouble {
+    param($Value)
+
+    if ($null -eq $Value) {
+        return $null
+    }
+    if ($Value -is [string] -and [string]::IsNullOrWhiteSpace($Value)) {
+        return $null
+    }
+
+    return [double]$Value
+}
+
+function New-ThresholdPolicyBlockers {
+    param($SeparationAudit)
+
+    $blockers = @()
+    if (-not $SeparationAudit) {
+        return @()
+    }
+
+    $regional = $SeparationAudit.window_reports |
+        Where-Object { $_.id -eq "regional_positive" } |
+        Select-Object -First 1
+    if (-not $regional) {
+        return @()
+    }
+
+    $regionalAvg = Convert-ToNullableDouble $regional.candidate_avg_p20d
+    $candidateThreshold = Convert-ToNullableDouble $regional.candidate_decision_threshold
+    $thresholdBinding = $false
+
+    if ($null -ne $regionalAvg -and $null -ne $candidateThreshold -and $regionalAvg -lt $candidateThreshold) {
+        $thresholdBinding = $true
+        $blockers += [pscustomobject]@{
+                id = "positive_avg_below_threshold"
+                severity = "warn"
+                window = "regional_positive"
+                evidence = ("regional positive-window avg p20d {0:P2} is below candidate threshold {1:P2}" -f $regionalAvg, $candidateThreshold)
+                action = "Do not treat threshold repair alone as sufficient; first lift positive-window continuity or improve separation."
+                regional_avg_p20d = [math]::Round($regionalAvg, 6)
+                candidate_threshold = [math]::Round($candidateThreshold, 6)
+                false_window_max_p20d = $null
+                false_to_regional_ratio = $null
+            }
+    }
+
+    $falseWindows = $SeparationAudit.window_reports |
+        Where-Object { $_.role -eq "false_positive_pressure" }
+    foreach ($falseWindow in $falseWindows) {
+        $falseMax = Convert-ToNullableDouble $falseWindow.candidate_max_p20d
+        if ($null -eq $falseMax -or $null -eq $regionalAvg -or $regionalAvg -le 0.0) {
+            continue
+        }
+
+        $falseToRegionalRatio = $falseMax / $regionalAvg
+        if ($falseToRegionalRatio -ge 0.90) {
+            $severity = if ($thresholdBinding) { "hard" } else { "warn" }
+            $blockerId = if ($thresholdBinding) { "threshold_lowering_unsafe" } else { "false_positive_close_to_regional" }
+            $roundedCandidateThreshold = if ($null -ne $candidateThreshold) {
+                [math]::Round($candidateThreshold, 6)
+            } else {
+                $null
+            }
+            $blockers += [pscustomobject]@{
+                    id = $blockerId
+                    severity = $severity
+                    window = $falseWindow.id
+                    evidence = ("{0} max p20d {1:P2} is {2:P1} of regional positive-window avg {3:P2}" -f $falseWindow.id, $falseMax, $falseToRegionalRatio, $regionalAvg)
+                    action = "Add feature/context gating before lowering 20d threshold; otherwise false-positive windows can be released with the true-positive window."
+                    regional_avg_p20d = [math]::Round($regionalAvg, 6)
+                    candidate_threshold = $roundedCandidateThreshold
+                    false_window_max_p20d = [math]::Round($falseMax, 6)
+                    false_to_regional_ratio = [math]::Round($falseToRegionalRatio, 6)
+                }
+        }
+    }
+
+    foreach ($feature in @($SeparationAudit.top_false_positive_coupled_features | Select-Object -First 5)) {
+        $roundedRegionalAvg = if ($null -ne $regionalAvg) {
+            [math]::Round($regionalAvg, 6)
+        } else {
+            $null
+        }
+        $roundedCandidateThreshold = if ($null -ne $candidateThreshold) {
+            [math]::Round($candidateThreshold, 6)
+        } else {
+            $null
+        }
+        $blockers += [pscustomobject]@{
+                id = $feature.classification
+                severity = "warn"
+                window = "cross_window_features"
+                evidence = ("{0}: false/regional delta ratio {1}" -f $feature.name, $feature.false_to_regional_delta_ratio)
+                action = "Inspect family gating or context constraints for this coupled feature before the next retrain."
+                regional_avg_p20d = $roundedRegionalAvg
+                candidate_threshold = $roundedCandidateThreshold
+                false_window_max_p20d = $null
+                false_to_regional_ratio = $feature.false_to_regional_delta_ratio
+            }
+    }
+
+    return @($blockers)
+}
+
+function Write-CandidateScreenArtifact {
+    param(
+        [string]$Recommendation,
+        $Reasons,
+        $ThresholdPolicyBlockers,
+        $RegimeRows,
+        $CooldownGovernanceRows,
+        $TrackedRows,
+        [string]$SeparationAuditPath,
+        [string]$ReleaseReviewPath
+    )
+
+    $outputDirectory = Join-Path $Root $OutputDir
+    New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+    $stem = "$BaselineReleaseId-vs-$CandidateReleaseId-candidate-screen"
+    $safeStem = $stem -replace '[^A-Za-z0-9._-]', '_'
+    $path = Join-Path $outputDirectory "$safeStem.json"
+
+    $payload = [ordered]@{
+        generated_at = (Get-Date).ToUniversalTime().ToString("o")
+        baseline_release_id = $BaselineReleaseId
+        candidate_release_id = $CandidateReleaseId
+        market_scope = $MarketScope
+        scenario_id = $ScenarioId
+        recommendation = $Recommendation
+        reasons = @($Reasons)
+        threshold_policy_blockers = @($ThresholdPolicyBlockers)
+        regime_rows = @($RegimeRows)
+        cooldown_governance_rows = @($CooldownGovernanceRows)
+        tracked_weight_deltas = @($TrackedRows)
+        evidence_paths = [ordered]@{
+            separation_audit = $SeparationAuditPath
+            release_review = $ReleaseReviewPath
+        }
+    }
+
+    $payload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $path -Encoding utf8
+    return $path
+}
+
 function Format-DeltaPct {
     param([double]$Value)
     "{0:+0.0%;-0.0%;0.0%}" -f $Value
@@ -277,6 +454,8 @@ Write-Host "[4/7] 20d cross-window separation audit"
 if ($LASTEXITCODE -ne 0) {
     throw "formal-candidate-separation-audit failed"
 }
+$separationAuditEnvelope = Load-SeparationAuditJson
+$separationAudit = $separationAuditEnvelope.doc
 Write-Host ""
 
 Write-Host "[5/7] Release-review cooldown / false-positive governance"
@@ -463,6 +642,11 @@ $regimeRows = @(
     [pscustomobject]@{ metric = "positive_avg_p20d"; baseline = [math]::Round($baselineH20.record.evaluation.regime_separation.positive_window_avg_probability, 6); candidate = [math]::Round($candidateH20.record.evaluation.regime_separation.positive_window_avg_probability, 6); delta = [math]::Round($candidateH20.record.evaluation.regime_separation.positive_window_avg_probability - $baselineH20.record.evaluation.regime_separation.positive_window_avg_probability, 6) }
 )
 
+$thresholdPolicyBlockers = New-ThresholdPolicyBlockers -SeparationAudit $separationAudit
+foreach ($blocker in @($thresholdPolicyBlockers | Where-Object { $_.severity -eq "hard" } | Select-Object -First 3)) {
+    Add-NoGoReason -Reason ("20d threshold policy blocker: {0}" -f $blocker.evidence)
+}
+
 Write-Host "Offline screen summary"
 Write-Host ("  regional positive-window hit rate : {0:P1} -> {1:P1} (retained {2:P1})" -f $regionalPositive.baseline_hit_rate_20d, $regionalPositive.candidate_hit_rate_20d, $retainedPositiveHitRate)
 Write-Host ("  regional 20d hits                 : {0} -> {1} (delta {2})" -f $regionalSummary.baseline_hit_count_20d, $regionalSummary.candidate_hit_count_20d, ($regionalHitLoss * -1))
@@ -488,11 +672,29 @@ Write-Host ""
 Write-Host "Release-review cooldown governance"
 $cooldownGovernanceRows | Format-Table -AutoSize
 Write-Host ""
+Write-Host "20d threshold policy blockers"
+if (@($thresholdPolicyBlockers).Count -gt 0) {
+    $thresholdPolicyBlockers | Format-Table -AutoSize
+} else {
+    Write-Host "  none"
+}
+Write-Host ""
 Write-Host "20d regime summary"
 $regimeRows | Format-Table -AutoSize
 Write-Host ""
 Write-Host "Tracked 20d weight deltas"
 $trackedRows | Format-Table -AutoSize
+Write-Host ""
+$screenArtifactPath = Write-CandidateScreenArtifact `
+    -Recommendation $recommendation `
+    -Reasons $reasons `
+    -ThresholdPolicyBlockers $thresholdPolicyBlockers `
+    -RegimeRows $regimeRows `
+    -CooldownGovernanceRows $cooldownGovernanceRows `
+    -TrackedRows $trackedRows `
+    -SeparationAuditPath $separationAuditEnvelope.path `
+    -ReleaseReviewPath $releaseReviewEnvelope.path
+Write-Host ("Candidate screen artifact: {0}" -f $screenArtifactPath)
 Write-Host ""
 Write-Host "[6/7] Curve / USDJPY / threshold semantics audit"
 & (Join-Path $PSScriptRoot "formal-candidate-semantics-audit.ps1") `
