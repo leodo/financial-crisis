@@ -138,7 +138,7 @@ export function useMethodViewModel({
     [
       "危机先验",
       probabilityAnomalyHorizons.length > 0
-        ? `当前 formal 读数 ${formatProbabilityPercentExact(assessment.probabilities.p_5d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_20d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_60d)} 命中 ${probabilityAnomalyHorizons.join(" / ")} 模型语义异常，只作为审计证据；主结论看 MVP 风险状态 ${mvpRiskState?.label ?? "概率待审计"}。`
+        ? `当前正式读数 ${formatProbabilityPercentExact(assessment.probabilities.p_5d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_20d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_60d)} 命中 ${probabilityAnomalyHorizons.join(" / ")} 模型语义异常，只作为审计证据；主结论看 MVP 风险状态 ${mvpRiskState?.label ?? "概率待审计"}。`
         : `当前是 ${formatProbabilityPercentExact(assessment.probabilities.p_5d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_20d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_60d)}，回答“风险窗口离现在有多近”。`
     ],
     [
@@ -148,7 +148,7 @@ export function useMethodViewModel({
     [
       "最终执行节奏",
       probabilityAnomalyHorizons.length > 0
-        ? `当前正式概率待审计，页面主结论改用 MVP 风险状态：${mvpRiskState?.label ?? "概率待审计"}。${mvpRiskState?.summary ?? "formal 概率只作为模型审计证据。"}`
+        ? `当前正式概率待审计，页面主结论改用 MVP 风险状态：${mvpRiskState?.label ?? "概率待审计"}。${mvpRiskState?.summary ?? "正式概率只作为模型审计证据。"}`
         : `当前执行节奏为 ${postureLabel(assessment.posture)}，它是把危机先验、动作层、数据可信度和事件确认压缩后的执行结论。`
     ],
     [

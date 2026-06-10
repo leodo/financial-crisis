@@ -174,7 +174,7 @@ fn mvp_risk_state_summary(
         probability_input_status,
         MvpProbabilityInputStatus::AuditOnly
     ) {
-        format!("{posture_copy} 正式概率当前只作为审计输入，不参与 MVP 主结论。")
+        format!("{posture_copy}正式概率当前只作为审计输入，不参与 MVP 主结论。")
     } else {
         posture_copy.to_string()
     }
@@ -186,7 +186,7 @@ fn mvp_next_actions(
 ) -> Vec<String> {
     let mut actions = match code {
         MvpRiskStateCode::Observe => vec![
-            "保持常规监控，不把低 formal 概率解释成风险已经远离。".to_string(),
+            "保持常规监控，不把偏低的正式概率审计读数解释成风险已经远离。".to_string(),
             "继续盯 VIX、信用利差、收益率曲线、USDJPY 和事件层是否共振。".to_string(),
         ],
         MvpRiskStateCode::Prepare => vec![
@@ -207,7 +207,7 @@ fn mvp_next_actions(
         probability_input_status,
         MvpProbabilityInputStatus::AuditOnly
     ) {
-        actions.push("等待 formal 概率模型通过 Go/No-Go 后，才恢复概率作为主结论。".to_string());
+        actions.push("等待正式概率模型通过 Go/No-Go 后，才恢复概率作为主结论。".to_string());
     }
 
     actions

@@ -164,7 +164,7 @@ export default function App() {
     probabilityAnomalyHorizons.length > 0
       ? `MVP 风险状态 ${mvpRiskState?.label ?? "概率待审计"}（${probabilityAnomalyHorizons.join(
           " / "
-        )} formal 读数异常）`
+        )} 正式读数异常）`
       : assessment.data
         ? `风险时距 ${timeBucketLabel(assessment.data.time_to_risk_bucket)}`
         : "风险时距 —";

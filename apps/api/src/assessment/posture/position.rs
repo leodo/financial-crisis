@@ -293,7 +293,7 @@ pub(in super::super) fn build_summary(
         MvpProbabilityInputStatus::AuditOnly
     ) {
         return format!(
-            "MVP 风险状态：{}。{} formal 5d / 20d / 60d 概率审计读数分别为 {} / {} / {}；这些读数当前不参与主结论，也不能解释成风险已经远离。当前 posture 仅作为非概率层参考：{}。",
+            "MVP 风险状态：{}。{}正式 5d / 20d / 60d 概率审计读数分别为 {} / {} / {}；这些读数当前不参与主结论，也不能解释成风险已经远离。当前 posture 仅作为非概率层参考：{}。",
             mvp_risk_state.label,
             mvp_risk_state.summary,
             format_probability_percent(probabilities.p_5d),
