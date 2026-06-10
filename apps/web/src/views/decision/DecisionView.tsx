@@ -1,6 +1,7 @@
 import {
   BadgeInfo,
   ChartColumnIncreasing,
+  ClipboardCheck,
   Database,
   History,
   Layers3,
@@ -78,6 +79,7 @@ export default function DecisionView({
     runtimeChipLabel,
     runtimeCards,
     heroMetrics,
+    numberAuditRows,
     riskHorizonActionMetrics,
     timeBucketDescription,
     analogWindowDescription,
@@ -124,6 +126,19 @@ export default function DecisionView({
             posture={posture}
             heroMetrics={heroMetrics}
           />
+
+          <section className="surface">
+            <SurfaceHeader title="当前数字可信度清单" icon={ClipboardCheck} />
+            <DetailRows
+              items={numberAuditRows.map((item) => ({
+                id: item.id,
+                title: item.title,
+                detail: item.detail,
+                meta: item.meta,
+                note: item.note
+              }))}
+            />
+          </section>
 
           <section className="surface">
             <SurfaceHeader title="当前结论怎么来的" icon={BadgeInfo} />

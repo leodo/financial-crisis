@@ -30,22 +30,6 @@ export function formatPercentagePointGap(value: number): string {
   return formatPercentPrecise(value).replace("%", " 个百分点");
 }
 
-export function formatThresholdMultiple(value: number): string {
-  if (!Number.isFinite(value)) {
-    return "—";
-  }
-  if (value >= 1000) {
-    return `${Math.round(value).toLocaleString("zh-CN")} 倍`;
-  }
-  if (value >= 100) {
-    return `${Math.round(value)} 倍`;
-  }
-  if (value >= 10) {
-    return `${value.toFixed(1)} 倍`;
-  }
-  return `${value.toFixed(2)} 倍`;
-}
-
 function describeProbabilityBand(value: number) {
   if (value < 0.15) {
     return {
@@ -345,22 +329,12 @@ export function ProbabilityTile({
       ? "已触线"
       : `还差 ${formatPercentagePointGap(thresholdGap)}`;
   const distanceLabel = distanceJudgmentDisabled ? "模型审计状态" : "距离动作线";
-  const thresholdMultipleValue =
-    thresholdShare === null
-      ? "—"
-      : distanceJudgmentDisabled
-        ? "不适用"
-        : thresholdGap === 0
-        ? "已触线"
-        : value > 0
-          ? formatThresholdMultiple(threshold / value)
-          : "无法计算";
   const distanceDetail =
     thresholdShare === null
       ? null
       : distanceJudgmentDisabled
-        ? "正式概率当前只作为审计读数，系统不计算触线比例、放大倍数或风险时距；下方接口值和模型链路只用于排查 active release 为什么偏冷。"
-        : `触线仍需约 ${thresholdMultipleValue}；机械完成度 ${thresholdShareValue}，不是剩余天数。`;
+        ? "正式概率当前只作为审计读数，系统不计算动作线距离或风险时距；下方接口值和模型链路只用于排查 active release 为什么偏冷。"
+        : `当前读数约为动作线的 ${thresholdShareValue}；这是阈值相对位置，不是剩余天数，也不是自动交易信号。`;
   const thresholdCopy =
     distanceJudgmentDisabled
       ? `${thresholdLabel} ${formatPercentPrecise(
@@ -411,8 +385,8 @@ export function ProbabilityTile({
           <strong>{formatPercentPrecise(threshold)}</strong>
         </div>
         <div>
-          <span>{distanceJudgmentDisabled ? "模型状态" : "触线所需放大"}</span>
-          <strong>{distanceJudgmentDisabled ? "待修复" : thresholdMultipleValue}</strong>
+          <span>{distanceJudgmentDisabled ? "模型状态" : "当前占动作线"}</span>
+          <strong>{distanceJudgmentDisabled ? "待修复" : thresholdShareValue}</strong>
         </div>
         <div>
           <span>{distanceJudgmentDisabled ? "距离判断" : "差值"}</span>

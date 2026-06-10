@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 const apiBaseUrl = process.env.FC_API_BASE_URL ?? "http://127.0.0.1:18080";
 const allowDemoMode = process.env.FC_ALLOW_DEMO === "1";
 const tailSuppressorFeature = "tail_pos__us_usdjpy_level__145";
@@ -244,11 +246,38 @@ function validatePositionGuidance(snapshot) {
   assert(governance.policy_change_requires_go_no_go === true, "policy changes should require Go/No-Go");
 }
 
+async function validateUserFacingUiCopy() {
+  const uiFiles = [
+    "../apps/web/src/views/decision/DecisionView.tsx",
+    "../apps/web/src/views/decision/sections.tsx",
+    "../apps/web/src/views/decision/components.tsx",
+    "../apps/web/src/views/decision/numberAudit.ts"
+  ];
+  const forbiddenPhrases = ["机械完成度", "触线仍需", "触线所需放大", "还差多少倍", "机械触线"];
+
+  for (const file of uiFiles) {
+    const text = await readFile(new URL(file, import.meta.url), "utf8");
+    for (const phrase of forbiddenPhrases) {
+      assert(!text.includes(phrase), `${file} still contains misleading UI copy: ${phrase}`);
+    }
+  }
+
+  const decisionView = await readFile(
+    new URL("../apps/web/src/views/decision/DecisionView.tsx", import.meta.url),
+    "utf8"
+  );
+  assert(
+    decisionView.includes("当前数字可信度清单"),
+    "decision dashboard should include the current number audit checklist"
+  );
+}
+
 const snapshot = await fetchJson("/api/assessment/current");
 validateRuntimeMode(snapshot);
 validateKeyIndicators(snapshot);
 validateMvpAuditState(snapshot);
 validatePositionGuidance(snapshot);
+await validateUserFacingUiCopy();
 
 if (failures.length > 0) {
   console.error("MVP runtime regression check failed:");

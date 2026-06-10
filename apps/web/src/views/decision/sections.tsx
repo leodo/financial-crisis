@@ -11,7 +11,6 @@ import type { MetricItem } from "../shared/panelHelpers";
 import { MetricGrid, RuleBox, SurfaceHeader } from "../shared/panelHelpers";
 import {
   formatPercentagePointGap,
-  formatThresholdMultiple,
   PostureLadder,
   ProbabilityTile
 } from "./components";
@@ -296,21 +295,17 @@ function buildRiskDistanceSummary(
         : nearest
           ? nearest.gap === 0
             ? "已触线"
-            : nearest.multiple
-              ? `需 ${formatThresholdMultiple(nearest.multiple)}`
-              : "无法计算"
+            : `占线 ${formatProbabilityPercentExact(nearest.share)}`
           : "未配置",
     nearestDetail:
       auditOnly
-        ? `当前不看机械触线比例，也不输出“还差多少倍”。阻断项：${mvpBlockers} 下一步：${mvpNextActions}`
+        ? `当前不计算阈值占比、放大倍数或仓位时距。阻断项：${mvpBlockers} 下一步：${mvpNextActions}`
         : nearest
-          ? `${nearest.label} 最接近；还差 ${formatPercentagePointGap(
+          ? `${nearest.label} 最接近；离动作线差 ${formatPercentagePointGap(
               nearest.gap
-            )}。机械完成度 ${formatProbabilityPercentExact(nearest.share)}，不是剩余天数。${
-              nearest.multiple && nearest.gap > 0
-                ? ` 触线仍需约 ${formatThresholdMultiple(nearest.multiple)}。`
-                : ""
-            }`
+            )}，当前读数约为动作线的 ${formatProbabilityPercentExact(
+              nearest.share
+            )}。这只是阈值相对位置，不代表剩余天数，动作升级还要看事件确认、数据新鲜度和历史类比。`
           : "当前 release 没有返回可比较的动作进入线。",
     modelStatus: modelStatusWithAnomaly,
     modelDetail
@@ -328,15 +323,9 @@ function buildRiskHorizonSanityNote(
     thresholds.hedge_p20d > 0 ? p20d / thresholds.hedge_p20d : null,
     thresholds.prepare_p60d > 0 ? p60d / thresholds.prepare_p60d : null
   ].filter((value): value is number => value !== null);
-  const thresholdMultiples = [
-    p5d > 0 ? thresholds.defend_p5d / p5d : null,
-    p20d > 0 ? thresholds.hedge_p20d / p20d : null,
-    p60d > 0 ? thresholds.prepare_p60d / p60d : null
-  ].filter((value): value is number => value !== null);
   const allFarBelowEntry =
     thresholdShares.length === 3 && thresholdShares.every((share) => share < 0.03);
   const twentyDayIsCold = p20d > 0 && p20d < p5d * 0.25 && p20d < p60d * 0.25;
-  const hasAllThresholdMultiples = thresholdMultiples.length === 3;
   const anomalyHorizons = assessment.probability_diagnostics.horizon_overlays
     .map((diagnostic) => ({
       horizonDays: diagnostic.horizon_days,
@@ -351,7 +340,7 @@ function buildRiskHorizonSanityNote(
       .map((row) => `${row.horizonDays}日`)
       .join(" / ")} 概率命中模型语义异常：高 USDJPY tail 在 active release 中反而压低概率。页面保留正式输出用于审计，但这些极小数不应被解释成“离风险很远”；下一步应修训练约束和 release review，而不是在运行时硬抬概率。${
       thresholdShares.length === 3
-        ? "机械触线比例在异常状态下已从主结论隐藏，避免把模型偏冷误读成可决策时距。"
+        ? "阈值占比在异常状态下已从主结论隐藏，避免把模型偏冷误读成可决策时距。"
         : ""
     }`;
   }
@@ -361,15 +350,7 @@ function buildRiskHorizonSanityNote(
       p20d
     )} 明显低于 5日 ${formatProbabilityPercentExact(p5d)} 和 60日 ${formatProbabilityPercentExact(
       p60d
-    )}。这不是“风险被证明为 0”，而是活跃正式模型当前没有捕捉到临近危机信号，同时 20d head 输出偏冷；决策上仍要结合关键指标、事件确认、历史类比和动作层。${
-      hasAllThresholdMultiples
-        ? `按当前进入线反推，触线大约还需要 5d ${formatThresholdMultiple(
-            thresholdMultiples[0]
-          )}、20d ${formatThresholdMultiple(thresholdMultiples[1])}、60d ${formatThresholdMultiple(
-            thresholdMultiples[2]
-          )} 的同期限概率放大，这比“占比小于多少”更适合判断距离。`
-        : ""
-    }`;
+    )}。这不是“风险被证明为 0”，而是活跃正式模型当前没有捕捉到临近危机信号，同时 20d head 输出偏冷；决策上仍要结合关键指标、事件确认、历史类比和动作层。`;
   }
 
   if (twentyDayIsCold) {

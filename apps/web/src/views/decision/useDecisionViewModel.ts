@@ -13,6 +13,7 @@ import {
   buildProbabilityTrendModel
 } from "./charts";
 import { buildHeroMetrics } from "./heroMetrics";
+import { buildNumberAuditRows } from "./numberAudit";
 import {
   buildActionPlanMetrics,
   buildBacktestCoverageScopeText,
@@ -97,6 +98,7 @@ export function useDecisionViewModel({
     [assessment, usdJpyIndicator]
   );
   const heroMetrics = useMemo(() => buildHeroMetrics(assessment), [assessment]);
+  const numberAuditRows = useMemo(() => buildNumberAuditRows(assessment), [assessment]);
   const riskHorizonActionMetrics = useMemo(
     () => buildRiskHorizonActionMetrics(assessment),
     [assessment]
@@ -223,6 +225,7 @@ export function useDecisionViewModel({
     runtimeChipLabel,
     runtimeCards,
     heroMetrics,
+    numberAuditRows,
     riskHorizonActionMetrics,
     timeBucketDescription,
     analogWindowDescription,
