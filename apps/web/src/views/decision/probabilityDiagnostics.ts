@@ -1,5 +1,5 @@
 import { formatNumber, formatSignedNumber } from "../../format";
-import type { ProbabilityHorizonOverlayDiagnostics } from "../../types";
+import type { AssessmentSnapshot, ProbabilityHorizonOverlayDiagnostics } from "../../types";
 
 const USDJPY_HIGH_TAIL_SUPPRESSOR_FEATURE = "tail_pos__us_usdjpy_level__145";
 
@@ -35,4 +35,18 @@ export function findProbabilityDiagnosticAnomaly(
       2
     )}，方向和“日元套息/外部冲击风险升温”的解释冲突；这个正式概率应先按模型待审计读数处理。`
   };
+}
+
+export function probabilityDiagnosticAnomalyHorizons(
+  assessment: Pick<AssessmentSnapshot, "probability_diagnostics">
+): string[] {
+  return assessment.probability_diagnostics.horizon_overlays
+    .filter((diagnostic) => findProbabilityDiagnosticAnomaly(diagnostic) !== null)
+    .map((diagnostic) => `${diagnostic.horizon_days}d`);
+}
+
+export function hasProbabilityDiagnosticAnomaly(
+  assessment: Pick<AssessmentSnapshot, "probability_diagnostics">
+): boolean {
+  return probabilityDiagnosticAnomalyHorizons(assessment).length > 0;
 }

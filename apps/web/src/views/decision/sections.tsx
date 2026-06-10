@@ -18,6 +18,7 @@ import {
 import { decisionContent } from "./content";
 import {
   findProbabilityDiagnosticAnomaly,
+  probabilityDiagnosticAnomalyHorizons,
   type ProbabilityDiagnosticAnomaly
 } from "./probabilityDiagnostics";
 import type {
@@ -86,12 +87,27 @@ export function DecisionHeroSummary({
   posture: PostureGuidance;
   heroMetrics: MetricItem[];
 }) {
+  const anomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
+  const probabilityAuditActive = anomalyHorizons.length > 0;
+  const heroClassName = `hero-surface ${postureClass(assessment.posture)}${
+    probabilityAuditActive ? " probability-audit" : ""
+  }`;
+  const heroValue = probabilityAuditActive ? "概率待审计" : postureLabel(assessment.posture);
+  const heroSubtitle = probabilityAuditActive
+    ? `风险窗口判断：待审计（原模型桶：${timeBucketLabel(assessment.time_to_risk_bucket)}）`
+    : `风险窗口判断：${timeBucketLabel(assessment.time_to_risk_bucket)}`;
+  const heroSummary = probabilityAuditActive
+    ? `${anomalyHorizons.join(
+        " / "
+      )} 正式概率读数命中模型方向异常；当前不输出“离风险还有多远”的仓位结论，原执行节奏只作为非概率层参考。${posture.summary}`
+    : posture.summary;
+
   return (
-    <section className={`hero-surface ${postureClass(assessment.posture)}`}>
-      <span className="kicker">当前执行节奏</span>
-      <div className="hero-value">{postureLabel(assessment.posture)}</div>
-      <div className="hero-subtitle">风险窗口判断：{timeBucketLabel(assessment.time_to_risk_bucket)}</div>
-      <p>{posture.summary}</p>
+    <section className={heroClassName}>
+      <span className="kicker">{probabilityAuditActive ? "当前模型状态" : "当前执行节奏"}</span>
+      <div className="hero-value">{heroValue}</div>
+      <div className="hero-subtitle">{heroSubtitle}</div>
+      <p>{heroSummary}</p>
       <MetricGrid className="hero-metrics" items={heroMetrics} />
     </section>
   );
@@ -239,8 +255,15 @@ function buildRiskDistanceSummary(
           : "当前概率和动作进入线之间没有明显显示层异常。";
 
   return {
-    bucketLabel: timeBucketLabel(assessment.time_to_risk_bucket),
-    bucketDetail: bucketDetail[assessment.time_to_risk_bucket],
+    bucketLabel: anomalyHorizons.length > 0 ? "待审计" : timeBucketLabel(assessment.time_to_risk_bucket),
+    bucketDetail:
+      anomalyHorizons.length > 0
+        ? `原模型桶是 ${timeBucketLabel(
+            assessment.time_to_risk_bucket
+          )}，但 ${anomalyHorizons
+            .map((row) => `${row.horizonDays}d`)
+            .join(" / ")} 概率读数命中方向异常，系统暂停输出“数月/数周/当下”的距离判断。`
+        : bucketDetail[assessment.time_to_risk_bucket],
     nearestValue:
       anomalyHorizons.length > 0
         ? "距离判断禁用"

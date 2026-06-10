@@ -14,6 +14,7 @@ import {
   qualityLabel,
   timeBucketLabel
 } from "./format";
+import { probabilityDiagnosticAnomalyHorizons } from "./views/decision/probabilityDiagnostics";
 import { useConsoleData, type ConsoleReadyData, type ConsoleDataSnapshot } from "./useConsoleData";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { RecoveryPanel } from "./components/RecoveryPanel";
@@ -149,17 +150,32 @@ export default function App() {
     null;
   const hasDataLag =
     !!assessment.data?.runtime.stale_warning && !assessment.data?.runtime.demo_mode;
+  const probabilityAnomalyHorizons = useMemo(
+    () => (assessment.data ? probabilityDiagnosticAnomalyHorizons(assessment.data) : []),
+    [assessment.data]
+  );
+  const riskWindowDisplayLabel = assessment.data
+    ? probabilityAnomalyHorizons.length > 0
+      ? `待审计（${probabilityAnomalyHorizons.join(" / ")}）`
+      : timeBucketLabel(assessment.data.time_to_risk_bucket)
+    : "—";
+  const riskWindowSummaryLabel =
+    probabilityAnomalyHorizons.length > 0
+      ? `风险时距 待审计（${probabilityAnomalyHorizons.join(" / ")} 概率读数异常）`
+      : assessment.data
+        ? `风险时距 ${timeBucketLabel(assessment.data.time_to_risk_bucket)}`
+        : "风险时距 —";
   const statusSummary = useMemo(() => {
     if (!assessment.data) {
       return null;
     }
 
     return [
-      `风险时距 ${timeBucketLabel(assessment.data.time_to_risk_bucket)}`,
+      riskWindowSummaryLabel,
       `数据可信度 ${qualityLabel(assessment.data.data_trust.quality_grade)}`,
       `关键数据 ${assessment.data.runtime.latest_key_indicator_at ?? assessment.data.runtime.latest_observation_at ?? "—"}`
     ];
-  }, [assessment.data]);
+  }, [assessment.data, riskWindowSummaryLabel]);
 
   return (
     <div className="app-shell">
@@ -227,7 +243,7 @@ export default function App() {
                     "—"}
                 </span>
                 <span>生成时间 {formatDateTime(assessment.data.runtime.generated_at)}</span>
-                <span>风险时距 {timeBucketLabel(assessment.data.time_to_risk_bucket)}</span>
+                <span>风险时距 {riskWindowDisplayLabel}</span>
                 <span>数据可信度 {qualityLabel(assessment.data.data_trust.quality_grade)}</span>
               </div>
             ) : null}
@@ -314,8 +330,18 @@ export default function App() {
               </div>
               <div className="warmup-metric">
                 <span>当前执行节奏</span>
-                <strong>{timeBucketLabel(assessment.data.time_to_risk_bucket)}</strong>
-                <small>{assessment.data.posture_reason}</small>
+                <strong>
+                  {probabilityAnomalyHorizons.length > 0
+                    ? "风险时距待审计"
+                    : timeBucketLabel(assessment.data.time_to_risk_bucket)}
+                </strong>
+                <small>
+                  {probabilityAnomalyHorizons.length > 0
+                    ? `${probabilityAnomalyHorizons.join(
+                        " / "
+                      )} 概率读数异常；完整面板会显示模型审计说明。`
+                    : assessment.data.posture_reason}
+                </small>
               </div>
               <div className="warmup-metric">
                 <span>最新关键观测</span>

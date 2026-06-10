@@ -227,6 +227,7 @@ export function SimpleLineChart({
         onPointerLeave={() => setHoverState(null)}
         onPointerMove={updateHoverIndex}
         preserveAspectRatio="none"
+        style={{ height }}
         viewBox={`0 0 ${width} ${height}`}
       >
         {ticks.map((tick) => (

@@ -285,6 +285,11 @@
   position: relative;
 }
 
+.hero-surface.probability-audit {
+  border-top-color: #b56a11;
+  background: #fffaf3;
+}
+
 .probability-trend-drilldowns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -44,7 +44,7 @@ import {
   describeProbabilityMode,
   describeReleaseHealth
 } from "./logic";
-import { findProbabilityDiagnosticAnomaly } from "./probabilityDiagnostics";
+import { probabilityDiagnosticAnomalyHorizons } from "./probabilityDiagnostics";
 
 function formatOptionalNumber(value: number | null, unit?: string) {
   return value === null ? "—" : formatNumber(value, unit);
@@ -120,12 +120,6 @@ function probabilityDisplayNote(assessment: AssessmentSnapshot): string | null {
     : "当前 formal 先验仍低于 1%，属于低位区间，而不是零风险断言。";
 }
 
-function probabilityDiagnosticAnomalyHorizons(assessment: AssessmentSnapshot): string[] {
-  return assessment.probability_diagnostics.horizon_overlays
-    .filter((diagnostic) => findProbabilityDiagnosticAnomaly(diagnostic) !== null)
-    .map((diagnostic) => `${diagnostic.horizon_days}d`);
-}
-
 function probabilitySnapshotValue(probabilities: AssessmentSnapshot["probabilities"]): string {
   return [
     formatProbabilityPercentExact(probabilities.p_5d),
@@ -135,6 +129,15 @@ function probabilitySnapshotValue(probabilities: AssessmentSnapshot["probabiliti
 }
 
 function probabilitySnapshotDetail(assessment: AssessmentSnapshot): string {
+  const anomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
+  if (anomalyHorizons.length > 0) {
+    return `当前线上 ${formatDate(assessment.as_of_date)} · 5d / 20d / 60d 正式读数为 ${probabilitySnapshotValue(
+      assessment.probabilities
+    )}；${anomalyHorizons.join(
+      " / "
+    )} 命中模型方向异常，这些小概率只作为审计证据，不作为风险时距或离场/对冲结论。`;
+  }
+
   const allZero =
     assessment.probabilities.p_5d === 0 &&
     assessment.probabilities.p_20d === 0 &&
@@ -317,7 +320,10 @@ export function buildRuntimeCards(
     },
     {
       label: "当前概率快照",
-      value: probabilitySnapshotValue(assessment.probabilities),
+      value:
+        probabilityDiagnosticAnomalyHorizons(assessment).length > 0
+          ? "正式概率待审计"
+          : probabilitySnapshotValue(assessment.probabilities),
       detail: probabilitySnapshotDetail(assessment)
     },
     {
@@ -594,8 +600,16 @@ export function buildSignalLayerRows(
       id: "posture",
       title: "最终执行节奏",
       description: "最后再叠加数据可信度、事件确认、日元套息放大器和用户偏好，压成一档执行节奏。",
-      value: `${postureLabel(assessment.posture)} / ${timeBucketLabel(assessment.time_to_risk_bucket)}`,
-      detail: posture.summary
+      value:
+        priorAnomalyHorizons.length > 0
+          ? `${postureLabel(assessment.posture)} / 风险时距待审计`
+          : `${postureLabel(assessment.posture)} / ${timeBucketLabel(assessment.time_to_risk_bucket)}`,
+      detail:
+        priorAnomalyHorizons.length > 0
+          ? `${priorAnomalyHorizons.join(
+              " / "
+            )} 正式概率读数命中模型方向异常；当前执行节奏只保留为非概率层参考，不能把“常态”理解成风险已经远离。${posture.summary}`
+          : posture.summary
     }
   ];
 }
