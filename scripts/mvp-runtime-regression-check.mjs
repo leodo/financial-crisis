@@ -340,6 +340,14 @@ async function validateUserFacingUiCopy() {
       decisionSections.includes("当前不计算阈值占比、放大倍数或仓位时距"),
     "risk horizon section should hide mechanical distance math in audit-only mode"
   );
+  assert(
+    decisionSections.includes("首屏四问摘要") &&
+      decisionSections.includes("当前是否危险") &&
+      decisionSections.includes("离风险多远") &&
+      decisionSections.includes("为什么") &&
+      decisionSections.includes("现在做什么"),
+    "decision hero should answer the four MVP decision questions on the first screen"
+  );
 
   const decisionApp = await readFile(new URL("../apps/web/src/App.tsx", import.meta.url), "utf8");
   assert(

@@ -114,6 +114,12 @@ export default function DecisionView({
 
   return (
     <section className="workspace">
+      <DecisionHeroSummary
+        assessment={assessment}
+        posture={posture}
+        heroMetrics={heroMetrics}
+      />
+
       <DecisionPrelude
         runtimeNotice={runtimeNotice}
         runtimeChipLabel={runtimeChipLabel}
@@ -122,12 +128,6 @@ export default function DecisionView({
 
       <section className="dashboard-columns">
         <div className="dashboard-column">
-          <DecisionHeroSummary
-            assessment={assessment}
-            posture={posture}
-            heroMetrics={heroMetrics}
-          />
-
           <section className="surface">
             <SurfaceHeader title="当前数字可信度清单" icon={ClipboardCheck} />
             <DetailRows

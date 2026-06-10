@@ -108,16 +108,155 @@ export function DecisionHeroSummary({
   const heroSummary = probabilityAuditActive
     ? `${mvpRiskState.summary}${auditReason}；当前不输出“离风险还有多远”的仓位结论，原执行节奏只作为非概率层参考。`
     : posture.summary;
+  const decisionAnswers = buildDecisionAnswerItems(
+    assessment,
+    posture,
+    probabilityAuditActive,
+    mvpRiskState
+  );
 
   return (
     <section className={heroClassName}>
       <span className="kicker">{probabilityAuditActive ? "当前 MVP 风险状态" : "当前执行节奏"}</span>
       <div className="hero-value">{heroValue}</div>
       <div className="hero-subtitle">{heroSubtitle}</div>
+      <div className="decision-answer-grid" aria-label="首屏四问摘要">
+        {decisionAnswers.map((item) => (
+          <div className={`decision-answer ${item.tone}`} key={item.id}>
+            <span>{item.question}</span>
+            <strong>{item.answer}</strong>
+            <small>{item.detail}</small>
+          </div>
+        ))}
+      </div>
       <p>{heroSummary}</p>
       <MetricGrid className="hero-metrics" items={heroMetrics} />
     </section>
   );
+}
+
+interface DecisionAnswerItem {
+  id: string;
+  question: string;
+  answer: string;
+  detail: string;
+  tone: "answer-observe" | "answer-prepare" | "answer-hedge" | "answer-defend" | "answer-audit";
+}
+
+function buildDecisionAnswerItems(
+  assessment: AssessmentSnapshot,
+  posture: PostureGuidance,
+  probabilityAuditActive: boolean,
+  mvpRiskState: ReturnType<typeof currentMvpRiskState>
+): DecisionAnswerItem[] {
+  const postureTone = decisionAnswerTone(assessment.posture);
+  const action = decisionActionCopy(probabilityAuditActive ? mvpRiskState.code : assessment.posture);
+  const distanceAnswer = probabilityAuditActive
+    ? "未知（概率待审计）"
+    : timeBucketLabel(assessment.time_to_risk_bucket);
+  const distanceDetail = probabilityAuditActive
+    ? "正式 5d / 20d / 60d 暂不参与时距，先看规则层和关键数据是否共振。"
+    : "按正式概率、事件确认和数据新鲜度合成，不等于自动交易倒计时。";
+  const whyDetail = probabilityAuditActive
+    ? firstReadableBlocker(mvpRiskState.blockers) ??
+      "正式概率审计中，当前主结论只按规则层、数据新鲜度和事件确认解释。"
+    : posture.summary;
+
+  return [
+    {
+      id: "danger-now",
+      question: "当前是否危险",
+      answer: probabilityAuditActive ? mvpRiskState.label : postureLabel(assessment.posture),
+      detail: probabilityAuditActive
+        ? "当前未把 formal 小概率当成低风险证明。"
+        : "这是当前执行节奏，不是危机发生概率。",
+      tone: probabilityAuditActive ? "answer-audit" : postureTone
+    },
+    {
+      id: "risk-distance",
+      question: "离风险多远",
+      answer: distanceAnswer,
+      detail: distanceDetail,
+      tone: probabilityAuditActive ? "answer-audit" : postureTone
+    },
+    {
+      id: "primary-reason",
+      question: "为什么",
+      answer: probabilityAuditActive ? "正式概率不作主输入" : "证据分层合成",
+      detail: whyDetail,
+      tone: probabilityAuditActive ? "answer-audit" : postureTone
+    },
+    {
+      id: "current-action",
+      question: "现在做什么",
+      answer: action.label,
+      detail: `${action.detail} 当前预算：${positionBudgetCopy(assessment)}。`,
+      tone: action.tone
+    }
+  ];
+}
+
+function decisionAnswerTone(
+  posture: AssessmentSnapshot["posture"]
+): DecisionAnswerItem["tone"] {
+  if (posture === "prepare") {
+    return "answer-prepare";
+  }
+  if (posture === "hedge") {
+    return "answer-hedge";
+  }
+  if (posture === "defend") {
+    return "answer-defend";
+  }
+  return "answer-observe";
+}
+
+function decisionActionCopy(code: string): {
+  label: string;
+  detail: string;
+  tone: DecisionAnswerItem["tone"];
+} {
+  if (code === "prepare") {
+    return {
+      label: "准备",
+      detail: "补现金、降脆弱性，先准备保护工具",
+      tone: "answer-prepare"
+    };
+  }
+  if (code === "hedge") {
+    return {
+      label: "对冲",
+      detail: "开始落地保护性对冲和净敞口收缩",
+      tone: "answer-hedge"
+    };
+  }
+  if (code === "defend") {
+    return {
+      label: "防守",
+      detail: "资本保全、流动性和去杠杆优先",
+      tone: "answer-defend"
+    };
+  }
+  return {
+    label: "观察",
+    detail: "维持核心仓位，重点监控触发层和数据复核",
+    tone: "answer-observe"
+  };
+}
+
+function firstReadableBlocker(blockers: string[]): string | null {
+  const blocker = blockers.find((item) => !item.includes("正式 5d/20d/60d"));
+  return blocker ?? blockers[0] ?? null;
+}
+
+function positionBudgetCopy(assessment: AssessmentSnapshot): string {
+  const guidance = assessment.position_guidance;
+  return [
+    `风险资产 ${formatPercentPrecise(guidance.target_equity_exposure_pct / 100)}`,
+    `现金 ${formatPercentPrecise(guidance.target_cash_pct / 100)}`,
+    `对冲 ${formatPercentPrecise(guidance.hedge_ratio_pct / 100)}`,
+    `期权 ${formatPercentPrecise(guidance.option_overlay_pct / 100)}`
+  ].join(" / ");
 }
 
 export function DecisionRiskHorizon({
