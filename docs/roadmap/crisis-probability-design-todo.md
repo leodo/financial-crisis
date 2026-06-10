@@ -970,6 +970,10 @@
      - 后续候选第一轮筛选会同时输出正例、2023-02 与 2023-07 误报窗口的耦合抬升特征，不再依赖人工额外记得跑 separation audit。
      - `2026-06-10` 已继续把 separation audit 下沉成 screen 内置的 `20d threshold policy blockers`：当 regional positive-window 均值仍低于候选 threshold，且 February/July false-positive max 接近或超过 regional 均值时，会输出 `threshold_lowering_unsafe` hard blocker，并写入 ignored 的 `artifacts/research/candidate-screen/*-candidate-screen.json`。
      - 对 `112926 -> 004609` 的实测 screen 现在会把 `february_false_positive max p20d 87.20% is 120.3% of regional positive-window avg 72.48%` 直接加入 No-Go reason，避免后续再把“直接降低 20d threshold”当成安全修复路径。
+   - `2026-06-10` 已把 separation audit 里识别出的 broad-score 耦合抬升下沉为训练护栏：
+     - `trigger_score` 与 `external_dimension_score` 会同时抬高 regional positive-window 和 2023-02 / 2023-07 误报窗口，不能让它们在 family-hybrid `20d` head 中继续成为泛化主驱动；
+     - 新 guardrail 只在 family-context 特征集的 `20d forward-crisis` head 生效：`trigger_score <= 0.65`、`external_dimension_score <= 0.42`；
+     - `formal-candidate-semantics-audit` 现在会输出 `Broad score weights`，并把这两项列为 `training_guardrail`；`formal-candidate-screen` 也把它们加入 tracked features，后续候选筛选会直接看到是否重新膨胀。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 

@@ -145,6 +145,21 @@ fn forward_crisis_coefficient_bounds(
             min: Some(0.0),
             max: Some(0.06),
         }),
+        // Separation / candidate-screen audits on 2026-06-10 showed that broad
+        // trigger and external-dimension scores were lifting 2023-02 / 2023-07
+        // false-positive windows almost as much as the regional-banks positive
+        // window. In family-hybrid heads, keep these as context features instead
+        // of letting them dominate generic 20d crisis probability.
+        (20, "trigger_score") if uses_family_context_features => Some(CoefficientBounds {
+            min: Some(0.0),
+            max: Some(0.65),
+        }),
+        (20, "external_dimension_score") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(0.0),
+                max: Some(0.42),
+            })
+        }
         // The best current family-hybrid candidate keeps USDJPY level as a real
         // positive driver. The failed 064930 / 064040 branch only looked cleaner
         // because it pushed the base level down toward 0.22 while simultaneously

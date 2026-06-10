@@ -40,6 +40,11 @@ $FamilyFeatureNames = @(
     "family_context__jpy_carry__external_dimension_score"
 )
 
+$BroadScoreFeatureNames = @(
+    "trigger_score",
+    "external_dimension_score"
+)
+
 function Resolve-ArtifactPath {
     param(
         [string]$ReleaseId,
@@ -302,6 +307,9 @@ $usdJpyRows = foreach ($featureName in $UsdJpyFeatureNames) {
 $familyRows = foreach ($featureName in $FamilyFeatureNames) {
     New-WeightRow -BaselineMap $baselineMap -CandidateMap $candidateMap -FeatureName $featureName
 }
+$broadScoreRows = foreach ($featureName in $BroadScoreFeatureNames) {
+    New-WeightRow -BaselineMap $baselineMap -CandidateMap $candidateMap -FeatureName $featureName
+}
 
 $thresholdRows = New-ThresholdSummaryRows -BaselineEval $baselineEval -CandidateEval $candidateEval
 $thresholdTakeaway = Get-ThresholdRoleTakeaway -BaselineEval $baselineEval -CandidateEval $candidateEval
@@ -388,6 +396,24 @@ $guardrailRows = @(
         -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "family_context__jpy_carry__external_dimension_score") `
         -MinAllowed 0.0 `
         -MaxAllowed 0.10
+    New-GuardrailStatusRow `
+        -Item "trigger score broad-lift cap" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d trigger_score should stay <= 0.65 in family-context heads so broad trigger pressure cannot dominate false-positive windows." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "trigger_score") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "trigger_score") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.65
+    New-GuardrailStatusRow `
+        -Item "external-dimension broad-lift cap" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d external_dimension_score should stay <= 0.42 in family-context heads so external pressure stays contextual rather than a generic 20d driver." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "external_dimension_score") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "external_dimension_score") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.42
     New-GuardrailStatusRow `
         -Item "USDJPY signed 20d change neutralization" `
         -Coverage "training_guardrail" `
@@ -478,6 +504,7 @@ $summary = [pscustomobject]@{
     curve_rows = $curveRows
     usdjpy_rows = $usdJpyRows
     family_rows = $familyRows
+    broad_score_rows = $broadScoreRows
     guardrail_rows = $guardrailRows
     overlay_rows = $overlayRows
     takeaways = $takeaways | Select-Object -Unique
@@ -508,6 +535,10 @@ Write-Host ""
 
 Write-Host "JPY carry / rate_shock context weights"
 $familyRows | Format-Table -AutoSize
+Write-Host ""
+
+Write-Host "Broad score weights"
+$broadScoreRows | Format-Table -AutoSize
 Write-Host ""
 
 Write-Host "Family overlay audit status"
