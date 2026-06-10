@@ -23,8 +23,8 @@ use context::{
     build_runtime_metadata,
 };
 use market_context::{
-    build_action_evidence_breakdown, build_data_trust, build_jpy_carry_snapshot,
-    build_relief_drivers, high_risk_breadth,
+    apply_key_indicator_freshness_guard, build_action_evidence_breakdown, build_data_trust,
+    build_jpy_carry_snapshot, build_relief_drivers, high_risk_breadth,
 };
 use mvp_state::build_mvp_risk_state;
 use posture::{
@@ -93,7 +93,11 @@ pub fn build_assessment_snapshot(
         (external_dimension_score * 0.45 + jpy_carry.score * 0.4 + event_dimension_score * 0.15)
             .clamp(0.0, 100.0),
     );
-    let data_trust = build_data_trust(snapshot, indicator_risks, jpy_carry.usdjpy_level.is_some());
+    let key_indicators = build_key_indicator_statuses(observations, snapshot.as_of_date, data_mode);
+    let data_trust = apply_key_indicator_freshness_guard(
+        build_data_trust(snapshot, indicator_risks, jpy_carry.usdjpy_level.is_some()),
+        &key_indicators,
+    );
     let breadth_score = high_risk_breadth(snapshot);
     let action_evidence = build_action_evidence_breakdown(snapshot, &data_trust, breadth_score);
     let conviction_score = action_evidence.score;
@@ -105,7 +109,6 @@ pub fn build_assessment_snapshot(
         &data_trust,
         &jpy_carry,
     );
-    let key_indicators = build_key_indicator_statuses(observations, snapshot.as_of_date, data_mode);
     let runtime = build_runtime_metadata(data_mode, snapshot, observations, &key_indicators);
     let probability_trace = build_probability_trace(
         snapshot,

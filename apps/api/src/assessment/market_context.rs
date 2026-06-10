@@ -1,7 +1,8 @@
 use fc_domain::{
     observation_history_for_indicator, observation_value_difference_from_tail,
-    ActionEvidenceBreakdown, DataTrust, IndicatorRisk, JpyCarrySnapshot, JpyCarryState,
-    Observation, RiskContributor, RiskDimension, RiskSnapshot,
+    ActionEvidenceBreakdown, DataTrust, FreshnessStatus, IndicatorRisk, JpyCarrySnapshot,
+    JpyCarryState, KeyIndicatorStatus, Observation, QualityGrade, RiskContributor, RiskDimension,
+    RiskSnapshot,
 };
 
 use super::{round1, round3, round_option, scaled_pressure};
@@ -76,6 +77,72 @@ pub(super) fn build_data_trust(
         quality_grade: snapshot.data_quality_summary.grade,
         data_quality_summary: snapshot.data_quality_summary.clone(),
         warnings,
+    }
+}
+
+pub(super) fn apply_key_indicator_freshness_guard(
+    mut data_trust: DataTrust,
+    key_indicators: &[KeyIndicatorStatus],
+) -> DataTrust {
+    let missing_count = key_indicators
+        .iter()
+        .filter(|indicator| indicator.status == FreshnessStatus::Missing)
+        .count();
+    let stale_count = key_indicators
+        .iter()
+        .filter(|indicator| indicator.status == FreshnessStatus::Stale)
+        .count();
+    let delayed_count = key_indicators
+        .iter()
+        .filter(|indicator| indicator.status == FreshnessStatus::Delayed)
+        .count();
+
+    if missing_count > 0 {
+        data_trust.coverage_score = round3(data_trust.coverage_score.min(0.68));
+        data_trust.quality_grade = cap_quality_grade(data_trust.quality_grade, QualityGrade::D);
+        data_trust.data_quality_summary.blocked_indicator_count += missing_count;
+        data_trust.warnings.push(format!(
+            "存在 {missing_count} 个关键近端指标缺失；系统必须降级结论可信度，不能用旧值或空值形成高置信判断。"
+        ));
+    }
+
+    if stale_count > 0 {
+        data_trust.coverage_score = round3(data_trust.coverage_score.min(0.74));
+        data_trust.quality_grade = cap_quality_grade(data_trust.quality_grade, QualityGrade::D);
+        data_trust.data_quality_summary.stale_indicator_count += stale_count;
+        data_trust.warnings.push(format!(
+            "存在 {stale_count} 个关键近端指标明显陈旧；当前值只能作为历史参照，短期仓位结论必须降级。"
+        ));
+    }
+
+    if delayed_count > 0 && missing_count == 0 && stale_count == 0 {
+        data_trust.coverage_score = round3(data_trust.coverage_score.min(0.88));
+        data_trust.quality_grade = cap_quality_grade(data_trust.quality_grade, QualityGrade::B);
+        data_trust.data_quality_summary.stale_indicator_count += delayed_count;
+        data_trust.warnings.push(format!(
+            "存在 {delayed_count} 个关键近端指标延迟；系统最多按中高可信解释，不能直接给高置信动作结论。"
+        ));
+    }
+
+    data_trust.data_quality_summary.grade = data_trust.quality_grade;
+    data_trust
+}
+
+fn cap_quality_grade(current: QualityGrade, cap: QualityGrade) -> QualityGrade {
+    if quality_rank(current) > quality_rank(cap) {
+        cap
+    } else {
+        current
+    }
+}
+
+fn quality_rank(grade: QualityGrade) -> u8 {
+    match grade {
+        QualityGrade::A => 4,
+        QualityGrade::B => 3,
+        QualityGrade::C => 2,
+        QualityGrade::D => 1,
+        QualityGrade::F => 0,
     }
 }
 
@@ -394,6 +461,46 @@ mod tests {
         }
     }
 
+    fn baseline_data_trust() -> DataTrust {
+        DataTrust {
+            coverage_score: 0.97,
+            core_feature_coverage: 1.0,
+            trigger_feature_coverage: 0.95,
+            external_feature_coverage: 1.0,
+            quality_grade: QualityGrade::A,
+            data_quality_summary: DataQualitySummary {
+                overall_score: 94.0,
+                grade: QualityGrade::A,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count: 0,
+            },
+            warnings: Vec::new(),
+        }
+    }
+
+    fn key_indicator_with_status(status: FreshnessStatus) -> KeyIndicatorStatus {
+        let latest_as_of_date = (status != FreshnessStatus::Missing)
+            .then(|| NaiveDate::from_ymd_opt(2026, 6, 5).unwrap());
+        KeyIndicatorStatus {
+            indicator_id: "us_external_usdjpy_level".to_string(),
+            display_name: "USDJPY".to_string(),
+            entity_id: "us".to_string(),
+            source_id: latest_as_of_date.map(|_| "boj".to_string()),
+            dataset_id: latest_as_of_date.map(|_| "boj_fx_daily".to_string()),
+            unit: "jpy_per_usd".to_string(),
+            latest_value: latest_as_of_date.map(|_| 160.0),
+            latest_as_of_date,
+            lag_days: latest_as_of_date.map(|_| 5),
+            lag_business_days: latest_as_of_date.map(|_| 2),
+            stale_threshold_days: 3,
+            status,
+            note: "test".to_string(),
+            lineage: None,
+        }
+    }
+
     fn snapshot_with_blocked_count(blocked_indicator_count: usize) -> RiskSnapshot {
         RiskSnapshot {
             as_of_date: NaiveDate::from_ymd_opt(2026, 6, 9).unwrap(),
@@ -459,5 +566,51 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.contains("核心指标缺少或被阻断")));
+    }
+
+    #[test]
+    fn key_indicator_missing_caps_data_trust_below_high_confidence() {
+        let trust = apply_key_indicator_freshness_guard(
+            baseline_data_trust(),
+            &[key_indicator_with_status(FreshnessStatus::Missing)],
+        );
+
+        assert!(trust.coverage_score <= 0.68);
+        assert_eq!(trust.quality_grade, QualityGrade::D);
+        assert_eq!(trust.data_quality_summary.grade, QualityGrade::D);
+        assert!(trust
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("关键近端指标缺失")));
+    }
+
+    #[test]
+    fn key_indicator_stale_caps_data_trust_below_high_confidence() {
+        let trust = apply_key_indicator_freshness_guard(
+            baseline_data_trust(),
+            &[key_indicator_with_status(FreshnessStatus::Stale)],
+        );
+
+        assert!(trust.coverage_score <= 0.74);
+        assert_eq!(trust.quality_grade, QualityGrade::D);
+        assert!(trust
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("关键近端指标明显陈旧")));
+    }
+
+    #[test]
+    fn key_indicator_delayed_caps_data_trust_to_medium_high_confidence() {
+        let trust = apply_key_indicator_freshness_guard(
+            baseline_data_trust(),
+            &[key_indicator_with_status(FreshnessStatus::Delayed)],
+        );
+
+        assert!(trust.coverage_score <= 0.88);
+        assert_eq!(trust.quality_grade, QualityGrade::B);
+        assert!(trust
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("关键近端指标延迟")));
     }
 }

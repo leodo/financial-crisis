@@ -139,7 +139,9 @@ mod tests {
         ]);
 
         assert_eq!(rows.len(), 7);
-        assert!(!rows.iter().any(|row| row.scenario_id == "us_bond_massacre_1994"));
+        assert!(!rows
+            .iter()
+            .any(|row| row.scenario_id == "us_bond_massacre_1994"));
         assert_eq!(rows[0].scenario_id, "us_black_monday_1987");
         assert_eq!(rows[1].scenario_id, "us_funding_stress_2011");
         assert_eq!(rows[6].scenario_id, "us_covid_liquidity_2020");
