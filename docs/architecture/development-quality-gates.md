@@ -105,6 +105,14 @@ just check-all
 
 但提交前仍以 `just verify` 为准。
 
+MVP 决策面板的运行时数字可信检查需要本地服务，因此不放进默认 CI/`just verify`。凡是修改首屏核心数字、`mvp_risk_state`、关键指标新鲜度、正式概率审计态或数据模式展示，都必须先启动 `just dev`，再运行：
+
+```text
+just mvp-regression
+```
+
+该命令会读取 `/api/assessment/current`，并检查当前 API 是否使用 SQLite、本地 USDJPY 是否与 JPY carry 模块一致、关键近端指标是否存在，以及 USDJPY tail 语义异常时是否降级为 `audit_only`。
+
 ## 6. CI 门禁
 
 仓库 CI 至少应自动执行：

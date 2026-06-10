@@ -24,6 +24,11 @@ dev-sqlite:
 status:
     ./scripts/dev-status.ps1
 
+# 针对 MVP 决策面板的运行时防回归检查；需要先启动 `just dev`。
+# 默认要求 API 使用本地 SQLite，并校验 USDJPY、关键近端指标与 audit-only 主结论口径。
+mvp-regression:
+    node ./scripts/mvp-runtime-regression-check.mjs
+
 # 检查生成工件是否误入版本化目录。
 # 已暂存的版本化 artifact 会让命令失败，除非先补充证据说明并设置 ALLOW_TRACKED_ARTIFACTS=1。
 artifact-status:
