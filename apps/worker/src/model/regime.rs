@@ -7,10 +7,14 @@ use super::{dot, normalized_features, sigmoid};
 
 #[derive(Debug, Clone)]
 pub(crate) struct RegimePairwiseTarget {
+    #[cfg(test)]
+    pub(crate) left_regime: ProbabilityTrainingRegime,
+    #[cfg(test)]
+    pub(crate) right_regime: ProbabilityTrainingRegime,
     left_centroid: Vec<f64>,
     right_centroid: Vec<f64>,
-    margin: f64,
-    weight: f64,
+    pub(crate) margin: f64,
+    pub(crate) weight: f64,
 }
 
 pub(crate) fn forward_crisis_regime_pairwise_targets(
@@ -47,34 +51,34 @@ pub(crate) fn forward_crisis_regime_pairwise_targets(
         ],
         20 => vec![
             (
-                ProbabilityTrainingRegime::PreWarningBuffer,
+                ProbabilityTrainingRegime::PositiveWindow,
                 ProbabilityTrainingRegime::Normal,
-                if uses_interaction_tail { 1.00 } else { 0.85 },
-                if uses_interaction_tail { 1.40 } else { 1.25 },
+                if uses_interaction_tail { 0.90 } else { 0.65 },
+                if uses_interaction_tail { 1.45 } else { 1.15 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
-                ProbabilityTrainingRegime::Normal,
-                if uses_interaction_tail { 0.55 } else { 0.40 },
-                if uses_interaction_tail { 1.00 } else { 0.85 },
+                ProbabilityTrainingRegime::PostCrisisCooldown,
+                if uses_interaction_tail { 1.05 } else { 0.75 },
+                if uses_interaction_tail { 1.55 } else { 1.20 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
                 ProbabilityTrainingRegime::PreWarningBuffer,
-                if uses_interaction_tail { 0.40 } else { 0.35 },
+                if uses_interaction_tail { 0.50 } else { 0.40 },
+                if uses_interaction_tail { 1.00 } else { 0.85 },
+            ),
+            (
+                ProbabilityTrainingRegime::PreWarningBuffer,
+                ProbabilityTrainingRegime::Normal,
                 if uses_interaction_tail { 0.80 } else { 0.70 },
+                if uses_interaction_tail { 0.85 } else { 0.75 },
             ),
             (
                 ProbabilityTrainingRegime::PreWarningBuffer,
                 ProbabilityTrainingRegime::PostCrisisCooldown,
-                if uses_interaction_tail { 0.90 } else { 0.70 },
-                if uses_interaction_tail { 1.25 } else { 1.10 },
-            ),
-            (
-                ProbabilityTrainingRegime::PositiveWindow,
-                ProbabilityTrainingRegime::PostCrisisCooldown,
-                if uses_interaction_tail { 0.70 } else { 0.45 },
-                if uses_interaction_tail { 1.05 } else { 0.80 },
+                if uses_interaction_tail { 0.70 } else { 0.55 },
+                if uses_interaction_tail { 0.80 } else { 0.70 },
             ),
         ],
         60 => vec![
@@ -118,6 +122,10 @@ pub(crate) fn forward_crisis_regime_pairwise_targets(
             let left_centroid = regime_centroid(rows, feature_stats, horizon_days, left)?;
             let right_centroid = regime_centroid(rows, feature_stats, horizon_days, right)?;
             Some(RegimePairwiseTarget {
+                #[cfg(test)]
+                left_regime: left,
+                #[cfg(test)]
+                right_regime: right,
                 left_centroid,
                 right_centroid,
                 margin,

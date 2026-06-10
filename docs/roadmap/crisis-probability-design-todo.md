@@ -983,6 +983,11 @@
      - screen 仍为 `no_go_offline`：regional banks positive-window hit rate `80.0% -> 0.0%`、runtime floor hit count `91 -> 41`、actionable precision `69.8% -> 0.0%`，并继续命中 `20d cooldown_bleed`、`60d cold_across_all_regimes`；
      - 本轮改善了误报强度但没有解决核心矛盾：February false-positive max p20d 从旧候选约 `87.2%` 降到 `82.07%`，但 regional positive-window avg p20d 仍只有 `74.27%`，低于 candidate threshold `90.00%`；
      - separation audit 仍显示 `interaction__us_curve_10y2y_level__us_fed_funds_level`、`tail_pos__trigger_score__50`、`trigger_score` 是正例/误报耦合抬升主因。下一步不能继续只加 broad cap，而应做 context gating 或训练目标层的 positive-window vs false-positive separation。
+   - `2026-06-10` 已开始把 `20d` 训练目标从“pre-warning buffer 先抬升”调整为“positive-window 必须优先高于 normal / cooldown”：
+     - `20d` pairwise target 现在把 `PositiveWindow > PostCrisisCooldown` 设为最强约束，其次是 `PositiveWindow > Normal`，并降低 `PreWarningBuffer > Normal/Cooldown` 的优先级；
+     - 新增单测固定这个训练目标顺序，防止后续重新把前置缓冲区抬得比真正危机正窗口更强；
+     - 这一步只改变下一轮候选训练的目标函数，不改变当前 active release，也不允许绕过 `formal-candidate-screen`、semantics audit、runtime contribution audit 和 release review；
+     - 后续必须重训 review-only 候选并验证：`20d` positive-window hit rate 是否恢复、cooldown 是否低于 positive-window、February/July false-positive 是否不会因 threshold 下调重新放出、`60d cold_across_all_regimes` 是否没有恶化。
 3. 只有在上面两条 evidence 清楚后，才决定是否需要新的 candidate retrain；当前 `us_formal_family_hybrid_20260606T112926` 已通过最新 strict/default review，不应继续把 release-review clause 微调当成主线；
 4. 继续把 formal history / rolling audit 链从 `persisted snapshots` 的过渡依赖收口到 `raw point-in-time feature store`，避免研究结论长期混用两套历史口径。
 
