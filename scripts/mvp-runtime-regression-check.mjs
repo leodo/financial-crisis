@@ -164,7 +164,15 @@ async function findBrowserExecutable() {
   return null;
 }
 
-async function dumpRenderedDom(browserPath) {
+function renderedUrlForView(viewId) {
+  const url = new URL(webBaseUrl);
+  if (viewId && viewId !== "decision") {
+    url.searchParams.set("view", viewId);
+  }
+  return url.toString();
+}
+
+async function dumpRenderedDom(browserPath, targetUrl = webBaseUrl) {
   const userDataDir = await mkdtemp(join(tmpdir(), "fc-mvp-browser-"));
   try {
     const { stdout } = await execFileAsync(
@@ -178,7 +186,7 @@ async function dumpRenderedDom(browserPath) {
         `--user-data-dir=${userDataDir}`,
         "--virtual-time-budget=10000",
         "--dump-dom",
-        webBaseUrl
+        targetUrl
       ],
       { maxBuffer: 10 * 1024 * 1024, timeout: 20000 }
     );
@@ -1394,6 +1402,78 @@ async function validateRenderedUiIfAvailable(
     ...renderedForbiddenPhrases
   ]) {
     assert(!dom.includes(phrase), `rendered decision dashboard still contains stale/misleading copy: ${phrase}`);
+  }
+
+  const viewContracts = [
+    {
+      id: "decision",
+      title: "美国金融危机风险决策面板",
+      required: ["当前数字说明", "为什么是现在", "离风险还有多远"],
+      allowAuditWord: false
+    },
+    {
+      id: "drivers",
+      title: "风险驱动拆解",
+      required: ["近端风险驱动", "结构背景驱动", "当前结论"],
+      allowAuditWord: false
+    },
+    {
+      id: "events",
+      title: "事件层确认",
+      required: ["事件摘要", "确认分数", "最近事件"],
+      allowAuditWord: false
+    },
+    {
+      id: "backtests",
+      title: "历史回测与误报边界",
+      required: ["回测摘要", "滚动历史复核", "当前运行历史轨迹（参考）"],
+      allowAuditWord: false
+    },
+    {
+      id: "audit",
+      title: "线上版本与研究核对",
+      required: ["当前线上版本", "审计摘要", "最近一次 Release Review"],
+      allowAuditWord: true
+    },
+    {
+      id: "indicators",
+      title: "指标细项总览",
+      required: ["当前指标摘要", "近端最需盯的指标", "指标细项"],
+      allowAuditWord: false
+    },
+    {
+      id: "sources",
+      title: "数据可信度与免费源状态",
+      required: ["数据覆盖与源健康摘要", "使用建议", "源状态"],
+      allowAuditWord: false
+    },
+    {
+      id: "method",
+      title: "方法说明与版本边界",
+      required: ["当前方法摘要", "当前运行阈值", "当前结论的限制"],
+      allowAuditWord: false
+    }
+  ];
+  const commonBadRenderedTokens = ["审计读数", "待审计", "概率待审计", "NaN", "undefined", "null", "Infinity"];
+  for (const contract of viewContracts) {
+    const viewDom = contract.id === "decision" ? dom : await dumpRenderedDom(browserPath, renderedUrlForView(contract.id));
+    assert(
+      viewDom.includes(contract.title),
+      `rendered ${contract.id} view is missing title: ${contract.title}`
+    );
+    assert(
+      !viewDom.includes("正在加载视图"),
+      `rendered ${contract.id} view still shows the loading placeholder`
+    );
+    for (const phrase of contract.required) {
+      assert(viewDom.includes(phrase), `rendered ${contract.id} view is missing: ${phrase}`);
+    }
+    for (const token of commonBadRenderedTokens) {
+      assert(!viewDom.includes(token), `rendered ${contract.id} view contains invalid token: ${token}`);
+    }
+    if (!contract.allowAuditWord) {
+      assert(!viewDom.includes("审计"), `rendered ${contract.id} view should not expose audit wording`);
+    }
   }
 
   return "checked";

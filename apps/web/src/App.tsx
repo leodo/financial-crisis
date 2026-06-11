@@ -55,6 +55,19 @@ const DATASET_LABELS: Record<keyof ConsoleReadyData, string> = {
   backtestTimeline: "滚动回测轨迹"
 };
 
+function isView(value: string | null): value is View {
+  return value !== null && navItems.some((item) => item.id === value);
+}
+
+function initialViewFromLocation(): View {
+  if (typeof window === "undefined") {
+    return "decision";
+  }
+
+  const requestedView = new URLSearchParams(window.location.search).get("view");
+  return isView(requestedView) ? requestedView : "decision";
+}
+
 function buildReadyData(
   view: View,
   data: ConsoleDataSnapshot
@@ -103,7 +116,7 @@ function productionSourceIssueLabels(sources: ConsoleDataSnapshot["sources"]): s
 }
 
 export default function App() {
-  const [view, setView] = useState<View>("decision");
+  const [view, setView] = useState<View>(() => initialViewFromLocation());
   const requiredKeys = VIEW_DATA_KEYS[view];
   const {
     assessment,
@@ -218,6 +231,20 @@ export default function App() {
       `关键数据 ${assessment.data.runtime.latest_key_indicator_at ?? assessment.data.runtime.latest_observation_at ?? "—"}`
     ].filter((item): item is string => item !== null);
   }, [assessment.data, riskWindowSummaryLabel, sourceIssueSummary]);
+  const handleViewChange = (nextView: View) => {
+    setView(nextView);
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    if (nextView === "decision") {
+      url.searchParams.delete("view");
+    } else {
+      url.searchParams.set("view", nextView);
+    }
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  };
 
   return (
     <div className="app-shell">
@@ -237,7 +264,7 @@ export default function App() {
               <button
                 key={item.id}
                 className={view === item.id ? "nav-item active" : "nav-item"}
-                onClick={() => setView(item.id)}
+                onClick={() => handleViewChange(item.id)}
                 type="button"
                 title={item.label}
               >
