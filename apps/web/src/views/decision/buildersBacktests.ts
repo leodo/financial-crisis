@@ -94,7 +94,7 @@ export function buildRollingAuditMetrics(
   const noSignalHint =
     "当前滚动窗口没有发出准备/对冲/防守动作信号，所以这里不是命中率为 0，而是样本分母为 0。";
   const rollingAuditHint =
-    "这是全历史回放里的动作信号审计口径，用来评估误报边界；不是当前正式概率的实时准确率。";
+    "这是全历史回放里的动作信号复核口径，用来评估误报边界；不是当前正式概率的实时准确率。";
   const rollingAuditCountHint =
     "这里统计的是历史回放评估点/区间数量，不是当前页面今天出现的事件条数。";
 

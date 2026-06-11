@@ -45,11 +45,11 @@ export function describeRollingAuditBoundary(
   rollingAudit: AssessmentSnapshot["backtest_summary"]["rolling_audit"]
 ) {
   if (method.method.probability_mode === "heuristic_mvp") {
-    return "当前滚动审计主要用于解释启发式动作层在历史上的表现，不能把它当成正式概率模型命中率。";
+    return "当前滚动历史复核主要用于解释启发式动作层在历史上的表现，不能把它当成正式概率模型命中率。";
   }
 
   if (rollingAudit.history_point_count > method.history_provenance.total_points) {
-    return `这组滚动审计当前复用了比默认运行历史更长的 replay 窗口（${rollingAudit.history_point_count} 点，对比默认 ${method.history_provenance.total_points} 点）。它更适合看长历史里的命中/误报分布；上面 method 区块里的 PIT 证据层说明只对应默认运行历史，不等于这组长历史已经全部进入 raw PIT 正式口径。`;
+    return `这组滚动历史复核当前复用了比默认运行历史更长的 replay 窗口（${rollingAudit.history_point_count} 点，对比默认 ${method.history_provenance.total_points} 点）。它更适合看长历史里的命中/误报分布；上面 method 区块里的 PIT 证据层说明只对应默认运行历史，不等于这组长历史已经全部进入 raw PIT 正式口径。`;
   }
 
   if (method.history_provenance.snapshot_bridge_points > 0) {
@@ -68,10 +68,10 @@ export function describeRollingAuditBoundary(
     method.history_provenance.feature_backed_points > 0 &&
     method.history_provenance.feature_backed_points === method.history_provenance.total_points
   ) {
-    return `当前默认历史轨迹 ${method.history_provenance.feature_backed_points}/${method.history_provenance.total_points} 个点都绑定到已落库 PIT feature snapshot，滚动审计已经进入 formal history 审计的正式证据层；后续重点应放在模型本体命中率和样本覆盖，而不是再把它当成旧 bridge 兼容结果。`;
+    return `当前默认历史轨迹 ${method.history_provenance.feature_backed_points}/${method.history_provenance.total_points} 个点都绑定到已落库 PIT feature snapshot，滚动历史复核已经进入正式历史证据层；后续重点应放在模型本体命中率和样本覆盖，而不是再把它当成旧 bridge 兼容结果。`;
   }
 
-  return "当前滚动审计可以帮助比较模型在不同历史阶段是否稳定，但仍要结合数据覆盖、PIT 可见性和 release review 一起解释。";
+  return "当前滚动历史复核可以帮助比较模型在不同历史阶段是否稳定，但仍要结合数据覆盖、PIT 可见性和 release review 一起解释。";
 }
 
 export const RISK_SCORE_BANDS = [

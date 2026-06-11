@@ -42,6 +42,38 @@ function isDerivedScoreBasis(scoreBasis: string | null | undefined) {
   );
 }
 
+function nearTermFrequencyRank(frequency: string) {
+  switch (frequency) {
+    case "daily":
+      return 0;
+    case "weekly":
+      return 1;
+    default:
+      return 2;
+  }
+}
+
+function observationDateValue(risk: IndicatorRisk) {
+  const date = risk.latest_observation?.as_of_date;
+  if (!date) {
+    return 0;
+  }
+  const parsed = Date.parse(`${date}T00:00:00Z`);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isNearTermMonitorCandidate(risk: IndicatorRisk) {
+  return (
+    risk.latest_observation !== null &&
+    nearTermFrequencyRank(risk.indicator.frequency) < 2 &&
+    risk.score > 0
+  );
+}
+
+function focusTrackingScope(risk: IndicatorRisk) {
+  return isNearTermMonitorCandidate(risk) ? "近端监控" : "背景跟踪";
+}
+
 function scoreInputTitle(risk: IndicatorRisk) {
   const basis = scoreBasisLabel(risk.score_basis);
   if (risk.score_input_value === null) {
@@ -68,6 +100,21 @@ function scoreInputDetails(risk: IndicatorRisk) {
 
 export function useIndicatorsViewModel({ indicators }: { indicators: IndicatorRisk[] }) {
   const rows = [...indicators].sort((left, right) => right.score - left.score);
+  const nearTermRows = rows
+    .filter(isNearTermMonitorCandidate)
+    .sort((left, right) => {
+      const frequencyDelta =
+        nearTermFrequencyRank(left.indicator.frequency) -
+        nearTermFrequencyRank(right.indicator.frequency);
+      if (frequencyDelta !== 0) {
+        return frequencyDelta;
+      }
+      const scoreDelta = right.score - left.score;
+      if (scoreDelta !== 0) {
+        return scoreDelta;
+      }
+      return observationDateValue(right) - observationDateValue(left);
+    });
   const highRiskRows = rows.filter((risk) => risk.score >= 75);
   const stressRows = rows.filter((risk) => risk.score >= 60 && risk.score < 75);
   const missingRows = rows.filter(
@@ -87,7 +134,7 @@ export function useIndicatorsViewModel({ indicators }: { indicators: IndicatorRi
       value: `${highRiskRows.length}`,
       hint:
         highRiskRows.length > 0
-          ? `最靠前的是 ${indicatorTitle(highRiskRows[0])}`
+          ? `最高分项是 ${indicatorTitle(highRiskRows[0])}；若为月频/年频，应按结构背景解释。`
           : "当前没有指标落在 75 分以上。"
     },
     {
@@ -102,10 +149,16 @@ export function useIndicatorsViewModel({ indicators }: { indicators: IndicatorRi
     }
   ];
 
-  const focusRows: DetailRowItem[] = rows.slice(0, 3).map((risk) => ({
+  const focusCandidates = [
+    ...nearTermRows,
+    ...rows.filter((risk) => !nearTermRows.some((nearTerm) => nearTerm.indicator.indicator_id === risk.indicator.indicator_id))
+  ].slice(0, 3);
+  const focusRows: DetailRowItem[] = focusCandidates.map((risk) => ({
     id: risk.indicator.indicator_id,
     title: indicatorTitle(risk),
-    detail: `${scoreInputTitle(risk)} · ${scoreBasisLabel(risk.score_basis)}`,
+    detail: `${frequencyLabel(risk.indicator.frequency)}${focusTrackingScope(risk)} · ${scoreInputTitle(
+      risk
+    )} · ${scoreBasisLabel(risk.score_basis)}`,
     meta: formatNumber(risk.score),
     note: `${
       isDerivedScoreBasis(risk.score_basis)

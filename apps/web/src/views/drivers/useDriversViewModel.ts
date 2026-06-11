@@ -6,7 +6,7 @@ import {
   postureLabel,
   timeBucketLabel
 } from "../../format";
-import type { AssessmentSnapshot, PostureGuidance, RiskSnapshot } from "../../types";
+import type { AssessmentSnapshot, IndicatorRisk, PostureGuidance, RiskSnapshot } from "../../types";
 import type { MetricItem } from "../shared/panelHelpers";
 import {
   currentMvpRiskState,
@@ -14,14 +14,23 @@ import {
   mvpRiskStateDetail,
   mvpRiskStateDisplayLabel
 } from "../decision/mvpRiskState";
+import {
+  buildNearTermRiskDrivers,
+  buildTimedRiskDrivers,
+  driverTimingLabel,
+  driverTimingPriority,
+  stripDriverTiming
+} from "../shared/driverTiming";
 import { driversContent } from "./content";
 
 export function useDriversViewModel({
   assessment,
+  indicators,
   overview,
   posture
 }: {
   assessment: AssessmentSnapshot;
+  indicators: IndicatorRisk[];
   overview: RiskSnapshot;
   posture: PostureGuidance;
 }) {
@@ -29,14 +38,32 @@ export function useDriversViewModel({
   const elevatedDimensions = overview.dimensions.filter((dimension) => dimension.score >= 50).length;
   const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   const mvpState = currentMvpRiskState(assessment);
+  const timedRiskDrivers = buildTimedRiskDrivers(assessment, indicators);
+  const nearTermTimedDrivers = buildNearTermRiskDrivers(assessment, indicators);
+  const nearTermDrivers = nearTermTimedDrivers.slice(0, 5).map(stripDriverTiming);
+  const backgroundDrivers = timedRiskDrivers
+    .filter((driver) => driverTimingPriority(driver.timingBucket) > 1)
+    .map(stripDriverTiming);
+  const strongestBackgroundDriver = timedRiskDrivers.find(
+    (driver) => driverTimingPriority(driver.timingBucket) > 1
+  );
 
   const summaryMetrics: MetricItem[] = [
     {
-      label: "高压驱动",
-      value: `${assessment.top_risk_drivers.filter((item) => item.score >= 60).length}`,
-      hint: assessment.top_risk_drivers[0]
-        ? `最强的是 ${humanizeNarrativeCopy(assessment.top_risk_drivers[0].display_name)}`
-        : "当前没有进入高压区的驱动。"
+      label: "近端高压驱动",
+      value: `${nearTermTimedDrivers.filter((item) => item.score >= 60).length}`,
+      hint: nearTermTimedDrivers[0]
+        ? `最强近端项是 ${humanizeNarrativeCopy(nearTermTimedDrivers[0].display_name)}`
+        : "当前没有日频/周频近端驱动进入高压区。"
+    },
+    {
+      label: "背景高分驱动",
+      value: `${backgroundDrivers.filter((item) => item.score >= 60).length}`,
+      hint: strongestBackgroundDriver
+        ? `${humanizeNarrativeCopy(strongestBackgroundDriver.display_name)} 属于 ${driverTimingLabel(
+            strongestBackgroundDriver.timingBucket
+          )}，不能当成今天刚发生的触发。`
+        : "当前没有需要单独标注的慢变量背景高分项。"
     },
     {
       label: "缓冲因素",
@@ -85,6 +112,8 @@ export function useDriversViewModel({
   ] as Array<[string, string]>;
 
   return {
+    nearTermDrivers,
+    backgroundDrivers,
     summaryMetrics,
     dimensionRows,
     summaryRows

@@ -15,7 +15,8 @@ import {
   formatNumber,
   formatPercent,
   jpyStateLabel,
-  levelLabel
+  levelLabel,
+  qualityLabel
 } from "../../format";
 import { SimpleGroupedBarChart } from "../../simpleCharts";
 import type { AssessmentSnapshot, RiskSnapshot } from "../../types";
@@ -38,7 +39,7 @@ import {
 } from "./actionBoundaries";
 import { BudgetBar } from "./components";
 import { decisionContent } from "./content";
-import { mvpProbabilityInputIsAuditOnly } from "./mvpRiskState";
+import { currentMvpRiskState, mvpProbabilityInputIsAuditOnly } from "./mvpRiskState";
 import type { GroupedBarChartModel } from "./charts";
 import type {
   DecisionAnalogRow,
@@ -66,6 +67,44 @@ function backtestSummaryCopy(assessment: AssessmentSnapshot) {
   return `${localCoverage}${structural}${action}`;
 }
 
+function displayedUpgradeCondition(
+  assessment: AssessmentSnapshot,
+  posture: { upgrade_condition: string }
+) {
+  if (!mvpProbabilityInputIsAuditOnly(assessment)) {
+    return posture.upgrade_condition;
+  }
+
+  const mvpState = currentMvpRiskState(assessment);
+  const scores = assessment.scores;
+  const eventScore = assessment.event_assessment.confirmation_score;
+  const coverage = assessment.data_trust.coverage_score;
+  const quality = assessment.data_trust.quality_grade;
+  const currentReadings = `当前对照：总风险 ${formatNumber(
+    scores.overall_score
+  )}，结构 ${formatNumber(scores.structural_score)}，触发 ${formatNumber(
+    scores.trigger_score
+  )}，外部 ${formatNumber(scores.external_shock_score)}，事件确认 ${formatNumber(
+    eventScore
+  )}，日元套息 ${jpyStateLabel(assessment.jpy_carry.state)} ${formatNumber(
+    assessment.jpy_carry.score
+  )}，关键指标覆盖 ${formatPercent(coverage)} / ${qualityLabel(quality)}。`;
+
+  if (mvpState.code === "observe") {
+    return `正式概率当前只作为参考输入，升级不按 60日 / 20日 / 5日概率阈值触发；若总风险、结构、触发、外部冲击、日元套息或事件确认进入 45 分以上，并且关键指标覆盖不低于 75% 且质量等级不低于 C，则升级为提前准备。${currentReadings}`;
+  }
+
+  if (mvpState.code === "prepare") {
+    return `正式概率当前只作为参考输入，下一档不按 20日概率阈值触发；若事件确认转为已确认且总风险达到 55 分以上，或触发压力达到 60 分并得到结构、外部冲击或日元套息同步确认，则升级为保护性对冲。${currentReadings}`;
+  }
+
+  if (mvpState.code === "hedge") {
+    return `正式概率当前只作为参考输入，下一档不按 5日概率阈值触发；若事件进入升级态，或总风险达到 75 分且触发压力/外部冲击至少一项达到 65 分，或日元套息进入平仓风险并伴随触发压力抬升，则升级为防守优先。${currentReadings}`;
+  }
+
+  return `正式概率当前只作为参考输入；除非规则层压力、事件确认和日元套息风险明显缓和，否则维持防守优先。${currentReadings}`;
+}
+
 export function DecisionWhyNowPanel({
   assessment,
   posture,
@@ -86,7 +125,9 @@ export function DecisionWhyNowPanel({
       <RuleBox label="近端优先说明">
         {decisionContent.panels.whyNowDriverTiming}
       </RuleBox>
-      <RuleBox label="升级条件">{humanizeNarrativeCopy(posture.upgrade_condition)}</RuleBox>
+      <RuleBox label="升级条件">
+        {humanizeNarrativeCopy(displayedUpgradeCondition(assessment, posture))}
+      </RuleBox>
     </section>
   );
 }
@@ -134,7 +175,7 @@ export function DecisionAnalogPanel({
       <ResponsiveTable
         columns={["历史场景", "相似度", "预警节奏", "差距"]}
         className="wide-table"
-        note="相似度（0-100）越高说明当前压力结构越接近该历史样本；预警节奏是历史上从信号到爆发的时间窗口，不是当前还剩多少天。"
+        note="相似度（0-100）：相似度是 0-100 的结构参照分，不是危机发生概率；预警节奏是历史上从信号到爆发的时间窗口，不代表当前还剩多少天。"
       >
         {analogRows.map((analog) => (
           <tr key={analog.id}>
@@ -441,18 +482,18 @@ export function DecisionRollingAuditPanel({
   const rollingAudit = assessment.backtest_summary.rolling_audit;
   const rollingAuditSummary =
     rollingAudit.actionable_signal_count === 0
-      ? `全历史滚动审计覆盖 ${rollingAudit.history_start} 到 ${rollingAudit.history_end}；当前运行口径没有发出准备/对冲/防守动作信号，因此不能把“动作信号精度”解释为 0% 命中率，只能说明本窗口没有可评估的动作信号。`
+      ? `全历史滚动复核覆盖 ${rollingAudit.history_start} 到 ${rollingAudit.history_end}；当前运行口径没有发出准备/对冲/防守动作信号，因此不能把“动作信号精度”解释为 0% 命中率，只能说明本窗口没有可评估的动作信号。`
       : rollingAudit.summary;
 
   return (
     <section className="surface">
-      <SurfaceHeader title="滚动审计与误报边界" icon={Database} />
-      <RuleBox label="历史滚动审计结论">
+      <SurfaceHeader title="滚动复核与误报边界" icon={Database} />
+      <RuleBox label="历史滚动复核结论">
         {humanizeNarrativeCopy(rollingAuditSummary)}
       </RuleBox>
       <MetricGrid items={rollingAuditMetrics} />
       <div className="surface-grid">
-        <RuleBox label="滚动审计历史窗口">{rollingAuditHistoryText}</RuleBox>
+        <RuleBox label="滚动复核历史窗口">{rollingAuditHistoryText}</RuleBox>
         <RuleBox label="口径区分">{humanizeNarrativeCopy(rollingAuditScopeText)}</RuleBox>
       </div>
       <RuleBox label="统计口径">{decisionContent.panels.rollingAuditDefinition}</RuleBox>

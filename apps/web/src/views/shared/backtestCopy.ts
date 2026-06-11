@@ -1,6 +1,17 @@
 import { formatDate } from "../../format";
 import type { BacktestPerformanceSummary, BacktestRollingAudit } from "../../types";
 
+export function backtestReviewCopy(text: string) {
+  return text
+    .replaceAll("全历史滚动审计", "全历史滚动复核")
+    .replaceAll("滚动审计历史窗口", "滚动复核历史窗口")
+    .replaceAll("滚动审计", "滚动历史复核")
+    .replaceAll("posture 审计", "执行节奏复核")
+    .replaceAll("执行节奏 审计", "执行节奏复核")
+    .replaceAll("审计口径", "复核口径")
+    .replaceAll("审计", "复核");
+}
+
 export function buildBacktestHistoryCoverageText(
   backtestSummary: BacktestPerformanceSummary
 ) {
@@ -14,7 +25,7 @@ export function buildBacktestCoverageScopeText(
 ) {
   const coverageScopeNote = backtestSummary.coverage_scope_note?.trim();
   if (coverageScopeNote) {
-    return coverageScopeNote;
+    return backtestReviewCopy(coverageScopeNote);
   }
 
   if (backtestSummary.history_start && backtestSummary.history_end) {
@@ -27,18 +38,18 @@ export function buildBacktestCoverageScopeText(
 export function buildRollingAuditHistoryText(rollingAudit: BacktestRollingAudit) {
   return rollingAudit.history_start && rollingAudit.history_end
     ? `${formatDate(rollingAudit.history_start)} - ${formatDate(rollingAudit.history_end)}`
-    : "当前没有可用滚动审计历史区间。";
+    : "当前没有可用滚动复核历史区间。";
 }
 
 export function buildRollingAuditScopeText(rollingAudit: BacktestRollingAudit) {
   const scopeNote = rollingAudit.scope_note?.trim();
   if (scopeNote) {
-    return scopeNote;
+    return backtestReviewCopy(scopeNote);
   }
 
   if (rollingAudit.history_start && rollingAudit.history_end) {
-    return `这里的滚动审计按滚动审计历史窗口 ${formatDate(rollingAudit.history_start)} 到 ${formatDate(rollingAudit.history_end)} 统计，用于观察动作规则在这段历史里的命中、受保护压力窗口和纯误报分布。`;
+    return `这里的滚动历史复核按 ${formatDate(rollingAudit.history_start)} 到 ${formatDate(rollingAudit.history_end)} 统计，用于观察动作规则在这段历史里的命中、受保护压力窗口和纯误报分布。`;
   }
 
-  return "这里的滚动审计按当前滚动审计历史窗口统计，用于观察动作规则在这段历史里的命中、受保护压力窗口和纯误报分布。";
+  return "这里的滚动历史复核按当前历史窗口统计，用于观察动作规则在这段历史里的命中、受保护压力窗口和纯误报分布。";
 }

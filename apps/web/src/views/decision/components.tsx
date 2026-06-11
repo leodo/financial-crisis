@@ -211,7 +211,7 @@ function describeThresholdDistance(
   if (share < 0.001) {
     return {
       label: `极低于${thresholdLabel}`,
-      note: `当前不到 ${thresholdLabel} 的 0.1%，说明活跃正式模型没有捕捉到这个期限的危机前证据；若直觉上不合理，应进入模型审计，而不是在 UI 上硬抬概率。`
+      note: `当前不到 ${thresholdLabel} 的 0.1%，说明活跃正式模型没有捕捉到这个期限的危机前证据；若直觉上不合理，应进入模型复核，而不是在 UI 上硬抬概率。`
     };
   }
   if (share < 0.01) {

@@ -114,6 +114,7 @@ const viewRegistry: Record<View, (data: ConsoleReadyData) => ReactElement> = {
   drivers: (data) => (
     <DriversView
       assessment={data.assessment}
+      indicators={data.indicators}
       overview={data.overview}
       posture={data.posture}
     />

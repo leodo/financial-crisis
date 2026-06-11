@@ -1001,6 +1001,10 @@ async function validateUserFacingUiCopy() {
     new URL("../apps/web/src/views/indicators/useIndicatorsViewModel.ts", import.meta.url),
     "utf8"
   );
+  const indicatorsView = await readFile(
+    new URL("../apps/web/src/views/indicators/IndicatorsView.tsx", import.meta.url),
+    "utf8"
+  );
   const indicatorsContent = await readFile(
     new URL("../apps/web/src/views/indicators/content.ts", import.meta.url),
     "utf8"
@@ -1014,18 +1018,41 @@ async function validateUserFacingUiCopy() {
       indicatorsViewModel.includes("指标级 ${qualityDetailLabel") &&
       indicatorsViewModel.includes("单项观测质量分") &&
       indicatorsViewModel.includes("不是整体结论可信度") &&
+      indicatorsViewModel.includes("nearTermFrequencyRank") &&
+      indicatorsViewModel.includes("isNearTermMonitorCandidate") &&
+      indicatorsViewModel.includes("focusTrackingScope") &&
+      indicatorsViewModel.includes('"背景跟踪"') &&
+      indicatorsView.includes("近端最需盯的指标") &&
       indicatorsContent.includes("评分输入不是当前水平") &&
       indicatorsContent.includes("当前水平请看最近读数") &&
+      indicatorsContent.includes("日频/周频指标") &&
+      indicatorsContent.includes("月频、季频、年频高分项更适合按结构背景解释") &&
       indicatorsContent.includes("指标级质量") &&
       indicatorsContent.includes("不等同于整体结论可信度") &&
       viewRegistry.includes("指标级质量"),
     "indicators view should separate derived score inputs and indicator-level quality from latest observed levels and conclusion confidence"
   );
 
+  const eventsViewModel = await readFile(
+    new URL("../apps/web/src/views/events/useEventsViewModel.ts", import.meta.url),
+    "utf8"
+  );
+  assert(
+    eventsViewModel.includes("0-100 分事件确认输入") &&
+      eventsViewModel.includes("不是危机概率") &&
+      eventsViewModel.includes("不是当前新增事件数") &&
+      eventsViewModel.includes("不等同于指标触发数量"),
+    "events view should explain confirmation score and event counts before showing bare numbers"
+  );
+
   const decisionApp = await readFile(new URL("../apps/web/src/App.tsx", import.meta.url), "utf8");
   assert(
     decisionApp.includes("mvpProbabilityInputIsAuditOnly"),
     "top-level loading and meta UI should use the shared MVP audit-only predicate"
+  );
+  assert(
+    decisionApp.includes('drivers: ["assessment", "indicators", "overview", "posture"]'),
+    "drivers view should require indicators data before rendering near-term driver lists"
   );
   assert(
     decisionApp.includes("当前处于参考态") &&
@@ -1118,8 +1145,15 @@ async function validateUserFacingUiCopy() {
       sourcesViewModel.includes("抓取水位") &&
       sourcesViewModel.includes("最近成功刷新") &&
       sourcesViewModel.includes("未进入正式刷新监控") &&
-      sourcesViewModel.includes("抓取/源状态分，不是当前结论可信度"),
-    "sources view should split observation dates, refresh watermarks, and delayed/partial-failure source health messages"
+      sourcesViewModel.includes("抓取/源状态分，不是当前结论可信度") &&
+      sourcesViewModel.includes("sourceUsageRecommendation") &&
+      sourcesViewModel.includes("可参与当前评估") &&
+      sourcesViewModel.includes("先不要依赖") &&
+      sourcesViewModel.includes("降级使用") &&
+      sourcesViewModel.includes("慢变量背景") &&
+      sourcesViewModel.includes("仅作辅助背景") &&
+      sourcesViewModel.includes("不能单独触发动作升级"),
+    "sources view should split observation dates, refresh watermarks, and user-facing source usage recommendations"
   );
 
   const sourcesView = await readFile(
@@ -1133,9 +1167,11 @@ async function validateUserFacingUiCopy() {
   assert(
     sourcesView.includes("数据覆盖与源健康摘要") &&
       sourcesView.includes("源健康分") &&
+      sourcesView.includes("使用建议") &&
       sourcesContent.includes("源健康分只说明抓取/源状态，不等同于当前结论可信度") &&
-      sourcesContent.includes("最新观测、观测滞后、抓取水位和最近成功刷新是不同口径"),
-    "sources page should distinguish source health scores from overall conclusion confidence"
+      sourcesContent.includes("最新观测、观测滞后、抓取水位和最近成功刷新是不同口径") &&
+      sourcesContent.includes("使用建议说明该源能否参与当前判断"),
+    "sources page should distinguish source health scores and source usage advice from overall conclusion confidence"
   );
 
   const driversViewModel = await readFile(
@@ -1144,7 +1180,10 @@ async function validateUserFacingUiCopy() {
   );
   assert(
     driversViewModel.includes("当前主结论先按 MVP 规则层解释；正式概率和 posture 只作背景参考。") &&
-      driversViewModel.includes("mvpRiskStateDetail"),
+      driversViewModel.includes("mvpRiskStateDetail") &&
+      driversViewModel.includes("buildNearTermRiskDrivers") &&
+      driversViewModel.includes("nearTermTimedDrivers.slice(0, 5)") &&
+      driversViewModel.includes("nearTermTimedDrivers.filter"),
     "drivers view should align its summary conclusion with the MVP reference-only state"
   );
 

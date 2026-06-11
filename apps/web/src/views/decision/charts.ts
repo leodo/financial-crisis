@@ -77,7 +77,7 @@ export function buildProbabilityTrendModel(history: AssessmentHistoryPoint[]) {
       : "这里展示的是发布版正式概率轨迹；若三条线长期贴平，通常表示当前仍在低风险区，或正式概率暂时受校准下限约束。";
   const windowNote =
     chartHistory.length < history.length
-      ? `当前图表已缩放到最近 ${chartHistory.length} 条评估点，避免历史高峰把当前低位压成贴地线；完整历史仍用于回测和发布审计。`
+      ? `当前图表已缩放到最近 ${chartHistory.length} 条评估点，避免历史高峰把当前低位压成贴地线；完整历史仍用于回测和发布复核。`
       : "";
   const sourceNote = buildProbabilityTrendSourceNote(history);
   const sanityNote = buildProbabilityTrendSanityNote(chartHistory, mode);

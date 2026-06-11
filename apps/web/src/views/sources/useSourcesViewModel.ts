@@ -99,6 +99,50 @@ function sourceHealthWarning(source: DataSource): string | null {
   )}：${humanizeNarrativeCopy(source.health.message)}`;
 }
 
+function sourceUsageRecommendation(source: DataSource, latestObservationDate: string | null) {
+  if (["failed", "failing", "missing"].includes(source.health.status)) {
+    return {
+      label: "先不要依赖",
+      detail: "当前源不可用或缺失；相关维度只能等待兜底源或补抓后再解释。"
+    };
+  }
+
+  if (!source.production_allowed || source.health.status === "prototype") {
+    return {
+      label: "仅作辅助背景",
+      detail: "不参与当前主结论，也不能单独触发动作升级。"
+    };
+  }
+
+  if (["delayed", "partial_failure", "stale"].includes(source.health.status)) {
+    return {
+      label: "降级使用",
+      detail: "只能作为背景或复核输入，短期动作升级要等源恢复或其他近端信号确认。"
+    };
+  }
+
+  if (source.source_type === "global_macro") {
+    return {
+      label: "慢变量背景",
+      detail: "可解释结构脆弱性，不代表今天刚发生触发。"
+    };
+  }
+
+  if (source.source_type === "filings_events") {
+    return {
+      label: "事件确认输入",
+      detail: latestObservationDate
+        ? "可参与事件层确认，但仍需与市场压力共振后才支持动作升级。"
+        : "可参与事件层确认；当前没有解析到最新观测日期，先按保守口径解释。"
+    };
+  }
+
+  return {
+    label: "可参与当前评估",
+    detail: "可用于当前日频评估；仍不是盘中实时行情，也不是结论可信度本身。"
+  };
+}
+
 export function useSourcesViewModel({
   assessment,
   sources
@@ -151,6 +195,7 @@ export function useSourcesViewModel({
     const datasetName = datasetLabel(dataset);
     const latestObservationDate = extractLatestObservationDate(source.health.message);
     const watermarkPeriod = extractWatermarkPeriod(source.health.message);
+    const usageRecommendation = sourceUsageRecommendation(source, latestObservationDate);
     const statusDetail = [
       source.health.last_success_at
         ? `最近成功刷新 ${formatDateTime(source.health.last_success_at)}`
@@ -172,6 +217,8 @@ export function useSourcesViewModel({
         sourceQualityBandLabel(source.health.quality_score),
         "抓取/源状态分，不是当前结论可信度"
       ],
+      usageLabel: usageRecommendation.label,
+      usageDetail: usageRecommendation.detail,
       productionAllowed: source.production_allowed ? "可进入正式评估" : "仅研究参考",
       productionDetail: source.production_allowed
         ? sourceAccessMethodLabel(source.access_method)

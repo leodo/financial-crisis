@@ -32,7 +32,7 @@ import { navItems, renderActiveView, type View } from "./viewRegistry";
 
 const VIEW_DATA_KEYS: Record<View, Array<keyof ConsoleReadyData>> = {
   decision: ["assessment", "assessmentHistory", "method", "posture", "overview", "backtests", "indicators"],
-  drivers: ["assessment", "overview", "posture"],
+  drivers: ["assessment", "indicators", "overview", "posture"],
   events: ["assessment", "events"],
   backtests: ["assessment", "backtests", "backtestTimeline"],
   audit: ["assessment", "audit"],

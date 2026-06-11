@@ -36,6 +36,17 @@ import {
 } from "../decision/signalLayerBuilders";
 import { methodContent } from "./content";
 
+function methodUserFacingCopy(text: string) {
+  return humanizeMethodNote(text)
+    .replaceAll("formal history 审计的正式证据层", "正式历史证据层")
+    .replaceAll("formal history 审计证据", "正式历史证据")
+    .replaceAll("formal history 审计", "正式历史证据复核")
+    .replaceAll("滚动审计", "滚动历史复核")
+    .replaceAll("replay 审计", "replay 复核")
+    .replaceAll("审计元数据", "训练覆盖元数据")
+    .replaceAll("审计", "复核");
+}
+
 export function useMethodViewModel({
   assessment,
   posture,
@@ -213,7 +224,7 @@ export function useMethodViewModel({
     {
       label: "证据等级",
       value: historyEvidenceTierLabel(historyProvenance.evidence_tier),
-      hint: historyProvenance.note
+      hint: methodUserFacingCopy(historyProvenance.note)
     },
     {
       label: "历史轨迹点数",
@@ -254,7 +265,7 @@ export function useMethodViewModel({
         source.latest_as_of_date !== null
           ? `共 ${source.count} 个点，最近日期 ${formatDate(source.latest_as_of_date)}`
           : `共 ${source.count} 个点`,
-      note: source.note,
+      note: methodUserFacingCopy(source.note),
       meta: `${source.count}`
     }));
   const scenarioCoverageRecords = method.scenario_data_coverage_catalog.records;
@@ -285,12 +296,14 @@ export function useMethodViewModel({
     sourceSummary: record.free_sources.join("、"),
     statusSummary: record.current_status,
     gapSummary:
-      record.blocking_gaps.length > 0 ? record.blocking_gaps.join("；") : "当前没有额外阻断缺口。"
+      record.blocking_gaps.length > 0
+        ? record.blocking_gaps.map(methodUserFacingCopy).join("；")
+        : "当前没有额外阻断缺口。"
   }));
 
   const limitations = [
     methodContent.runtimeBoundarySummary,
-    historyProvenance.note,
+    methodUserFacingCopy(historyProvenance.note),
     heuristicMode
       ? `当前概率模式是 ${probabilityModeLabel(assessment.method.probability_mode)}，${methodContent.limitationModeHeuristic}`
       : `当前概率模式是 ${probabilityModeLabel(assessment.method.probability_mode)}，${methodContent.limitationModeFormal}`,
@@ -314,15 +327,15 @@ export function useMethodViewModel({
     scenarioCoverageRows,
     scenarioCoverageCatalogId,
     scenarioCoverageCatalogSource,
-    scenarioCoverageCatalogNote: humanizeMethodNote(method.scenario_data_coverage_catalog.note),
+    scenarioCoverageCatalogNote: methodUserFacingCopy(method.scenario_data_coverage_catalog.note),
     historyProvenanceMetrics,
     historyProvenanceRows,
-    historyProvenanceNote: historyProvenance.note,
+    historyProvenanceNote: methodUserFacingCopy(historyProvenance.note),
     historyProvenanceReplayRunId: historyProvenance.latest_replay_run_id,
     limitations,
     historyPolicyVersion,
     protectedCatalogId,
     protectedCatalogSource,
-    protectedCatalogNote: humanizeMethodNote(method.protected_stress_window_catalog.note)
+    protectedCatalogNote: methodUserFacingCopy(method.protected_stress_window_catalog.note)
   };
 }

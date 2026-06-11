@@ -246,9 +246,10 @@ mod tests {
 
     #[test]
     fn refresh_frequency_skip_ignores_daily_but_defers_slow_series_with_recent_watermark() {
-        let options = BackfillOptions::parse(&[])
+        let mut options = BackfillOptions::parse(&[])
             .unwrap()
             .with_frequency_watermark_refresh();
+        options.end = NaiveDate::from_ymd_opt(2026, 6, 9).unwrap();
         let recent = NaiveDate::from_ymd_opt(2026, 6, 5).unwrap();
 
         assert!(!options.should_skip_due_to_frequency_watermark(Frequency::Daily, Some(recent)));

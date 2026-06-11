@@ -21,6 +21,7 @@ import {
 import { buildProbabilityAxisMax, type LineChartModel } from "../decision/charts";
 import type { MetricItem } from "../shared/panelHelpers";
 import {
+  backtestReviewCopy,
   buildBacktestCoverageScopeText,
   buildBacktestHistoryCoverageText,
   buildRollingAuditHistoryText,
@@ -143,7 +144,7 @@ export function useBacktestsViewModel({
     endDate: formatDate(episode.end_date),
     duration: formatCount(episode.duration_days, "d"),
     signalCount: formatCount(episode.signal_count),
-    note: humanizeNarrativeCopy(episode.note)
+    note: humanizeNarrativeCopy(backtestReviewCopy(episode.note))
   }));
 
   return {

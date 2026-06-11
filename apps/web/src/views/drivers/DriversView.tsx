@@ -1,5 +1,5 @@
 import { BadgeInfo, Layers3, ShieldCheck, Siren } from "lucide-react";
-import type { AssessmentSnapshot, PostureGuidance, RiskSnapshot } from "../../types";
+import type { AssessmentSnapshot, IndicatorRisk, PostureGuidance, RiskSnapshot } from "../../types";
 import {
   DetailRows,
   DriverList,
@@ -13,15 +13,18 @@ import { useDriversViewModel } from "./useDriversViewModel";
 
 export default function DriversView({
   assessment,
+  indicators,
   overview,
   posture
 }: {
   assessment: AssessmentSnapshot;
+  indicators: IndicatorRisk[];
   overview: RiskSnapshot;
   posture: PostureGuidance;
 }) {
-  const { summaryMetrics, dimensionRows, summaryRows } = useDriversViewModel({
+  const { nearTermDrivers, backgroundDrivers, summaryMetrics, dimensionRows, summaryRows } = useDriversViewModel({
     assessment,
+    indicators,
     overview,
     posture
   });
@@ -42,14 +45,30 @@ export default function DriversView({
 
       <section className="band-grid">
         <section className="surface">
-          <SurfaceHeader title="上行风险驱动" icon={Siren} />
-          <DriverList rows={assessment.top_risk_drivers} />
+          <SurfaceHeader title="近端风险驱动" icon={Siren} />
+          {nearTermDrivers.length > 0 ? (
+            <DriverList rows={nearTermDrivers} />
+          ) : (
+            <RuleBox label="当前状态">当前没有日频/周频近端高分驱动；先看结构背景和缓冲因素。</RuleBox>
+          )}
         </section>
 
         <section className="surface">
           <SurfaceHeader title="缓冲因素" icon={ShieldCheck} />
           <DriverList rows={assessment.top_relief_drivers} reverse />
         </section>
+      </section>
+
+      <section className="surface">
+        <SurfaceHeader title="结构背景驱动" icon={Siren} />
+        <RuleBox label="怎么读">
+          月频、季频、年频或偏旧数据可以解释风险底色，但不代表今天刚出现触发；当前执行动作仍要看近端驱动、事件确认和数据新鲜度是否共振。
+        </RuleBox>
+        {backgroundDrivers.length > 0 ? (
+          <DriverList rows={backgroundDrivers} />
+        ) : (
+          <RuleBox label="当前状态">当前没有需要单独标注的慢变量背景驱动。</RuleBox>
+        )}
       </section>
 
       <section className="surface">

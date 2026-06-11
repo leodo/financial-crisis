@@ -21,7 +21,7 @@ export default function IndicatorsView({ indicators }: { indicators: IndicatorRi
           <SurfaceHeader title="当前指标摘要" icon={Table2} />
           <MetricGrid items={summaryMetrics} />
           <div className="driver-preview">
-            <strong>当前最需盯的指标</strong>
+            <strong>近端最需盯的指标</strong>
             <DetailRows items={focusRows} compact />
           </div>
         </section>

@@ -15,7 +15,7 @@ export const methodContent = {
   overlayIntro:
     "这里把 base raw、base calibrated 和 overlay final 拆开显示。只有 final 明显偏离 calibrated，才说明 family overlay 在当前快照里真的改写了危机概率。",
   overlayEmpty:
-    "当前 active release 还没有训练完成并挂载到线上 bundle 的 family overlay head；如果这里只看到审计元数据，说明研究侧已经开始统计 family 样本，但 runtime 仍主要由 base head 决定。",
+    "当前 active release 还没有训练完成并挂载到线上 bundle 的 family overlay head；如果这里只看到训练覆盖元数据，说明研究侧已经开始统计 family 样本，但 runtime 仍主要由 base head 决定。",
   overlayTableNote:
     "先看 scenario 数和 split 行数，再看 gate active 行数，最后看 note，判断这个 family overlay 是否只是概念上的候选，还是已经具备真正训练条件。",
   scenarioCoverageIntro:
@@ -28,7 +28,7 @@ export const methodContent = {
   runtimeBoundarySummary:
     "这个页面把危机概率、动作概率、风险时距和执行节奏拆开解释。历史回放会优先复用同口径缓存；如果缓存口径不匹配，系统才会回退到已落库快照或按原始观测重建。",
   limitationModeFormal:
-    "已经切到正式概率包，但仍要结合数据新鲜度、回测审计和事件确认一起解释。",
+    "已经切到正式概率包，但仍要结合数据新鲜度、历史复核和事件确认一起解释。",
   limitationModeHeuristic: "这仍是启发式过渡层，不能当成校准后的正式危机概率。",
   limitationReleaseDegraded:
     "因此页面上的仓位预算更适合当作执行节奏和保护框架，而不是自动交易指令。",

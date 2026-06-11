@@ -14,6 +14,7 @@ import {
   RuleBox,
   SurfaceHeader
 } from "../shared/panelHelpers";
+import { backtestReviewCopy } from "../shared/backtestCopy";
 import { backtestsContent } from "./content";
 import { useBacktestsViewModel } from "./useBacktestsViewModel";
 
@@ -69,14 +70,14 @@ export default function BacktestsView({
         </section>
 
         <section className="surface">
-          <SurfaceHeader title="滚动审计" icon={ShieldCheck} />
+          <SurfaceHeader title="滚动历史复核" icon={ShieldCheck} />
           <p className="body-copy">
-            {humanizeNarrativeCopy(assessment.backtest_summary.rolling_audit.summary)}
+            {humanizeNarrativeCopy(backtestReviewCopy(assessment.backtest_summary.rolling_audit.summary))}
           </p>
           <MetricGrid items={rollingMetrics} />
-          <RuleBox label="滚动审计历史窗口">{rollingAuditHistoryRange}</RuleBox>
+          <RuleBox label="滚动复核历史窗口">{rollingAuditHistoryRange}</RuleBox>
           <RuleBox label="口径区分">{humanizeNarrativeCopy(rollingAuditScopeText)}</RuleBox>
-          <RuleBox label="审计口径">{backtestsContent.auditDefinition}</RuleBox>
+          <RuleBox label="复核口径">{backtestsContent.auditDefinition}</RuleBox>
           <RuleBox label="区间展示规则">{backtestsContent.episodeDisplayRule}</RuleBox>
         </section>
 
