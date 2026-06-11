@@ -124,7 +124,7 @@ export function DecisionAnalogPanel({
       <SurfaceHeader title="历史类比" icon={GitCompareArrows} />
       {closestAnalog ? (
         <div className="analog-callout">
-          <span>当前最接近 <strong>{closestAnalog.title}</strong> 的压力结构（{closestAnalog.position}）。{closestAnalog.detail}</span>
+          <span>当前最接近 <strong>{closestAnalog.title}</strong> 的压力结构（相似度 <strong>{closestAnalog.similarity}</strong>）。{closestAnalog.detail}</span>
         </div>
       ) : null}
       <SimpleGroupedBarChart model={analogChart} height={320} />
@@ -132,9 +132,9 @@ export function DecisionAnalogPanel({
         蓝柱表示当前总风险强度，橙柱表示每个历史场景爆发前的压力峰值。柱体越接近，说明当前结构与该历史场景越相似。
       </div>
       <ResponsiveTable
-        columns={["历史场景", "当前阶段", "预警节奏", "差距"]}
+        columns={["历史场景", "相似度", "预警节奏", "差距"]}
         className="wide-table"
-        note="当前阶段表示系统对当前风险积累到什么程度的判断；预警节奏说明历史上该场景从出现结构信号到爆发的时间窗口，不是当前距离爆发还剩多少天。"
+        note="相似度（0-100）越高说明当前压力结构越接近该历史样本；预警节奏是历史上从信号到爆发的时间窗口，不是当前还剩多少天。"
       >
         {analogRows.map((analog) => (
           <tr key={analog.id}>
@@ -142,10 +142,7 @@ export function DecisionAnalogPanel({
               <strong>{analog.title}</strong>
               <span>{analog.detail}</span>
             </td>
-            <td>
-              <span className="analog-phase-tag">{analog.position}</span>
-              <small>{analog.positionHint}</small>
-            </td>
+            <td className="table-nowrap">{analog.similarity}</td>
             <td className="table-nowrap">{analog.historicalLead}</td>
             <td className="table-nowrap">{analog.gap}</td>
           </tr>

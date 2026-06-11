@@ -564,18 +564,6 @@ tbody td.table-nowrap {
   white-space: nowrap;
 }
 
-.analog-phase-tag {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-weight: 600;
-  font-size: 0.85em;
-  background: #dbeafe;
-  color: #1e40af;
-  white-space: nowrap;
-  margin-bottom: 4px;
-}
-
 .analog-callout {
   display: flex;
   align-items: flex-start;
