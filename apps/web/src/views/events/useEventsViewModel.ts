@@ -1,4 +1,5 @@
 import {
+  eventSignalListLabel,
   eventStateLabel,
   eventTypeLabel,
   formatDate,
@@ -18,12 +19,13 @@ export function useEventsViewModel({
   events: AlertEvent[];
 }) {
   const eventState = eventStateLabel(assessment.event_assessment.state);
+  const eventSignalLabel = eventSignalListLabel(assessment.event_assessment.state);
   const confirmationScore = formatNumber(assessment.event_assessment.confirmation_score);
   const summaryMetrics: MetricItem[] = [
     { label: "事件状态", value: eventState },
     { label: "确认分数", value: confirmationScore },
     {
-      label: "已确认信号",
+      label: eventSignalLabel,
       value: `${assessment.event_assessment.confirmed_signals.length}`
     },
     {
@@ -80,6 +82,7 @@ export function useEventsViewModel({
   return {
     summaryMetrics,
     eventState,
+    eventSignalLabel,
     confirmationScore,
     confirmedSignals: assessment.event_assessment.confirmed_signals.map(humanizeNarrativeCopy),
     pendingGaps: assessment.event_assessment.pending_gaps.map(humanizeNarrativeCopy),

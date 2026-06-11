@@ -1,7 +1,11 @@
 import { formatPercent } from "../../format";
 import type { AssessmentSnapshot } from "../../types";
 import { describeProbabilityMode, describeReleaseHealth } from "./logic";
-import { currentMvpRiskState, mvpProbabilityInputIsAuditOnly } from "./mvpRiskState";
+import {
+  currentMvpRiskState,
+  mvpProbabilityInputIsAuditOnly,
+  mvpRiskStateDisplayLabel
+} from "./mvpRiskState";
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -56,7 +60,7 @@ export function decisionModelReliabilityLabel(assessment: AssessmentSnapshot): s
     return `降级 ${formatPercent(score)}`;
   }
   if (auditOnly) {
-    return `待审计 ${formatPercent(score)}`;
+    return `参考 ${formatPercent(score)}`;
   }
   if (assessment.method.release_status === "healthy") {
     return `健康 ${formatPercent(score)}`;
@@ -71,7 +75,7 @@ export function decisionModelReliabilityHint(assessment: AssessmentSnapshot): st
   return [
     `模型层当前是 ${probabilityMode.label}，服务状态 ${releaseHealth}。`,
     auditOnly
-      ? "正式概率已经被 MVP 降级为审计读数，不能把低概率解释成风险已经远离。"
+      ? "正式概率当前作为参考输入，不能把低概率解释成风险已经远离。"
       : "正式概率可以作为主输入之一，但仍需要事件确认、数据新鲜度和历史类比共同支持。",
     `模型可信度组件当前为 ${formatPercent(modelReliabilityComponent(assessment))}，它只说明模型读数可用程度，不是危机概率。`
   ].join(" ");
@@ -163,7 +167,7 @@ export function decisionReliabilityLabel(assessment: AssessmentSnapshot): string
     return `降级 ${formatPercent(score)}`;
   }
   if (mvpProbabilityInputIsAuditOnly(assessment)) {
-    return `审计上限 ${formatPercent(score)}`;
+    return `参考上限 ${formatPercent(score)}`;
   }
   if (score >= 0.8) {
     return `高可信 ${formatPercent(score)}`;
@@ -192,13 +196,13 @@ export function decisionReliabilityHint(assessment: AssessmentSnapshot): string 
   );
   const capCopy =
     mvpProbabilityInputIsAuditOnly(assessment)
-      ? "正式概率当前待审计，可靠性分数会被封顶，不能解释成模型结论已经很有把握。"
+      ? "正式概率当前只作参考输入，可靠性分数会被封顶，不能解释成模型结论已经很有把握。"
       : "正式概率当前可作为主输入之一，但仍需结合事件确认和数据新鲜度。";
 
   return [
     "结论可靠性不是危机发生概率，也不是动作升级证据。",
-    "它按数据覆盖 35%、模型状态 25%、事件确认 20%、历史相似度 10%、关键数据新鲜度 10% 汇总；页面已把模型可信度和数据新鲜度拆开显示。",
-    `当前覆盖 ${formatPercent(assessment.data_trust.coverage_score)}，模型层 ${probabilityMode.label}，服务 ${releaseHealth}，MVP 状态 ${mvpState.label}。`,
+    "它按关键指标覆盖 35%、模型状态 25%、事件确认 20%、历史相似度 10%、关键数据新鲜度 10% 汇总；页面已把模型可信度、关键指标覆盖和源健康状态拆开显示。",
+    `当前关键指标覆盖 ${formatPercent(assessment.data_trust.coverage_score)}，模型层 ${probabilityMode.label}，服务 ${releaseHealth}，MVP 状态 ${mvpRiskStateDisplayLabel(mvpState.label)}。`,
     `事件确认 ${formatPercent(assessment.event_assessment.confirmation_score / 100)}，最高历史相似度 ${formatPercent(maxAnalog / 100)}，最新关键数据 ${latestDataDate}。`,
     staleCopy,
     capCopy

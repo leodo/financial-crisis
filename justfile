@@ -24,8 +24,8 @@ dev-sqlite:
 status:
     ./scripts/dev-status.ps1
 
-# 针对 MVP 决策面板的运行时防回归检查；需要先启动 `just dev`。
-# 默认要求 API 使用本地 SQLite，并校验 USDJPY、关键近端指标与 audit-only 主结论口径。
+# 针对 MVP 决策面板的运行时/渲染防回归检查；需要先启动 `just dev`。
+# 默认要求 API 使用本地 SQLite，并校验 USDJPY、关键近端指标、reference-only 主结论口径和首页 DOM 文案。
 mvp-regression:
     node ./scripts/mvp-runtime-regression-check.mjs
 
@@ -48,6 +48,11 @@ audit-report:
 # 适合检查当前有哪些候选版、激活版和历史版。
 release-list:
     cargo run -p fc-worker -- research release list
+
+# 汇总最近 candidate-screen 与 default release-review，快速回答“当前 active 之后有没有更适合切换的候选版”。
+# 用法：`just release-triage us_formal_family_hybrid_20260606T112926`
+release-triage baseline_release_id:
+    node ./scripts/release-candidate-triage.mjs {{baseline_release_id}}
 
 # 用“当前 active release”对比一个 candidate release，自动切换 API、以 strict_rebuild 方式重放历史、导出 review 报告，再恢复原 active。
 # 默认导出到忽略目录 artifacts/research/release-review，避免实验副产物长期污染 Git 工作区。
@@ -371,7 +376,7 @@ refresh-status:
 # 默认跳过 World Bank 年频慢变量，保证日常刷新能在几分钟内完成。
 # 这是日常维护本地评估库的首选入口；需要慢变量时再单独运行 `just backfill-world-bank`。
 refresh-latest:
-    cargo run -p fc-worker -- refresh latest-free --skip-world-bank
+    cargo run -p fc-worker -- refresh latest-free --mvp-key-only --fast-lookback-days 14 --fred-chunk-days 15 --skip-world-bank
     ./scripts/dev-status.ps1
 
 # 在日常刷新基础上追加 GDELT prototype 事件源。

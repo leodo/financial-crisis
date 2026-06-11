@@ -17,9 +17,13 @@ import type { DecisionSignalLayerRowModel } from "./builderTypes";
 import {
   currentMvpRiskState,
   mvpProbabilityInputIsAuditOnly,
-  mvpRiskStateDetail
+  mvpRiskStateDetail,
+  mvpRiskStateDisplayLabel
 } from "./mvpRiskState";
 import { probabilityDiagnosticAnomalyHorizons } from "./probabilityDiagnostics";
+
+const PROBABILITY_HORIZONS = [5, 20, 60] as const;
+const PROBABILITY_EPSILON = 1e-9;
 
 export function actionSourceSummary(assessment: AssessmentSnapshot) {
   if (!assessment.method.actionability_enabled) {
@@ -48,19 +52,20 @@ export function actionSourceSummary(assessment: AssessmentSnapshot) {
 function probabilityDisplayNote(assessment: AssessmentSnapshot): string | null {
   const anomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
   const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
+  const runtimeReferenceNote = probabilityRuntimeReferenceNote(assessment);
   if (anomalyHorizons.length > 0) {
     return `当前 ${anomalyHorizons.join(
       " / "
-    )} 概率命中 USDJPY 高位 tail 压低读数的语义异常；正式概率 ${probabilitySnapshotValue(
+    )} 概率命中 USDJPY 高位 tail 压低读数的语义异常；页面当前显示 ${probabilitySnapshotValue(
       assessment.probabilities
-    )} 只保留为模型审计证据，不能解释成“风险很远”，也不能用于离场/对冲时距结论。`;
+    )} 只作为运行口径参考值。${runtimeReferenceNote ? `${runtimeReferenceNote} ` : ""}它不能解释成“风险很远”，也不能单独用于离场/对冲时距结论。`;
   }
   if (auditOnly) {
     return `当前正式先验 ${probabilitySnapshotValue(
       assessment.probabilities
-    )} 已被后端 MVP 状态降级为审计读数；它不回答“离风险还有多远”，主结论看 ${currentMvpRiskState(
-      assessment
-    ).label}。`;
+    )} 已被后端 MVP 状态降为参考输入；${runtimeReferenceNote ? `${runtimeReferenceNote} ` : ""}它不单独回答“离风险还有多远”，主结论看 ${mvpRiskStateDisplayLabel(
+      currentMvpRiskState(assessment).label
+    )}。`;
   }
 
   const peakProbability = Math.max(
@@ -96,22 +101,87 @@ export function probabilitySnapshotValue(
   ].join(" / ");
 }
 
+function probabilityValueForHorizon(
+  probabilities: AssessmentSnapshot["probabilities"],
+  horizonDays: (typeof PROBABILITY_HORIZONS)[number]
+): number {
+  switch (horizonDays) {
+    case 5:
+      return probabilities.p_5d;
+    case 20:
+      return probabilities.p_20d;
+    case 60:
+      return probabilities.p_60d;
+  }
+}
+
+function probabilityDiagnosticForHorizon(
+  assessment: Pick<AssessmentSnapshot, "probabilities" | "probability_diagnostics">,
+  horizonDays: (typeof PROBABILITY_HORIZONS)[number]
+) {
+  return assessment.probability_diagnostics.horizon_overlays.find(
+    (diagnostic) => diagnostic.horizon_days === horizonDays
+  );
+}
+
+export function hasRuntimeProbabilityOverride(
+  assessment: Pick<AssessmentSnapshot, "probability_diagnostics">
+): boolean {
+  return assessment.probability_diagnostics.horizon_overlays.some((diagnostic) => {
+    const runtimeFinal = diagnostic.runtime_final_probability;
+    return (
+      runtimeFinal !== undefined &&
+      Math.abs(runtimeFinal - diagnostic.final_probability) > PROBABILITY_EPSILON
+    );
+  });
+}
+
+export function probabilityModelFinalSnapshotValue(
+  assessment: Pick<AssessmentSnapshot, "probabilities" | "probability_diagnostics">
+): string {
+  return PROBABILITY_HORIZONS.map((horizonDays) => {
+    const diagnostic = probabilityDiagnosticForHorizon(assessment, horizonDays);
+    const modelFinal =
+      diagnostic?.final_probability ??
+      probabilityValueForHorizon(assessment.probabilities, horizonDays);
+    return formatProbabilityPercentExact(modelFinal);
+  }).join(" / ");
+}
+
+export function probabilityRuntimeReferenceNote(
+  assessment: Pick<AssessmentSnapshot, "probabilities" | "probability_diagnostics">
+): string | null {
+  if (!hasRuntimeProbabilityOverride(assessment)) {
+    return null;
+  }
+  return `模型原始输出 ${probabilityModelFinalSnapshotValue(
+    assessment
+  )}；页面当前显示的运行口径参考值为 ${probabilitySnapshotValue(assessment.probabilities)}。`;
+}
+
 export function probabilitySnapshotDetail(assessment: AssessmentSnapshot): string {
   const anomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
   const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
+  const runtimeReferenceNote = probabilityRuntimeReferenceNote(assessment);
   if (anomalyHorizons.length > 0) {
-    return `当前线上 ${formatDate(assessment.as_of_date)} · 5d / 20d / 60d 正式读数为 ${probabilitySnapshotValue(
+    return `当前线上 ${formatDate(
+      assessment.as_of_date
+    )} · 5d / 20d / 60d 页面显示的是运行口径参考值 ${probabilitySnapshotValue(
       assessment.probabilities
-    )}；${anomalyHorizons.join(
+    )}。${runtimeReferenceNote ? `${runtimeReferenceNote} ` : ""}${anomalyHorizons.join(
       " / "
-    )} 命中模型方向异常，这些小概率只作为审计证据，不作为风险时距或离场/对冲结论。${currentMvpRiskState(assessment).label}是当前主显示口径。`;
+    )} 命中模型方向异常，这些数值不作为风险时距或离场/对冲主结论。${mvpRiskStateDisplayLabel(
+      currentMvpRiskState(assessment).label
+    )}是当前主显示口径。`;
   }
   if (auditOnly) {
-    return `当前线上 ${formatDate(assessment.as_of_date)} · 5d / 20d / 60d 正式读数为 ${probabilitySnapshotValue(
+    return `当前线上 ${formatDate(
+      assessment.as_of_date
+    )} · 5d / 20d / 60d 当前按参考口径展示为 ${probabilitySnapshotValue(
       assessment.probabilities
-    )}；后端已将正式概率降级为审计读数，主显示口径为 ${currentMvpRiskState(
-      assessment
-    ).label}。`;
+    )}；${runtimeReferenceNote ? `${runtimeReferenceNote} ` : ""}后端当前将正式概率作为参考输入，主显示口径为 ${mvpRiskStateDisplayLabel(
+      currentMvpRiskState(assessment).label
+    )}。`;
   }
 
   const allZero =
@@ -209,51 +279,58 @@ export function buildSignalLayerRows(
   const actionabilitySource = actionSourceSummary(assessment).detail;
   const actionEvidence = assessment.action_evidence;
   const actionEvidenceDetail = actionEvidence
-    ? `${actionEvidenceBreakdownCopy(assessment)} 它不是模型结论置信概率；结论可靠性请看数据覆盖、模型服务状态和关键数据日期。`
-    : `${actionEvidenceBreakdownCopy(assessment)} 它不是模型结论置信概率；结论可靠性请看数据覆盖、模型服务状态和关键数据日期。`;
+    ? `${actionEvidenceBreakdownCopy(assessment)} 它不是模型结论置信概率；结论可靠性请看关键指标覆盖、模型服务状态、源健康状态和关键数据日期。`
+    : `${actionEvidenceBreakdownCopy(assessment)} 它不是模型结论置信概率；结论可靠性请看关键指标覆盖、模型服务状态、源健康状态和关键数据日期。`;
   const priorDetail = probabilityDisplayNote(assessment);
   const priorAnomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
   const priorAuditOnly = mvpProbabilityInputIsAuditOnly(assessment);
+  const actionValuesAreAuxiliary =
+    priorAuditOnly || !assessment.method.actionability_enabled;
   const priorThresholdSummary = `当前进入线：准备 ${formatPercent(method.runtime_thresholds.prepare_p60d)} / 对冲 ${formatPercent(method.runtime_thresholds.hedge_p20d)} / 防守 ${formatPercent(method.runtime_thresholds.defend_p5d)}`;
   const state = currentMvpRiskState(assessment);
 
   return [
     {
       id: "prior",
-      title: priorAuditOnly ? "危机先验（审计）" : "危机先验",
+      title: priorAuditOnly ? "危机先验（参考）" : "危机先验",
       description:
         priorAuditOnly
-          ? "正式概率待审计时，这一层只展示模型审计读数，不回答风险时距。"
+          ? "正式概率当前只保留为参考输入，主结论优先看规则层和关键数据是否共振。"
           : "先看未来 5d / 20d / 60d 进入风险窗口的概率，回答“离风险还有多远”。",
-      value:
-        priorAuditOnly
-          ? "正式概率待审计"
-          : `${formatProbabilityPercentExact(
-              assessment.probabilities.p_5d
-            )} / ${formatProbabilityPercentExact(
-              assessment.probabilities.p_20d
-            )} / ${formatProbabilityPercentExact(assessment.probabilities.p_60d)}`,
+      value: priorAuditOnly
+        ? "参考输入"
+        : `${formatProbabilityPercentExact(
+            assessment.probabilities.p_5d
+          )} / ${formatProbabilityPercentExact(
+            assessment.probabilities.p_20d
+          )} / ${formatProbabilityPercentExact(assessment.probabilities.p_60d)}`,
       detail:
         priorAuditOnly
-          ? priorDetail ?? "正式概率只作为模型审计证据。"
+          ? `当前页面参考值 ${probabilitySnapshotValue(assessment.probabilities)}。${
+              priorDetail ?? "正式概率当前只作为参考值。"
+            }`
           : priorDetail
             ? `${priorThresholdSummary} · ${priorDetail}`
             : priorThresholdSummary
     },
     {
       id: "actionability",
-      title: "动作概率",
-      description: "再看准备 / 对冲 / 防守，回答“现在该不该开始准备、加保护、保流动性”。",
-      value: `${formatActionProbability(
-        assessment.actionability.prepare,
-        assessment.method.actionability_enabled
-      )} / ${formatActionProbability(
-        assessment.actionability.hedge,
-        assessment.method.actionability_enabled
-      )} / ${formatActionProbability(
-        assessment.actionability.defend,
-        assessment.method.actionability_enabled
-      )}`,
+      title: actionValuesAreAuxiliary ? "动作信号（辅助）" : "动作概率",
+      description: actionValuesAreAuxiliary
+        ? "准备 / 对冲 / 防守当前只保留为辅助执行信号，不能压过 MVP 规则层主结论。"
+        : "再看准备 / 对冲 / 防守，回答“现在该不该开始准备、加保护、保流动性”。",
+      value: actionValuesAreAuxiliary
+        ? "辅助信号"
+        : `${formatActionProbability(
+            assessment.actionability.prepare,
+            assessment.method.actionability_enabled
+          )} / ${formatActionProbability(
+            assessment.actionability.hedge,
+            assessment.method.actionability_enabled
+          )} / ${formatActionProbability(
+            assessment.actionability.defend,
+            assessment.method.actionability_enabled
+          )}`,
       detail: `${actionabilitySource} 当前显示：${formatActionDetailValue(
         "准备",
         assessment.actionability.prepare,
@@ -280,19 +357,19 @@ export function buildSignalLayerRows(
       title: priorAuditOnly ? "MVP 主结论" : "最终执行节奏",
       description:
         priorAuditOnly
-          ? "正式概率待审计时，先用规则层、数据质量、事件确认和日元套息状态给出保守 MVP 结论。"
+          ? "正式概率作为参考输入时，先用规则层、数据质量、事件确认和日元套息状态给出保守 MVP 结论。"
           : "最后再叠加数据可信度、事件确认、日元套息放大器和用户偏好，压成一档执行节奏。",
       value:
         priorAuditOnly
-          ? state.label
+          ? mvpRiskStateDisplayLabel(state.label)
           : `${postureLabel(assessment.posture)} / ${timeBucketLabel(assessment.time_to_risk_bucket)}`,
       detail:
         priorAuditOnly
           ? `${
               priorAnomalyHorizons.length > 0
                 ? `${priorAnomalyHorizons.join(" / ")} 正式概率读数命中模型方向异常`
-                : "正式概率已被后端降级为审计读数"
-            }；当前执行节奏按 MVP 风险状态展示，不能把正式低概率理解成风险已经远离。${mvpRiskStateDetail(assessment)}`
+                : "正式概率已被后端降为参考输入"
+            }；当前执行节奏按 MVP 风险状态展示，不能把正式低概率直接理解成风险已经远离。${mvpRiskStateDetail(assessment)}`
           : posture.summary
     }
   ];

@@ -15,6 +15,8 @@ use super::{
 use crate::assessment::common::round_probability;
 use crate::assessment::{probability_action_thresholds, round3, ServingModelContext};
 
+const USDJPY_HIGH_TAIL_SUPPRESSOR_FEATURE: &str = "tail_pos__us_usdjpy_level__145";
+
 #[derive(Debug, Clone)]
 pub(crate) struct ProbabilityComputationTrace {
     pub raw_probabilities: ProbabilityBlock,
@@ -130,12 +132,10 @@ pub(super) fn build_probability_trace(
         calibrated_p_60d_raw
     };
     let calibrated_p_60d = crate::assessment::clamp_probability(calibrated_p_60d_pre_clamp);
-    let calibrated_probabilities = ProbabilityBlock {
-        p_5d: round_probability(calibrated_p_5d),
-        p_20d: round_probability(calibrated_p_20d),
-        p_60d: round_probability(calibrated_p_60d),
-    };
-    let probability_diagnostics = ProbabilityDiagnostics {
+    let mut runtime_p_5d = calibrated_p_5d;
+    let mut runtime_p_20d = calibrated_p_20d;
+    let mut runtime_p_60d = calibrated_p_60d;
+    let mut probability_diagnostics = ProbabilityDiagnostics {
         horizon_overlays: bundle
             .horizons
             .iter()
@@ -153,9 +153,9 @@ pub(super) fn build_probability_trace(
                     calibrated_probability: round_probability(score.calibrated_probability),
                     final_probability: round_probability(score.final_probability),
                     runtime_final_probability: Some(match horizon.horizon_days {
-                        5 => round_probability(calibrated_p_5d),
-                        20 => round_probability(calibrated_p_20d),
-                        60 => round_probability(calibrated_p_60d),
+                        5 => round_probability(runtime_p_5d),
+                        20 => round_probability(runtime_p_20d),
+                        60 => round_probability(runtime_p_60d),
                         _ => round_probability(score.final_probability),
                     }),
                     monotonic_lift: round_probability(match horizon.horizon_days {
@@ -175,6 +175,20 @@ pub(super) fn build_probability_trace(
                 Some(diagnostics)
             })
             .collect(),
+    };
+
+    apply_runtime_semantic_fallback(
+        heuristic_probabilities,
+        &mut runtime_p_5d,
+        &mut runtime_p_20d,
+        &mut runtime_p_60d,
+        &mut probability_diagnostics,
+    );
+
+    let calibrated_probabilities = ProbabilityBlock {
+        p_5d: round_probability(runtime_p_5d),
+        p_20d: round_probability(runtime_p_20d),
+        p_60d: round_probability(runtime_p_60d),
     };
     let action_thresholds = probability_action_thresholds(Some(serving_model));
 
@@ -242,6 +256,110 @@ pub(super) fn build_probability_trace(
             .actionability
             .as_ref()
             .map(|_| "fusion_policy_v3_probability_context_gate_20260601".to_string()),
+    }
+}
+
+fn apply_runtime_semantic_fallback(
+    heuristic_probabilities: &ProbabilityBlock,
+    runtime_p_5d: &mut f64,
+    runtime_p_20d: &mut f64,
+    runtime_p_60d: &mut f64,
+    probability_diagnostics: &mut ProbabilityDiagnostics,
+) {
+    for horizon in &mut probability_diagnostics.horizon_overlays {
+        let (runtime_probability, heuristic_probability) = match horizon.horizon_days {
+            5 => (&mut *runtime_p_5d, heuristic_probabilities.p_5d),
+            20 => (&mut *runtime_p_20d, heuristic_probabilities.p_20d),
+            60 => (&mut *runtime_p_60d, heuristic_probabilities.p_60d),
+            _ => continue,
+        };
+
+        if !has_usdjpy_high_tail_anomaly(horizon) || heuristic_probability <= *runtime_probability {
+            continue;
+        }
+
+        let fallback_lift = (heuristic_probability - *runtime_probability).max(0.0);
+        *runtime_probability = heuristic_probability;
+        horizon.runtime_final_probability = Some(round_probability(heuristic_probability));
+        horizon.monotonic_lift = round_probability(horizon.monotonic_lift + fallback_lift);
+    }
+}
+
+fn has_usdjpy_high_tail_anomaly(horizon: &ProbabilityHorizonOverlayDiagnostics) -> bool {
+    horizon.base_contributions.iter().any(|contribution| {
+        contribution.name == USDJPY_HIGH_TAIL_SUPPRESSOR_FEATURE
+            && contribution.raw_value > 0.0
+            && contribution.contribution <= -1.0
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn anomaly_horizon(
+        horizon_days: u32,
+        runtime_final_probability: f64,
+    ) -> ProbabilityHorizonOverlayDiagnostics {
+        ProbabilityHorizonOverlayDiagnostics {
+            horizon_days,
+            raw_probability: runtime_final_probability,
+            calibrated_probability: runtime_final_probability,
+            final_probability: runtime_final_probability,
+            runtime_final_probability: Some(runtime_final_probability),
+            monotonic_lift: 0.0,
+            configured_overlay_count: 0,
+            base_contributions: vec![LogisticProbabilityFeatureContribution {
+                name: USDJPY_HIGH_TAIL_SUPPRESSOR_FEATURE.to_string(),
+                raw_value: 15.34,
+                normalized_value: 7.53,
+                weight: -1.22,
+                contribution: -9.04,
+            }],
+            contributions: Vec::new(),
+            overlay_audits: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn runtime_semantic_fallback_raises_anomalous_horizons_to_heuristic_floor() {
+        let heuristic_probabilities = ProbabilityBlock {
+            p_5d: 0.0,
+            p_20d: 0.03,
+            p_60d: 0.08,
+        };
+        let mut runtime_p_5d = 0.000569;
+        let mut runtime_p_20d = 0.000043;
+        let mut runtime_p_60d = 0.000399;
+        let mut diagnostics = ProbabilityDiagnostics {
+            horizon_overlays: vec![
+                anomaly_horizon(5, runtime_p_5d),
+                anomaly_horizon(20, runtime_p_20d),
+                anomaly_horizon(60, runtime_p_60d),
+            ],
+        };
+
+        apply_runtime_semantic_fallback(
+            &heuristic_probabilities,
+            &mut runtime_p_5d,
+            &mut runtime_p_20d,
+            &mut runtime_p_60d,
+            &mut diagnostics,
+        );
+
+        assert_eq!(runtime_p_5d, 0.000569);
+        assert_eq!(runtime_p_20d, 0.03);
+        assert_eq!(runtime_p_60d, 0.08);
+        assert_eq!(
+            diagnostics.horizon_overlays[1].runtime_final_probability,
+            Some(0.03)
+        );
+        assert_eq!(
+            diagnostics.horizon_overlays[2].runtime_final_probability,
+            Some(0.08)
+        );
+        assert!(diagnostics.horizon_overlays[1].monotonic_lift > 0.0);
+        assert!(diagnostics.horizon_overlays[2].monotonic_lift > 0.0);
     }
 }
 

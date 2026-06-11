@@ -100,7 +100,7 @@ fn threshold_has_usable_positive_window_support(
             || positive_window_hit_rate + 1e-9 >= hits.cooldown_hit_rate())
 }
 
-fn threshold_has_usable_forward_crisis_support(
+pub(in super::super) fn threshold_has_usable_forward_crisis_support(
     hits: ProbabilityThresholdRegimeHitSummary,
     horizon_days: u32,
 ) -> bool {

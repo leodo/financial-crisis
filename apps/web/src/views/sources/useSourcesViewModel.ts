@@ -3,9 +3,9 @@ import {
   formatDateTime,
   formatNumber,
   formatPercent,
+  humanizeNarrativeCopy,
   humanizeSourceLicenseNote,
   qualityDetailLabel,
-  sourceLagLabel,
   sourceAccessMethodLabel,
   sourceHealthStatusLabel,
   sourcePriorityLabel,
@@ -16,8 +16,87 @@ import type { AssessmentSnapshot, DataSource } from "../../types";
 import type { MetricItem } from "../shared/panelHelpers";
 
 function extractDatasetId(message: string) {
-  const match = message.match(/dataset=([^)]+)/);
+  const match = message.match(/dataset=([^;)]+)/);
   return match?.[1] ?? null;
+}
+
+function extractLatestObservationDate(message: string) {
+  const match = message.match(/latest observation (\d{4}-\d{2}-\d{2})/);
+  return match?.[1] ?? null;
+}
+
+function extractWatermarkPeriod(message: string) {
+  const match =
+    message.match(/抓取水位[= ](\d{4}-\d{2}-\d{2})/) ??
+    message.match(/watermark_period=(\d{4}-\d{2}-\d{2})/) ??
+    message.match(/data_period=(\d{4}-\d{2}-\d{2})/) ??
+    message.match(/last successful data period (\d{4}-\d{2}-\d{2})/);
+  return match?.[1] ?? null;
+}
+
+function sourceObservationLagLabel(seconds: number | null | undefined) {
+  if (seconds === null || seconds === undefined) {
+    return "观测滞后未知";
+  }
+
+  const days = Math.max(0, Math.round(seconds / 86_400));
+  return `观测滞后 ${days} 天`;
+}
+
+function sourceLagDetail(source: DataSource, latestObservationDate: string | null) {
+  if (latestObservationDate || source.health.last_success_at) {
+    return sourceObservationLagLabel(source.health.lag_seconds);
+  }
+
+  if (!source.production_allowed) {
+    return "未进入正式刷新监控";
+  }
+
+  return sourceObservationLagLabel(source.health.lag_seconds);
+}
+
+function sourceHealthMessage(
+  source: DataSource,
+  datasetName: string,
+  latestObservationDate: string | null,
+  watermarkPeriod: string | null
+): string {
+  if (source.health.status === "prototype") {
+    return "当前仍按原型辅助信号处理，不直接进入正式评估。";
+  }
+
+  if (["delayed", "partial_failure", "failed"].includes(source.health.status)) {
+    return `源状态${sourceHealthStatusLabel(source.health.status)}：${humanizeNarrativeCopy(
+      source.health.message
+    )}`;
+  }
+
+  if (latestObservationDate && watermarkPeriod && latestObservationDate !== watermarkPeriod) {
+    return `当前使用 ${datasetName}；最新观测 ${latestObservationDate}，抓取水位 ${watermarkPeriod}。`;
+  }
+
+  if (latestObservationDate) {
+    return `当前使用 ${datasetName}；最新观测 ${latestObservationDate}。`;
+  }
+
+  if (watermarkPeriod) {
+    return `当前使用 ${datasetName}；抓取水位 ${watermarkPeriod}。`;
+  }
+
+  return `当前使用 ${datasetName}。`;
+}
+
+function sourceHealthWarning(source: DataSource): string | null {
+  if (
+    !source.production_allowed ||
+    !["delayed", "partial_failure", "failed"].includes(source.health.status)
+  ) {
+    return null;
+  }
+
+  return `${source.display_name} 当前${sourceHealthStatusLabel(
+    source.health.status
+  )}：${humanizeNarrativeCopy(source.health.message)}`;
 }
 
 export function useSourcesViewModel({
@@ -40,12 +119,15 @@ export function useSourcesViewModel({
     )
   ).length;
   const researchOnlyCount = sources.filter((source) => !source.production_allowed).length;
+  const sourceWarnings = sources
+    .map(sourceHealthWarning)
+    .filter((warning): warning is string => warning !== null);
 
   const summaryMetrics: MetricItem[] = [
     {
-      label: "总体等级",
+      label: "关键覆盖等级",
       value: qualityDetailLabel(assessment.data_trust.quality_grade),
-      hint: `总覆盖 ${formatPercent(assessment.data_trust.coverage_score)}`
+      hint: `关键指标覆盖 ${formatPercent(assessment.data_trust.coverage_score)}，不等同于全部源健康。`
     },
     {
       label: "受阻核心",
@@ -53,9 +135,9 @@ export function useSourcesViewModel({
       hint: "建议先补齐这些指标，再提高动作强度。"
     },
     {
-      label: "延迟/缺失源",
+      label: "源健康降级",
       value: `${delayedOrMissingCount}`,
-      hint: "这部分会拖慢部分维度的确认速度。"
+      hint: "这部分单独反映源状态，会拖慢部分维度的确认速度。"
     },
     {
       label: "仅辅助源",
@@ -67,6 +149,16 @@ export function useSourcesViewModel({
   const sourceRows = sources.map((source) => {
     const dataset = extractDatasetId(source.health.message);
     const datasetName = datasetLabel(dataset);
+    const latestObservationDate = extractLatestObservationDate(source.health.message);
+    const watermarkPeriod = extractWatermarkPeriod(source.health.message);
+    const statusDetail = [
+      source.health.last_success_at
+        ? `最近成功刷新 ${formatDateTime(source.health.last_success_at)}`
+        : "暂时没有成功抓取记录",
+      latestObservationDate ? `最新观测 ${latestObservationDate}` : null,
+      watermarkPeriod ? `抓取水位 ${watermarkPeriod}` : null,
+      sourceLagDetail(source, latestObservationDate)
+    ].filter((detail): detail is string => detail !== null);
 
     return {
       id: source.source_id,
@@ -74,22 +166,22 @@ export function useSourcesViewModel({
       sourceMeta: `${sourceTypeLabel(source.source_type)} · ${sourcePriorityLabel(source.priority)}`,
       sourceMetaHint: dataset ? `数据集 ${datasetName}` : source.source_id,
       status: sourceHealthStatusLabel(source.health.status),
-      statusDetail: [
-        source.health.last_success_at
-          ? `最近成功 ${formatDateTime(source.health.last_success_at)}`
-          : "暂时没有成功抓取记录",
-        sourceLagLabel(source.health.lag_seconds)
+      statusDetail,
+      qualityScore: `源健康分 ${formatNumber(source.health.quality_score)}`,
+      qualityDetail: [
+        sourceQualityBandLabel(source.health.quality_score),
+        "抓取/源状态分，不是当前结论可信度"
       ],
-      qualityScore: formatNumber(source.health.quality_score),
-      qualityDetail: sourceQualityBandLabel(source.health.quality_score),
       productionAllowed: source.production_allowed ? "可进入正式评估" : "仅研究参考",
       productionDetail: source.production_allowed
         ? sourceAccessMethodLabel(source.access_method)
         : "原型源或开发辅助源",
-      healthMessage:
-        source.health.status === "prototype"
-          ? "当前仍按原型辅助信号处理，不直接进入正式评估。"
-          : `当前使用 ${datasetName}`,
+      healthMessage: sourceHealthMessage(
+        source,
+        datasetName,
+        latestObservationDate,
+        watermarkPeriod
+      ),
       licenseNote: humanizeSourceLicenseNote(source.license_note)
     };
   });
@@ -97,7 +189,7 @@ export function useSourcesViewModel({
   return {
     summaryMetrics,
     coverageMetrics,
-    warnings: assessment.data_trust.warnings,
+    warnings: [...assessment.data_trust.warnings, ...sourceWarnings],
     sourceRows
   };
 }

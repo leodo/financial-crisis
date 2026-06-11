@@ -38,6 +38,7 @@ import type {
   TimeToRiskBucket
 } from "../../types";
 import type { DetailRowItem, MetricItem } from "../shared/panelHelpers";
+import { currentMvpRiskState } from "../decision/mvpRiskState";
 import { buildProbabilityOverlayViewModel } from "../shared/probabilityOverlay";
 import { auditContent } from "./content";
 import { buildDatasetSummarySection } from "./datasetSummarySection";
@@ -97,32 +98,48 @@ export function useAuditViewModel({
   const activeLikeStatuses = new Set(["active", "approved"]);
   const inactiveStatuses = new Set(["archived", "rolled_back", "retired"]);
   const uniqueSnapshotDates = new Set(audit.snapshots.map((snapshot) => snapshot.as_of_date)).size;
+  const probabilityInputReferenceOnly =
+    currentMvpRiskState(assessment).probability_input_status === "reference_only";
 
   const runtimeMetrics: MetricItem[] = [
     {
       label: "概率层",
       value: probabilityModeLabel(audit.runtime_probability_mode),
+      hint: "这是 API 当前加载的概率服务层，不代表当前概率已可作为主结论。",
       valueClassName: "metric-value-token"
     },
     {
       label: "服务状态",
       value: releaseServingStatusLabel(audit.runtime_release_status),
+      hint:
+        probabilityInputReferenceOnly
+          ? "服务状态正常只说明 bundle 可加载；当前正式概率仍是参考输入。"
+          : "服务状态正常不等于 release review 或 Go/No-Go 自动通过。",
       valueClassName: "metric-value-token"
     },
     {
       label: "当前生效版本",
       value: activeRelease.value,
+      hint: activeRelease.hint ?? "线上 active release id；不是候选晋升结论。",
       valueClassName: "metric-value-token"
     },
-    { label: "最新快照", value: formatDate(audit.latest_snapshot_date) }
+    {
+      label: "最新快照",
+      value: formatDate(audit.latest_snapshot_date),
+      hint: "运行快照日期，不是实时行情时间。"
+    }
   ];
 
   const summaryMetrics: MetricItem[] = [
-    { label: "登记版本数", value: `${audit.releases.length}` },
+    {
+      label: "登记版本数",
+      value: `${audit.releases.length}`,
+      hint: "release registry 中的历史/候选/归档总数，不代表可上线版本数。"
+    },
     {
       label: "当前 / 已批准",
       value: `${audit.releases.filter((release) => activeLikeStatuses.has(release.status)).length}`,
-      hint: "仍属于当前可运行版本或已批准候选。"
+      hint: "登记状态计数，不代表这些版本都适合作为当前主结论。"
     },
     {
       label: "已归档 / 回退",
@@ -132,12 +149,14 @@ export function useAuditViewModel({
     {
       label: "回放批次",
       value: `${audit.replay_runs.length}`,
-      hint: audit.latest_replay_run_id ? `最新 run: ${audit.latest_replay_run_id}` : "当前没有可展示的 replay run"
+      hint: audit.latest_replay_run_id
+        ? `历史回放任务批次数；最新 run: ${audit.latest_replay_run_id}`
+        : "当前没有可展示的 replay run"
     },
     {
       label: "快照覆盖",
       value: `${uniqueSnapshotDates} 天`,
-      hint: `${audit.snapshots.length} 条历史预测记录`
+      hint: `${audit.snapshots.length} 条历史预测记录；这是运行快照覆盖，不是模型训练样本数。`
     }
   ];
   const provenanceMetrics: MetricItem[] = [
@@ -148,7 +167,8 @@ export function useAuditViewModel({
     },
     {
       label: "PIT 快照支撑",
-      value: `${audit.history_provenance.feature_backed_points}/${audit.history_provenance.total_points}`
+      value: `${audit.history_provenance.feature_backed_points}/${audit.history_provenance.total_points}`,
+      hint: "历史证据层覆盖，不代表当前正式概率已经恢复主结论。"
     },
     {
       label: "沿用旧 PIT",
@@ -343,25 +363,29 @@ export function useAuditViewModel({
             hint: latestReleaseReviewCoverageSource?.hint
           },
           {
-            label: "回测覆盖",
-            value: `${latestReleaseReview.scenario_coverage_catalog.covered_backtest_scenario_count}/${latestReleaseReview.scenario_coverage_catalog.backtest_scenario_count}`
+            label: "回测覆盖（目录）",
+            value: `${latestReleaseReview.scenario_coverage_catalog.covered_backtest_scenario_count}/${latestReleaseReview.scenario_coverage_catalog.backtest_scenario_count}`,
+            hint: "scenario catalog 覆盖数，不是当前模型通过率。"
           },
           {
-            label: "重点覆盖",
-            value: `${latestReleaseReview.scenario_coverage_catalog.covered_focus_scenario_count}/${latestReleaseReview.scenario_coverage_catalog.focus_scenario_count}`
+            label: "重点覆盖（目录）",
+            value: `${latestReleaseReview.scenario_coverage_catalog.covered_focus_scenario_count}/${latestReleaseReview.scenario_coverage_catalog.focus_scenario_count}`,
+            hint: "重点历史场景覆盖数，不是当前风险事件数。"
           },
           {
-            label: "主训练可用",
-            value: `${latestReleaseReview.scenario_coverage_catalog.main_training_eligible_count}`
+            label: "主训练可用（目录）",
+            value: `${latestReleaseReview.scenario_coverage_catalog.main_training_eligible_count}`,
+            hint: "目录层可训练场景数，不等于候选版已可上线。"
           },
           {
-            label: "扩展可用",
-            value: `${latestReleaseReview.scenario_coverage_catalog.extension_training_eligible_count}`
+            label: "扩展可用（目录）",
+            value: `${latestReleaseReview.scenario_coverage_catalog.extension_training_eligible_count}`,
+            hint: "扩展训练候选场景数，仍需 release review 判断。"
           },
           {
-            label: "受保护压力",
+            label: "受保护压力（目录）",
             value: `${latestReleaseReview.scenario_coverage_catalog.protected_stress_eligible_count}`,
-            hint: `历史类比可用 ${latestReleaseReview.scenario_coverage_catalog.historical_analog_eligible_count} 个`
+            hint: `protected stress 场景目录数；历史类比可用 ${latestReleaseReview.scenario_coverage_catalog.historical_analog_eligible_count} 个`
           }
         ]
       : [];
@@ -560,25 +584,31 @@ export function useAuditViewModel({
           value: formatDateTime(latestRateShockAudit.generated_at)
         },
         {
-          label: "样本行数",
-          value: `${latestRateShockAudit.compare_summary.overall_window.row_count}`
+          label: "样本行数（历史）",
+          value: `${latestRateShockAudit.compare_summary.overall_window.row_count}`,
+          hint: "2022 利率冲击审计窗口中的历史 dataset 行数。"
         },
         {
-          label: "20d 命中",
-          value: `${latestRateShockAudit.compare_summary.baseline_hit_count_20d} -> ${latestRateShockAudit.compare_summary.candidate_hit_count_20d}`
+          label: "20d 命中（历史）",
+          value: `${latestRateShockAudit.compare_summary.baseline_hit_count_20d} -> ${latestRateShockAudit.compare_summary.candidate_hit_count_20d}`,
+          hint: "历史回放越过 20d 离线线的点数，不是当前 20d 正式概率命中。"
         },
         {
-          label: "60d 命中",
-          value: `${latestRateShockAudit.compare_summary.baseline_hit_count_60d} -> ${latestRateShockAudit.compare_summary.candidate_hit_count_60d}`
+          label: "60d 命中（历史）",
+          value: `${latestRateShockAudit.compare_summary.baseline_hit_count_60d} -> ${latestRateShockAudit.compare_summary.candidate_hit_count_60d}`,
+          hint: "历史回放越过 60d 离线线的点数，不是当前 60d 正式概率命中。"
         },
         {
-          label: "20d 阈值",
-          value: `${formatPercent(latestRateShockAudit.thresholds.baseline_20d)} -> ${formatPercent(latestRateShockAudit.thresholds.candidate_20d)}`
+          label: "20d 入线阈值（审计）",
+          value: `${formatPercent(latestRateShockAudit.thresholds.baseline_20d)} -> ${formatPercent(latestRateShockAudit.thresholds.candidate_20d)}`,
+          hint: "专项审计用的离线运行线，不是当前页面概率。"
         },
         {
-          label: "20d 均值变化",
+          label: "20d 均值变化（历史）",
           value: formatPercent(latestRateShockAudit.compare_summary.overall_window.avg_delta_p_20d),
-          hint: rateShockSplitSummary ? `split: ${rateShockSplitSummary}` : undefined
+          hint: rateShockSplitSummary
+            ? `历史回放 candidate - baseline；split: ${rateShockSplitSummary}`
+            : "历史回放 candidate - baseline，不是当前概率变化。"
         }
       ]
     : [];
@@ -616,8 +646,8 @@ export function useAuditViewModel({
       ).map(([label, row]) => ({
         id: `rate-shock-focus-${label}`,
         title: rateShockContinuityFocusLabel(label),
-        detail: `样本 ${row.row_count}；20d ${formatPercent(row.baseline_avg_p_20d)} -> ${formatPercent(row.candidate_avg_p_20d)}；60d ${formatPercent(row.baseline_avg_p_60d)} -> ${formatPercent(row.candidate_avg_p_60d)}`,
-        note: `20d 命中 ${row.baseline_hit_20d.hit_count} -> ${row.candidate_hit_20d.hit_count}，最长段 ${row.baseline_hit_20d.max_streak} -> ${row.candidate_hit_20d.max_streak}；20d 阈值差 ${formatPercent(row.baseline_avg_gap_to_threshold_20d)} -> ${formatPercent(row.candidate_avg_gap_to_threshold_20d)}`,
+        detail: `历史样本 ${row.row_count}；20d ${formatPercent(row.baseline_avg_p_20d)} -> ${formatPercent(row.candidate_avg_p_20d)}；60d ${formatPercent(row.baseline_avg_p_60d)} -> ${formatPercent(row.candidate_avg_p_60d)}`,
+        note: `20d 回放命中 ${row.baseline_hit_20d.hit_count} -> ${row.candidate_hit_20d.hit_count}，最长段 ${row.baseline_hit_20d.max_streak} -> ${row.candidate_hit_20d.max_streak}；20d 离线线差 ${formatPercent(row.baseline_avg_gap_to_threshold_20d)} -> ${formatPercent(row.candidate_avg_gap_to_threshold_20d)}`,
         meta: `20d Δ ${formatPercent(row.avg_delta_p_20d)}`
       }))
     : [];

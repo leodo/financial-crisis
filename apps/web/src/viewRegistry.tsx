@@ -66,22 +66,22 @@ export const navItems: ViewNavItem[] = [
     id: "backtests",
     label: "回测表现",
     icon: History,
-    title: "历史回测与滚动审计",
-    description: "查看历史场景命中、动作提前量，以及非危机误报区间。"
+    title: "历史回测与误报边界",
+    description: "查看历史场景命中、动作提前量，以及非危机阶段的误报边界。"
   },
   {
     id: "audit",
-    label: "发布审计",
+    label: "版本核对",
     icon: GitCompareArrows,
-    title: "发布审计与运行态检查",
-    description: "查看当前线上版本、历史预测快照、训练工件和研究审计摘要。"
+    title: "线上版本与研究核对",
+    description: "查看当前线上版本、历史预测快照、训练工件和研究核对摘要。"
   },
   {
     id: "indicators",
     label: "指标细项",
     icon: Table2,
     title: "指标细项总览",
-    description: "逐项查看评分口径、历史分位、30 天变化和数据质量。"
+    description: "逐项查看评分口径、历史分位、30 天变化和指标级质量。"
   },
   {
     id: "sources",
@@ -108,6 +108,7 @@ const viewRegistry: Record<View, (data: ConsoleReadyData) => ReactElement> = {
       posture={data.posture}
       overview={data.overview}
       backtests={data.backtests}
+      indicators={data.indicators}
     />
   ),
   drivers: (data) => (

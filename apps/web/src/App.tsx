@@ -10,22 +10,28 @@ import {
 import {
   formatDateTime,
   dataModeLabel,
-  formatProbabilityPercentExact,
   qualityLabel,
   timeBucketLabel
 } from "./format";
 import { probabilityDiagnosticAnomalyHorizons } from "./views/decision/probabilityDiagnostics";
 import {
   currentMvpRiskState,
-  mvpProbabilityInputIsAuditOnly
+  mvpProbabilityInputIsAuditOnly,
+  mvpRiskStateDisplayCopy,
+  mvpRiskStateDisplayLabel
 } from "./views/decision/mvpRiskState";
+import {
+  probabilityModelFinalSnapshotValue,
+  probabilityRuntimeReferenceNote,
+  probabilitySnapshotValue
+} from "./views/decision/signalLayerBuilders";
 import { useConsoleData, type ConsoleReadyData, type ConsoleDataSnapshot } from "./useConsoleData";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { RecoveryPanel } from "./components/RecoveryPanel";
 import { navItems, renderActiveView, type View } from "./viewRegistry";
 
 const VIEW_DATA_KEYS: Record<View, Array<keyof ConsoleReadyData>> = {
-  decision: ["assessment", "assessmentHistory", "method", "posture", "overview", "backtests"],
+  decision: ["assessment", "assessmentHistory", "method", "posture", "overview", "backtests", "indicators"],
   drivers: ["assessment", "overview", "posture"],
   events: ["assessment", "events"],
   backtests: ["assessment", "backtests", "backtestTimeline"],
@@ -40,7 +46,7 @@ const DATASET_LABELS: Record<keyof ConsoleReadyData, string> = {
   assessmentHistory: "概率轨迹",
   posture: "执行节奏建议",
   method: "方法与版本说明",
-  audit: "发布审计",
+  audit: "版本核对",
   overview: "维度总览",
   indicators: "指标细项",
   events: "事件确认",
@@ -82,6 +88,18 @@ function formatErrorText(error: unknown): string {
   }
 
   return "未知错误";
+}
+
+function productionSourceIssueLabels(sources: ConsoleDataSnapshot["sources"]): string[] {
+  return (
+    sources
+      ?.filter(
+        (source) =>
+          source.production_allowed &&
+          ["delayed", "partial_failure", "failed"].includes(source.health.status)
+      )
+      .map((source) => source.display_name) ?? []
+  );
 }
 
 export default function App() {
@@ -162,17 +180,28 @@ export default function App() {
     ? mvpProbabilityInputIsAuditOnly(assessment.data)
     : false;
   const mvpRiskState = assessment.data ? currentMvpRiskState(assessment.data) : null;
+  const sourceIssueLabels = useMemo(
+    () => productionSourceIssueLabels(data.sources),
+    [data.sources]
+  );
+  const sourceIssueSummary =
+    sourceIssueLabels.length > 0
+      ? `生产源健康降级 ${sourceIssueLabels.length}：${sourceIssueLabels.join("、")}`
+      : null;
+  const runtimeReferenceNote = assessment.data
+    ? probabilityRuntimeReferenceNote(assessment.data)
+    : null;
   const riskWindowDisplayLabel = assessment.data
     ? probabilityAuditOnly
-      ? mvpRiskState?.label ?? "正式概率待审计"
+      ? mvpRiskStateDisplayLabel(mvpRiskState?.label ?? "观察为主")
       : timeBucketLabel(assessment.data.time_to_risk_bucket)
     : "—";
   const riskWindowSummaryLabel =
     probabilityAuditOnly
-      ? `MVP 风险状态 ${mvpRiskState?.label ?? "概率待审计"}（${
+      ? `MVP 风险状态 ${mvpRiskStateDisplayLabel(mvpRiskState?.label ?? "观察为主")}（${
           probabilityAnomalyHorizons.length > 0
-            ? `${probabilityAnomalyHorizons.join(" / ")} 正式读数异常`
-            : "正式概率审计态"
+            ? `${probabilityAnomalyHorizons.join(" / ")} 正式读数偏低`
+            : "正式概率仅作参考"
         }）`
       : assessment.data
         ? `风险时距 ${timeBucketLabel(assessment.data.time_to_risk_bucket)}`
@@ -184,10 +213,11 @@ export default function App() {
 
     return [
       riskWindowSummaryLabel,
-      `数据可信度 ${qualityLabel(assessment.data.data_trust.quality_grade)}`,
+      `关键数据覆盖 ${qualityLabel(assessment.data.data_trust.quality_grade)}`,
+      sourceIssueSummary,
       `关键数据 ${assessment.data.runtime.latest_key_indicator_at ?? assessment.data.runtime.latest_observation_at ?? "—"}`
-    ];
-  }, [assessment.data, riskWindowSummaryLabel]);
+    ].filter((item): item is string => item !== null);
+  }, [assessment.data, riskWindowSummaryLabel, sourceIssueSummary]);
 
   return (
     <div className="app-shell">
@@ -256,7 +286,8 @@ export default function App() {
                 </span>
                 <span>生成时间 {formatDateTime(assessment.data.runtime.generated_at)}</span>
                 <span>风险时距 {riskWindowDisplayLabel}</span>
-                <span>数据可信度 {qualityLabel(assessment.data.data_trust.quality_grade)}</span>
+                <span>关键数据覆盖 {qualityLabel(assessment.data.data_trust.quality_grade)}</span>
+                {sourceIssueSummary ? <span>{sourceIssueSummary}</span> : null}
               </div>
             ) : null}
           </div>
@@ -311,6 +342,19 @@ export default function App() {
           />
         )}
 
+        {assessment.data && probabilityAuditOnly && !isAssessmentUnavailable && (
+          <section className="notice">
+            <strong>当前处于参考态</strong>
+            <div>
+              当前正式概率只作为参考输入，动作信号和预算边界也只作为辅助参考；
+              当前主结论优先看 MVP 风险状态 {mvpRiskStateDisplayLabel(mvpRiskState?.label ?? "观察为主")}。
+              {probabilityAnomalyHorizons.length > 0
+                ? ` 当前 ${probabilityAnomalyHorizons.join(" / ")} 命中模型方向异常。`
+                : ""}
+            </div>
+          </section>
+        )}
+
         {showDecisionWarmup && assessment.data && (
         <section className="warmup-panel" aria-live="polite">
             <div className="warmup-head">
@@ -332,23 +376,25 @@ export default function App() {
                 <small>先看压力位置，不等于危机概率</small>
               </div>
               <div className="warmup-metric">
-                <span>危机先验</span>
+                <span>{probabilityAuditOnly ? "参考概率" : "危机先验"}</span>
                 <strong>
                   {probabilityAuditOnly
-                    ? "正式概率待审计"
-                    : `${formatProbabilityPercentExact(assessment.data.probabilities.p_5d)} /
-                  ${formatProbabilityPercentExact(assessment.data.probabilities.p_20d)} /
-                  ${formatProbabilityPercentExact(assessment.data.probabilities.p_60d)}`}
+                    ? "规则层优先"
+                    : probabilitySnapshotValue(assessment.data.probabilities)}
                 </strong>
                 <small>
                   {probabilityAuditOnly
-                    ? `${formatProbabilityPercentExact(
-                        assessment.data.probabilities.p_5d
-                      )} / ${formatProbabilityPercentExact(
-                        assessment.data.probabilities.p_20d
-                      )} / ${formatProbabilityPercentExact(
-                        assessment.data.probabilities.p_60d
-                      )} 仅作审计读数`
+                    ? `当前页面参考值 ${probabilitySnapshotValue(
+                        assessment.data.probabilities
+                      )} 仅作参考值，当前不单独拿来判断风险时距。${
+                        runtimeReferenceNote ? ` ${runtimeReferenceNote}` : ""
+                      }`
+                    : runtimeReferenceNote
+                      ? `当前页面值 ${probabilitySnapshotValue(
+                          assessment.data.probabilities
+                        )}；模型原始输出 ${probabilityModelFinalSnapshotValue(
+                          assessment.data
+                        )}。`
                     : "5d / 20d / 60d"}
                 </small>
               </div>
@@ -356,15 +402,15 @@ export default function App() {
                 <span>当前执行节奏</span>
                 <strong>
                   {probabilityAuditOnly
-                    ? mvpRiskState?.label ?? "风险时距待审计"
+                    ? mvpRiskStateDisplayLabel(mvpRiskState?.label ?? "观察为主")
                     : timeBucketLabel(assessment.data.time_to_risk_bucket)}
                 </strong>
                 <small>
                   {probabilityAuditOnly
-                    ? mvpRiskState?.summary ??
+                    ? mvpRiskStateDisplayCopy(mvpRiskState?.summary ?? "") ||
                       `${probabilityAnomalyHorizons.join(
                         " / "
-                      )} 概率读数异常；完整面板会显示模型审计说明。`
+                      )} 概率读数偏低；完整面板会显示参考说明。`
                     : assessment.data.posture_reason}
                 </small>
               </div>

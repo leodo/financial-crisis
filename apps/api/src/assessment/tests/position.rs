@@ -78,7 +78,7 @@ fn position_guidance_governance_enforces_manual_review_and_release_boundaries() 
 }
 
 #[test]
-fn summary_uses_mvp_state_when_probability_is_audit_only() {
+fn summary_uses_mvp_state_when_probability_is_reference_only() {
     let summary = build_summary(
         &summary_test_snapshot(),
         &ProbabilityBlock {
@@ -90,9 +90,9 @@ fn summary_uses_mvp_state_when_probability_is_audit_only() {
         &posture_guidance_for(DecisionPosture::Normal),
         &MvpRiskState {
             code: MvpRiskStateCode::Observe,
-            label: "观察为主（概率待审计）".to_string(),
-            probability_input_status: MvpProbabilityInputStatus::AuditOnly,
-            summary: "MVP 规则层未看到足够证据支持主动减仓或对冲，正式概率当前只作为审计输入。"
+            label: "观察为主（概率参考）".to_string(),
+            probability_input_status: MvpProbabilityInputStatus::ReferenceOnly,
+            summary: "MVP 规则层未看到足够证据支持主动减仓或对冲，正式概率当前只作为参考输入。"
                 .to_string(),
             primary_evidence: Vec::new(),
             blockers: Vec::new(),
@@ -100,7 +100,7 @@ fn summary_uses_mvp_state_when_probability_is_audit_only() {
         },
     );
 
-    assert!(summary.contains("MVP 风险状态：观察为主（概率待审计）"));
+    assert!(summary.contains("MVP 风险状态：观察为主（概率参考）"));
     assert!(summary.contains("不参与主结论"));
     assert!(!summary.contains("当前仍偏常态区间"));
 }

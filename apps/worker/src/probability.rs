@@ -106,6 +106,7 @@ fn train_probability_head(
         .iter()
         .map(|row| crate::score_logistic_model_for_dataset(&raw_model, row))
         .collect::<Vec<_>>();
+    let evaluation_row_refs = evaluation_rows.iter().collect::<Vec<_>>();
     let (calibration, evaluation_probabilities) = select_probability_calibration_strategy(
         &calibration_inputs,
         &calibration_labels,
@@ -113,6 +114,7 @@ fn train_probability_head(
         horizon_days,
         label_mode,
         &evaluation_raw_probabilities,
+        &evaluation_row_refs,
         calibration_candidate,
     );
     let calibration_decision_probabilities = calibration.as_ref().map_or_else(

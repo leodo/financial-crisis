@@ -106,29 +106,29 @@ export function LeadtimeAuditSection({ audit }: { audit: ResearchAuditResponse }
     ? [
         { label: "审计时间", value: formatDateTime(latestLeadtimeAudit.generated_at) },
         {
-          label: "Timely warning",
+          label: "及时预警率（历史）",
           value: formatMetricValue(metricValue(latestLeadtimeAudit, "timely_warning_rate")?.candidate ?? null, "percent"),
-          hint: `Δ ${formatMetricDelta(metricValue(latestLeadtimeAudit, "timely_warning_rate")?.delta ?? null, "percent")}`
+          hint: `离线 candidate 相对 baseline：${formatMetricDelta(metricValue(latestLeadtimeAudit, "timely_warning_rate")?.delta ?? null, "percent")}`
         },
         {
-          label: "Strict actionable",
+          label: "严格动作点（历史）",
           value: formatMetricValue(metricValue(latestLeadtimeAudit, "strict_actionable_point_count")?.candidate ?? null),
-          hint: `Δ ${formatMetricDelta(metricValue(latestLeadtimeAudit, "strict_actionable_point_count")?.delta ?? null)}`
+          hint: `离线 candidate 相对 baseline：${formatMetricDelta(metricValue(latestLeadtimeAudit, "strict_actionable_point_count")?.delta ?? null)}`
         },
         {
-          label: "Runtime floor hits",
+          label: "运行线命中（历史）",
           value: formatMetricValue(metricValue(latestLeadtimeAudit, "runtime_floor_hit_count")?.candidate ?? null),
-          hint: `Δ ${formatMetricDelta(metricValue(latestLeadtimeAudit, "runtime_floor_hit_count")?.delta ?? null)}`
+          hint: `离线 candidate 相对 baseline：${formatMetricDelta(metricValue(latestLeadtimeAudit, "runtime_floor_hit_count")?.delta ?? null)}`
         },
         {
-          label: "Action precision",
+          label: "动作精度（历史）",
           value: formatMetricValue(metricValue(latestLeadtimeAudit, "actionable_precision")?.candidate ?? null, "percent"),
-          hint: `Δ ${formatMetricDelta(metricValue(latestLeadtimeAudit, "actionable_precision")?.delta ?? null, "percent")}`
+          hint: `离线历史回放精度，不是当前正式概率准确率；candidate 相对 baseline：${formatMetricDelta(metricValue(latestLeadtimeAudit, "actionable_precision")?.delta ?? null, "percent")}`
         },
         {
-          label: "最长纯误报",
+          label: "最长纯误报（历史）",
           value: `${formatMetricValue(metricValue(latestLeadtimeAudit, "longest_false_positive_episode_days")?.candidate ?? null)} 天`,
-          hint: `Δ ${formatMetricDelta(metricValue(latestLeadtimeAudit, "longest_false_positive_episode_days")?.delta ?? null)} 天`
+          hint: `离线历史 episode，不是今天新增误报；candidate 相对 baseline：${formatMetricDelta(metricValue(latestLeadtimeAudit, "longest_false_positive_episode_days")?.delta ?? null)} 天`
         }
       ]
     : [];
@@ -175,7 +175,7 @@ export function LeadtimeAuditSection({ audit }: { audit: ResearchAuditResponse }
           </RuleBox>
           <ResponsiveTable
             className="wide-table"
-            columns={["期限", "基线诊断", "候选诊断", "候选 EW/Normal", "候选 floor gap", "候选命中率"]}
+            columns={["期限", "基线诊断", "候选诊断", "历史 EW/Normal 均值", "离运行线（审计）", "历史命中率"]}
             note={auditContent.leadtimeRuntimeTableNote}
           >
             {latestLeadtimeAudit.runtime_rows.map((row) => (
@@ -193,7 +193,7 @@ export function LeadtimeAuditSection({ audit }: { audit: ResearchAuditResponse }
             <ResponsiveTable
               className="wide-table"
               columns={["场景", "结果", "候选 L2", "候选 L3", "缺口"]}
-              note="L2 表示提前量已经出现，L3 表示达到可执行动作口径；有 L2 无 L3 时，下一步要查 posture、gate 和 sustained-hit。"
+              note="L2 / L3 是历史场景里的提前量转化，不是当前倒计时；有 L2 无 L3 时，下一步要查 posture、gate 和 sustained-hit。"
             >
               {leadtimeGaps.map((row) => (
                 <tr key={row.scenario_id}>
@@ -208,8 +208,8 @@ export function LeadtimeAuditSection({ audit }: { audit: ResearchAuditResponse }
           ) : null}
           <ResponsiveTable
             className="wide-table xwide-table"
-            columns={["场景", "候选失败模式", "候选主阻塞", "候选连续性 facet", "候选 runtime / strict"]}
-            note="这张表回答“为什么已经有 runtime floor hit，却没有变成更高的 timely warning”。"
+            columns={["场景", "候选失败模式", "候选主阻塞", "候选连续性 facet", "历史 runtime / strict 点"]}
+            note="这张表回答历史回放里“为什么已经有 runtime floor hit，却没有变成更高的 timely warning”。"
           >
             {topFocusRows.map((row) => (
               <tr key={row.scenario_id}>

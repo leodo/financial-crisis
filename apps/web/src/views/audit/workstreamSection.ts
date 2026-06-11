@@ -116,21 +116,24 @@ export function buildWorkstreamAuditSection(audit: ResearchAuditResponse) {
       )
     },
     {
-      label: "覆盖场景",
-      value: `${coveredScenarioCount}/${totalScenarioCount}`
+      label: "覆盖场景（历史）",
+      value: `${coveredScenarioCount}/${totalScenarioCount}`,
+      hint: "residual workstream 覆盖的历史场景，不是当前风险事件数量。"
     },
     {
-      label: "总样本行",
-      value: `${totalRows}`
+      label: "总样本行（历史）",
+      value: `${totalRows}`,
+      hint: "专项审计匹配到的历史 dataset 行数，不是当前线上训练样本承诺。"
     },
     {
-      label: "20d 正标签",
-      value: `${totalPositive20d}`
+      label: "20d 正标签（历史）",
+      value: `${totalPositive20d}`,
+      hint: "历史样本里的正标签数量，不是当前 20d 风险概率。"
     },
     {
-      label: "60d 正标签",
+      label: "60d 正标签（历史）",
       value: `${totalPositive60d}`,
-      hint: `受保护样本 ${totalProtectedRows}`
+      hint: `历史样本里的正标签数量；受保护样本 ${totalProtectedRows}`
     }
   ];
 
@@ -176,7 +179,7 @@ export function buildWorkstreamAuditSection(audit: ResearchAuditResponse) {
       id: `workstream-${row.workstream}`,
       title: workstreamAuditLabel(row.workstream),
       detail: `${row.covered_scenario_count}/${row.scenario_count} 个场景；${compactList(row.scenarios, "未登记场景")}`,
-      note: `rows ${row.total_rows}；20d 正标签 ${row.total_positive_label_20d_count}；60d 正标签 ${row.total_positive_label_60d_count}；training role ${compactList(row.training_roles, "未登记")}；family ${compactList(row.scenario_families.map(releaseReviewScenarioFamilyLabel), "未登记")}`,
+      note: `历史行数 ${row.total_rows}；20d 正标签 ${row.total_positive_label_20d_count}；60d 正标签 ${row.total_positive_label_60d_count}；training role ${compactList(row.training_roles, "未登记")}；family ${compactList(row.scenario_families.map(releaseReviewScenarioFamilyLabel), "未登记")}`,
       meta: formatPercent(row.avg_coverage_score)
     }));
 
@@ -206,11 +209,11 @@ export function buildWorkstreamAuditSection(audit: ResearchAuditResponse) {
       ],
       splitSummary: compactList(row.split_counts, "未登记 split"),
       regimeSummary: `20d ${compactList(row.regime20_counts, "—")} / 60d ${compactList(row.regime60_counts, "—")}`,
-      labelSummary: `5d ${row.positive_label_5d_count} / 20d ${row.positive_label_20d_count} / 60d ${row.positive_label_60d_count}`,
+      labelSummary: `历史标签 5d ${row.positive_label_5d_count} / 20d ${row.positive_label_20d_count} / 60d ${row.positive_label_60d_count}`,
       actionSummary: `prepare ${row.prepare_primary_count} / hedge ${row.hedge_primary_count} / defend ${row.defend_primary_count}；phase ${compactList(row.action_phase_counts, "—")}；level ${compactList(row.primary_action_level_counts, "—")}`,
       coverageSummary: `${formatPercent(row.avg_coverage_score)} / 核心 ${formatPercent(row.avg_core_feature_coverage)} / 触发 ${formatPercent(row.avg_trigger_feature_coverage)}`,
       coverageDetails: [
-        `行数 ${row.row_count} / protected ${row.protected_row_count}`,
+        `历史行数 ${row.row_count} / protected ${row.protected_row_count}`,
         `特征 ${row.feature_name_count}：${compactList(row.feature_names.slice(0, 4), "未登记")}${row.feature_names.length > 4 ? " ..." : ""}`,
         latestWorkstreamAuditSource?.value
           ? `slice: ${compactFileReference(row.slice_json_path).value}`

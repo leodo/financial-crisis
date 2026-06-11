@@ -5,13 +5,24 @@ function stripTerminalPunctuation(value: string): string {
   return value.trim().replace(/[。；;]+$/u, "");
 }
 
+export function mvpRiskStateDisplayCopy(value: string): string {
+  return value
+    .replaceAll("概率待审计", "概率参考")
+    .replaceAll("审计读数", "参考值")
+    .replaceAll("审计输入", "参考输入")
+    .replaceAll("审计态", "参考态")
+    .replaceAll("待审计", "参考");
+}
+
 function sentence(value: string): string {
-  const stripped = stripTerminalPunctuation(value);
+  const stripped = stripTerminalPunctuation(mvpRiskStateDisplayCopy(value));
   return stripped ? `${stripped}。` : "";
 }
 
 function labeledSentence(label: string, items: string[]): string {
-  const values = items.map(stripTerminalPunctuation).filter(Boolean);
+  const values = items
+    .map((item) => stripTerminalPunctuation(mvpRiskStateDisplayCopy(item)))
+    .filter(Boolean);
   return values.length > 0 ? `${label}：${values.join("；")}。` : "";
 }
 
@@ -20,7 +31,7 @@ export function currentMvpRiskState(assessment: AssessmentSnapshot): MvpRiskStat
     code: "observe",
     label: "观察为主（MVP 未返回）",
     probability_input_status: probabilityDiagnosticAnomalyHorizons(assessment).length > 0
-      ? "audit_only"
+      ? "reference_only"
       : "usable",
     summary: "当前 API 未返回 MVP 风险状态，页面仅保留兼容显示；主结论仍应先复核数据和模型状态。",
     primary_evidence: [],
@@ -29,9 +40,13 @@ export function currentMvpRiskState(assessment: AssessmentSnapshot): MvpRiskStat
   };
 }
 
+export function mvpRiskStateDisplayLabel(label: string): string {
+  return label.replace(/（[^）]*(?:待审计|未返回)[^）]*）/gu, "").trim();
+}
+
 export function mvpProbabilityInputIsAuditOnly(assessment: AssessmentSnapshot): boolean {
   return (
-    currentMvpRiskState(assessment).probability_input_status === "audit_only" ||
+    currentMvpRiskState(assessment).probability_input_status === "reference_only" ||
     probabilityDiagnosticAnomalyHorizons(assessment).length > 0
   );
 }

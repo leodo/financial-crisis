@@ -27,6 +27,7 @@ fn probability_calibration_strategy_rejects_inverting_fit() {
         ),
     ];
     let calibration_row_refs = calibration_rows.iter().collect::<Vec<_>>();
+    let evaluation_row_refs = calibration_rows.iter().collect::<Vec<_>>();
     let calibration_candidate = PlattCalibrationArtifact {
         alpha: -1.4,
         beta: -3.0,
@@ -41,6 +42,7 @@ fn probability_calibration_strategy_rejects_inverting_fit() {
         20,
         ProbabilityTargetLabelMode::ForwardCrisis,
         &raw_probabilities,
+        &evaluation_row_refs,
         calibration_candidate,
     );
 
@@ -75,6 +77,7 @@ fn probability_calibration_strategy_keeps_inverting_fit_for_reversed_raw_ranking
         ),
     ];
     let calibration_row_refs = calibration_rows.iter().collect::<Vec<_>>();
+    let evaluation_row_refs = calibration_rows.iter().collect::<Vec<_>>();
     let calibration_candidate = fit_platt_calibration(&raw_probabilities, &labels);
     assert!(calibration_candidate.alpha < 0.0);
 
@@ -85,6 +88,7 @@ fn probability_calibration_strategy_keeps_inverting_fit_for_reversed_raw_ranking
         20,
         ProbabilityTargetLabelMode::ForwardCrisis,
         &raw_probabilities,
+        &evaluation_row_refs,
         calibration_candidate.clone(),
     );
 
@@ -126,6 +130,7 @@ fn probability_calibration_strategy_keeps_raw_when_calibration_flattens_early_wa
         ),
     ];
     let calibration_row_refs = calibration_rows.iter().collect::<Vec<_>>();
+    let evaluation_row_refs = calibration_rows.iter().collect::<Vec<_>>();
     let raw_probabilities = vec![0.72, 0.68, 0.44, 0.12, 0.61];
     let labels = calibration_rows
         .iter()
@@ -145,11 +150,88 @@ fn probability_calibration_strategy_keeps_raw_when_calibration_flattens_early_wa
         20,
         ProbabilityTargetLabelMode::ForwardCrisis,
         &raw_probabilities,
+        &evaluation_row_refs,
         flattening_calibration,
     );
 
     assert!(calibration.is_none());
     assert_eq!(evaluation_probabilities, raw_probabilities);
+}
+
+#[test]
+fn probability_calibration_strategy_rejects_calibration_that_crushes_evaluation_regime_support() {
+    let calibration_rows = vec![
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 5).unwrap(),
+            1,
+            ProbabilityTrainingRegime::PositiveWindow,
+        ),
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 6).unwrap(),
+            1,
+            ProbabilityTrainingRegime::PositiveWindow,
+        ),
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 20).unwrap(),
+            0,
+            ProbabilityTrainingRegime::Normal,
+        ),
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 21).unwrap(),
+            0,
+            ProbabilityTrainingRegime::Normal,
+        ),
+    ];
+    let calibration_row_refs = calibration_rows.iter().collect::<Vec<_>>();
+    let calibration_raw_probabilities = vec![0.11, 0.24, 0.71, 0.82];
+    let calibration_labels = vec![1.0, 1.0, 0.0, 0.0];
+    let calibration_candidate =
+        fit_platt_calibration(&calibration_raw_probabilities, &calibration_labels);
+    assert!(calibration_candidate.alpha < 0.0);
+
+    let evaluation_rows = vec![
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 2, 1).unwrap(),
+            1,
+            ProbabilityTrainingRegime::PositiveWindow,
+        ),
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 2, 2).unwrap(),
+            1,
+            ProbabilityTrainingRegime::PositiveWindow,
+        ),
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 2, 3).unwrap(),
+            0,
+            ProbabilityTrainingRegime::PreWarningBuffer,
+        ),
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 2, 10).unwrap(),
+            0,
+            ProbabilityTrainingRegime::Normal,
+        ),
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 2, 20).unwrap(),
+            0,
+            ProbabilityTrainingRegime::InCrisis,
+        ),
+    ];
+    let evaluation_row_refs = evaluation_rows.iter().collect::<Vec<_>>();
+    let evaluation_raw_probabilities = vec![0.91, 0.84, 0.58, 0.12, 0.79];
+
+    let (calibration, evaluation_probabilities) = select_probability_calibration_strategy(
+        &calibration_raw_probabilities,
+        &calibration_labels,
+        &calibration_row_refs,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+        &evaluation_raw_probabilities,
+        &evaluation_row_refs,
+        calibration_candidate,
+    );
+
+    assert!(calibration.is_none());
+    assert_eq!(evaluation_probabilities, evaluation_raw_probabilities);
 }
 
 #[test]
@@ -541,6 +623,72 @@ fn regime_support_adjustment_repairs_sparse_20d_prewarning_hits_at_extreme_thres
     assert!(adjusted_threshold < base_threshold);
     assert!(adjusted_threshold <= 0.84);
     assert!(early_warning_hit_count(adjusted_threshold) >= 8);
+}
+
+#[test]
+fn threshold_diagnostics_rejects_sparse_positive_window_support_as_usable() {
+    let mut rows = Vec::new();
+    let mut probabilities = Vec::new();
+    for index in 0..10 {
+        rows.push(forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+            1,
+            ProbabilityTrainingRegime::PositiveWindow,
+        ));
+        probabilities.push(if index < 2 { 0.91 } else { 0.42 });
+    }
+    for index in 0..10 {
+        rows.push(forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+            0,
+            ProbabilityTrainingRegime::PreWarningBuffer,
+        ));
+        probabilities.push(if index < 4 { 0.92 } else { 0.40 });
+    }
+    for _ in 0..20 {
+        rows.push(forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+            0,
+            ProbabilityTrainingRegime::Normal,
+        ));
+        probabilities.push(0.30);
+    }
+
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    let labels = rows
+        .iter()
+        .map(|row| row.label_20d as f64)
+        .collect::<Vec<_>>();
+    let calibration_selection = ProbabilityCalibrationSelection {
+        rows: row_refs.clone(),
+        eligible_row_count: row_refs.len(),
+        eligible_positive_count: labels.iter().filter(|label| **label >= 0.5).count(),
+        eligible_negative_count: labels.iter().filter(|label| **label < 0.5).count(),
+        used_full_split_fallback: false,
+    };
+    let threshold_selection = ProbabilityThresholdSelection {
+        rows: row_refs,
+        probabilities,
+        labels,
+        used_full_split_fallback: false,
+    };
+    let diagnostics =
+        build_probability_threshold_diagnostics(ProbabilityThresholdDiagnosticsInput {
+            full_calibration_rows: &rows,
+            calibration_selection: &calibration_selection,
+            threshold_selection: &threshold_selection,
+            horizon_days: 20,
+            label_mode: ProbabilityTargetLabelMode::ForwardCrisis,
+            base_threshold: 0.90,
+            final_threshold: 0.90,
+        });
+
+    assert_eq!(diagnostics.base_summary.early_warning_hit_rate, 0.40);
+    assert_eq!(diagnostics.base_summary.positive_window_hit_rate, 0.20);
+    assert_eq!(
+        diagnostics.repair_reason,
+        "base_hits_early_warning_but_positive_window_support_is_too_weak"
+    );
 }
 
 #[test]

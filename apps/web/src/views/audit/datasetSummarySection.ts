@@ -108,28 +108,34 @@ export function buildDatasetSummarySection(audit: ResearchAuditResponse) {
 
   const latestDatasetSummaryMetrics: MetricItem[] = [
     {
-      label: "已导出数据集",
-      value: `${latestDatasetSummaries.length}/3`
+      label: "已导出数据集（审计）",
+      value: `${latestDatasetSummaries.length}/3`,
+      hint: "已落库/导出的 formal dataset evidence，不代表模型已经完成训练或上线。"
     },
     {
-      label: "总样本行",
-      value: `${latestDatasetSummaries.reduce((sum, row) => sum + row.dataset.row_count, 0)}`
+      label: "总样本行（历史）",
+      value: `${latestDatasetSummaries.reduce((sum, row) => sum + row.dataset.row_count, 0)}`,
+      hint: "三套历史 dataset 的行数合计，不是当前线上模型训练样本承诺。"
     },
     {
-      label: "覆盖场景",
-      value: `${uniqueScenarioIds.size}`
+      label: "覆盖场景（目录）",
+      value: `${uniqueScenarioIds.size}`,
+      hint: "历史场景目录覆盖数，不是当前风险事件数。"
     },
     {
-      label: "主训练可用",
-      value: `${uniqueMainScenarioIds.size}`
+      label: "主训练可用（目录）",
+      value: `${uniqueMainScenarioIds.size}`,
+      hint: "目录层判断的可用场景数，不等于 candidate 已通过 release review。"
     },
     {
-      label: "扩展 / Protected",
-      value: `${uniqueExtensionScenarioIds.size} / ${uniqueProtectedScenarioIds.size}`
+      label: "扩展 / Protected（目录）",
+      value: `${uniqueExtensionScenarioIds.size} / ${uniqueProtectedScenarioIds.size}`,
+      hint: "扩展训练和 protected stress 场景目录数，不是自动放行条件。"
     },
     {
-      label: "历史类比可用",
-      value: `${uniqueAnalogScenarioIds.size}`
+      label: "历史类比可用（目录）",
+      value: `${uniqueAnalogScenarioIds.size}`,
+      hint: "可用于类比的历史场景数，不是当前危机概率。"
     }
   ];
 
@@ -178,8 +184,8 @@ export function buildDatasetSummarySection(audit: ResearchAuditResponse) {
         `生成: ${formatDateTime(summary.generated_at)}`
       ],
       splitSummary: splitCounts.join(" / "),
-      labelSummary: `5d ${totalPositive5d} / 20d ${totalPositive20d} / 60d ${totalPositive60d}；prepare ${totalPrepare} / hedge ${totalHedge}；protected ${totalProtected}`,
-      coverageSummary: `${summary.coverage_catalog.aligned_scenario_count}/${summary.coverage_catalog.total_scenario_count} 场景 / ${datasetIntentLabel(summary.coverage_catalog.dataset_intent)}`,
+      labelSummary: `历史标签 5d ${totalPositive5d} / 20d ${totalPositive20d} / 60d ${totalPositive60d}；动作标签 prepare ${totalPrepare} / hedge ${totalHedge}；protected ${totalProtected}`,
+      coverageSummary: `目录覆盖 ${summary.coverage_catalog.aligned_scenario_count}/${summary.coverage_catalog.total_scenario_count} 场景 / ${datasetIntentLabel(summary.coverage_catalog.dataset_intent)}`,
       coverageDetails: [
         `主训练 ${summary.coverage_catalog.main_training_eligible_count} / 扩展 ${summary.coverage_catalog.extension_training_eligible_count} / protected ${summary.coverage_catalog.protected_stress_eligible_count}`,
         `历史类比 ${summary.coverage_catalog.historical_analog_eligible_count}`,
@@ -197,7 +203,7 @@ export function buildDatasetSummarySection(audit: ResearchAuditResponse) {
         datasetLabel: datasetLabel(summary.dataset.dataset_id),
         datasetDetails: [
           summary.dataset.dataset_version,
-          `rows ${summary.dataset.row_count}`,
+          `历史行数 ${summary.dataset.row_count}`,
           releaseReviewScenarioCoveragePitLabel(row.coverage_point_in_time_mode ?? "best_effort")
         ],
         scenarioLabel: row.label ?? row.scenario_id,
@@ -217,11 +223,11 @@ export function buildDatasetSummarySection(audit: ResearchAuditResponse) {
             : "未登记推荐角色",
           row.episode_template_id ? `episode: ${row.episode_template_id}` : null
         ].filter((item): item is string => item !== null),
-        labelSummary: `horizon ${row.default_horizon_roles.join("/") || "—"}；主训练 ${boolSummary(
+        labelSummary: `训练用途 horizon ${row.default_horizon_roles.join("/") || "—"}；主训练 ${boolSummary(
           row.usable_for_main_training,
           "是"
         ) ?? "否"} / 扩展 ${boolSummary(row.usable_for_extension_training, "是") ?? "否"}`,
-        coverageSummary: `${row.coverage_grade ?? "未评级"} / ${releaseReviewScenarioCoveragePitLabel(
+        coverageSummary: `覆盖等级 ${row.coverage_grade ?? "未评级"} / ${releaseReviewScenarioCoveragePitLabel(
           row.coverage_point_in_time_mode ?? "best_effort"
         )}`,
         coverageDetails: [

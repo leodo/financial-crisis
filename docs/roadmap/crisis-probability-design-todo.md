@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-10
+最后更新：2026-06-11
 
 ## 1. 目的
 
@@ -27,18 +27,37 @@ MVP 当前判定：
 
 #### P0：数字可信 MVP
 
-- [x] 修复或降级 `20d` formal 概率异常偏冷问题；在通过 Go/No-Go 前，`5d / 20d / 60d` 只能作为审计读数，不能参与 MVP 主结论。
-  - 2026-06-10：已完成 MVP/UI 降级，formal 概率 `audit_only` 时三期限都不再输出风险时距或触线倍数；真正的 `20d` 模型本体修复仍保留在 P2。
+- [x] 修复或降级 `20d` formal 概率异常偏冷问题；在通过 Go/No-Go 前，`5d / 20d / 60d` 只能作为参考值，不能参与 MVP 主结论。
+  - 2026-06-10：已完成 MVP/UI 降级，formal 概率 `reference_only` 时三期限都不再输出风险时距或触线倍数；真正的 `20d` 模型本体修复仍保留在 P2。
+  - 2026-06-11：已确认当前页面值 `0.057% / 3% / 8%` 来自 API `runtime_final_probability`，模型原始 `final_probability` 仍是 `0.057% / 0.0043% / 0.04%`；这不是前端渲染 bug，而是正式模型偏冷 + 运行口径参考值并存。
+  - 2026-06-11：已修正概率轨迹和风险时距文案，不再把页面运行口径 `20d=3%` 误写成“明显低于 5d=0.057%”；现在页面明确拆成“页面当前显示的运行口径参考值”和“模型原始输出”，并在 `just mvp-regression` 中加入防回归检查。
 - [x] 重做“离风险还有多远”的页面口径：不再显示容易误读的 `0` 或极小值，而是展示离 `观察 / 准备 / 对冲 / 防守` 下一阶段还差哪些证据。
   - 2026-06-10：audit-only 状态下改为展示“下一阶段还差：证据共振”、阻断项和下一步，而不是机械完成度、差值或放大倍数。
+  - 2026-06-11：首屏四问在 `reference_only` 下不再把原模型桶 `常态` 作为“离风险多远”的主答案；当前改为 `未进入动作窗口`，并说明不按 `5d / 20d / 60d` 低概率判断“风险很远”。`just mvp-regression` 已加入渲染防回归。
 - [x] 拆分“结论把握度”：至少区分数据新鲜度、模型可信度、当前结论可信度，避免长期固定数值让用户误以为系统很确定。
   - 2026-06-10：首页已拆成“结论可信度 / 模型可信度 / 数据新鲜度 / 动作升级证据”。
-- [x] 给概率轨迹增加鼠标悬停细节，显示日期、`5d / 20d / 60d`、posture、时距桶和数据来源；当 formal 概率为 `audit_only` 时必须明确标注。
-  - 2026-06-10：tooltip 明细已补日期、时距桶、posture、raw/formal 对照、较前点变化和历史来源；概率轨迹保留 audit-only 复核说明。
-- [x] 增加 MVP 回归检查，防止异常 formal 概率、误导性时距数字或缺失 audit-only 文案再次进入首页。
-  - 2026-06-10：`just mvp-regression` 已增加 20d 偏冷时必须降级为 `audit_only`、必须暴露语义异常 blocker、必须防止“风险已经远离”误读的检查；本轮另做浏览器 DOM 复核确认首页不再显示机械完成度和触线倍数。
-- [x] 给首页增加“当前数字可信度清单”，把主结论、正式概率审计态、USDJPY、数据新鲜度和持仓预算分开标注。
-  - 2026-06-10：页面首屏已增加数字审计清单；`just mvp-regression` 同步禁止“机械完成度 / 触线仍需 / 还差多少倍”等容易误读的 UI 文案回归。
+  - 2026-06-11：顶部状态与 MVP 证据继续拆分 `关键数据覆盖 A` 和 `生产源健康降级 2`；`A` 只表示当前关键指标覆盖/新鲜度，不再写成容易误解为全部源健康的 `数据可信度 A`。来源页同步改为 `关键覆盖等级` 与 `源健康降级` 两个口径。
+- [x] 给概率轨迹增加鼠标悬停细节，显示日期、`5d / 20d / 60d`、posture、时距桶和数据来源；当 formal 概率为 `reference_only` 时必须明确标注。
+  - 2026-06-10：tooltip 明细已补日期、时距桶、posture、raw/formal 对照、较前点变化和历史来源；概率轨迹保留 reference-only 复核说明。
+- [x] 增加 MVP 回归检查，防止异常 formal 概率、误导性时距数字或缺失 reference-only 文案再次进入首页。
+  - 2026-06-10：`just mvp-regression` 已增加 20d 偏冷时必须降级为 `reference_only`、必须暴露语义异常 blocker、必须防止“风险已经远离”误读的检查；本轮另做浏览器 DOM 复核确认首页不再显示机械完成度和触线倍数。
+- [x] 给首页增加“当前数字说明”，把主结论、正式概率参考态、USDJPY、数据新鲜度和持仓预算分开标注。
+  - 2026-06-10：页面首屏已增加数字说明清单；`just mvp-regression` 同步禁止“机械完成度 / 触线仍需 / 还差多少倍”等容易误读的 UI 文案回归。
+  - 2026-06-11：`当前数字说明` 已补 `规则层风险分数 · MVP 主输入`，当前页面浏览器验收显示 `总风险 36.0 / 结构 38.1 / 触发 33.5 / 外部 28.4`，并明确标注来源 `API scores / scoring engine`、单位 `0-100 分`、状态“规则层主结论输入”，以及“不是危机发生概率”。
+  - 2026-06-11：`当前数字说明` 继续补齐 `事件确认 · 安静` 与 `日元套息放大器 · 平稳` 两行；当前页面浏览器验收显示 `确认分 18.0 / 近期事件`、`放大器 16.1 / 融资压力 34.7 / VIX 联动 38.6`，并明确二者都是 `0-100 分` 辅助输入，不是危机概率、自动动作指令或日本危机预测。
+  - 2026-06-11：`当前数字说明` 已继续补齐 `结论可信度 · 参考上限 45%` 和 `动作升级证据 · 仅数据底座`；当前页面浏览器验收显示 `模型 参考 35% / 数据 新鲜 100% / 事件 18%`、`总分 10% / 数据底座 10% / 风险广度 0% / 压力 0%`，并明确可靠性和动作证据都不是危机概率。
+  - 2026-06-11：排查到事件层 `quiet/安静 + 18.0` 仍显示“已确认信号”的误导来源：后端 `confirmed_signals` 字段实际承载最近 alert trigger reason，不等于当前事件状态已经 confirmed。前端已改成 quiet/watching 时显示 `近期观察信号`，confirmed/escalating 时才显示 `已确认信号`；当前浏览器验收确认页面不再出现旧标签。
+  - 2026-06-11：事件层记录继续补齐日期和等级；当前浏览器验收显示 `2026-05-21 · L1 观察`、`2026-05-15 · L1 观察`，避免用户把 `18.0 / 近期事件 2 条` 误读成今天刚发生的确认升级。
+  - 2026-06-11：排查到 JPY carry 卡片 `20d 波动 0.001` 的误导来源：后端返回的是 USDJPY 20 日窗口日变化率标准差的小数口径。页面已改为 `20d 日收益波动 0.1%` 并在数字说明中同步解释，避免裸小数看起来像坏数据。
+  - 2026-06-11：排查到 MVP 主证据 `日元套息 Quiet 16.1` 的误导来源：API `mvp_state` 使用 Rust enum debug 文案拼接用户可见字符串。后端已改为中文状态与单位，当前运行 API 和浏览器验收均显示 `事件确认 18.0 分，日元套息 平稳 16.1 分`。
+  - 2026-06-11：排查到 top drivers / Why Now 中仍有派生评分输入被写成“当前信号”的风险。SOFR 变化幅度与 Case-Shiller `12m同比` 现在都会显示为 `评分输入`，并同时给出真实最新水平；`mvp-regression` 已加入 SOFR 与 Case-Shiller 防回归检查，避免把变化、同比、振幅误读成指标当前 level。
+  - 2026-06-11：继续收敛历史类比与滚动审计数字显示。历史类比相似度改为 `0-100` 结构参照分，并明确提前天数不是“当前还剩多少天”；滚动审计指标改为 `动作信号精度（历史）` 等历史回放口径，并说明这些点/区间不是当前正式概率实时准确率。`mvp-regression` 已加入渲染防回归。
+  - 2026-06-11：回测页首屏 headline 继续补口径：`动作命中` 改为 `动作命中（场景回测）`，`动作信号/纯误报区间` 改为历史回放点/区间，说明这些数不是今天新增事件数，也不是当前正式概率准确率。
+  - 2026-06-11：指标细项页同步拆分 `最近读数` 与 `评分输入`。变化幅度、同比、振幅等派生口径现在会标注“不是当前水平，当前水平请看左侧最近读数”，避免把 SOFR 变化、USDJPY 20d 振幅或 Case-Shiller 同比误读成真实 level。
+  - 2026-06-11：指标细项页继续把最后一列从泛化的 `数据质量` 改为 `指标级质量`；单元格显示 `单项观测质量分` 并明确 `不是整体结论可信度`，避免把某个指标的观测/源证据误读成面板总可信度。
+  - 2026-06-11：来源页与方法页继续拆数字口径。来源页 `质量` 改为 `源健康分`，说明它只表示抓取/源状态，不等同于当前结论可信度；方法页明确 `release_status=healthy` 只是服务和 bundle 可加载，PIT 历史点数不是训练样本数或 Go/No-Go 次数，运行阈值百分比不是当前 5d/20d/60d 概率或风险差距。
+  - 2026-06-11：版本核对页继续补审计口径。`登记版本数`、`当前/已批准`、`快照覆盖`、`PIT 快照支撑` 和 `服务状态` 都明确为 registry / replay / runtime snapshot / history evidence 审计数字，不代表候选可上线、Go/No-Go 通过或当前正式概率已恢复主结论。
+  - 2026-06-11：版本核对页继续清理专项审计数字。`Runtime Contribution` 的 `触线完成度` 改为 `入线占比（审计）`，Formal Dataset / Residual Workstream / 2022 Rate Shock 的行数、覆盖和命中都标成历史 dataset evidence；Funding Stress、Lead-Time、Prewarning Gap、Cooldown 在没有对应工件时只显示缺工件状态，不伪造正式数字。
 
 #### P1：决策面板 MVP
 
@@ -58,6 +77,9 @@ MVP 当前判定：
 
 #### P2：正式概率模型
 
+- [x] 在 release review guardrail 中拒绝中期阈值高于正样本窗口均值的候选，避免 `20d/60d` 阈值看似有 early-warning 支持、但实际 positive-window 过不了进入线。
+  - 2026-06-11：`us_formal_family_hybrid_20260610T152412` 的 fast review 已新增 blocker：`20d threshold 87.8% > positive_window avg 37.5%`、`60d threshold 89.5% > positive_window avg 50.4%`，并继续拒绝 `60d cooldown_bleed`。
+  - 2026-06-11：阈值诊断已前移复用完整 forward-crisis 支持判断；`pre-warning` 有零星命中但 `positive-window` 命中太弱时，会标记为 `base_hits_early_warning_but_positive_window_support_is_too_weak`，不再误写成 `base_threshold_has_usable_early_warning_gap`。
 - [ ] 在 MVP 页面数字可信之前，不把 formal 模型作为首页主结论。
 - [ ] 后续再修 `20d` 当前态过冷、`60d` 背景值、样本稀疏、标签和校准冲突。
 - [ ] 只有 release review 与 Go/No-Go 通过后，formal 概率才恢复为主决策输入。
@@ -70,21 +92,22 @@ MVP 当前判定：
 
 - [x] 把关键指标 freshness guard 独立成一个可回滚提交。
 - [x] 每次触碰首页结论链路后，至少运行 `cargo fmt --all -- --check`、相关 Rust 单测、`just mvp-regression`、`just web-build`、`just artifact-status`、`just hotspot-status`。
-- [x] 维护“每个页面关键数字从哪里来”的审计清单；没有来源、单位、日期和状态的数字不进入首页。
-  - 2026-06-10：`当前数字可信度清单` 已覆盖 MVP 首屏关键数字，并展示来源、单位、日期和状态；`just mvp-regression` 已加入静态防回归检查。
+- [x] 维护“每个页面关键数字从哪里来”的说明清单；没有来源、单位、日期和状态的数字不进入首页。
+  - 2026-06-10：`当前数字说明` 已覆盖 MVP 首屏关键数字，并展示来源、单位、日期和状态；`just mvp-regression` 已加入静态防回归检查。
 
 #### Iteration 1：页面数字可信
 
-- [x] 首页 `audit_only` 时，主标题、数字卡、风险时距、概率轨迹和动作建议必须一致地说明：formal 概率只作为审计读数，不是主结论。
+- [x] 首页 `reference_only` 时，主标题、数字卡、风险时距、概率轨迹和动作建议必须一致地说明：formal 概率只作为参考值，不是主结论。
   - 2026-06-10：已统一使用 `mvpProbabilityInputIsAuditOnly`，覆盖首页加载态、结论卡、风险时距、动作边界、概率轨迹和方法页。
+  - 2026-06-11：可见页面文案已统一改为“正式概率”，避免继续出现 `formal 概率` 这类中英混排旧词；当前浏览器验收确认首屏参考态提示、概率轨迹说明和旧词禁止项均通过。
 - [x] `release_status=healthy` 只能说明服务和 bundle 可加载，不能被展示成“模型结论可信”；页面必须同时展示 `probability_input_status`。
-  - 2026-06-10：结论可信度与模型可信度已拆开；服务状态显示为“运行正常”，正式概率状态显示为“审计上限 / 待审计”，不再把 release healthy 解释成模型结论高可信。
+  - 2026-06-10：结论可信度与模型可信度已拆开；服务状态显示为“运行正常”，正式概率状态显示为“参考值 / 参考输入”，不再把 release healthy 解释成模型结论高可信。
 - [x] 低位小概率不得被舍入成容易误读的 `0`；必须显示精确百分比、基点和接口原始值。
   - 2026-06-10：正式概率审计行展示精确百分比、bp 和接口小数，例如 `20d 0.0067%（0.67 bp）/ raw 0.000067`。
 - [x] `20d` 偏冷、USDJPY tail 方向异常、formal 概率被降级时，UI 必须给出人能看懂的阻断原因。
   - 2026-06-10：概率轨迹、主结论和数字审计清单均说明 `20d` 偏冷与 USDJPY tail 方向异常，正式概率只保留为模型审计证据。
-- [x] 结论可信度必须被 `audit_only` 和关键数据缺失/陈旧封顶，不能因为数据覆盖高就显示高可信。
-  - 2026-06-10：`audit_only` 下结论可信度封顶为 `45%`；关键指标缺失/陈旧由后端 freshness guard 降级数据可信度。
+- [x] 结论可信度必须被 `reference_only` 和关键数据缺失/陈旧封顶，不能因为数据覆盖高就显示高可信。
+  - 2026-06-10：`reference_only` 下结论可信度封顶为 `45%`；关键指标缺失/陈旧由后端 freshness guard 降级数据可信度。
 
 #### Iteration 2：决策面板 MVP
 
@@ -1094,10 +1117,21 @@ MVP 当前判定：
      - 下一步优先级应转向 `curve/fed-funds interaction` 的 context gating、`60d` feature transfer/threshold 语义修复，以及 episode-native 动作头质量，而不是激活 `043016` 或继续在运行时硬抬概率。
    - `2026-06-10` 已继续重训 review-only 候选 `us_formal_family_hybrid_20260610T053555`，验证新增 `systemic_credit` trigger/external context 下限：
      - 新增特征和训练护栏生效，semantics audit 显示 USDJPY 高位 tail、signed 20d change、trigger-change interaction 的负向/错误语义已从 candidate 中清掉；
-     - 当前点 runtime contribution audit 显示 `20d` 从 baseline `0.0067%` 升到 candidate `59.9069%`，进一步确认用户在页面看到的 `20d` 贴底直线是 active release 语义缺陷，不是前端折线渲染 bug；
-     - 候选仍为 `no_go_offline`，不能激活：regional banks `20d` positive-window hit rate `80.0% -> 75.0%`，`20d` hits `46 -> 30`，runtime floor hit count `91 -> 85`，且 `60d` positive-window avg probability 只保留 `4.3%`；
-     - Threshold 仍是硬阻塞：candidate `20d` threshold 为 `87.80%`，regional positive-window avg p20d `85.02%` 仍低于 threshold；February false-positive max p20d `89.59%` 是 regional avg 的 `105.4%`，July false-positive max p20d `82.90%` 是 regional avg 的 `97.5%`；
-     - 结论：`systemic_credit` context transfer 是必要护栏，但仍不能解决正例/误报耦合和 `60d cold_across_all_regimes`。下一步必须做 `curve/fed-funds interaction` context gating、`60d` feature transfer/threshold 语义修复和 episode-native actionability，而不是发布该候选或简单下调 `20d` threshold。
+   - 当前点 runtime contribution audit 显示 `20d` 从 baseline `0.0067%` 升到 candidate `59.9069%`，进一步确认用户在页面看到的 `20d` 贴底直线是 active release 语义缺陷，不是前端折线渲染 bug；
+   - 候选仍为 `no_go_offline`，不能激活：regional banks `20d` positive-window hit rate `80.0% -> 75.0%`，`20d` hits `46 -> 30`，runtime floor hit count `91 -> 85`，且 `60d` positive-window avg probability 只保留 `4.3%`；
+   - Threshold 仍是硬阻塞：candidate `20d` threshold 为 `87.80%`，regional positive-window avg p20d `85.02%` 仍低于 threshold；February false-positive max p20d `89.59%` 是 regional avg 的 `105.4%`，July false-positive max p20d `82.90%` 是 regional avg 的 `97.5%`；
+   - `2026-06-10` 继续对 bundle evaluation / runtime review / scenario-pack audit 交叉核对后，确认 `053555` 的更深层失败模式不是“当前点太冷”，而是 `60d` 校准层把几乎所有 regime 都压到约 `2%`：
+     - baseline `60d` bundle `calibration=null`，且 `positive_window_avg_probability=37.22%`、diagnosis=`usable_early_warning_separation`；候选 `053555` 则新增 `calibration(beta=-3.6179)`，bundle evaluation 变成 `normal=2.11% / positive_window=1.99% / cooldown=1.83%`，diagnosis=`cold_across_all_regimes`；
+     - runtime review 同步验证这不是单个场景偶发：`60d` 的 `raw_gap_vs_normal` 仍为正，但 `calibrated_gap_vs_normal` 在 `in_crisis / cooldown` 都转成负值，`positive_window` 只剩 `+0.039pp`，说明 `60d` 问题已从 raw head/feature transfer 进一步收敛到 calibration collapse；
+     - 结论：下一步若继续修 `053555` 这条线，优先级应是 `60d calibration / monotonicity / regime gap retention`，而不是继续只做 USDJPY 语义或再单点下调 `20d threshold`；
+   - 结论：`systemic_credit` context transfer 是必要护栏，但仍不能解决正例/误报耦合和 `60d cold_across_all_regimes`。下一步必须做 `curve/fed-funds interaction` context gating、`60d` feature transfer/threshold 语义修复和 episode-native actionability，而不是发布该候选或简单下调 `20d` threshold。
+   - `2026-06-10` 已新增 `just release-triage <baseline_release_id>` / `scripts/release-candidate-triage.mjs`：
+     - 自动汇总最近 `candidate-screen` + `default release-review` + bundle regime diagnosis，直接输出各候选的 `20d threshold blockers`、`60d cold_across_all_regimes`、动作精度、timely warning 与 runtime floor 回归；
+     - 以当前 active `us_formal_family_hybrid_20260606T112926` 为 baseline 的最近 6 个候选实测全部为 `no_go_offline`；最接近可用的仍是 `053555`，但它也同时命中 `regional_banks continuity regression`、`threshold_lowering_unsafe` 与 `60d calibration collapse`，因此不能把“最近有很多 approved release”误读成“有一版可以直接切换”。
+   - `2026-06-10` 已在 `apps/worker/src/probability/threshold/calibration.rs` 前移一层 20d/60d 校准安全门禁：
+     - `select_probability_calibration_strategy` 现在除了看 calibration split 本身，还会用 evaluation split 复核校准后的 regime support；
+     - 如果校准会把 `positive_window` 压到不高于 `normal`、把正的 `positive_window_gap_vs_normal` 压成负值，或把 `usable_early_warning_separation` 压成 `cold_across_all_regimes`，则直接丢弃该 calibration，保留 raw head；
+     - 已新增 `probability_calibration_strategy_rejects_calibration_that_crushes_evaluation_regime_support` 单测，并与现有 inversion / flattening 测试一起通过；这一步不能单独修好当前 active release，但可以防止后续候选再把明显坏的 60d 校准静默写进 bundle。
    - `2026-06-10` 补充候选审计运行治理：
      - `formal-candidate-screen` 与 `formal-candidate-runtime-contribution-audit` 都会临时切换 API active release；这些脚本现在通过 `scripts/review-active-release-lock.ps1` 串行化，避免并发审计时互相覆盖恢复状态，把 review-only No-Go candidate 留在线上；
      - 本轮已把 active release 恢复为 `us_formal_family_hybrid_20260606T112926` 并 reload API；页面继续按“模型待审计”展示 `5d / 20d / 60d` 极小正式概率，不把这些小数解释成风险很远。
@@ -1127,12 +1161,14 @@ MVP 当前判定：
 
 用户复核后，当前优先级从“继续扩大 formal candidate 研究”临时收敛为“先交付不误导用户的最小可用决策面板”：
 
-- [x] API 增加 `mvp_risk_state`，在 formal 概率命中 USDJPY 高位 tail 语义异常时，把概率状态降级为 `audit_only`，主结论改由保守规则层输出 `observe / prepare / hedge / defend`。
-- [x] API `summary` 在 `audit_only` 时不再输出“当前仍偏常态区间”作为主结论，而是明确写成 “MVP 风险状态 + 正式概率审计读数”。
-- [x] 决策面板首屏、启动占位、信号层和“离风险还有多远”模块在概率异常时优先展示 `mvp_risk_state.label / summary`，正式 5d/20d/60d 只保留为模型审计证据。
+- [x] API 增加 `mvp_risk_state`，在 formal 概率命中 USDJPY 高位 tail 语义异常时，把概率状态降级为 `reference_only`，主结论改由保守规则层输出 `observe / prepare / hedge / defend`。
+- [x] API `summary` 在 `reference_only` 时不再输出“当前仍偏常态区间”作为主结论，而是明确写成 “MVP 风险状态 + 正式概率参考值”。
+- [x] 决策面板首屏、启动占位、信号层和“离风险还有多远”模块在概率异常时优先展示 `mvp_risk_state.label / summary`，正式 5d/20d/60d 只保留为参考输入和模型链路复核证据。
 - [x] “离风险还有多远”在异常时禁用机械触线距离，避免把 active release 偏冷误读成风险很远。
-- [x] 已完成浏览器验收：首屏显示 `观察为主（概率待审计）`，概率卡显示 `模型待审计 / 审计读数`，风险时距模块显示 `MVP 决策口径`。
-- [x] 正式模型研究恢复前，页面主结论、API summary、warmup 面板和方法说明页都不能把 `audit_only` 概率当成可用危机概率；本轮已完成这些入口的口径修正。
+- [x] 已完成浏览器验收：首屏显示 `观察为主（概率参考）`，概率卡显示 `运行口径参考概率 / 模型原始输出`，风险时距模块显示 `MVP 风险状态`。
+- [x] 正式模型研究恢复前，页面主结论、API summary、warmup 面板和方法说明页都不能把 `reference_only` 概率当成可用危机概率；本轮已完成这些入口的口径修正。
+- [x] 2026-06-11：release review guard 已新增真实候选 blocker，拒绝 `20d/60d decision_threshold > positive_window_avg_probability`；`152412` 已被 fast review 明确判为 `guard_passed=false`，不能激活。
+- [x] 2026-06-11：阈值诊断链路已补 sparse positive-window support 回归测试；后续新 bundle 若只靠少量 pre-warning 命中支撑高阈值，会在训练诊断阶段暴露为模型 blocker，而不是等到页面数字被用户发现不合理。
 
 ### 6.4.3 MVP 迭代式收敛计划
 
@@ -1141,8 +1177,8 @@ MVP 当前判定：
 阶段性判断：
 
 - 当前未偏离目标，但前一阶段过早进入正式概率候选研究，导致页面上出现“数字很精细、但主结论不可用”的风险；后续迭代顺序必须改为先保证页面数字可信、解释不误导，再继续模型升级。
-- 当前最终成品完成度约 `65%`，最小可用版完成度约 `85%`：免费数据、SQLite、本地面板、历史类比、数据 lineage、MVP 审计态和数字可信清单已经可用；正式概率模型、动作模型、自动刷新与告警仍未达到可直接辅助大仓位决策的标准。
-- 在 `audit_only` 状态解除前，所有 5d/20d/60d 概率只能作为模型审计读数，不能作为“还有几天/几周离场”的主结论。
+- 当前最终成品完成度约 `65%`，最小可用版完成度约 `85%`：免费数据、SQLite、本地面板、历史类比、数据 lineage、MVP 参考态和数字说明清单已经可用；正式概率模型、动作模型、自动刷新与告警仍未达到可直接辅助大仓位决策的标准。
+- 在 `reference_only` 状态解除前，所有 5d/20d/60d 概率只能作为模型参考值，不能作为“还有几天/几周离场”的主结论。
 
 后续按以下迭代推进：
 
@@ -1151,24 +1187,39 @@ MVP 当前判定：
    - [x] 正式概率异常时，主结论切到 `mvp_risk_state`；
    - [x] “离风险还有多远”在模型异常时不再输出机械触线距离；
    - [~] 对首屏所有核心数字建立 snapshot/UI 回归测试，防止以后再次出现 0、旧价、极小比例被解释成低风险。
-     - 已新增 `just mvp-regression`，对运行中的本地 API 校验 SQLite 模式、USDJPY 与 JPY carry 一致性、近端关键指标存在性，以及 USDJPY tail 语义异常时必须进入 `audit_only`；
-     - 2026-06-10：`just mvp-regression` 已继续补强仓位预算和用户偏好约束，要求动作建议必须标记为系统预算、禁止自动执行、要求人工确认，并在 `audit_only` 摘要里明确“审计读数不能解释成风险已经远离”；
+     - 已新增 `just mvp-regression`，对运行中的本地 API 校验 SQLite 模式、USDJPY 与 JPY carry 一致性、近端关键指标存在性，以及 USDJPY tail 语义异常时必须进入 `reference_only`；
+     - 2026-06-10：`just mvp-regression` 已继续补强仓位预算和用户偏好约束，要求动作建议必须标记为系统预算、禁止自动执行、要求人工确认，并在 `reference_only` 摘要里明确“参考值不能解释成风险已经远离”；
      - 2026-06-10：`just mvp-regression` 已加入关键数字清单必须包含来源、单位、日期和状态的静态检查；本轮已人工浏览器 DOM 复核实际渲染。
-     - 仍可补自动化浏览器/DOM 级回归，覆盖“危机先验（审计）”“MVP 决策口径”和首屏文本是否实际渲染。
+     - 2026-06-11：`just mvp-regression` 已补 headless rendered DOM 检查，当前本地实测 `rendered_ui=checked`；会验证首页实际渲染包含 `观察为主（概率参考）`、`当前数字说明`、`0.057% / 3% / 8%`，并禁止旧的 `审计读数 / 待审计 / 机械完成度 / 触线仍需 / 还差多少倍` 回归。
+     - 2026-06-11：rendered DOM 检查继续补强为从 API `scores` 动态拼出规则层分数摘要，并要求页面实际渲染 `总风险 / 结构 / 触发 / 外部`、`API scores / scoring engine`、`0-100 分` 和“不是危机发生概率”，避免这组 MVP 主输入只停留在代码静态文案里。
+     - 2026-06-11：rendered DOM 检查已继续覆盖 `event_assessment` 和 `jpy_carry`，从 API 当前值动态验证事件确认摘要、JPY carry 摘要和美日短端利差，并要求页面出现 `API event_assessment / event rules`、`API jpy_carry / key indicators`、“不是自动动作指令”和“不是在预测日本危机”等解释。
+     - 2026-06-11：rendered DOM 检查已继续覆盖 `decisionReliability` 与 `action_evidence`，动态验证结论可信度、模型可信度、数据新鲜度、事件确认和动作证据拆解，并要求页面出现“可靠性，不是概率”、`API action_evidence / scoring engine` 和“不是模型结论置信概率”。
+     - 2026-06-11：rendered DOM 检查已加入事件状态标签防回归：当 `event_assessment.state` 不是 confirmed/escalating 时，页面必须显示 `近期观察信号`，并禁止旧的 `已确认信号` 标签回归。
+     - 2026-06-11：rendered DOM 检查已加入事件日期/等级防回归：当 API 返回 `recent_events` 时，页面必须渲染首条事件的 `triggered_as_of_date` 和 `level`，避免事件分数没有时间锚点。
+     - 2026-06-11：rendered DOM 检查已加入 JPY carry 20d 波动口径防回归：要求页面显示 `20d 日收益波动` 和百分比格式，防止 `0.001` 这类小数口径直接暴露给用户。
+     - 2026-06-11：API 单测和 `just mvp-regression` 已加入 MVP 主证据防回归，禁止 `日元套息 Quiet/Building/Stress/Unwind` 这类 Rust enum 名称进入用户可见主结论。
+     - 2026-06-11：`just mvp-regression` 已加入版本核对页专项审计防回归，要求 registry / replay / dataset / runtime contribution 数字明确标成审计或历史证据，并禁止 `触线完成度`、裸 `Action precision` 等容易被读成当前正式结论的标签回归。
 2. P1 最小可用决策面板：
    - [x] 把主结论固定为四档：观察 / 准备 / 对冲 / 防守，并在每档给出仓位动作边界；
-     - 2026-06-10：组合动作建议面板新增四档动作边界表，覆盖风险资产上限、现金目标、对冲覆盖、期权保护、杠杆上限和执行窗口；`audit_only` 时当前档按 MVP 规则层高亮，正式概率只保留为审计读数；
+     - 2026-06-10：组合动作建议面板新增四档动作边界表，覆盖风险资产上限、现金目标、对冲覆盖、期权保护、杠杆上限和执行窗口；`reference_only` 时当前档按 MVP 规则层高亮，正式概率只保留为参考值；
    - [x] 把当前状态与 1987、2000、2008、2011、2020、2022、2023 的历史前窗口放到同一张“相似度 + 领先天数 + 证据差异”视图；
      - 2026-06-10：后端历史类比不再只截断 Top 3，而是固定纳入 `1987 / 2000 / 2008 / 2011 / 2020 / 2022 / 2023` 七个美国核心场景并按相似度排序；前端历史类比面板已改成“历史场景 / 相似度 / 结构提前 / 动作提前 / 证据差异”表格；
    - [~] 对“结论把握度”重新定义为数据覆盖、模型状态、事件确认和历史相似度的组合，不再长期固定在一个难解释的数值。
      - 页面已改为“结论可靠性”，按数据覆盖 35%、模型状态 25%、事件确认 20%、历史相似度 10%、关键数据新鲜度 10% 汇总；
-     - `audit_only` 时可靠性分数会封顶并明确提示“不能解释成模型结论已经很有把握”；
+     - `reference_only` 时可靠性分数会封顶并明确提示“不能解释成模型结论已经很有把握”；
      - 后续仍可把该公式下沉到 API contract，避免前端长期独占解释口径。
 3. P1 免费数据可靠性：
    - [~] 固化日频刷新任务、失败重试和抓取日志；
      - 2026-06-10：已新增 `SqliteStore::load_ingestion_source_health_summaries`，按 source 汇总 `ingest_runs` 的最后成功抓取时间、最后成功数据期、总运行数、成功数、失败数和最后错误；
      - 2026-06-10：API SQLite runtime 的 `/api/sources` 已改用真实 `ingest_runs` 摘要，不再用当前时间伪装 `last_success_at`；有连续失败时会标为 `partial_failure` 并显示失败计数；
      - 2026-06-10：worker 新增 `cargo run -p fc-worker -- refresh status`，justfile 新增 `just refresh-status`，用于刷新后立刻核对免费数据是否真的成功落库；
+     - 2026-06-10：实测旧 `refresh-latest` 会在全量 FRED 图表 CSV 阶段超过 10 分钟并无法走到 Treasury/BOJ/SEC；默认 `just refresh-latest` 已改为 `--mvp-key-only --fast-lookback-days 14 --fred-chunk-days 15`，先刷新 VIX、信用利差、STLFSI、EFFR、SOFR 等 MVP 核心 FRED 小集合，再继续 Treasury/BOJ/SEC；全量 FRED + GDELT 保留在 `just refresh-latest-full`；
+     - 2026-06-10：新快速路径本地实测约 102 秒完成，FRED / Treasury / BOJ 均写入 run 级成功证据，USDJPY 更新到 `160.34 @ 2026-06-08`；当时 SEC EDGAR 因网络 body timeout 失败，但失败被记录且不再阻塞其它免费源刷新；
+     - 2026-06-11：`/api/sources` 已修正“无 ingest run 证据仍显示 healthy”的误导状态；生产源缺少 `last_success_at` 或 run 证据时会降为 `delayed` 并封顶质量分。这一步暴露出 World Bank 缺 run evidence、SEC EDGAR 最近刷新失败，而不是继续伪装成完全健康。
+     - 2026-06-11：已用真实 `cargo run -p fc-worker -- backfill world-bank --start 2024-01-01 --end 2026-06-11` 补齐 World Bank 年频慢变量的 `ingest_runs=success` 证据；输出确认 2025 值尚未发布，所以 `2024-12-31` 是当前官方年频最新期，不是坏数据。
+     - 2026-06-11：SEC EDGAR connector 已把 response body 读取超时也接到 curl fallback；随后 `backfill sec-edgar --start 2026-06-09 --end 2026-06-11` 成功写入 16 个 payload、12 条事件观测和 success run，避免偶发 body timeout 让整批日频事件源长期显示失败。
+     - 2026-06-11：当前 `/api/sources` 与浏览器实测显示 SEC EDGAR / World Bank 都恢复 `healthy`，数据可信度页摘要为 `源健康降级0`，首页顶栏不再显示 `生产源健康降级`；`just mvp-regression` 已改为按实时 `/api/sources` 动态验证降级数量，而不是硬编码 `2`。
+     - 2026-06-11：来源页继续拆清 `最新观测`、`观测滞后`、`抓取水位`、`最近成功刷新` 四个口径；SEC 这类事件源允许最新观测日与抓取水位不同，不再让用户误以为两个数字冲突。GDELT / yfinance 这类未进入正式刷新链路的原型源改显示 `未进入正式刷新监控`，来源页也不再用 `近实时` 暗示日频/原型源有生产级盘中刷新证据。
      - 后续仍需做系统级定时任务/cron 配置、失败自动重试策略和告警推送，本轮只完成“状态可见、不能误导”的 MVP 最小闭环。
    - [~] 对 FRED/BOJ/Treasury/SEC/GDELT/公开市场数据分别显示最新日期、免费可得性和替代源；
      - 已完成 sources 页状态标签补齐，支持 `partial_failure / failed / disabled` 的中文解释；

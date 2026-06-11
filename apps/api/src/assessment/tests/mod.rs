@@ -3,14 +3,16 @@ pub(super) use super::probability::{
     actionability_confidence_from_probability, fuse_actionability_confidence,
 };
 pub(super) use super::{
-    build_position_guidance, build_posture_guidance, build_summary, build_time_to_risk_bucket,
+    build_position_guidance, build_posture_guidance, build_summary,
+    build_synthetic_driver_explanation, build_time_to_risk_bucket, build_top_risk_drivers,
     ProbabilityActionThresholds,
 };
 pub(super) use chrono::{NaiveDate, Utc};
 pub(super) use fc_domain::{
     ActionabilityBlock, DataQualitySummary, DataTrust, DecisionPosture, EventAssessment,
-    EventConfirmationState, JpyCarrySnapshot, JpyCarryState, MvpProbabilityInputStatus,
-    MvpRiskState, MvpRiskStateCode, PostureGuidance, ProbabilityBlock, QualityGrade, RiskLevel,
+    EventConfirmationState, Frequency, Indicator, IndicatorRisk, JpyCarrySnapshot, JpyCarryState,
+    MvpProbabilityInputStatus, MvpRiskState, MvpRiskStateCode, Observation, PostureGuidance,
+    ProbabilityBlock, QualityGrade, RiskContributor, RiskDimension, RiskDirection, RiskLevel,
     RiskSnapshot, TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
 };
 

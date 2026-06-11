@@ -264,7 +264,7 @@ export default function AuditView({
                 <MetricGrid items={latestDatasetSummaryMetrics} className="audit-review-metrics" />
                 <ResponsiveTable
                   className="wide-table xwide-table"
-                  columns={["数据集", "时间范围 / 版本", "Split / 行数", "标签 / 动作", "目录 / 结论", "建议"]}
+                  columns={["数据集", "时间范围 / 版本", "Split / 历史行数", "历史标签 / 动作", "目录证据 / 结论", "建议"]}
                   note={auditContent.datasetSummaryTableNote}
                 >
                   {latestDatasetSummaryRows.map((row) => (
@@ -284,7 +284,7 @@ export default function AuditView({
                 {latestDatasetScenarioRows.length > 0 ? (
                   <ResponsiveTable
                     className="wide-table xwide-table"
-                    columns={["数据集", "场景", "时间窗 / 角色", "可用范围", "覆盖 / 免费主源", "主要缺口"]}
+                    columns={["数据集", "场景", "时间窗 / 角色", "历史可用范围", "目录覆盖 / 免费主源", "主要缺口"]}
                     note={auditContent.datasetScenarioTableNote}
                   >
                     {latestDatasetScenarioRows.map((row) => (

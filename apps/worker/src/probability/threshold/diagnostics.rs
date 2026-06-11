@@ -11,7 +11,7 @@ use super::{
     decision::{
         probability_prediction_count_ceiling_from_actual_positive_count,
         probability_threshold_decision_metrics, regime_aware_threshold_prediction_ceiling,
-        threshold_has_usable_early_warning_support,
+        threshold_has_usable_early_warning_support, threshold_has_usable_forward_crisis_support,
     },
     ProbabilityCalibrationRegimeEvidenceBucket, ProbabilityCalibrationSelection,
     ProbabilityThresholdDecisionMetrics, ProbabilityThresholdDiagnosticsInput,
@@ -83,8 +83,14 @@ pub(crate) fn build_probability_threshold_diagnostics(
         "not_applicable".to_string()
     } else if base_metrics.regime_hits.early_warning_row_count == 0 {
         "no_early_warning_rows".to_string()
-    } else if threshold_has_usable_early_warning_support(base_metrics.regime_hits, horizon_days) {
+    } else if threshold_has_usable_forward_crisis_support(base_metrics.regime_hits, horizon_days) {
         "base_threshold_has_usable_early_warning_gap".to_string()
+    } else if threshold_has_usable_early_warning_support(base_metrics.regime_hits, horizon_days)
+        && base_metrics.regime_hits.positive_window_hit_count == 0
+    {
+        "base_hits_early_warning_but_no_positive_window_hits".to_string()
+    } else if threshold_has_usable_early_warning_support(base_metrics.regime_hits, horizon_days) {
+        "base_hits_early_warning_but_positive_window_support_is_too_weak".to_string()
     } else if actual_positive_count == 0 {
         "no_positive_labels".to_string()
     } else if repair_applied

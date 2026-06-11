@@ -9,7 +9,11 @@ import {
   decisionReliabilityHint,
   decisionReliabilityLabel
 } from "./decisionReliability";
-import { currentMvpRiskState, mvpRiskStateDetail } from "./mvpRiskState";
+import {
+  currentMvpRiskState,
+  mvpRiskStateDetail,
+  mvpRiskStateDisplayLabel
+} from "./mvpRiskState";
 
 function actionEvidenceScore(assessment: AssessmentSnapshot): number {
   return assessment.action_evidence?.score ?? assessment.conviction_score;
@@ -81,7 +85,7 @@ export function buildHeroMetrics(assessment: AssessmentSnapshot): MetricItem[] {
   return [
     {
       label: "MVP 风险状态",
-      value: state.label,
+      value: mvpRiskStateDisplayLabel(state.label),
       hint: mvpRiskStateDetail(assessment),
       valueClassName: "metric-value-token"
     },

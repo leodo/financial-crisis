@@ -38,7 +38,8 @@ pub enum MvpRiskStateCode {
 #[serde(rename_all = "snake_case")]
 pub enum MvpProbabilityInputStatus {
     Usable,
-    AuditOnly,
+    #[serde(alias = "audit_only")]
+    ReferenceOnly,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

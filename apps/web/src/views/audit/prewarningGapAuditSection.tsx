@@ -85,20 +85,24 @@ export function PrewarningGapAuditSection({ audit }: { audit: ResearchAuditRespo
           value: formatDateTime(latestPrewarningGapAudit.generated_at)
         },
         {
-          label: "场景数",
-          value: `${latestPrewarningGapAudit.scenario_count}`
+          label: "历史场景数",
+          value: `${latestPrewarningGapAudit.scenario_count}`,
+          hint: "pre-warning gap 审计覆盖的历史场景数量，不是当前事件数量。"
         },
         {
-          label: "数据行",
-          value: `${totalRows}`
+          label: "历史数据行",
+          value: `${totalRows}`,
+          hint: "这些是历史场景 dataset 行数，不是当前训练样本承诺。"
         },
         {
-          label: "候选 20d 命中",
-          value: `${totalCandidate20dHits}`
+          label: "候选 20d 命中（历史）",
+          value: `${totalCandidate20dHits}`,
+          hint: "历史回放中越过离线线的点数，不是当前正式概率命中。"
         },
         {
-          label: "真缺运行信号",
-          value: `${trueRuntimeGapCount}`
+          label: "真缺运行信号（历史）",
+          value: `${trueRuntimeGapCount}`,
+          hint: "历史场景诊断分类数量，不代表当前没有风险信号。"
         }
       ]
     : [];
@@ -141,7 +145,7 @@ export function PrewarningGapAuditSection({ audit }: { audit: ResearchAuditRespo
         datasetDetails: [
           dataset.dataset_key ?? "未绑定 dataset",
           compactCounts(dataset.split_counts),
-          `coverage ${formatOptionalProbability(dataset.avg_coverage_score)}`
+          `数据覆盖 ${formatOptionalProbability(dataset.avg_coverage_score)}`
         ].join(" · "),
         labelSummary: `20d ${dataset.label_20d_count} / 60d ${dataset.label_60d_count} / protected ${dataset.protected_row_count}`,
         coverageDetails: [
@@ -159,7 +163,7 @@ export function PrewarningGapAuditSection({ audit }: { audit: ResearchAuditRespo
         p60Details: [
           `候选均值 ${formatOptionalProbability(probability.candidate_avg_p_60d)}`,
           `峰值 ${formatOptionalProbability(probability.candidate_max_p_60d)}`,
-          `近阈值 ${probability.candidate_near_threshold_60d_5pp_count}`
+          `近线点（历史）${probability.candidate_near_threshold_60d_5pp_count}`
         ].join(" · "),
         nextAction: nextActionLabel(row.diagnosis.next_action, row.diagnosis.reasons)
       };
@@ -181,7 +185,7 @@ export function PrewarningGapAuditSection({ audit }: { audit: ResearchAuditRespo
           {scenarioRows.length > 0 ? (
             <ResponsiveTable
               className="wide-table xwide-table"
-              columns={["场景 / 诊断", "Dataset / 覆盖", "标签 / 缺口", "20d 命中", "60d 命中", "下一步"]}
+              columns={["场景 / 诊断", "Dataset / 覆盖", "标签 / 缺口", "20d 回放命中", "60d 回放命中", "下一步"]}
               note={auditContent.prewarningGapTableNote}
             >
               {scenarioRows.map((row) => (

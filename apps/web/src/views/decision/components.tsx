@@ -145,13 +145,28 @@ function buildBaseContributionRows(diagnostic?: ProbabilityHorizonOverlayDiagnos
 
 function probabilityReadingNote(
   value: number,
-  anomaly: ProbabilityDiagnosticAnomaly | null
+  anomaly: ProbabilityDiagnosticAnomaly | null,
+  diagnostic?: ProbabilityHorizonOverlayDiagnostics
 ): string {
+  const runtimeFinal = diagnostic?.runtime_final_probability;
+  const modelFinal = diagnostic?.final_probability ?? value;
+  const hasRuntimeOverride =
+    runtimeFinal !== undefined &&
+    Math.abs(runtimeFinal - modelFinal) > 1e-9;
   if (anomaly) {
-    return "当前概率数值来自 active release，但该期限命中语义异常；这张卡只把它作为模型审计证据展示，不把低概率解释成风险很远或风险为零。";
+    return hasRuntimeOverride
+      ? `当前页面显示的是运行口径参考值；模型原始最终值仅 ${formatProbabilityPercentExact(
+          modelFinal
+        )}，因此这张卡不把低概率解释成风险很远或风险为零。`
+      : "当前概率数值来自 active release，但该期限命中语义异常；这张卡把它作为参考值展示，不把低概率解释成风险很远或风险为零。";
   }
   if (value === 0) {
     return "当前接口精确返回 0，需要结合数据日期、release 状态和模型链路复核；它不等于市场风险被证明为零。";
+  }
+  if (hasRuntimeOverride) {
+    return `当前页面值是运行口径参考值 ${formatProbabilityPercentExact(
+      value
+    )}；模型原始最终值为 ${formatProbabilityPercentExact(modelFinal)}。这条参考值用于辅助观察，不单独决定风险时距。`;
   }
   if (value < 0.01) {
     return `当前是低位小概率但不是 0；原始接口值为 ${formatProbabilityDecimal(
@@ -175,7 +190,7 @@ function describeThresholdDistance(
   }
   if (anomaly && value < threshold) {
     return {
-      label: "模型待审计",
+      label: "参考解读",
       note: `${anomaly.title}；该读数只代表当前 active release 的机械输出，不能当成“离危机很远”的证明。`
     };
   }
@@ -248,7 +263,8 @@ function ProbabilityDiagnosticsBlock({
         <span>模型链路</span>
         <strong>
           raw {formatProbabilityPercentExact(diagnostic.raw_probability)} · calibrated{" "}
-          {formatProbabilityPercentExact(diagnostic.calibrated_probability)} · runtime{" "}
+          {formatProbabilityPercentExact(diagnostic.calibrated_probability)} · model final{" "}
+          {formatProbabilityPercentExact(diagnostic.final_probability)} · runtime{" "}
           {formatProbabilityPercentExact(runtimeFinal)}
         </strong>
       </div>
@@ -304,50 +320,73 @@ export function ProbabilityTile({
 }) {
   const band = describeProbabilityBand(value);
   const anomaly = findProbabilityDiagnosticAnomaly(diagnostic);
+  const modelFinal = diagnostic?.final_probability ?? value;
+  const runtimeFinal = diagnostic?.runtime_final_probability ?? modelFinal;
+  const hasRuntimeOverride =
+    diagnostic?.runtime_final_probability !== undefined &&
+    Math.abs(runtimeFinal - modelFinal) > 1e-9;
   const thresholdGap = Math.max(0, threshold - value);
   const thresholdShare = threshold > 0 ? value / threshold : null;
   const thresholdDistance = describeThresholdDistance(value, threshold, thresholdLabel, anomaly);
   const displayThresholdDistance =
     forceAuditOnly && !anomaly
       ? {
-          label: "模型待审计",
-          note: "MVP 已把 formal 概率降级为审计读数；这一期限不单独计算风险时距或触线完成度。"
+          label: "参考解读",
+          note: "MVP 当前把正式概率作为参考输入；这一期限仍显示实际数值，但不单独决定风险时距或动作档位。"
         }
       : thresholdDistance;
   const thresholdShareValue =
     thresholdShare === null ? "—" : formatProbabilityPercentExact(thresholdShare);
-  const distanceJudgmentDisabled = forceAuditOnly || anomaly !== null;
-  const valueLabel = distanceJudgmentDisabled
-    ? anomaly
-      ? "正式概率读数异常"
-      : "正式概率待审计"
-    : "当前正式概率";
-  const primaryValue = distanceJudgmentDisabled ? "待审计" : formatProbabilityPercentExact(value);
+  const distanceJudgmentDisabled = anomaly !== null;
+  const valueLabel = anomaly
+    ? hasRuntimeOverride
+      ? "当前参考概率（运行口径）"
+      : "当前参考概率"
+    : forceAuditOnly
+      ? hasRuntimeOverride
+        ? "当前参考概率（运行口径）"
+        : "当前参考概率"
+      : "当前正式概率";
+  const primaryValue = formatProbabilityPercentExact(value);
   const distanceHeadline = distanceJudgmentDisabled
-    ? "距离判断禁用"
+    ? "参考判断"
+    : forceAuditOnly
+      ? "参考态"
     : thresholdGap === 0
       ? "已触线"
       : `还差 ${formatPercentagePointGap(thresholdGap)}`;
-  const distanceLabel = distanceJudgmentDisabled ? "模型审计状态" : "距离动作线";
+  const distanceLabel = distanceJudgmentDisabled
+    ? "当前限制"
+    : forceAuditOnly
+      ? "参考距离"
+      : "距离动作线";
   const distanceDetail =
     thresholdShare === null
       ? null
       : distanceJudgmentDisabled
-        ? "正式概率当前只作为审计读数，系统不计算动作线距离或风险时距；下方接口值和模型链路只用于排查 active release 为什么偏冷。"
-        : `当前读数约为动作线的 ${thresholdShareValue}；这是阈值相对位置，不是剩余天数，也不是自动交易信号。`;
+        ? "当前先按参考值解读；下方接口值和模型链路只用于复核 active release 为什么偏冷。"
+        : forceAuditOnly
+          ? "当前不按阈值占比、差值或放大倍数解释这条概率；动作升级仍以规则层、事件确认和数据新鲜度为主。"
+          : `当前读数约为动作线的 ${thresholdShareValue}；这是阈值相对位置，不是剩余天数，也不是自动交易信号。`;
   const thresholdCopy =
     distanceJudgmentDisabled
       ? `${thresholdLabel} ${formatPercentPrecise(
           threshold
-        )} 仅作为审计参照；formal 概率当前被标记为模型待审计，不输出距离结论。`
+        )} 仅作为参考线；当前优先复核模型读数，再结合规则层解释。`
+      : forceAuditOnly
+        ? `${thresholdLabel} ${formatPercentPrecise(
+            threshold
+          )} 作为参考动作线展示；页面先按规则层给出主结论。`
       : thresholdGap === 0
-      ? `已达到${thresholdLabel} ${formatPercentPrecise(threshold)}`
-      : `距${thresholdLabel} ${formatPercentPrecise(threshold)} 还差 ${formatPercentagePointGap(
-          thresholdGap
-        )}`;
+        ? `已达到${thresholdLabel} ${formatPercentPrecise(threshold)}`
+        : `距${thresholdLabel} ${formatPercentPrecise(threshold)} 还差 ${formatPercentagePointGap(
+            thresholdGap
+          )}`;
   const bandNote = distanceJudgmentDisabled
-    ? "当前处于模型审计状态，不按低位、准备区、对冲区或防守区解释。"
-    : band.note;
+    ? "当前属于模型异常参考值，不按低位、准备区、对冲区或防守区直接解释。"
+    : forceAuditOnly
+      ? "当前数值用于辅助观察，不单独决定动作档位。"
+      : band.note;
 
   return (
     <div
@@ -361,10 +400,11 @@ export function ProbabilityTile({
       </div>
       <span className="probability-value-label">{valueLabel}</span>
       <strong>{primaryValue}</strong>
-      {distanceJudgmentDisabled ? (
+      {distanceJudgmentDisabled || forceAuditOnly ? (
         <div className="probability-reading-status">
-          审计读数 {formatProbabilityPercentExact(value)} · {formatProbabilityBasisPoints(value)}；
-          当前数值不参与风险时距判断
+          页面值 {formatProbabilityPercentExact(value)} · {formatProbabilityBasisPoints(value)}
+          {hasRuntimeOverride ? `；模型原始 ${formatProbabilityPercentExact(modelFinal)}` : ""}；
+          {distanceJudgmentDisabled ? " 当前先不单独用于风险时距判断" : " 当前以规则层结论为主"}
         </div>
       ) : null}
       {anomaly ? (
@@ -385,14 +425,34 @@ export function ProbabilityTile({
           <strong>{formatPercentPrecise(threshold)}</strong>
         </div>
         <div>
-          <span>{distanceJudgmentDisabled ? "模型状态" : "当前占动作线"}</span>
-          <strong>{distanceJudgmentDisabled ? "待修复" : thresholdShareValue}</strong>
+          <span>
+            {distanceJudgmentDisabled
+              ? "模型状态"
+              : forceAuditOnly
+                ? "主结论口径"
+                : "当前占动作线"}
+          </span>
+          <strong>
+            {distanceJudgmentDisabled
+              ? "待修复"
+              : forceAuditOnly
+                ? "规则层优先"
+                : thresholdShareValue}
+          </strong>
         </div>
         <div>
-          <span>{distanceJudgmentDisabled ? "距离判断" : "差值"}</span>
+          <span>
+            {distanceJudgmentDisabled
+              ? "距离判断"
+              : forceAuditOnly
+                ? "时距解读"
+                : "差值"}
+          </span>
           <strong>
             {distanceJudgmentDisabled
               ? "不适用"
+              : forceAuditOnly
+                ? "参考态"
               : thresholdGap === 0
                 ? "已触线"
                 : formatPercentagePointGap(thresholdGap)}
@@ -400,9 +460,12 @@ export function ProbabilityTile({
         </div>
       </div>
       <div className="probability-raw">
-        接口值 {formatProbabilityDecimal(value)} · {formatProbabilityBasisPoints(value)}
+        页面值 {formatProbabilityDecimal(value)} · {formatProbabilityBasisPoints(value)}
+        {hasRuntimeOverride ? `；模型原始 ${formatProbabilityDecimal(modelFinal)}` : ""}
       </div>
-      <div className="probability-reading-note">{probabilityReadingNote(value, anomaly)}</div>
+      <div className="probability-reading-note">
+        {probabilityReadingNote(value, anomaly, diagnostic)}
+      </div>
       <p>{hint}</p>
       <div className="probability-threshold">{thresholdCopy}</div>
       <small>{bandNote}</small>

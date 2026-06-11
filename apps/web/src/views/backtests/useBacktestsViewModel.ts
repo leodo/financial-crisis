@@ -26,6 +26,11 @@ import {
   buildRollingAuditHistoryText,
   buildRollingAuditScopeText
 } from "../shared/backtestCopy";
+import {
+  currentMvpRiskState,
+  mvpProbabilityInputIsAuditOnly,
+  mvpRiskStateDisplayLabel
+} from "../decision/mvpRiskState";
 import { backtestsContent } from "./content";
 
 function formatOptionalDays(value: number | null | undefined) {
@@ -70,12 +75,18 @@ export function useBacktestsViewModel({
   const rollingAuditScopeText = buildRollingAuditScopeText(
     assessment.backtest_summary.rolling_audit
   );
+  const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
+  const mvpState = currentMvpRiskState(assessment);
 
-  const currentPosture = postureLabel(assessment.posture);
+  const currentPosture = auditOnly
+    ? mvpRiskStateDisplayLabel(mvpState.label)
+    : postureLabel(assessment.posture);
   const hasActionSignals = assessment.backtest_summary.rolling_audit.actionable_signal_count > 0;
+  const historicalReplayCountHint =
+    "这是全历史滚动回放里的评估点/区间数量，不是今天新增事件数，也不是当前正式概率准确率。";
   const headlineMetrics: MetricItem[] = [
     {
-      label: "动作命中",
+      label: "动作命中（场景回测）",
       value:
         assessment.backtest_summary.timely_warning_rate === 0
           ? "未形成动作预警"
@@ -83,26 +94,32 @@ export function useBacktestsViewModel({
       hint:
         assessment.backtest_summary.timely_warning_rate === 0
           ? "当前回测口径没有形成满足提前量要求的动作级预警，不等于采集失败。"
-          : undefined
+          : "这是历史场景回测命中率，用来评估过去危机前是否提前亮灯；不是当前危机概率。"
     },
     {
-      label: "动作信号",
+      label: "动作信号点（历史）",
       value: hasActionSignals
         ? formatCount(assessment.backtest_summary.rolling_audit.actionable_signal_count)
         : "无",
       hint: hasActionSignals
-        ? undefined
+        ? historicalReplayCountHint
         : "当前滚动窗口没有准备/对冲/防守动作信号，精度没有可评估分母。"
     },
     {
-      label: "纯误报区间",
+      label: "纯误报区间（历史）",
       value: hasActionSignals
         ? formatCount(assessment.backtest_summary.rolling_audit.false_positive_episode_count)
-        : "无"
+        : "无",
+      hint: hasActionSignals
+        ? historicalReplayCountHint
+        : "当前滚动窗口没有准备/对冲/防守动作信号，因此没有可评估的纯误报区间。"
     },
     {
       label: "当前执行节奏",
-      value: currentPosture
+      value: currentPosture,
+      hint: auditOnly
+        ? "当前主结论先按 MVP 规则层解释；回测页中的正式概率轨迹只保留为模型复核参考。"
+        : undefined
     }
   ];
 
@@ -139,6 +156,7 @@ export function useBacktestsViewModel({
     rollingAuditHistoryRange,
     rollingAuditScopeText,
     currentPosture,
+    auditOnly,
     scenarioRows,
     episodeRows
   };

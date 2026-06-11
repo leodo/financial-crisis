@@ -36,6 +36,7 @@ export default function BacktestsView({
     rollingAuditHistoryRange,
     rollingAuditScopeText,
     currentPosture,
+    auditOnly,
     scenarioRows,
     episodeRows
   } = useBacktestsViewModel({
@@ -87,7 +88,12 @@ export default function BacktestsView({
       </section>
 
       <section className="surface">
-        <SurfaceHeader title="当前运行历史轨迹" icon={History} />
+        <SurfaceHeader title={auditOnly ? "当前运行历史轨迹（参考）" : "当前运行历史轨迹"} icon={History} />
+        {auditOnly ? (
+          <RuleBox label="怎么看这张图">
+            当前正式概率处于参考态，这条轨迹只保留给模型复核和历史对照使用，不直接参与当前执行节奏判断。
+          </RuleBox>
+        ) : null}
         <SimpleLineChart model={chart} height={280} />
       </section>
 

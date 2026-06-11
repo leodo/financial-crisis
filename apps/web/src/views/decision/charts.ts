@@ -215,7 +215,8 @@ function buildProbabilityTrendSanityNote(
     return "";
   }
 
-  return "当前 20日窗口明显低于 5日和 60日，不是画图错误；它表示活跃正式模型的 20d head 在当前样本上输出偏冷，后续需要通过训练和 release review 修复，而不是在运行时硬抬概率。";
+  const modeCopy = mode === "raw" ? "原始概率轨迹" : "正式概率历史轨迹";
+  return `当前图表的${modeCopy}中，20日序列明显低于 5日和 60日；这不是画图错误，而是用于提示 20d head 在该轨迹口径下偏冷。后续需要通过训练和 release review 修复，而不是在运行时硬抬概率。`;
 }
 
 function buildProbabilityTrendScaleNote(

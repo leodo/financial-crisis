@@ -91,8 +91,9 @@ export default function MethodView({
 
         <section className="surface">
           <SurfaceHeader title="当前运行阈值" icon={History} />
+          <RuleBox label="怎么看这些百分比">{methodContent.runtimeThresholdNote}</RuleBox>
           <MetricPairsGrid pairs={runtimeMetrics} />
-          <RuleBox label="历史审计策略版本">
+          <RuleBox label="历史评估策略版本">
             <span title={historyPolicyVersion.hint}>{historyPolicyVersion.value}</span>
           </RuleBox>
           <RuleBox label="当前执行条款">

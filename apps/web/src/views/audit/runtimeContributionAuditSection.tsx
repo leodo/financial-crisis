@@ -72,15 +72,18 @@ export function RuntimeContributionAuditSection({ audit }: { audit: ResearchAudi
         },
         {
           label: "共同日期",
-          value: `${latestRuntimeAudit.common_date_count}`
+          value: `${latestRuntimeAudit.common_date_count}`,
+          hint: "baseline 与 candidate 可比较的运行窗口日期数，不是训练样本数。"
         },
         {
           label: "审计期限",
-          value: latestRuntimeAudit.horizons.map((row) => `${row.horizon_days}d`).join(" / ")
+          value: latestRuntimeAudit.horizons.map((row) => `${row.horizon_days}d`).join(" / "),
+          hint: "这里按离线审计 horizon 分组，不是当前页面三期限正式概率结论。"
         },
         {
-          label: "Takeaways",
-          value: `${latestRuntimeAudit.takeaways.length}`
+          label: "审计归因",
+          value: `${latestRuntimeAudit.takeaways.length}`,
+          hint: "artifact 输出的模型诊断结论条数，不是 Go/No-Go 放行项。"
         }
       ]
     : [];
@@ -210,7 +213,7 @@ export function RuntimeContributionAuditSection({ audit }: { audit: ResearchAudi
           ) : null}
           <ResponsiveTable
             className="wide-table xwide-table"
-            columns={["窗口", "Baseline 均值/线", "Candidate 均值/线", "触线完成度", "语义异常", "候选 runtime group", "候选最大拖累"]}
+            columns={["窗口", "Baseline 均值/运行线", "Candidate 均值/运行线", "入线占比（审计）", "语义异常", "候选 runtime group", "候选最大拖累"]}
             note={auditContent.runtimeContributionHorizonTableNote}
           >
             {horizonRows.map((row) => (
@@ -228,7 +231,7 @@ export function RuntimeContributionAuditSection({ audit }: { audit: ResearchAudi
           {groupRows.length > 0 ? (
             <ResponsiveTable
               className="wide-table xwide-table"
-              columns={["窗口", "Runtime group", "天数", "候选均值/线", "候选触线", "语义异常", "候选最大拖累"]}
+              columns={["窗口", "Runtime group", "天数", "候选均值/运行线", "候选入线占比", "语义异常", "候选最大拖累"]}
               note={auditContent.runtimeContributionGroupTableNote}
             >
               {groupRows.map((row) => (
@@ -247,7 +250,7 @@ export function RuntimeContributionAuditSection({ audit }: { audit: ResearchAudi
           {latestDateRows.length > 0 ? (
             <ResponsiveTable
               className="wide-table"
-              columns={["窗口", "最新日期", "Baseline", "Candidate", "触线完成度", "状态迁移"]}
+              columns={["窗口", "最新日期", "Baseline", "Candidate", "入线占比（审计）", "状态迁移"]}
               note={auditContent.runtimeContributionLatestDateTableNote}
             >
               {latestDateRows.map((row) => (

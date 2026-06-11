@@ -76,7 +76,7 @@ export interface AssessmentScores {
 }
 
 export type MvpRiskStateCode = "observe" | "prepare" | "hedge" | "defend";
-export type MvpProbabilityInputStatus = "usable" | "audit_only";
+export type MvpProbabilityInputStatus = "usable" | "reference_only";
 
 export interface MvpRiskState {
   code: MvpRiskStateCode;

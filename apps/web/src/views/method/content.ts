@@ -23,6 +23,8 @@ export const methodContent = {
   scenarioCoverageTableNote:
     "覆盖等级描述的是免费历史数据能把该样本还原到什么程度，不代表模型已经在这个样本上训练达标。",
   protectedCatalogTitle: "受保护压力窗口目录",
+  runtimeThresholdNote:
+    "这些百分比是准备 / 对冲 / 防守等执行档位的进入线或桥接线，不是当前 5d / 20d / 60d 概率，也不是风险还差多少。",
   runtimeBoundarySummary:
     "这个页面把危机概率、动作概率、风险时距和执行节奏拆开解释。历史回放会优先复用同口径缓存；如果缓存口径不匹配，系统才会回退到已落库快照或按原始观测重建。",
   limitationModeFormal:

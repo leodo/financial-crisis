@@ -194,6 +194,12 @@ pub(crate) fn compare_probability_guardrails(
     }
 
     for horizon in &summary.regime_separation_summaries {
+        if let Some(threshold_regression) =
+            probability_threshold_acceptance_regression(&bundle, horizon)
+        {
+            regressions.push(threshold_regression);
+        }
+
         if matches!(horizon.horizon_days, 20 | 60)
             && horizon.positive_window_avg_probability <= horizon.normal_avg_probability
         {
@@ -218,6 +224,53 @@ pub(crate) fn compare_probability_guardrails(
     }
 
     Ok(regressions)
+}
+
+fn probability_threshold_acceptance_regression(
+    bundle: &fc_domain::ProbabilityBundle,
+    horizon: &fc_domain::RegimeSeparationEvaluationSummary,
+) -> Option<String> {
+    if !matches!(horizon.horizon_days, 20 | 60) {
+        return None;
+    }
+
+    let threshold = bundle
+        .horizons
+        .iter()
+        .find(|candidate| candidate.horizon_days == horizon.horizon_days)
+        .and_then(|candidate| candidate.decision_threshold)?;
+
+    if horizon.positive_window_sample_count > 0
+        && threshold > horizon.positive_window_avg_probability + 0.005
+    {
+        return Some(format!(
+            "{}d decision threshold {} sits above positive_window avg {} in bundle evaluation",
+            horizon.horizon_days,
+            crate::format_pct(threshold),
+            crate::format_pct(horizon.positive_window_avg_probability),
+        ));
+    }
+
+    let final_summary = bundle
+        .horizons
+        .iter()
+        .find(|candidate| candidate.horizon_days == horizon.horizon_days)
+        .and_then(|candidate| candidate.threshold_diagnostics.as_ref())
+        .map(|diagnostics| &diagnostics.final_summary)?;
+
+    if final_summary.cooldown_row_count > 0
+        && final_summary.positive_window_row_count > 0
+        && final_summary.cooldown_hit_rate + 0.001 >= final_summary.positive_window_hit_rate
+    {
+        return Some(format!(
+            "{}d threshold hit rates keep cooldown {:.1}% at or above positive_window {:.1}% in bundle diagnostics",
+            horizon.horizon_days,
+            final_summary.cooldown_hit_rate * 100.0,
+            final_summary.positive_window_hit_rate * 100.0,
+        ));
+    }
+
+    None
 }
 
 pub(crate) fn compare_operational_guardrails(

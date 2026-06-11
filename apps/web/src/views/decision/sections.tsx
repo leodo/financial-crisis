@@ -18,6 +18,8 @@ import { decisionContent } from "./content";
 import {
   findProbabilityDiagnosticAnomaly,
   probabilityDiagnosticAnomalyHorizons,
+  probabilityModelFinalHorizonValues,
+  probabilityModelTwentyDayIsCold,
   type ProbabilityDiagnosticAnomaly
 } from "./probabilityDiagnostics";
 import type {
@@ -27,7 +29,9 @@ import type {
 import {
   currentMvpRiskState,
   mvpProbabilityInputIsAuditOnly,
-  mvpRiskStateDetail
+  mvpRiskStateDisplayCopy,
+  mvpRiskStateDetail,
+  mvpRiskStateDisplayLabel
 } from "./mvpRiskState";
 
 export function DecisionPrelude({
@@ -97,16 +101,18 @@ export function DecisionHeroSummary({
   const auditReason =
     anomalyHorizons.length > 0
       ? `${anomalyHorizons.join(" / ")} 正式概率读数命中模型方向异常`
-      : "后端已将正式概率降级为审计态";
+      : "当前正式概率先按参考值解读";
   const heroClassName = `hero-surface ${postureClass(assessment.posture)}${
     probabilityAuditActive ? " probability-audit" : ""
   }`;
-  const heroValue = probabilityAuditActive ? mvpRiskState.label : postureLabel(assessment.posture);
+  const heroValue = probabilityAuditActive
+    ? mvpRiskStateDisplayLabel(mvpRiskState.label)
+    : postureLabel(assessment.posture);
   const heroSubtitle = probabilityAuditActive
-    ? `当前 MVP 风险状态；正式风险窗口待审计（原模型桶：${timeBucketLabel(assessment.time_to_risk_bucket)}）`
+    ? `当前主结论按 MVP 规则层显示；正式风险窗口先按参考值解读（原模型桶：${timeBucketLabel(assessment.time_to_risk_bucket)}）`
     : `风险窗口判断：${timeBucketLabel(assessment.time_to_risk_bucket)}`;
   const heroSummary = probabilityAuditActive
-    ? `${mvpRiskState.summary}${auditReason}；当前不输出“离风险还有多远”的仓位结论，原执行节奏只作为非概率层参考。`
+    ? `${mvpRiskStateDisplayCopy(mvpRiskState.summary)}${auditReason}；当前主结论优先看规则层、数据新鲜度和事件确认，正式概率保留为参考输入。`
     : posture.summary;
   const decisionAnswers = buildDecisionAnswerItems(
     assessment,
@@ -152,23 +158,25 @@ function buildDecisionAnswerItems(
   const postureTone = decisionAnswerTone(assessment.posture);
   const action = decisionActionCopy(probabilityAuditActive ? mvpRiskState.code : assessment.posture);
   const distanceAnswer = probabilityAuditActive
-    ? "未知（概率待审计）"
+    ? referenceOnlyRiskDistanceAnswer(mvpRiskState)
     : timeBucketLabel(assessment.time_to_risk_bucket);
   const distanceDetail = probabilityAuditActive
-    ? "正式 5d / 20d / 60d 暂不参与时距，先看规则层和关键数据是否共振。"
+    ? "不按 5d / 20d / 60d 低概率判断“风险很远”；当前主看规则层、关键数据和事件确认是否共振。"
     : "按正式概率、事件确认和数据新鲜度合成，不等于自动交易倒计时。";
   const whyDetail = probabilityAuditActive
     ? firstReadableBlocker(mvpRiskState.blockers) ??
-      "正式概率审计中，当前主结论只按规则层、数据新鲜度和事件确认解释。"
+      "正式概率当前只作参考，主结论先按规则层、数据新鲜度和事件确认解释。"
     : posture.summary;
 
   return [
     {
       id: "danger-now",
       question: "当前是否危险",
-      answer: probabilityAuditActive ? mvpRiskState.label : postureLabel(assessment.posture),
+      answer: probabilityAuditActive
+        ? mvpRiskStateDisplayLabel(mvpRiskState.label)
+        : postureLabel(assessment.posture),
       detail: probabilityAuditActive
-        ? "当前未把 formal 小概率当成低风险证明。"
+        ? "当前不会把正式小概率直接当成低风险证明。"
         : "这是当前执行节奏，不是危机发生概率。",
       tone: probabilityAuditActive ? "answer-audit" : postureTone
     },
@@ -182,7 +190,7 @@ function buildDecisionAnswerItems(
     {
       id: "primary-reason",
       question: "为什么",
-      answer: probabilityAuditActive ? "正式概率不作主输入" : "证据分层合成",
+      answer: probabilityAuditActive ? "规则层 + 参考概率" : "证据分层合成",
       detail: whyDetail,
       tone: probabilityAuditActive ? "answer-audit" : postureTone
     },
@@ -194,6 +202,16 @@ function buildDecisionAnswerItems(
       tone: action.tone
     }
   ];
+}
+
+function referenceOnlyRiskDistanceAnswer(
+  mvpRiskState: ReturnType<typeof currentMvpRiskState>
+): string {
+  if (mvpRiskState.code === "observe") {
+    return "未进入动作窗口";
+  }
+
+  return mvpRiskStateDisplayLabel(mvpRiskState.label);
 }
 
 function decisionAnswerTone(
@@ -342,12 +360,12 @@ export function DecisionRiskHorizon({
       <MetricGrid items={actionMetrics} />
       <RuleBox label="时距判断">
         {probabilityAuditActive
-          ? "正式概率当前处于审计状态，页面暂停输出“数月 / 数周 / 当下”的仓位时距结论；当前只按 MVP 规则层判断是否需要观察、准备、对冲或防守。"
+          ? "正式概率当前先按参考值解读；页面主结论优先按 MVP 规则层判断是否需要观察、准备、对冲或防守。"
           : timeBucketDescription}
       </RuleBox>
       <RuleBox label="历史参照">
         {probabilityAuditActive
-          ? `${analogWindowDescription} 当前历史类比只作为结构参照，不把异常偏低的 formal 概率解释成风险已经远离。`
+          ? `${analogWindowDescription} 当前历史类比只作为结构参照，不把偏低的正式概率直接解释成风险已经远离。`
           : analogWindowDescription}
       </RuleBox>
     </section>
@@ -387,13 +405,13 @@ function buildRiskDistanceSummary(
     .map((row) => row.share)
     .filter((value): value is number => value !== null);
   const allFarBelowEntry = allShares.length === 3 && allShares.every((share) => share < 0.03);
-  const twentyDayIsCold = p20d > 0 && p20d < p5d * 0.25 && p20d < p60d * 0.25;
+  const twentyDayIsCold = probabilityModelTwentyDayIsCold(assessment);
   const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   const mvpBlockers = mvpRiskState.blockers.length
-    ? mvpRiskState.blockers.join("；")
+    ? mvpRiskState.blockers.map((item) => mvpRiskStateDisplayCopy(item)).join("；")
     : "MVP 规则层尚未看到足够证据支持动作升级。";
   const mvpNextActions = mvpRiskState.next_actions.length
-    ? mvpRiskState.next_actions.join("；")
+    ? mvpRiskState.next_actions.map((item) => mvpRiskStateDisplayCopy(item)).join("；")
     : "继续观察关键指标、事件确认和历史类比是否共振。";
 
   const bucketDetail: Record<AssessmentSnapshot["time_to_risk_bucket"], string> = {
@@ -404,42 +422,42 @@ function buildRiskDistanceSummary(
   };
 
   const modelStatus = twentyDayIsCold
-    ? "20d 偏冷待审计"
+    ? "20d 偏冷"
     : allFarBelowEntry
       ? "未捕捉临近窗口"
       : "读数可解释";
-  const modelStatusWithAnomaly = auditOnly ? "正式概率待审计" : modelStatus;
+  const modelStatusWithAnomaly = auditOnly ? "正式概率参考值" : modelStatus;
   const modelDetail =
     auditOnly && anomalyHorizons.length > 0
       ? `${anomalyHorizons
           .map((row) => `${row.horizonDays}d`)
-          .join(" / ")} 命中 USDJPY 高位 tail 压低概率的语义异常；这些小数只能说明 active release 当前输出偏冷，不能当成风险已远离，也不能用于离场/对冲时距结论。`
+          .join(" / ")} 命中 USDJPY 高位 tail 压低概率的语义异常；这些小数只能说明 active release 当前输出偏冷，不能当成风险已远离。`
       : auditOnly
-        ? "后端 MVP 状态已把正式概率降级为审计读数；这些小数不能当成风险时距、减仓或对冲结论。"
-      : twentyDayIsCold
-        ? `20d 只有 ${formatProbabilityPercentExact(p20d)}，明显低于 5d ${formatProbabilityPercentExact(
-            p5d
-          )} 和 60d ${formatProbabilityPercentExact(p60d)}；先按模型审计处理，不在运行时硬抬概率。`
+        ? "后端 MVP 状态当前把正式概率降为参考输入；这些小数不能单独决定风险时距、减仓或对冲结论。"
+        : twentyDayIsCold
+          ? `${probabilityModelTwentyDayColdCopy(assessment)}；先按参考异常处理，不在运行时硬抬概率。`
         : allFarBelowEntry
           ? "三期限都远低于动作进入线，系统因此给出常态观察；仍需结合关键指标和事件确认复核。"
           : "当前概率和动作进入线之间没有明显显示层异常。";
 
   return {
-    bucketLabel: auditOnly ? mvpRiskState.label : timeBucketLabel(assessment.time_to_risk_bucket),
+    bucketLabel: auditOnly
+      ? mvpRiskStateDisplayLabel(mvpRiskState.label)
+      : timeBucketLabel(assessment.time_to_risk_bucket),
     bucketDetail:
       auditOnly
-        ? `${mvpRiskState.summary} 原模型桶是 ${timeBucketLabel(
+        ? `${mvpRiskStateDisplayCopy(mvpRiskState.summary)} 原模型桶是 ${timeBucketLabel(
             assessment.time_to_risk_bucket
           )}，但 ${
             anomalyHorizons.length > 0
               ? `${anomalyHorizons.map((row) => `${row.horizonDays}d`).join(" / ")} 概率读数命中方向异常`
-              : "正式概率已被后端标记为审计态"
-          }，系统暂停输出“数月/数周/当下”的距离判断。`
+              : "正式概率当前仅作参考"
+          }，因此页面优先展示规则层结论。`
         : bucketDetail[assessment.time_to_risk_bucket],
-    nearestLabel: auditOnly ? "下一阶段还差" : "最接近的动作线",
+    nearestLabel: auditOnly ? "阈值距离" : "最接近的动作线",
     nearestValue:
       auditOnly
-        ? "证据共振"
+        ? "当前不按阈值解读"
         : nearest
           ? nearest.gap === 0
             ? "已触线"
@@ -447,7 +465,7 @@ function buildRiskDistanceSummary(
           : "未配置",
     nearestDetail:
       auditOnly
-        ? `当前不计算阈值占比、放大倍数或仓位时距。阻断项：${mvpBlockers} 下一步：${mvpNextActions}`
+        ? `当前不计算阈值占比、放大倍数或仓位时距，避免把模型偏冷的小概率误读成“风险很远”。阻断项：${mvpBlockers} 下一步：${mvpNextActions}`
         : nearest
           ? `${nearest.label} 最接近；离动作线差 ${formatPercentagePointGap(
               nearest.gap
@@ -473,7 +491,7 @@ function buildRiskHorizonSanityNote(
   ].filter((value): value is number => value !== null);
   const allFarBelowEntry =
     thresholdShares.length === 3 && thresholdShares.every((share) => share < 0.03);
-  const twentyDayIsCold = p20d > 0 && p20d < p5d * 0.25 && p20d < p60d * 0.25;
+  const twentyDayIsCold = probabilityModelTwentyDayIsCold(assessment);
   const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   const anomalyHorizons = assessment.probability_diagnostics.horizon_overlays
     .map((diagnostic) => ({
@@ -487,29 +505,27 @@ function buildRiskHorizonSanityNote(
   if (anomalyHorizons.length > 0) {
     return `当前 ${anomalyHorizons
       .map((row) => `${row.horizonDays}日`)
-      .join(" / ")} 概率命中模型语义异常：高 USDJPY tail 在 active release 中反而压低概率。页面保留正式输出用于审计，但这些极小数不应被解释成“离风险很远”；下一步应修训练约束和 release review，而不是在运行时硬抬概率。${
+      .join(" / ")} 概率命中模型语义异常：高 USDJPY tail 在 active release 中反而压低概率。页面保留正式输出作为参考，但这些极小数不应被解释成“离风险很远”；下一步应修训练约束和 release review，而不是在运行时硬抬概率。${
       thresholdShares.length === 3
-        ? "阈值占比在异常状态下已从主结论隐藏，避免把模型偏冷误读成可决策时距。"
+        ? "阈值占比在异常状态下会降为辅助参考，避免把模型偏冷误读成可决策时距。"
         : ""
     }`;
   }
 
   if (auditOnly) {
-    return "正式概率已被 MVP 降级为审计读数；页面不把低概率、小数或阈值占比解释成“离风险很远”，当前主结论看规则层、关键数据、事件确认和历史类比。";
+    return "正式概率已被 MVP 降为参考输入；页面不把低概率、小数或阈值占比直接解释成“离风险很远”，当前主结论看规则层、关键数据、事件确认和历史类比。";
   }
 
   if (twentyDayIsCold && allFarBelowEntry) {
-    return `当前三条正式概率都远低于进入线，且 20日窗口 ${formatProbabilityPercentExact(
-      p20d
-    )} 明显低于 5日 ${formatProbabilityPercentExact(p5d)} 和 60日 ${formatProbabilityPercentExact(
-      p60d
+    return `当前三条正式概率都远低于进入线，且 ${probabilityModelTwentyDayColdCopy(
+      assessment
     )}。这不是“风险被证明为 0”，而是活跃正式模型当前没有捕捉到临近危机信号，同时 20d head 输出偏冷；决策上仍要结合关键指标、事件确认、历史类比和动作层。`;
   }
 
   if (twentyDayIsCold) {
-    return `20日窗口 ${formatProbabilityPercentExact(
-      p20d
-    )} 明显低于 5日和 60日，这说明当前 20d head 输出偏冷；它不是画图错误，后续应通过训练和 release review 修复模型，而不是运行时硬抬概率。`;
+    return `${probabilityModelTwentyDayColdCopy(
+      assessment
+    )}；这说明当前 20d head 输出偏冷。它不是画图错误，后续应通过训练和 release review 修复模型，而不是运行时硬抬概率。`;
   }
 
   if (allFarBelowEntry) {
@@ -517,6 +533,19 @@ function buildRiskHorizonSanityNote(
   }
 
   return null;
+}
+
+function probabilityModelTwentyDayColdCopy(assessment: AssessmentSnapshot): string {
+  const values = probabilityModelFinalHorizonValues(assessment);
+  if (!values) {
+    return "模型原始 20d head 当前偏冷";
+  }
+
+  return `模型原始 20d ${formatProbabilityPercentExact(
+    values.p20d
+  )} 明显低于模型原始 5d ${formatProbabilityPercentExact(
+    values.p5d
+  )} 和 60d ${formatProbabilityPercentExact(values.p60d)}`;
 }
 
 export function DecisionPosturePlaybook({

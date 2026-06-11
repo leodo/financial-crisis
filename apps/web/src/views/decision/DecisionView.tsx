@@ -12,6 +12,7 @@ import type {
   AssessmentMethodResponse,
   AssessmentSnapshot,
   BacktestScenarioSummary,
+  IndicatorRisk,
   PostureGuidance,
   RiskSnapshot
 } from "../../types";
@@ -41,7 +42,6 @@ import {
   DecisionEventPanel,
   DecisionJpyCarryPanel,
   DecisionReliefPanel,
-  DecisionRollingAuditPanel,
   DecisionWhyNowPanel
 } from "./panels";
 import {
@@ -51,7 +51,16 @@ import {
   DecisionRiskHorizon
 } from "./sections";
 import { mvpProbabilityInputIsAuditOnly } from "./mvpRiskState";
-import { probabilityDiagnosticAnomalyHorizons } from "./probabilityDiagnostics";
+import {
+  probabilityDiagnosticAnomalyHorizons,
+  probabilityModelFinalHorizonValues,
+  probabilityModelTwentyDayIsCold
+} from "./probabilityDiagnostics";
+import {
+  hasRuntimeProbabilityOverride,
+  probabilityModelFinalSnapshotValue,
+  probabilityRuntimeReferenceNote
+} from "./signalLayerBuilders";
 import { useDecisionViewModel } from "./useDecisionViewModel";
 
 export default function DecisionView({
@@ -60,7 +69,8 @@ export default function DecisionView({
   method,
   posture,
   overview,
-  backtests
+  backtests,
+  indicators
 }: {
   assessment: AssessmentSnapshot;
   history: AssessmentHistoryPoint[];
@@ -68,6 +78,7 @@ export default function DecisionView({
   posture: PostureGuidance;
   overview: RiskSnapshot;
   backtests: BacktestScenarioSummary[];
+  indicators: IndicatorRisk[];
 }) {
   const {
     probabilityTrend,
@@ -92,25 +103,24 @@ export default function DecisionView({
     postureThresholdMetrics,
     freeDataReliabilityRows,
     signalLayerRows,
+    whyNowDrivers,
     analogRows,
     actionPlanMetrics,
     jpyCarryMetrics,
     backtestSummaryMetrics,
     backtestHistoryCoverageText,
     backtestCoverageScopeText,
-    rollingAuditMetrics,
-    rollingAuditHistoryText,
-    rollingAuditScopeText,
-    rollingAuditBoundaryText,
-    rollingAuditEpisodes
   } = useDecisionViewModel({
     assessment,
     method,
     history,
     posture,
-    backtests
+    backtests,
+    indicators
   });
   const probabilityTrajectoryAuditNote = buildProbabilityTrajectoryAuditNote(assessment);
+  const probabilityReferenceOnly = mvpProbabilityInputIsAuditOnly(assessment);
+  const runtimeProbabilityOverride = hasRuntimeProbabilityOverride(assessment);
 
   return (
     <section className="workspace">
@@ -129,7 +139,7 @@ export default function DecisionView({
       <section className="dashboard-columns">
         <div className="dashboard-column">
           <section className="surface">
-            <SurfaceHeader title="当前数字可信度清单" icon={ClipboardCheck} />
+            <SurfaceHeader title="当前数字说明" icon={ClipboardCheck} />
             <DetailRows
               items={numberAuditRows.map((item) => ({
                 id: item.id,
@@ -188,32 +198,71 @@ export default function DecisionView({
           </section>
 
           <section className="surface">
-            <SurfaceHeader title="概率轨迹" icon={History} />
+            <SurfaceHeader
+              title={probabilityReferenceOnly ? "概率轨迹（参考）" : "概率轨迹"}
+              icon={History}
+            />
             {probabilityTrajectoryAuditNote ? (
-              <RuleBox label="概率轨迹复核">{probabilityTrajectoryAuditNote}</RuleBox>
+              <RuleBox label="概率轨迹说明">{probabilityTrajectoryAuditNote}</RuleBox>
             ) : null}
-            <MetricGrid className="probability-trend-metrics" items={probabilityTrend.summaryMetrics} />
-            <SimpleLineChart model={probabilityTrend.chart} height={320} />
-            <div className="legend-note">{probabilityTrend.note}</div>
-            <div className="probability-trend-drilldowns">
-              <div className="probability-trend-relative">
-                <div className="section-subhead">
-                  <strong>20日局部放大</strong>
-                  <span>只重画 20d，使用 20d 自身范围的纵轴；用来判断它是不是一条真正的直线。</span>
+            {probabilityReferenceOnly ? (
+              <>
+                <MetricGrid
+                  className="probability-trend-metrics"
+                  items={[
+                    {
+                      label: runtimeProbabilityOverride ? "5日参考值（运行口径）" : "5日参考值",
+                      value: formatProbabilityPercentExact(assessment.probabilities.p_5d),
+                      hint: buildReferenceProbabilityHint(assessment, 5)
+                    },
+                    {
+                      label: runtimeProbabilityOverride ? "20日参考值（运行口径）" : "20日参考值",
+                      value: formatProbabilityPercentExact(assessment.probabilities.p_20d),
+                      hint: buildReferenceProbabilityHint(assessment, 20)
+                    },
+                    {
+                      label: runtimeProbabilityOverride ? "60日参考值（运行口径）" : "60日参考值",
+                      value: formatProbabilityPercentExact(assessment.probabilities.p_60d),
+                      hint: buildReferenceProbabilityHint(assessment, 60)
+                    }
+                  ]}
+                />
+                <RuleBox label="为什么这里不展开细轨迹">
+                  正式概率当前只作为参考输入。为了避免把极小概率的坐标压缩、局部放大或相对变化误读成可执行时距，
+                  当前不展示这组三期限的细轨迹图；如需排查模型链路，请优先看上方“当前数字说明”和“离风险还有多远”
+                  里的模型诊断。
+                </RuleBox>
+              </>
+            ) : (
+              <>
+                <MetricGrid className="probability-trend-metrics" items={probabilityTrend.summaryMetrics} />
+                <SimpleLineChart model={probabilityTrend.chart} height={320} />
+                <div className="legend-note">{probabilityTrend.note}</div>
+                <div className="probability-trend-drilldowns">
+                  <div className="probability-trend-relative">
+                    <div className="section-subhead">
+                      <strong>20日局部放大</strong>
+                      <span>只重画 20d，使用 20d 自身范围的纵轴；用来判断它是不是一条真正的直线。</span>
+                    </div>
+                    <SimpleLineChart model={probabilityTrend.twentyDayZoomChart} height={190} />
+                  </div>
+                  <div className="probability-trend-relative">
+                    <div className="section-subhead">
+                      <strong>近期相对变化</strong>
+                      <span>每条线按自身近期区间归一，专门用来看 20d 这类低位线是否真的没有变化。</span>
+                    </div>
+                    <SimpleLineChart model={probabilityTrend.relativeChart} height={190} />
+                  </div>
                 </div>
-                <SimpleLineChart model={probabilityTrend.twentyDayZoomChart} height={190} />
-              </div>
-              <div className="probability-trend-relative">
-                <div className="section-subhead">
-                  <strong>近期相对变化</strong>
-                  <span>每条线按自身近期区间归一，专门用来看 20d 这类低位线是否真的没有变化。</span>
-                </div>
-                <SimpleLineChart model={probabilityTrend.relativeChart} height={190} />
-              </div>
-            </div>
+              </>
+            )}
           </section>
 
-          <DecisionWhyNowPanel assessment={assessment} posture={posture} />
+          <DecisionWhyNowPanel
+            assessment={assessment}
+            posture={posture}
+            drivers={whyNowDrivers}
+          />
 
           <DecisionReliefPanel assessment={assessment} posture={posture} overview={overview} />
 
@@ -267,7 +316,7 @@ export default function DecisionView({
               clauses={blockerClauses}
             />
             <MetricGrid items={postureThresholdMetrics} />
-            <RuleBox label="历史审计策略">
+            <RuleBox label="历史评估策略">
               {compactTechnicalId(method.runtime_thresholds.history_runtime_policy_version).value}
             </RuleBox>
           </section>
@@ -280,15 +329,6 @@ export default function DecisionView({
           <DecisionEventPanel assessment={assessment} />
 
           <DecisionJpyCarryPanel assessment={assessment} jpyCarryMetrics={jpyCarryMetrics} />
-
-          <DecisionRollingAuditPanel
-            assessment={assessment}
-            rollingAuditMetrics={rollingAuditMetrics}
-            rollingAuditHistoryText={rollingAuditHistoryText}
-            rollingAuditScopeText={rollingAuditScopeText}
-            rollingAuditBoundaryText={rollingAuditBoundaryText}
-            rollingAuditEpisodes={rollingAuditEpisodes}
-          />
         </div>
       </section>
     </section>
@@ -299,28 +339,71 @@ function buildProbabilityTrajectoryAuditNote(assessment: AssessmentSnapshot): st
   const { p_5d: p5d, p_20d: p20d, p_60d: p60d } = assessment.probabilities;
   const anomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
   const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
-  const twentyDayIsCold = p20d > 0 && p20d < p5d * 0.25 && p20d < p60d * 0.25;
+  const twentyDayIsCold = probabilityModelTwentyDayIsCold(assessment);
+  const runtimeReferenceNote = probabilityRuntimeReferenceNote(assessment);
 
   if (!auditOnly && anomalyHorizons.length === 0 && !twentyDayIsCold) {
     return null;
   }
 
-  const twentyDayCopy = `20d 当前是 ${formatProbabilityPercentExact(
-    p20d
-  )}（${formatProbabilityBasisPoints(p20d)}，接口 ${formatProbabilityDecimal(p20d)}）`;
-  const comparisonCopy = `5d 是 ${formatProbabilityPercentExact(
+  const pageReferenceCopy = `页面当前显示的运行口径参考值：5d ${formatProbabilityPercentExact(
     p5d
-  )}，60d 是 ${formatProbabilityPercentExact(p60d)}`;
+  )} / 20d ${formatProbabilityPercentExact(p20d)} / 60d ${formatProbabilityPercentExact(
+    p60d
+  )}`;
+  const sourceCopy = runtimeReferenceNote ? `${runtimeReferenceNote} ` : `${pageReferenceCopy}。`;
+  const modelColdCopy = probabilityModelTwentyDayColdCopy(assessment);
 
   if (anomalyHorizons.length > 0) {
-    return `${twentyDayCopy}，明显低于 ${comparisonCopy}。这不是图表渲染把 20d 画错，而是 active release 的 ${anomalyHorizons.join(
+    return `${sourceCopy}${modelColdCopy ? `${modelColdCopy}；` : ""}这不是图表渲染把 20d 画错，而是 active release 的 ${anomalyHorizons.join(
       " / "
-    )} 概率命中 USDJPY 高位 tail 压低读数的语义异常；折线和极小概率只作为模型审计证据保留，不参与“离风险还有多远”、减仓或对冲时距判断。`;
+    )} 概率命中 USDJPY 高位 tail 压低读数的语义异常；折线和极小概率当前作为参考证据保留，不单独参与“离风险还有多远”、减仓或对冲时距判断。`;
   }
 
   if (auditOnly) {
-    return `正式概率当前已被 MVP 降级为审计读数；折线保留用于排查模型和数据链路，不参与“离风险还有多远”、减仓或对冲时距判断。`;
+    return `正式概率当前已被 MVP 降为参考输入；${sourceCopy}折线保留用于复核模型和数据链路，不单独参与“离风险还有多远”、减仓或对冲时距判断。`;
   }
 
-  return `${twentyDayCopy}，明显低于 ${comparisonCopy}。主图使用统一纵轴时 20d 会贴近底部；下方 20d 局部放大图用于确认它是否真的在变化。当前先按 20d head 偏冷处理，不在运行时硬抬概率。`;
+  return `${modelColdCopy ?? "模型原始 20d head 当前偏冷"}。主图使用统一纵轴时 20d 会贴近底部；下方 20d 局部放大图用于确认它是否真的在变化。当前先按 20d head 偏冷处理，不在运行时硬抬概率。`;
+}
+
+function probabilityModelTwentyDayColdCopy(assessment: AssessmentSnapshot): string | null {
+  const values = probabilityModelFinalHorizonValues(assessment);
+  if (!values || !probabilityModelTwentyDayIsCold(assessment)) {
+    return null;
+  }
+
+  return `模型原始 20d ${formatProbabilityPercentExact(
+    values.p20d
+  )} 明显低于模型原始 5d ${formatProbabilityPercentExact(
+    values.p5d
+  )} 和 60d ${formatProbabilityPercentExact(values.p60d)}`;
+}
+
+function buildReferenceProbabilityHint(
+  assessment: AssessmentSnapshot,
+  horizonDays: 5 | 20 | 60
+): string {
+  const diagnostic = assessment.probability_diagnostics.horizon_overlays.find(
+    (item) => item.horizon_days === horizonDays
+  );
+  const pageValue =
+    horizonDays === 5
+      ? assessment.probabilities.p_5d
+      : horizonDays === 20
+        ? assessment.probabilities.p_20d
+        : assessment.probabilities.p_60d;
+  const modelFinal = diagnostic?.final_probability;
+  const hasOverride =
+    diagnostic?.runtime_final_probability !== undefined &&
+    modelFinal !== undefined &&
+    Math.abs(diagnostic.runtime_final_probability - modelFinal) > 1e-9;
+
+  if (hasOverride && modelFinal !== undefined) {
+    return `${formatProbabilityBasisPoints(pageValue)} · 页面 ${formatProbabilityDecimal(
+      pageValue
+    )} · 模型原始 ${formatProbabilityPercentExact(modelFinal)}`;
+  }
+
+  return `${formatProbabilityBasisPoints(pageValue)} · 页面 ${formatProbabilityDecimal(pageValue)}`;
 }

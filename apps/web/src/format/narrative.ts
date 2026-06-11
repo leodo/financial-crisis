@@ -25,6 +25,10 @@ export function humanizeSourceLicenseNote(text: string): string {
       "Development-only market data prototype; not a production dependency.",
       "仅开发期市场数据原型，不属于正式依赖。"
     )
+    .replaceAll(
+      "Development-only market data prototype; not a production dependency。",
+      "仅开发期市场数据原型，不属于正式依赖。"
+    )
     .replaceAll("prototype source, not for production", "原型源，不进入正式评估");
 }
 

@@ -36,7 +36,7 @@ export default function IndicatorsView({ indicators }: { indicators: IndicatorRi
         <SurfaceHeader title="指标细项" icon={Table2} />
         <ResponsiveTable
           className="wide-table xwide-table"
-          columns={["指标", "最近读数", "评分依据", "风险分", "历史位置", "数据质量"]}
+          columns={["指标", "最近读数", "评分依据", "风险分", "历史位置", "指标级质量"]}
           note={indicatorsContent.tableNote}
         >
           {tableRows.map((risk) => (

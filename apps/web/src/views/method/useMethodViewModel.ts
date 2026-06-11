@@ -29,6 +29,11 @@ import {
   mvpProbabilityInputIsAuditOnly
 } from "../decision/mvpRiskState";
 import { probabilityDiagnosticAnomalyHorizons } from "../decision/probabilityDiagnostics";
+import {
+  probabilityModelFinalSnapshotValue,
+  probabilityRuntimeReferenceNote,
+  probabilitySnapshotValue
+} from "../decision/signalLayerBuilders";
 import { methodContent } from "./content";
 
 export function useMethodViewModel({
@@ -65,6 +70,8 @@ export function useMethodViewModel({
   const probabilityAnomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
   const probabilityAuditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   const mvpRiskState = currentMvpRiskState(assessment);
+  const runtimeReferenceNote = probabilityRuntimeReferenceNote(assessment);
+  const modelFinalSnapshot = probabilityModelFinalSnapshotValue(assessment);
 
   const buildVersionRow = (label: string, rawValue: string): VersionRowItem => {
     const compact = compactTechnicalId(rawValue);
@@ -120,7 +127,11 @@ export function useMethodViewModel({
     {
       label: "概率模式",
       value: probabilityModeLabel(assessment.method.probability_mode),
-      hint: heuristicMode ? "当前仍是启发式过渡层。" : "当前已经切到正式概率包。"
+      hint: probabilityAuditOnly
+        ? "正式概率包已加载，但当前仅作参考输入；主结论仍看 MVP 规则层。"
+        : heuristicMode
+          ? "当前仍是启发式过渡层。"
+          : "当前已经切到正式概率包。"
     },
     {
       label: "动作层",
@@ -131,33 +142,49 @@ export function useMethodViewModel({
     },
     {
       label: "点位可见性",
-      value: pointInTimeModeLabel(assessment.method.point_in_time_mode)
+      value: pointInTimeModeLabel(assessment.method.point_in_time_mode),
+      hint: "这是历史特征可见性的构建口径，不是数据新鲜度或结论可信度。"
     },
     {
       label: "运行状态",
-      value: releaseServingStatusLabel(assessment.method.release_status)
+      value: releaseServingStatusLabel(assessment.method.release_status),
+      hint: probabilityAuditOnly
+        ? "这里只说明服务和 bundle 可加载，不代表正式概率已恢复为当前主结论。"
+        : "这是服务状态，不等同于模型结论可信度。"
     }
   ];
 
   const priorActionRows: Array<[string, string]> = [
     [
-      "危机先验",
+      probabilityAuditOnly ? "危机先验（参考）" : "危机先验",
       probabilityAuditOnly
-        ? `当前正式读数 ${formatProbabilityPercentExact(assessment.probabilities.p_5d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_20d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_60d)} ${
+        ? `当前页面参考值 ${probabilitySnapshotValue(assessment.probabilities)}。${
+            runtimeReferenceNote ? `${runtimeReferenceNote} ` : ""
+          }${
             probabilityAnomalyHorizons.length > 0
               ? `命中 ${probabilityAnomalyHorizons.join(" / ")} 模型语义异常`
-              : "已被后端 MVP 状态降级"
-          }，只作为审计证据；主结论看 MVP 风险状态 ${mvpRiskState.label}。`
-        : `当前是 ${formatProbabilityPercentExact(assessment.probabilities.p_5d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_20d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_60d)}，回答“风险窗口离现在有多近”。`
+              : "已被后端 MVP 状态降为参考输入"
+          }，只作为参考证据；当前不要把这组三期限直接理解成风险时距，主结论看 MVP 风险状态 ${mvpRiskState.label}。`
+        : runtimeReferenceNote
+          ? `当前页面值 ${probabilitySnapshotValue(
+              assessment.probabilities
+            )}；模型原始输出 ${modelFinalSnapshot}。当前回答“风险窗口离现在有多近”时，应优先按模型原始输出和异常诊断解释，不把运行口径参考值直接当成正式结论。`
+          : `当前是 ${formatProbabilityPercentExact(assessment.probabilities.p_5d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_20d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_60d)}，回答“风险窗口离现在有多近”。`
     ],
     [
-      "动作概率",
-      `当前是 ${formatMethodActionProbability(assessment.actionability.prepare)} / ${formatMethodActionProbability(assessment.actionability.hedge)} / ${formatMethodActionProbability(assessment.actionability.defend)}，回答“现在该不该准备、对冲或防守”；它和 60d / 20d / 5d 的危机先验不是一一对应关系。`
+      probabilityAuditOnly || !assessment.method.actionability_enabled
+        ? "动作信号（辅助）"
+        : "动作概率",
+      probabilityAuditOnly
+        ? `当前显示 ${formatMethodActionProbability(assessment.actionability.prepare)} / ${formatMethodActionProbability(assessment.actionability.hedge)} / ${formatMethodActionProbability(assessment.actionability.defend)}，它回答“现在该不该准备、对冲或防守”，但在参考态下仍要让位于 MVP 规则层主结论。`
+        : !assessment.method.actionability_enabled
+          ? `当前显示 ${formatMethodActionProbability(assessment.actionability.prepare)} / ${formatMethodActionProbability(assessment.actionability.hedge)} / ${formatMethodActionProbability(assessment.actionability.defend)}，但这一层仍由危机先验和评分层过渡映射而来，只适合作为辅助执行信号，不应当成正式校准后的独立动作概率。`
+          : `当前是 ${formatMethodActionProbability(assessment.actionability.prepare)} / ${formatMethodActionProbability(assessment.actionability.hedge)} / ${formatMethodActionProbability(assessment.actionability.defend)}，回答“现在该不该准备、对冲或防守”；它和 60d / 20d / 5d 的危机先验不是一一对应关系。`
     ],
     [
       "最终执行节奏",
       probabilityAuditOnly
-        ? `当前正式概率待审计，页面主结论改用 MVP 风险状态：${mvpRiskState.label}。${mvpRiskState.summary}`
+        ? `当前正式概率只作参考输入，页面主结论改用 MVP 风险状态：${mvpRiskState.label}。${mvpRiskState.summary}`
         : `当前执行节奏为 ${postureLabel(assessment.posture)}，它是把危机先验、动作层、数据可信度和事件确认压缩后的执行结论。`
     ],
     [
@@ -190,14 +217,15 @@ export function useMethodViewModel({
     },
     {
       label: "历史轨迹点数",
-      value: `${historyProvenance.total_points}`
+      value: `${historyProvenance.total_points}`,
+      hint: "默认历史窗口的回放点数，不是训练样本数量，也不是 Go/No-Go 通过次数。"
     },
     {
       label: "PIT 快照支撑",
       value: `${historyProvenance.feature_backed_points}/${historyProvenance.total_points || 0}`,
       hint:
         historyProvenance.latest_feature_backed_date !== null
-          ? `最近一条当天 PIT 快照支撑点日期：${formatDate(historyProvenance.latest_feature_backed_date)}`
+          ? `最近一条当天 PIT 快照支撑点日期：${formatDate(historyProvenance.latest_feature_backed_date)}；这是历史证据层，不代表当前正式概率可作主结论。`
           : "当前默认历史窗口里还没有 PIT 快照支撑点。"
     },
     {

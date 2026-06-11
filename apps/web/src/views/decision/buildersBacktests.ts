@@ -93,41 +93,51 @@ export function buildRollingAuditMetrics(
   const hasActionSignals = rollingAudit.actionable_signal_count > 0;
   const noSignalHint =
     "当前滚动窗口没有发出准备/对冲/防守动作信号，所以这里不是命中率为 0，而是样本分母为 0。";
+  const rollingAuditHint =
+    "这是全历史回放里的动作信号审计口径，用来评估误报边界；不是当前正式概率的实时准确率。";
+  const rollingAuditCountHint =
+    "这里统计的是历史回放评估点/区间数量，不是当前页面今天出现的事件条数。";
 
   return [
     {
-      label: "动作信号精度",
+      label: "动作信号精度（历史）",
       value: hasActionSignals ? formatPercent(rollingAudit.actionable_precision) : "无动作信号",
-      hint: hasActionSignals ? undefined : noSignalHint
+      hint: hasActionSignals ? rollingAuditHint : noSignalHint
     },
     {
-      label: "动作信号点",
+      label: "动作信号点（历史）",
       value: noActionSignalText(hasActionSignals, "无") ?? formatCount(rollingAudit.actionable_signal_count),
-      hint: hasActionSignals ? undefined : noSignalHint
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     },
     {
       label: "危机前命中点",
-      value: noActionSignalText(hasActionSignals) ?? formatCount(rollingAudit.pre_crisis_signal_count)
+      value: noActionSignalText(hasActionSignals) ?? formatCount(rollingAudit.pre_crisis_signal_count),
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     },
     {
       label: "危机中信号点",
-      value: noActionSignalText(hasActionSignals) ?? formatCount(rollingAudit.in_crisis_signal_count)
+      value: noActionSignalText(hasActionSignals) ?? formatCount(rollingAudit.in_crisis_signal_count),
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     },
     {
       label: "受保护压力点",
-      value: noActionSignalText(hasActionSignals) ?? formatCount(rollingAudit.stress_window_signal_count)
+      value: noActionSignalText(hasActionSignals) ?? formatCount(rollingAudit.stress_window_signal_count),
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     },
     {
-      label: "纯误报点",
-      value: noActionSignalText(hasActionSignals) ?? formatCount(rollingAudit.false_positive_signal_count)
+      label: "纯误报点（历史）",
+      value: noActionSignalText(hasActionSignals) ?? formatCount(rollingAudit.false_positive_signal_count),
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     },
     {
-      label: "误报区间",
-      value: noActionSignalText(hasActionSignals, "无") ?? formatCount(rollingAudit.false_positive_episode_count)
+      label: "误报区间（历史）",
+      value: noActionSignalText(hasActionSignals, "无") ?? formatCount(rollingAudit.false_positive_episode_count),
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     },
     {
-      label: "最长误报区间",
-      value: noActionSignalText(hasActionSignals, "无") ?? formatCount(rollingAudit.longest_false_positive_episode_days, "d")
+      label: "最长误报区间（历史）",
+      value: noActionSignalText(hasActionSignals, "无") ?? formatCount(rollingAudit.longest_false_positive_episode_days, "d"),
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     }
   ];
 }

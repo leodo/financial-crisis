@@ -113,7 +113,10 @@ export function buildActionBoundaryRows(assessment: AssessmentSnapshot): ActionB
 
 export function actionBoundarySourceCopy(assessment: AssessmentSnapshot): string {
   if (mvpProbabilityInputIsAuditOnly(assessment)) {
-    return "当前正式概率待审计，四档高亮按 MVP 规则层决定；正式 5d/20d/60d 只保留为模型审计读数。";
+    return "当前正式概率先按参考值解读，四档高亮按 MVP 规则层决定；下方预算边界也只作为系统预算参考，不应被直接当成精确执行指令。";
+  }
+  if (!assessment.method.actionability_enabled) {
+    return "当前动作层仍有一部分来自危机先验和评分层的过渡映射；下方预算边界更适合作为系统预算参考，不应被直接当成精确执行指令。";
   }
   return "当前四档高亮按正式 posture 决定，并已叠加用户风险偏好生成下方预算条。";
 }

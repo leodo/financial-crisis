@@ -8,6 +8,12 @@ import {
 } from "../../format";
 import type { AssessmentSnapshot, PostureGuidance, RiskSnapshot } from "../../types";
 import type { MetricItem } from "../shared/panelHelpers";
+import {
+  currentMvpRiskState,
+  mvpProbabilityInputIsAuditOnly,
+  mvpRiskStateDetail,
+  mvpRiskStateDisplayLabel
+} from "../decision/mvpRiskState";
 import { driversContent } from "./content";
 
 export function useDriversViewModel({
@@ -21,6 +27,8 @@ export function useDriversViewModel({
 }) {
   const topDimension = [...overview.dimensions].sort((left, right) => right.score - left.score)[0];
   const elevatedDimensions = overview.dimensions.filter((dimension) => dimension.score >= 50).length;
+  const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
+  const mvpState = currentMvpRiskState(assessment);
 
   const summaryMetrics: MetricItem[] = [
     {
@@ -46,8 +54,10 @@ export function useDriversViewModel({
     },
     {
       label: "执行结论",
-      value: postureLabel(assessment.posture),
-      hint: timeBucketLabel(assessment.time_to_risk_bucket)
+      value: auditOnly ? mvpRiskStateDisplayLabel(mvpState.label) : postureLabel(assessment.posture),
+      hint: auditOnly
+        ? "当前主结论先按 MVP 规则层解释；正式概率和 posture 只作背景参考。"
+        : timeBucketLabel(assessment.time_to_risk_bucket)
     }
   ];
 
@@ -68,7 +78,10 @@ export function useDriversViewModel({
   const summaryRows = [
     [driversContent.summaryTitles.system, humanizeNarrativeCopy(assessment.summary)],
     [driversContent.summaryTitles.legacy, humanizeNarrativeCopy(overview.level_reason)],
-    [driversContent.summaryTitles.posture, humanizeNarrativeCopy(posture.summary)]
+    [
+      driversContent.summaryTitles.posture,
+      auditOnly ? humanizeNarrativeCopy(mvpRiskStateDetail(assessment)) : humanizeNarrativeCopy(posture.summary)
+    ]
   ] as Array<[string, string]>;
 
   return {

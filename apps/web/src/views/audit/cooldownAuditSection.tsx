@@ -69,20 +69,24 @@ export function CooldownAuditSection({ audit }: { audit: ResearchAuditResponse }
           value: formatDateTime(latestCooldownAudit.generated_at)
         },
         {
-          label: "审计结论",
-          value: latestCooldownAudit.recommendation
+          label: "审计结论（离线）",
+          value: latestCooldownAudit.recommendation,
+          hint: "candidate 晋升审计结论，不是当前面板动作建议。"
         },
         {
-          label: "No-Go 原因",
-          value: `${latestCooldownAudit.no_go_reasons.length}`
+          label: "No-Go 原因（离线）",
+          value: `${latestCooldownAudit.no_go_reasons.length}`,
+          hint: "release review 阻断项数量，不是线上自动放行结果。"
         },
         {
-          label: "候选误报变化",
-          value: `${latestCooldownAudit.false_positive_episodes.candidate_regressions.length}`
+          label: "候选误报变化（历史）",
+          value: `${latestCooldownAudit.false_positive_episodes.candidate_regressions.length}`,
+          hint: "历史回放 episode 变化，不是今天新增误报。"
         },
         {
-          label: "场景误报 delta",
-          value: `${latestCooldownAudit.scenario_false_positive_deltas.length}`
+          label: "场景误报 delta（历史）",
+          value: `${latestCooldownAudit.scenario_false_positive_deltas.length}`,
+          hint: "历史场景维度的误报变化条数，不是当前概率准确率。"
         }
       ]
     : [];
@@ -173,7 +177,7 @@ export function CooldownAuditSection({ audit }: { audit: ResearchAuditResponse }
           {runtimeRows.length > 0 ? (
             <ResponsiveTable
               className="wide-table"
-              columns={["窗口", "诊断", "Cooldown - Positive", "Cooldown - Normal"]}
+              columns={["窗口", "诊断", "冷却期 - 正例窗（历史）", "冷却期 - 常态窗（历史）"]}
               note={auditContent.cooldownRuntimeTableNote}
             >
               {runtimeRows.map((row) => (
@@ -206,7 +210,7 @@ export function CooldownAuditSection({ audit }: { audit: ResearchAuditResponse }
           {scenarioRows.length > 0 ? (
             <ResponsiveTable
               className="wide-table"
-              columns={["历史场景", "误报数量", "结果"]}
+              columns={["历史场景", "误报数量（历史）", "结果"]}
               note={auditContent.cooldownScenarioTableNote}
             >
               {scenarioRows.map((row) => (

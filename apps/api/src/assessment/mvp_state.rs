@@ -14,7 +14,7 @@ pub(super) fn build_mvp_risk_state(
     probability_diagnostics: &ProbabilityDiagnostics,
 ) -> MvpRiskState {
     let probability_input_status = if has_probability_semantic_anomaly(probability_diagnostics) {
-        MvpProbabilityInputStatus::AuditOnly
+        MvpProbabilityInputStatus::ReferenceOnly
     } else {
         MvpProbabilityInputStatus::Usable
     };
@@ -36,24 +36,26 @@ pub(super) fn build_mvp_risk_state(
         scores.external_shock_score
     ));
     primary_evidence.push(format!(
-        "数据覆盖 {:.1}%，质量等级 {:?}",
+        "关键指标覆盖 {:.1}%，覆盖等级 {:?}",
         data_trust.coverage_score * 100.0,
         data_trust.quality_grade
     ));
     primary_evidence.push(format!(
-        "事件确认 {:.1}，日元套息 {:?} {:.1}",
-        event_assessment.confirmation_score, jpy_carry.state, jpy_carry.score
+        "事件确认 {:.1} 分，日元套息 {} {:.1} 分",
+        event_assessment.confirmation_score,
+        jpy_carry_state_label(jpy_carry.state),
+        jpy_carry.score
     ));
 
     let mut blockers = Vec::new();
     if matches!(
         probability_input_status,
-        MvpProbabilityInputStatus::AuditOnly
+        MvpProbabilityInputStatus::ReferenceOnly
     ) {
-        blockers.push("正式 5d/20d/60d 概率命中模型语义异常，只能作为审计输入。".to_string());
+        blockers.push("正式 5d/20d/60d 概率命中模型语义异常，只能作为参考输入。".to_string());
     }
     if data_blocked {
-        blockers.push("数据覆盖或质量不足，MVP 规则层只能保持观察。".to_string());
+        blockers.push("关键指标覆盖或覆盖等级不足，MVP 规则层只能保持观察。".to_string());
     }
     if scores.overall_score < 45.0 && scores.trigger_score < 45.0 {
         blockers.push("总风险和触发压力尚未进入 45 分以上的准备区。".to_string());
@@ -70,6 +72,15 @@ pub(super) fn build_mvp_risk_state(
         primary_evidence,
         blockers,
         next_actions: mvp_next_actions(code, probability_input_status),
+    }
+}
+
+fn jpy_carry_state_label(state: JpyCarryState) -> &'static str {
+    match state {
+        JpyCarryState::Quiet => "平稳",
+        JpyCarryState::Building => "积累中",
+        JpyCarryState::Stress => "高压",
+        JpyCarryState::Unwind => "平仓风险",
     }
 }
 
@@ -135,20 +146,20 @@ fn mvp_risk_state_label(
     probability_input_status: MvpProbabilityInputStatus,
 ) -> &'static str {
     match (code, probability_input_status) {
-        (MvpRiskStateCode::Observe, MvpProbabilityInputStatus::AuditOnly) => {
-            "观察为主（概率待审计）"
+        (MvpRiskStateCode::Observe, MvpProbabilityInputStatus::ReferenceOnly) => {
+            "观察为主（概率参考）"
         }
         (MvpRiskStateCode::Observe, MvpProbabilityInputStatus::Usable) => "观察为主",
-        (MvpRiskStateCode::Prepare, MvpProbabilityInputStatus::AuditOnly) => {
-            "提前准备（概率待审计）"
+        (MvpRiskStateCode::Prepare, MvpProbabilityInputStatus::ReferenceOnly) => {
+            "提前准备（概率参考）"
         }
         (MvpRiskStateCode::Prepare, MvpProbabilityInputStatus::Usable) => "提前准备",
-        (MvpRiskStateCode::Hedge, MvpProbabilityInputStatus::AuditOnly) => {
-            "保护性对冲（概率待审计）"
+        (MvpRiskStateCode::Hedge, MvpProbabilityInputStatus::ReferenceOnly) => {
+            "保护性对冲（概率参考）"
         }
         (MvpRiskStateCode::Hedge, MvpProbabilityInputStatus::Usable) => "保护性对冲",
-        (MvpRiskStateCode::Defend, MvpProbabilityInputStatus::AuditOnly) => {
-            "防守优先（概率待审计）"
+        (MvpRiskStateCode::Defend, MvpProbabilityInputStatus::ReferenceOnly) => {
+            "防守优先（概率参考）"
         }
         (MvpRiskStateCode::Defend, MvpProbabilityInputStatus::Usable) => "防守优先",
     }
@@ -172,9 +183,9 @@ fn mvp_risk_state_summary(
     };
     if matches!(
         probability_input_status,
-        MvpProbabilityInputStatus::AuditOnly
+        MvpProbabilityInputStatus::ReferenceOnly
     ) {
-        format!("{posture_copy}正式概率当前只作为审计输入，不参与 MVP 主结论。")
+        format!("{posture_copy}正式概率当前只作为参考输入，不参与 MVP 主结论。")
     } else {
         posture_copy.to_string()
     }
@@ -186,7 +197,7 @@ fn mvp_next_actions(
 ) -> Vec<String> {
     let mut actions = match code {
         MvpRiskStateCode::Observe => vec![
-            "保持常规监控，不把偏低的正式概率审计读数解释成风险已经远离。".to_string(),
+            "保持常规监控，不把偏低的正式概率参考值解释成风险已经远离。".to_string(),
             "继续盯 VIX、信用利差、收益率曲线、USDJPY 和事件层是否共振。".to_string(),
         ],
         MvpRiskStateCode::Prepare => vec![
@@ -205,7 +216,7 @@ fn mvp_next_actions(
 
     if matches!(
         probability_input_status,
-        MvpProbabilityInputStatus::AuditOnly
+        MvpProbabilityInputStatus::ReferenceOnly
     ) {
         actions.push("等待正式概率模型通过 Go/No-Go 后，才恢复概率作为主结论。".to_string());
     }
@@ -311,10 +322,18 @@ mod tests {
         assert_eq!(state.code, MvpRiskStateCode::Observe);
         assert_eq!(
             state.probability_input_status,
-            MvpProbabilityInputStatus::AuditOnly
+            MvpProbabilityInputStatus::ReferenceOnly
         );
-        assert_eq!(state.label, "观察为主（概率待审计）");
-        assert!(state.summary.contains("正式概率当前只作为审计输入"));
+        assert_eq!(state.label, "观察为主（概率参考）");
+        assert!(state.summary.contains("正式概率当前只作为参考输入"));
+        assert!(state
+            .primary_evidence
+            .iter()
+            .any(|evidence| evidence.contains("事件确认 18.0 分，日元套息 平稳 17.5 分")));
+        assert!(!state
+            .primary_evidence
+            .iter()
+            .any(|evidence| evidence.contains("Quiet")));
         assert!(state
             .blockers
             .iter()

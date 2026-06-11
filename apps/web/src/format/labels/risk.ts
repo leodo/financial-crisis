@@ -136,6 +136,16 @@ export function eventStateLabel(state: EventConfirmationState): string {
   return labels[state];
 }
 
+export function eventSignalListLabel(state: EventConfirmationState): string {
+  return state === "confirmed" || state === "escalating" ? "已确认信号" : "近期观察信号";
+}
+
+export function eventSignalListEmptyText(state: EventConfirmationState): string {
+  return state === "confirmed" || state === "escalating"
+    ? "当前没有新增确认信号。"
+    : "当前没有近期观察信号；事件层暂不支持动作升级。";
+}
+
 export function userProfileLabel(profile: UserRiskProfile): string {
   const labels: Record<UserRiskProfile, string> = {
     conservative: "保守",

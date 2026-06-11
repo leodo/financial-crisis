@@ -7,7 +7,6 @@ import {
   formatNumber,
   formatPercent,
   formatPercentPrecise,
-  formatPreciseNumber,
   formatSignedNumber,
   freshnessLabel,
   pointInTimeModeLabel,
@@ -44,15 +43,16 @@ import {
 import {
   currentMvpRiskState,
   mvpProbabilityInputIsAuditOnly,
-  mvpRiskStateDetail
+  mvpRiskStateDetail,
+  mvpRiskStateDisplayLabel
 } from "./mvpRiskState";
-import { probabilityDiagnosticAnomalyHorizons } from "./probabilityDiagnostics";
 import {
   actionEvidenceHint,
   actionEvidenceScore,
   actionEvidenceStatus,
   actionSourceSummary,
   formatActionProbability,
+  hasRuntimeProbabilityOverride,
   probabilitySnapshotDetail,
   probabilitySnapshotValue
 } from "./signalLayerBuilders";
@@ -123,6 +123,8 @@ export function buildRuntimeCards(
   assessment: AssessmentSnapshot,
   usdJpyIndicator: AssessmentSnapshot["key_indicators"][number] | undefined
 ): DecisionRuntimeCard[] {
+  const probabilityIsReferenceOnly = mvpProbabilityInputIsAuditOnly(assessment);
+  const hasRuntimeOverride = hasRuntimeProbabilityOverride(assessment);
   return [
     {
       label: "最新关键观测",
@@ -140,11 +142,9 @@ export function buildRuntimeCards(
       detail: decisionContent.prelude.generatedHint
     },
     {
-      label: "当前概率快照",
-      value:
-        mvpProbabilityInputIsAuditOnly(assessment)
-          ? "正式概率待审计"
-          : probabilitySnapshotValue(assessment.probabilities),
+      label:
+        probabilityIsReferenceOnly || hasRuntimeOverride ? "运行口径参考概率" : "当前概率快照",
+      value: probabilitySnapshotValue(assessment.probabilities),
       detail: probabilitySnapshotDetail(assessment)
     },
     {
@@ -168,7 +168,7 @@ export function buildHeroMetrics(assessment: AssessmentSnapshot): MetricItem[] {
   return [
     {
       label: "MVP 风险状态",
-      value: state.label,
+      value: mvpRiskStateDisplayLabel(state.label),
       hint: mvpRiskStateDetail(assessment),
       valueClassName: "metric-value-token"
     },
@@ -185,9 +185,9 @@ export function buildHeroMetrics(assessment: AssessmentSnapshot): MetricItem[] {
       valueClassName: "metric-value-token"
     },
     {
-      label: "数据覆盖",
+      label: "关键指标覆盖",
       value: formatPercent(assessment.data_trust.coverage_score),
-      hint: "衡量当前免费数据源覆盖度；这个才更接近数据可信程度。"
+      hint: "衡量当前关键指标覆盖度；不等同于全部免费源都健康。"
     }
   ];
 }
@@ -196,6 +196,8 @@ export function buildRiskHorizonActionMetrics(
   assessment: AssessmentSnapshot
 ): MetricItem[] {
   const actionSource = actionSourceSummary(assessment);
+  const actionValuesAreAuxiliary =
+    !assessment.method.actionability_enabled || mvpProbabilityInputIsAuditOnly(assessment);
   const prepareLabel = assessment.method.actionability_enabled ? "准备动作" : "准备动作（过渡）";
   const hedgeLabel = assessment.method.actionability_enabled ? "对冲动作" : "对冲动作（过渡）";
   const defendLabel = assessment.method.actionability_enabled ? "防守动作" : "防守动作（过渡）";
@@ -203,10 +205,12 @@ export function buildRiskHorizonActionMetrics(
   return [
     {
       label: prepareLabel,
-      value: formatActionProbability(
-        assessment.actionability.prepare,
-        assessment.method.actionability_enabled
-      ),
+      value: actionValuesAreAuxiliary
+        ? "辅助信号"
+        : formatActionProbability(
+            assessment.actionability.prepare,
+            assessment.method.actionability_enabled
+          ),
       hint: `${decisionContent.riskHorizon.actionHints.prepare} ${formatActionCurrentValue(
         assessment.actionability.prepare,
         assessment.method.actionability_enabled
@@ -214,10 +218,12 @@ export function buildRiskHorizonActionMetrics(
     },
     {
       label: hedgeLabel,
-      value: formatActionProbability(
-        assessment.actionability.hedge,
-        assessment.method.actionability_enabled
-      ),
+      value: actionValuesAreAuxiliary
+        ? "辅助信号"
+        : formatActionProbability(
+            assessment.actionability.hedge,
+            assessment.method.actionability_enabled
+          ),
       hint: `${decisionContent.riskHorizon.actionHints.hedge} ${formatActionCurrentValue(
         assessment.actionability.hedge,
         assessment.method.actionability_enabled
@@ -225,10 +231,12 @@ export function buildRiskHorizonActionMetrics(
     },
     {
       label: defendLabel,
-      value: formatActionProbability(
-        assessment.actionability.defend,
-        assessment.method.actionability_enabled
-      ),
+      value: actionValuesAreAuxiliary
+        ? "辅助信号"
+        : formatActionProbability(
+            assessment.actionability.defend,
+            assessment.method.actionability_enabled
+          ),
       hint: `${decisionContent.riskHorizon.actionHints.defend} ${formatActionCurrentValue(
         assessment.actionability.defend,
         assessment.method.actionability_enabled
@@ -359,7 +367,7 @@ export function buildAnalogRows(assessment: AssessmentSnapshot): DecisionAnalogR
   return assessment.historical_analogs.map((analog) => ({
     id: analog.scenario_id,
     title: analog.name,
-    similarity: formatNumber(analog.similarity_score),
+    similarity: `${formatNumber(analog.similarity_score)} /100`,
     structuralLead: formatOptionalLeadTime(analog.lead_time_days, "无稳定结构信号"),
     actionLead: formatOptionalLeadTime(analog.actionable_lead_time_days, "未形成动作预警"),
     evidenceDifference: historicalEvidenceDifference(
@@ -393,6 +401,8 @@ export function buildActionPlanMetrics(
   const releaseHealth = describeReleaseHealth(assessment.method.release_status);
   const compactReleaseId = releaseIdLabel(assessment.method.release_id);
   const governance = assessment.position_guidance.governance;
+  const budgetIsReference =
+    mvpProbabilityInputIsAuditOnly(assessment) || !assessment.method.actionability_enabled;
 
   return [
     { label: "概率模式", value: probabilityMode.label, hint: probabilityMode.hint },
@@ -406,15 +416,27 @@ export function buildActionPlanMetrics(
     {
       label: "动作框架",
       value: assessment.position_guidance.capital_preservation_overlay_enabled
-        ? "资本保全"
-        : "分层防守",
-      hint: compactTechnicalId(assessment.position_guidance.action_playbook_version).value
+        ? budgetIsReference
+          ? "资本保全（参考）"
+          : "资本保全"
+        : budgetIsReference
+          ? "分层防守（参考）"
+          : "分层防守",
+      hint: `${compactTechnicalId(assessment.position_guidance.action_playbook_version).value}${
+        budgetIsReference ? " · 当前先按预算参考解读" : ""
+      }`
     },
     {
       label: "建议性质",
-      value: governance.system_budget_only ? "系统预算建议" : "可执行指令",
+      value: governance.system_budget_only
+        ? budgetIsReference
+          ? "系统预算参考"
+          : "系统预算建议"
+        : "可执行指令",
       hint: governance.system_budget_only
-        ? "只回答系统层面的减震、对冲和现金预算，不替代个性化投资建议。"
+        ? budgetIsReference
+          ? "当前预算数字只作为系统层参考边界，不替代个性化投资建议，也不应直接照抄执行。"
+          : "只回答系统层面的减震、对冲和现金预算，不替代个性化投资建议。"
         : "当前版本允许直接执行。"
     },
     {
@@ -455,7 +477,11 @@ export function buildJpyCarryMetrics(
       label: "美日利差",
       value: formatSignedNumber(assessment.jpy_carry.us_jp_short_rate_diff, 2, "%")
     },
-    { label: "20d 波动", value: formatPreciseNumber(assessment.jpy_carry.realized_vol_20d) },
+    {
+      label: "20d 日收益波动",
+      value: formatPercentPrecise(assessment.jpy_carry.realized_vol_20d),
+      hint: "USDJPY 20 日窗口日变化率标准差；后端返回小数口径，页面按百分比展示。"
+    },
     {
       label: "融资压力",
       value: formatNumber(assessment.jpy_carry.funding_pressure_score)

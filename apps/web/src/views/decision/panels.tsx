@@ -7,11 +7,15 @@ import {
   ShieldCheck
 } from "lucide-react";
 import {
+  eventSignalListEmptyText,
+  eventSignalListLabel,
+  formatDate,
   humanizeNarrativeCopy,
   eventStateLabel,
   formatNumber,
   formatPercent,
-  jpyStateLabel
+  jpyStateLabel,
+  levelLabel
 } from "../../format";
 import { SimpleGroupedBarChart } from "../../simpleCharts";
 import type { AssessmentSnapshot, RiskSnapshot } from "../../types";
@@ -34,6 +38,7 @@ import {
 } from "./actionBoundaries";
 import { BudgetBar } from "./components";
 import { decisionContent } from "./content";
+import { mvpProbabilityInputIsAuditOnly } from "./mvpRiskState";
 import type { GroupedBarChartModel } from "./charts";
 import type {
   DecisionAnalogRow,
@@ -63,10 +68,12 @@ function backtestSummaryCopy(assessment: AssessmentSnapshot) {
 
 export function DecisionWhyNowPanel({
   assessment,
-  posture
+  posture,
+  drivers
 }: {
   assessment: AssessmentSnapshot;
   posture: { reasons: string[]; upgrade_condition: string };
+  drivers: AssessmentSnapshot["top_risk_drivers"];
 }) {
   return (
     <section className="surface">
@@ -74,8 +81,11 @@ export function DecisionWhyNowPanel({
       <BulletList items={posture.reasons.map(humanizeNarrativeCopy)} />
       <div className="driver-preview">
         <strong>{decisionContent.panels.whyNowTopDrivers}</strong>
-        <DriverList rows={assessment.top_risk_drivers.slice(0, 3)} />
+        <DriverList rows={drivers} />
       </div>
+      <RuleBox label="近端优先说明">
+        {decisionContent.panels.whyNowDriverTiming}
+      </RuleBox>
       <RuleBox label="升级条件">{humanizeNarrativeCopy(posture.upgrade_condition)}</RuleBox>
     </section>
   );
@@ -113,11 +123,12 @@ export function DecisionAnalogPanel({
       <SurfaceHeader title="历史类比" icon={GitCompareArrows} />
       <SimpleGroupedBarChart model={analogChart} height={320} />
       <div className="legend-note">
-        蓝柱表示当前总风险强度，橙柱表示对应历史场景的压力峰值。这里固定对比美国核心历史压力样本，先看相似度，再看历史上是否给过结构或动作提前量。
+        蓝柱表示当前总风险强度，橙柱表示对应历史场景的压力峰值。这里固定对比美国核心历史压力样本，先看相似度，再看历史上是否给过结构或动作提前量；相似度是 0-100 的结构参照分，不是危机发生概率。
       </div>
       <ResponsiveTable
-        columns={["历史场景", "相似度", "结构提前", "动作提前", "证据差异"]}
+        columns={["历史场景", "相似度（0-100）", "结构提前", "动作提前", "证据差异"]}
         className="wide-table"
+        note="相似度越高表示当前压力结构更接近该历史样本；提前天数来自历史回放/场景目录，不代表当前还剩多少天。"
       >
         {analogRows.map((analog) => (
           <tr key={analog.id}>
@@ -145,6 +156,8 @@ export function DecisionActionPlanPanel({
 }) {
   const actionBoundaryRows = buildActionBoundaryRows(assessment);
   const currentActionBoundary = currentActionBoundaryPosture(assessment);
+  const budgetIsReference =
+    mvpProbabilityInputIsAuditOnly(assessment) || !assessment.method.actionability_enabled;
 
   return (
     <section className="surface">
@@ -155,7 +168,11 @@ export function DecisionActionPlanPanel({
       <ResponsiveTable
         columns={["档位", "风险资产上限", "现金目标", "对冲覆盖", "期权保护", "杠杆上限", "执行窗口"]}
         className="wide-table action-boundary-table"
-        note="这张表是系统级风险预算边界，不是自动交易指令；当前档位的实际预算会叠加你的风险偏好。"
+        note={
+          budgetIsReference
+            ? "这张表当前是系统级预算参考边界，不是自动交易指令；当前档位和预算数字都不应被直接照抄执行。"
+            : "这张表是系统级风险预算边界，不是自动交易指令；当前档位的实际预算会叠加你的风险偏好。"
+        }
       >
         {actionBoundaryRows.map((row) => (
           <tr
@@ -168,7 +185,9 @@ export function DecisionActionPlanPanel({
                 {row.id === currentActionBoundary ? <span>当前</span> : null}
               </div>
               <small>{row.summary}</small>
-              {row.currentBudget ? <em>当前预算：{row.currentBudget}</em> : null}
+              {row.currentBudget ? (
+                <em>{budgetIsReference ? `当前预算参考：${row.currentBudget}` : `当前预算：${row.currentBudget}`}</em>
+              ) : null}
             </td>
             <td className="table-nowrap">{row.riskAssetRange}</td>
             <td className="table-nowrap">{row.cashRange}</td>
@@ -188,22 +207,36 @@ export function DecisionActionPlanPanel({
       ) : null}
       <div className="surface-grid">
         <BudgetBar
-          label="风险资产上限"
+          label={budgetIsReference ? "风险资产上限（参考）" : "风险资产上限"}
           value={assessment.position_guidance.target_equity_exposure_pct}
+          valueLabel={
+            budgetIsReference
+              ? `${formatNumber(assessment.position_guidance.target_equity_exposure_pct, "%")} 参考`
+              : undefined
+          }
           note="风险窗口打开时，系统建议先压低总暴露。"
           tone="risk"
         />
         <BudgetBar
-          label="现金目标"
+          label={budgetIsReference ? "现金目标（参考）" : "现金目标"}
           value={assessment.position_guidance.target_cash_pct}
+          valueLabel={
+            budgetIsReference
+              ? `${formatNumber(assessment.position_guidance.target_cash_pct, "%")} 参考`
+              : undefined
+          }
           note="用于应对流动性冲击和执行保护动作。"
           tone="cash"
         />
         <BudgetBar
-          label="对冲覆盖"
+          label={budgetIsReference ? "对冲覆盖（参考）" : "对冲覆盖"}
           value={assessment.position_guidance.hedge_ratio_pct}
           valueLabel={
-            assessment.position_guidance.hedge_ratio_pct === 0 ? "暂不对冲" : undefined
+            assessment.position_guidance.hedge_ratio_pct === 0
+              ? "暂不对冲"
+              : budgetIsReference
+                ? `${formatNumber(assessment.position_guidance.hedge_ratio_pct, "%")} 参考`
+                : undefined
           }
           note={
             assessment.position_guidance.hedge_ratio_pct === 0
@@ -213,14 +246,24 @@ export function DecisionActionPlanPanel({
           tone="hedge"
         />
         <BudgetBar
-          label="杠杆上限"
+          label={budgetIsReference ? "杠杆上限（参考）" : "杠杆上限"}
           value={assessment.position_guidance.leverage_cap_pct}
+          valueLabel={
+            budgetIsReference
+              ? `${formatNumber(assessment.position_guidance.leverage_cap_pct, "%")} 参考`
+              : undefined
+          }
           note="风险窗口内不宜维持高杠杆。"
           tone="leverage"
         />
         <BudgetBar
-          label="期权保护"
+          label={budgetIsReference ? "期权保护（参考）" : "期权保护"}
           value={assessment.position_guidance.option_overlay_pct}
+          valueLabel={
+            budgetIsReference
+              ? `${formatNumber(assessment.position_guidance.option_overlay_pct, "%")} 参考`
+              : undefined
+          }
           note="可用来做尾部保护，而不是替代全部风控。"
           tone="option"
         />
@@ -243,7 +286,9 @@ export function DecisionActionPlanPanel({
         <span>{decisionContent.panels.actionPlanGovernance}</span>
         <span>
           {assessment.position_guidance.governance.system_budget_only
-            ? "当前输出是系统预算建议，不是个性化投资建议。"
+            ? budgetIsReference
+              ? "当前输出是系统预算参考，不是个性化投资建议，也不应直接照抄执行。"
+              : "当前输出是系统预算建议，不是个性化投资建议。"
             : "当前输出可直接执行。"}
         </span>
         <span>
@@ -271,11 +316,25 @@ export function DecisionActionPlanPanel({
   );
 }
 
+function eventSignalDisplayItems(assessment: AssessmentSnapshot): string[] {
+  if (assessment.event_assessment.recent_events.length > 0) {
+    return assessment.event_assessment.recent_events.map(
+      (event) =>
+        `${formatDate(event.triggered_as_of_date)} · ${levelLabel(event.level)} · ${humanizeNarrativeCopy(
+          event.trigger_reason
+        )}`
+    );
+  }
+  return assessment.event_assessment.confirmed_signals.map(humanizeNarrativeCopy);
+}
+
 export function DecisionEventPanel({
   assessment
 }: {
   assessment: AssessmentSnapshot;
 }) {
+  const eventSignalLabel = eventSignalListLabel(assessment.event_assessment.state);
+  const eventSignals = eventSignalDisplayItems(assessment);
   return (
     <section className="surface">
       <SurfaceHeader title="事件层确认" icon={Activity} />
@@ -285,11 +344,11 @@ export function DecisionEventPanel({
         summary={humanizeNarrativeCopy(assessment.event_assessment.summary)}
       />
       <div className="surface-grid">
-        <RuleBox label={decisionContent.panels.eventConfirmedTitle}>
+        <RuleBox label={eventSignalLabel}>
           <BulletList
-            items={assessment.event_assessment.confirmed_signals.map(humanizeNarrativeCopy)}
+            items={eventSignals}
             compact
-            emptyText={decisionContent.panels.eventConfirmedEmpty}
+            emptyText={eventSignalListEmptyText(assessment.event_assessment.state)}
             emptyVariant="inline"
           />
         </RuleBox>

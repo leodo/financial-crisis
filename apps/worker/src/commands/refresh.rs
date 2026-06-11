@@ -10,6 +10,15 @@ use super::backfill::{
     FredBackfillOptions,
 };
 
+const MVP_FRED_REFRESH_TARGETS: &[(&str, Option<&str>)] = &[
+    ("us_market_vix_close", None),
+    ("us_credit_high_yield_oas", None),
+    ("us_credit_baa_10y_spread", None),
+    ("us_liquidity_financial_stress_stl", None),
+    ("us_liquidity_effr", Some("EFFR")),
+    ("us_liquidity_sofr", None),
+];
+
 #[derive(Debug, Clone)]
 pub(crate) struct RefreshLatestOptions {
     pub(crate) fast_lookback_days: i64,
@@ -17,6 +26,7 @@ pub(crate) struct RefreshLatestOptions {
     pub(crate) fred_chunk_days: i64,
     pub(crate) skip_world_bank: bool,
     pub(crate) include_gdelt: bool,
+    pub(crate) mvp_key_only: bool,
     pub(crate) reload_api: bool,
     pub(crate) api_reload_url: String,
 }
@@ -28,6 +38,7 @@ impl RefreshLatestOptions {
         let mut fred_chunk_days = 45_i64;
         let mut skip_world_bank = false;
         let mut include_gdelt = false;
+        let mut mvp_key_only = false;
         let mut reload_api = true;
         let mut api_reload_url = crate::DEFAULT_API_RELOAD_URL.to_string();
         let mut index = 0;
@@ -55,6 +66,9 @@ impl RefreshLatestOptions {
                 "--include-gdelt" => {
                     include_gdelt = true;
                 }
+                "--mvp-key-only" => {
+                    mvp_key_only = true;
+                }
                 "--no-reload-api" => {
                     reload_api = false;
                 }
@@ -76,6 +90,7 @@ impl RefreshLatestOptions {
             fred_chunk_days,
             skip_world_bank,
             include_gdelt,
+            mvp_key_only,
             reload_api,
             api_reload_url,
         })
@@ -115,89 +130,74 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
         5 + if options.skip_world_bank { 0 } else { 1 } + if options.include_gdelt { 1 } else { 0 };
 
     println!("Stage 1/{total_stages}: FRED market series");
-    backfill_fred_with_options(FredBackfillOptions {
-        options: BackfillOptions {
-            start: fast_start,
-            end: today,
-            chunk_days: Some(options.fred_chunk_days),
-            indicator_filter: None,
-            external_code_filter: None,
-            watermark_overlap_days: None,
-            respect_frequency_watermark: false,
-        }
-        .with_frequency_watermark_refresh(),
-        fred_mode: FredBackfillMode::GraphCsv,
-    })
-    .await?;
+    let mut stage_failures = Vec::new();
+    refresh_fred_stage(&options, fast_start, today, &mut stage_failures).await;
 
     println!("Stage 2/{total_stages}: Treasury yield curve");
-    backfill_treasury_yield_with_options(
-        BackfillOptions {
-            start: fast_start,
-            end: today,
-            chunk_days: Some(options.fast_lookback_days.min(180)),
-            indicator_filter: None,
-            external_code_filter: None,
-            watermark_overlap_days: None,
-            respect_frequency_watermark: false,
-        }
-        .with_frequency_watermark_refresh(),
-    )
-    .await?;
+    record_stage_result(
+        "Treasury yield curve",
+        backfill_treasury_yield_with_options(
+            BackfillOptions {
+                start: fast_start,
+                end: today,
+                chunk_days: Some(options.fast_lookback_days.min(180)),
+                indicator_filter: None,
+                external_code_filter: None,
+                watermark_overlap_days: None,
+                respect_frequency_watermark: false,
+            }
+            .with_frequency_watermark_refresh(),
+        )
+        .await,
+        &mut stage_failures,
+    );
 
     println!("Stage 3/{total_stages}: BOJ FX");
-    backfill_boj_with_options(BojBackfillOptions {
-        dataset: BojDataset::FxDaily,
-        options: BackfillOptions {
-            start: fast_start,
-            end: today,
-            chunk_days: Some(options.fast_lookback_days.min(180)),
-            indicator_filter: None,
-            external_code_filter: None,
-            watermark_overlap_days: None,
-            respect_frequency_watermark: false,
-        }
-        .with_frequency_watermark_refresh(),
-    })
-    .await?;
+    record_stage_result(
+        "BOJ FX",
+        backfill_boj_with_options(BojBackfillOptions {
+            dataset: BojDataset::FxDaily,
+            options: BackfillOptions {
+                start: fast_start,
+                end: today,
+                chunk_days: Some(options.fast_lookback_days.min(180)),
+                indicator_filter: None,
+                external_code_filter: None,
+                watermark_overlap_days: None,
+                respect_frequency_watermark: false,
+            }
+            .with_frequency_watermark_refresh(),
+        })
+        .await,
+        &mut stage_failures,
+    );
 
     println!("Stage 4/{total_stages}: BOJ money market");
-    backfill_boj_with_options(BojBackfillOptions {
-        dataset: BojDataset::MoneyMarketRates,
-        options: BackfillOptions {
-            start: fast_start,
-            end: today,
-            chunk_days: Some(options.fast_lookback_days.min(180)),
-            indicator_filter: None,
-            external_code_filter: None,
-            watermark_overlap_days: None,
-            respect_frequency_watermark: false,
-        }
-        .with_frequency_watermark_refresh(),
-    })
-    .await?;
+    record_stage_result(
+        "BOJ money market",
+        backfill_boj_with_options(BojBackfillOptions {
+            dataset: BojDataset::MoneyMarketRates,
+            options: BackfillOptions {
+                start: fast_start,
+                end: today,
+                chunk_days: Some(options.fast_lookback_days.min(180)),
+                indicator_filter: None,
+                external_code_filter: None,
+                watermark_overlap_days: None,
+                respect_frequency_watermark: false,
+            }
+            .with_frequency_watermark_refresh(),
+        })
+        .await,
+        &mut stage_failures,
+    );
 
     println!("Stage 5/{total_stages}: SEC EDGAR");
-    backfill_sec_edgar_with_options(
-        BackfillOptions {
-            start: fast_start,
-            end: today,
-            chunk_days: None,
-            indicator_filter: None,
-            external_code_filter: None,
-            watermark_overlap_days: None,
-            respect_frequency_watermark: false,
-        }
-        .with_frequency_watermark_refresh(),
-    )
-    .await?;
-
-    let mut next_stage = 6;
-    if !options.skip_world_bank {
-        println!("Stage {next_stage}/{total_stages}: World Bank slow variables");
-        backfill_world_bank_with_options(
+    record_stage_result(
+        "SEC EDGAR",
+        backfill_sec_edgar_with_options(
             BackfillOptions {
-                start: slow_start,
+                start: fast_start,
                 end: today,
                 chunk_days: None,
                 indicator_filter: None,
@@ -207,25 +207,63 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
             }
             .with_frequency_watermark_refresh(),
         )
-        .await?;
+        .await,
+        &mut stage_failures,
+    );
+
+    let mut next_stage = 6;
+    if !options.skip_world_bank {
+        println!("Stage {next_stage}/{total_stages}: World Bank slow variables");
+        record_stage_result(
+            "World Bank slow variables",
+            backfill_world_bank_with_options(
+                BackfillOptions {
+                    start: slow_start,
+                    end: today,
+                    chunk_days: None,
+                    indicator_filter: None,
+                    external_code_filter: None,
+                    watermark_overlap_days: None,
+                    respect_frequency_watermark: false,
+                }
+                .with_frequency_watermark_refresh(),
+            )
+            .await,
+            &mut stage_failures,
+        );
         next_stage += 1;
     }
 
     if options.include_gdelt {
         println!("Stage {next_stage}/{total_stages}: GDELT prototype events");
-        backfill_gdelt_with_options(
-            BackfillOptions {
-                start: fast_start,
-                end: today,
-                chunk_days: None,
-                indicator_filter: None,
-                external_code_filter: None,
-                watermark_overlap_days: Some(7),
-                respect_frequency_watermark: false,
-            }
-            .with_frequency_watermark_refresh(),
-        )
-        .await?;
+        record_stage_result(
+            "GDELT prototype events",
+            backfill_gdelt_with_options(
+                BackfillOptions {
+                    start: fast_start,
+                    end: today,
+                    chunk_days: None,
+                    indicator_filter: None,
+                    external_code_filter: None,
+                    watermark_overlap_days: Some(7),
+                    respect_frequency_watermark: false,
+                }
+                .with_frequency_watermark_refresh(),
+            )
+            .await,
+            &mut stage_failures,
+        );
+    }
+
+    if !stage_failures.is_empty() {
+        println!(
+            "Latest free-data refresh completed with {} stage warning(s):",
+            stage_failures.len()
+        );
+        for failure in stage_failures.iter().take(8) {
+            println!("  warning: {failure}");
+        }
+        println!("Run `just refresh-status` to inspect source-level success and failure evidence.");
     }
 
     super::db_check().await?;
@@ -244,6 +282,69 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn refresh_fred_stage(
+    options: &RefreshLatestOptions,
+    fast_start: chrono::NaiveDate,
+    today: chrono::NaiveDate,
+    stage_failures: &mut Vec<String>,
+) {
+    if options.mvp_key_only {
+        println!(
+            "  using MVP key-only FRED refresh ({} series)",
+            MVP_FRED_REFRESH_TARGETS.len()
+        );
+        for (indicator_id, external_code) in MVP_FRED_REFRESH_TARGETS {
+            let label = external_code
+                .map(|code| format!("FRED {indicator_id}/{code}"))
+                .unwrap_or_else(|| format!("FRED {indicator_id}"));
+            let result = backfill_fred_with_options(FredBackfillOptions {
+                options: BackfillOptions {
+                    start: fast_start,
+                    end: today,
+                    chunk_days: Some(options.fred_chunk_days),
+                    indicator_filter: Some((*indicator_id).to_string()),
+                    external_code_filter: external_code.map(str::to_string),
+                    watermark_overlap_days: None,
+                    respect_frequency_watermark: false,
+                }
+                .with_frequency_watermark_refresh(),
+                fred_mode: FredBackfillMode::GraphCsv,
+            })
+            .await;
+            record_stage_result(&label, result, stage_failures);
+        }
+        return;
+    }
+
+    record_stage_result(
+        "FRED market series",
+        backfill_fred_with_options(FredBackfillOptions {
+            options: BackfillOptions {
+                start: fast_start,
+                end: today,
+                chunk_days: Some(options.fred_chunk_days),
+                indicator_filter: None,
+                external_code_filter: None,
+                watermark_overlap_days: None,
+                respect_frequency_watermark: false,
+            }
+            .with_frequency_watermark_refresh(),
+            fred_mode: FredBackfillMode::GraphCsv,
+        })
+        .await,
+        stage_failures,
+    );
+}
+
+fn record_stage_result(label: &str, result: Result<()>, stage_failures: &mut Vec<String>) {
+    if let Err(error) = result {
+        let message = format!("{label}: {error:#}");
+        tracing::warn!(%message, "refresh stage failed");
+        println!("  warning: {message}");
+        stage_failures.push(message);
+    }
 }
 
 async fn refresh_status(args: &[String]) -> Result<()> {
@@ -265,7 +366,7 @@ async fn refresh_status(args: &[String]) -> Result<()> {
     println!("Free-data refresh status from {}", crate::sqlite_path());
     println!(
         "{:<12} {:<12} {:<24} {:<12} {:<8} {}",
-        "source", "latest", "last_success", "data_period", "failures", "message"
+        "source", "最近运行", "最近成功刷新", "抓取水位", "失败数", "证据"
     );
     for summary in summaries {
         println!("{}", render_status_row(&summary));
@@ -277,23 +378,24 @@ fn render_status_row(summary: &IngestionSourceHealthSummary) -> String {
     let latest = summary
         .latest_status
         .as_deref()
-        .unwrap_or("unknown")
+        .map(refresh_status_label)
+        .unwrap_or("未知")
         .to_string();
     let last_success = summary
         .last_success_at
         .map(|timestamp| timestamp.format("%Y-%m-%d %H:%M:%S").to_string())
-        .unwrap_or_else(|| "never".to_string());
-    let data_period = summary
+        .unwrap_or_else(|| "暂无".to_string());
+    let watermark_period = summary
         .last_successful_period
         .map(|period| period.to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+        .unwrap_or_else(|| "未知".to_string());
     let message = summary
         .latest_error_message
         .as_deref()
         .map(truncate_status_message)
         .unwrap_or_else(|| {
             format!(
-                "{} run(s), {} success",
+                "{} 次运行，{} 次成功",
                 summary.total_run_count, summary.successful_run_count
             )
         });
@@ -303,10 +405,20 @@ fn render_status_row(summary: &IngestionSourceHealthSummary) -> String {
         summary.source_id,
         latest,
         last_success,
-        data_period,
+        watermark_period,
         summary.failures_after_last_success,
         message
     )
+}
+
+fn refresh_status_label(status: &str) -> &'static str {
+    match status {
+        "success" => "成功",
+        "failed" => "失败",
+        "running" => "运行中",
+        "skipped" => "已跳过",
+        _ => "未知",
+    }
 }
 
 fn truncate_status_message(message: &str) -> String {
@@ -319,5 +431,67 @@ fn truncate_status_message(message: &str) -> String {
         format!("{truncated}...")
     } else {
         truncated
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{NaiveDate, TimeZone, Utc};
+
+    use super::*;
+
+    #[test]
+    fn refresh_status_row_uses_user_facing_source_health_terms() {
+        let summary = IngestionSourceHealthSummary {
+            source_id: "sec_edgar".to_string(),
+            latest_dataset_id: Some("sec_filing_events".to_string()),
+            latest_target_id: Some("us".to_string()),
+            latest_status: Some("success".to_string()),
+            latest_started_at: None,
+            latest_finished_at: None,
+            last_success_at: Some(Utc.with_ymd_and_hms(2026, 6, 10, 19, 16, 12).unwrap()),
+            last_successful_period: Some(NaiveDate::from_ymd_opt(2026, 6, 8).unwrap()),
+            total_run_count: 8,
+            successful_run_count: 7,
+            failed_run_count: 1,
+            failures_after_last_success: 0,
+            latest_error_message: None,
+        };
+
+        let row = render_status_row(&summary);
+
+        assert!(row.contains("sec_edgar"));
+        assert!(row.contains("成功"));
+        assert!(row.contains("2026-06-10 19:16:12"));
+        assert!(row.contains("2026-06-08"));
+        assert!(row.contains("8 次运行，7 次成功"));
+        assert!(!row.contains("data_period"));
+        assert!(!row.contains("last_success"));
+    }
+
+    #[test]
+    fn refresh_status_row_keeps_latest_error_as_evidence() {
+        let summary = IngestionSourceHealthSummary {
+            source_id: "fred".to_string(),
+            latest_dataset_id: Some("fred_series_observations".to_string()),
+            latest_target_id: None,
+            latest_status: Some("failed".to_string()),
+            latest_started_at: None,
+            latest_finished_at: None,
+            last_success_at: None,
+            last_successful_period: None,
+            total_run_count: 2,
+            successful_run_count: 0,
+            failed_run_count: 2,
+            failures_after_last_success: 2,
+            latest_error_message: Some("timeout while fetching source".to_string()),
+        };
+
+        let row = render_status_row(&summary);
+
+        assert!(row.contains("失败"));
+        assert!(row.contains("暂无"));
+        assert!(row.contains("未知"));
+        assert!(row.contains("timeout while fetching source"));
     }
 }

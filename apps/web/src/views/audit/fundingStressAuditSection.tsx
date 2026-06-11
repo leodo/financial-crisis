@@ -120,18 +120,25 @@ export function FundingStressAuditSection({ audit }: { audit: ResearchAuditRespo
   const metrics = latestFundingStressAudit && fullWindow && dataset
     ? [
         { label: "审计时间", value: formatDateTime(latestFundingStressAudit.generated_at) },
-        { label: "样本行数", value: `${latestFundingStressAudit.row_count}` },
         {
-          label: "20d 峰值 / floor",
-          value: `${formatOptionalProbability(fullWindow.candidate_max_p20d.value)} / ${formatOptionalProbability(latestFundingStressAudit.thresholds.candidate_20d)}`
+          label: "样本行数（历史）",
+          value: `${latestFundingStressAudit.row_count}`,
+          hint: "2011 审计窗口中的 dataset 行数，不是当前模型训练样本总数。"
         },
         {
-          label: "60d 峰值 / floor",
-          value: `${formatOptionalProbability(fullWindow.candidate_max_p60d.value)} / ${formatOptionalProbability(latestFundingStressAudit.thresholds.candidate_60d)}`
+          label: "20d 历史峰值 / 入线",
+          value: `${formatOptionalProbability(fullWindow.candidate_max_p20d.value)} / ${formatOptionalProbability(latestFundingStressAudit.thresholds.candidate_20d)}`,
+          hint: "历史窗口 candidate 峰值对离线运行线，不是当前 20d 风险距离。"
         },
         {
-          label: "Split",
-          value: countSummary(dataset.split_counts)
+          label: "60d 历史峰值 / 入线",
+          value: `${formatOptionalProbability(fullWindow.candidate_max_p60d.value)} / ${formatOptionalProbability(latestFundingStressAudit.thresholds.candidate_60d)}`,
+          hint: "历史窗口 candidate 峰值对离线运行线，不是当前 60d 风险距离。"
+        },
+        {
+          label: "Split（历史）",
+          value: countSummary(dataset.split_counts),
+          hint: "审计 dataset 的 split 分布，不是上线状态。"
         },
         {
           label: "Family Context",
@@ -256,7 +263,7 @@ export function FundingStressAuditSection({ audit }: { audit: ResearchAuditRespo
           </RuleBox>
           <ResponsiveTable
             className="wide-table"
-            columns={["期限", "候选峰值", "运行 floor", "离 floor", "命中", "近阈值"]}
+            columns={["期限", "候选历史峰值", "离线运行线", "离入线（审计）", "历史命中点", "近线点"]}
           >
             {thresholdRows.map((row) => (
               <tr key={row.id}>
@@ -270,12 +277,12 @@ export function FundingStressAuditSection({ audit }: { audit: ResearchAuditRespo
             ))}
           </ResponsiveTable>
           {dataset ? (
-            <RuleBox label="Dataset 证据">
+            <RuleBox label="Dataset 证据（历史样本）">
               {[
                 `action ${countSummary(dataset.action_level_counts)}`,
                 `regime20 ${countSummary(dataset.regime_20d_counts)}`,
                 `protected ${dataset.protected_row_count}`,
-                `coverage ${formatOptionalPercent(dataset.avg_coverage_score)}`,
+                `数据覆盖 ${formatOptionalPercent(dataset.avg_coverage_score)}`,
                 `raw features ${dataset.raw_feature_name_count || dataset.feature_name_count}`,
                 `resolved features ${dataset.resolved_feature_name_count || 0}`,
                 dataset.missing_relevant_features.length > 0

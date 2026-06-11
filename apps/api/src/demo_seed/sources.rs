@@ -198,7 +198,7 @@ fn sources_runtime_with_ingestion_health(
             SourceStatus::Prototype,
             62.0,
             false,
-            "Development-only market data prototype; not a production dependency。",
+            "Development-only market data prototype; not a production dependency.",
         ),
     ]
 }
@@ -311,17 +311,14 @@ fn ingestion_health_note(ingestion_health: Option<&IngestionSourceHealthSummary>
 
     let success_note = summary
         .last_success_at
-        .map(|timestamp| format!("last successful refresh {}", timestamp.to_rfc3339()))
-        .unwrap_or_else(|| "no successful refresh recorded".to_string());
+        .map(|timestamp| format!("最近成功刷新 {}", timestamp.to_rfc3339()))
+        .unwrap_or_else(|| "暂无成功刷新记录".to_string());
     let period_note = summary
         .last_successful_period
-        .map(|period| format!(", last successful data period {period}"))
+        .map(|period| format!(", 抓取水位 {period}"))
         .unwrap_or_default();
     let failure_note = if summary.failures_after_last_success > 0 {
-        format!(
-            ", {} failed run(s) after last success",
-            summary.failures_after_last_success
-        )
+        format!(", 成功后失败 {} 次", summary.failures_after_last_success)
     } else {
         String::new()
     };
