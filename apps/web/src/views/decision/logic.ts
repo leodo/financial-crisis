@@ -127,6 +127,12 @@ export function describeTimeBucket(bucket: AssessmentSnapshot["time_to_risk_buck
   return mapping[bucket];
 }
 
+export function analogPhaseLabel(phase: string): string {
+  if (phase === "acute_window") return "接近爆发期";
+  if (phase === "pre_break") return "压力升温期";
+  return "结构积累期";
+}
+
 export function describeAnalogWindow(
   analog: AssessmentSnapshot["historical_analogs"][number] | undefined,
   bucket: AssessmentSnapshot["time_to_risk_bucket"]
@@ -135,17 +141,19 @@ export function describeAnalogWindow(
     return describeTimeBucket(bucket);
   }
 
+  const phase = analogPhaseLabel(analog.reference_phase);
+
   if (analog.lead_time_days === null && analog.actionable_lead_time_days === null) {
-    return `当前最接近 ${analog.name} 的压力阶段，但该历史样本没有可用提前量估计。`;
+    return `当前最接近 ${analog.name}（${phase}），但该历史样本没有可用提前量估计。`;
   }
 
   if (analog.actionable_lead_time_days === null) {
-    return `当前最接近 ${analog.name} 的结构脆弱阶段，历史上大约提前 ${analog.lead_time_days} 天先出现类似压力，但危机前未形成足够强的可执行预警。`;
+    return `当前最接近 ${analog.name}（${phase}），历史上约提前 ${analog.lead_time_days} 天出现结构信号，但未形成可执行预警。`;
   }
 
   if (analog.lead_time_days === null) {
-    return `当前最接近 ${analog.name} 的风险窗口，历史上大约提前 ${analog.actionable_lead_time_days} 天进入可执行预警。`;
+    return `当前最接近 ${analog.name}（${phase}），历史上约提前 ${analog.actionable_lead_time_days} 天进入可执行预警。`;
   }
 
-  return `当前最接近 ${analog.name} 的风险窗口，历史上大约提前 ${analog.lead_time_days} 天进入结构抬升，并在约提前 ${analog.actionable_lead_time_days} 天进入可执行预警。`;
+  return `当前最接近 ${analog.name}（${phase}），历史上约提前 ${analog.lead_time_days} 天进入结构抬升，约提前 ${analog.actionable_lead_time_days} 天进入可执行预警。`;
 }

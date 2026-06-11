@@ -1,5 +1,6 @@
 import {
   formatDate,
+  formatNumber,
   formatPercentPrecise,
   formatProbabilityBasisPoints,
   formatProbabilityDecimal,
@@ -578,17 +579,18 @@ export function buildAnalogChart(
     return match?.max_score ?? analog.peak_score;
   });
 
+  const currentScore = assessment.scores.overall_score;
   return {
     categories: analogNames,
     maxValue: 100,
     series: [
       {
-        label: "当前总风险强度",
+        label: `当前 ${formatNumber(currentScore)} 分`,
         color: "#1d4ed8",
-        values: analogNames.map(() => assessment.scores.overall_score)
+        values: analogNames.map(() => currentScore)
       },
       {
-        label: "历史峰值",
+        label: `历史峰值`,
         color: "#b45309",
         values: scenarioPeaks.length > 0 ? scenarioPeaks : peakScores
       }

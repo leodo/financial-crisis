@@ -363,19 +363,42 @@ function runStatusLabel(status: string) {
   return labels[status] ?? status;
 }
 
+function analogPositionLabel(phase: string): { position: string; hint: string } {
+  if (phase === "acute_window") {
+    return { position: "接近爆发期", hint: "当前与该场景爆发前的窗口高度相似，需要密切监控。" };
+  }
+  if (phase === "pre_break") {
+    return { position: "压力升温期", hint: "当前已接近该场景爆发前的脆弱阶段，需要关注风险加速信号。" };
+  }
+  return { position: "结构积累期", hint: "当前风险结构正在积累，离该场景的爆发还有距离。" };
+}
+
+function analogLeadText(leadDays: number | null, actionableDays: number | null): string {
+  if (leadDays !== null && actionableDays !== null) {
+    return `结构抬升约领先 ${Math.round(leadDays).toLocaleString("zh-CN")} 天，可执行预警约领先 ${Math.round(actionableDays).toLocaleString("zh-CN")} 天`;
+  }
+  if (leadDays !== null) {
+    return `结构抬升约领先 ${Math.round(leadDays).toLocaleString("zh-CN")} 天，但未形成可执行预警`;
+  }
+  if (actionableDays !== null) {
+    return `可执行预警约领先 ${Math.round(actionableDays).toLocaleString("zh-CN")} 天`;
+  }
+  return "无可用提前量估计";
+}
+
 export function buildAnalogRows(assessment: AssessmentSnapshot): DecisionAnalogRow[] {
-  return assessment.historical_analogs.map((analog) => ({
-    id: analog.scenario_id,
-    title: analog.name,
-    similarity: `${formatNumber(analog.similarity_score)} /100`,
-    structuralLead: formatOptionalLeadTime(analog.lead_time_days, "无稳定结构信号"),
-    actionLead: formatOptionalLeadTime(analog.actionable_lead_time_days, "未形成动作预警"),
-    evidenceDifference: historicalEvidenceDifference(
-      assessment.scores.overall_score,
-      analog.peak_score
-    ),
-    detail: humanizeNarrativeCopy(analog.note)
-  }));
+  return assessment.historical_analogs.map((analog) => {
+    const position = analogPositionLabel(analog.reference_phase);
+    return {
+      id: analog.scenario_id,
+      title: analog.name,
+      position: position.position,
+      positionHint: position.hint,
+      historicalLead: analogLeadText(analog.lead_time_days, analog.actionable_lead_time_days),
+      gap: historicalEvidenceDifference(assessment.scores.overall_score, analog.peak_score),
+      detail: humanizeNarrativeCopy(analog.note)
+    };
+  });
 }
 
 function formatOptionalLeadTime(value: number | null, emptyLabel: string): string {

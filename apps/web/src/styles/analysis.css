@@ -564,6 +564,31 @@ tbody td.table-nowrap {
   white-space: nowrap;
 }
 
+.analog-phase-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.85em;
+  background: #dbeafe;
+  color: #1e40af;
+  white-space: nowrap;
+  margin-bottom: 4px;
+}
+
+.analog-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border-radius: 6px;
+  background: #f0f9ff;
+  border-left: 3px solid #2563eb;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
 tbody tr:last-child td {
   border-bottom: 0;
 }
