@@ -1359,6 +1359,8 @@ async function validateRenderedUiIfAvailable(
     "不是在预测日本危机",
     "20d 日收益波动",
     "关键指标覆盖",
+    "评估口径日期",
+    "浏览器本地时间",
     "frontend decisionReliability / API data_trust + method + event_assessment",
     "可靠性，不是概率",
     "API action_evidence / scoring engine",

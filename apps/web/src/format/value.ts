@@ -170,6 +170,57 @@ export function formatDateTime(value: string | null | undefined): string {
   return `${normalized.slice(0, 16)} UTC`;
 }
 
+function parseDateTime(value: string | null | undefined): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const millisecondsPrecision = trimmed.replace(
+    /\.(\d{3})\d+(?=Z$|[+-]\d{2}:?\d{2}$|$)/,
+    ".$1"
+  );
+  const withTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(millisecondsPrecision)
+    ? millisecondsPrecision
+    : `${millisecondsPrecision}Z`;
+  const parsed = new Date(withTimezone);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function formatDateTimeWithLocal(value: string | null | undefined): string {
+  const utcText = formatDateTime(value);
+  const parsed = parseDateTime(value);
+  if (!parsed) {
+    return utcText;
+  }
+
+  const localParts = new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZoneName: "short"
+  })
+    .formatToParts(parsed)
+    .reduce<Record<string, string>>((parts, part) => {
+      if (part.type !== "literal") {
+        parts[part.type] = part.value;
+      }
+      return parts;
+    }, {});
+  const localText = `${localParts.year}-${localParts.month}-${localParts.day} ${localParts.hour}:${localParts.minute}${
+    localParts.timeZoneName ? ` ${localParts.timeZoneName}` : ""
+  }`;
+
+  return `${utcText}（本地 ${localText}）`;
+}
+
 export function wrapTimelineLabel(value: string): string {
   const match = value.match(/^(\d{4}(?:-\d{4})?)(.*)$/);
   if (!match) {

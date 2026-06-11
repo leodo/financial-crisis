@@ -2,6 +2,7 @@ import {
   dataModeLabel,
   formatDate,
   formatDateTime,
+  formatDateTimeWithLocal,
   formatNumber,
   formatPercent,
   formatPercentPrecise,
@@ -250,7 +251,7 @@ export function buildNumberAuditRows(assessment: AssessmentSnapshot): DecisionNu
         assessment.runtime.latest_key_indicator_at
           ? formatDate(assessment.runtime.latest_key_indicator_at)
           : "—"
-      }；本次生成 ${formatDateTime(assessment.runtime.generated_at)}`,
+      }；本次生成 ${formatDateTimeWithLocal(assessment.runtime.generated_at)}`,
       meta: assessment.runtime.stale_warning ? "需降级解释" : "可用",
       note:
         assessment.runtime.stale_warning ??

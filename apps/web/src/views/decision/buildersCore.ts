@@ -4,6 +4,7 @@ import {
   describePostureClause,
   formatDate,
   formatDateTime,
+  formatDateTimeWithLocal,
   formatNumber,
   formatPercent,
   formatPercentPrecise,
@@ -138,8 +139,8 @@ export function buildRuntimeCards(
     },
     {
       label: "本次评估生成",
-      value: formatDateTime(assessment.runtime.generated_at),
-      detail: decisionContent.prelude.generatedHint
+      value: formatDateTimeWithLocal(assessment.runtime.generated_at),
+      detail: `${decisionContent.prelude.generatedHint} 这里同时显示 UTC 与浏览器本地时间，避免跨时区误判刷新状态。`
     },
     {
       label:

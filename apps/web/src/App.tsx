@@ -8,7 +8,7 @@ import {
   ShieldCheck
 } from "lucide-react";
 import {
-  formatDateTime,
+  formatDateTimeWithLocal,
   dataModeLabel,
   qualityLabel,
   timeBucketLabel
@@ -303,7 +303,7 @@ export default function App() {
             </div>
             {assessment.data ? (
               <div className="meta-strip">
-                <span>评估日期 {assessment.data.as_of_date}</span>
+                <span>评估口径日期 {assessment.data.as_of_date}</span>
                 <span>数据模式 {dataModeLabel(assessment.data.runtime.data_mode)}</span>
                 <span>
                   关键数据{" "}
@@ -311,7 +311,7 @@ export default function App() {
                     assessment.data.runtime.latest_observation_at ??
                     "—"}
                 </span>
-                <span>生成时间 {formatDateTime(assessment.data.runtime.generated_at)}</span>
+                <span>生成时间 {formatDateTimeWithLocal(assessment.data.runtime.generated_at)}</span>
                 <span>风险时距 {riskWindowDisplayLabel}</span>
                 <span>关键数据覆盖 {qualityLabel(assessment.data.data_trust.quality_grade)}</span>
                 {sourceIssueSummary ? <span>{sourceIssueSummary}</span> : null}
