@@ -80,6 +80,7 @@ MVP 当前判定：
 - [x] 在 release review guardrail 中拒绝中期阈值高于正样本窗口均值的候选，避免 `20d/60d` 阈值看似有 early-warning 支持、但实际 positive-window 过不了进入线。
   - 2026-06-11：`us_formal_family_hybrid_20260610T152412` 的 fast review 已新增 blocker：`20d threshold 87.8% > positive_window avg 37.5%`、`60d threshold 89.5% > positive_window avg 50.4%`，并继续拒绝 `60d cooldown_bleed`。
   - 2026-06-11：阈值诊断已前移复用完整 forward-crisis 支持判断；`pre-warning` 有零星命中但 `positive-window` 命中太弱时，会标记为 `base_hits_early_warning_but_positive_window_support_is_too_weak`，不再误写成 `base_threshold_has_usable_early_warning_gap`。
+  - 2026-06-12：用增强后的 family-hybrid 训练脚本生成 `us_formal_family_hybrid_20260611T165542`，并以 `review-only` 登记后跑完整 `formal-candidate-screen`。结论仍是 `no_go_offline`：区域银行正窗口 20d 命中从 `46` 降到 `30`，positive-window hit rate 从 `80.0%` 降到 `75.0%`，release-review precision 从 `69.8%` 降到 `36.3%`，最长纯误报从 `17d` 扩大到 `66d`，且 `60d` 仍有 cooldown bleed。20d 阈值不能简单下调，因为 February false-positive max `89.59%` 已高于 regional positive-window avg `85.02%`，July false-positive max `82.90%` 也接近正窗口均值；下一轮应先修 `interaction__us_curve_10y2y_level__us_fed_funds_level` 的 false-positive coupled lift、60d cooldown 与 actionability head，而不是继续硬降阈值。
 - [ ] 在 MVP 页面数字可信之前，不把 formal 模型作为首页主结论。
 - [ ] 后续再修 `20d` 当前态过冷、`60d` 背景值、样本稀疏、标签和校准冲突。
 - [ ] 只有 release review 与 Go/No-Go 通过后，formal 概率才恢复为主决策输入。

@@ -3,6 +3,11 @@ param(
     [switch]$DryRun,
     [string]$MarketScope = "financial_system",
     [string]$ModelShape = "family_conditional_v1",
+    [string]$ReleasePrefix = "",
+    [string]$OutputDir = "",
+    [string]$ManifestDir = "",
+    [string]$LogDir = "artifacts/research/formal-training-logs",
+    [switch]$NoLog,
     [string]$PrimaryDatasetId = "formal_v1_main_1990_daily",
     [string[]]$AuxDatasetIds = @(
         "formal_v1_ext_stress_1990_daily",
@@ -17,6 +22,52 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location -LiteralPath $Root
+
+function Resolve-RepoPath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return $null
+    }
+
+    if ([System.IO.Path]::IsPathRooted($Path)) {
+        return $Path
+    }
+
+    return Join-Path $Root $Path
+}
+
+function Format-CommandLine {
+    param([string[]]$CommandArgs)
+
+    $quotedArgs = foreach ($arg in $CommandArgs) {
+        if ($arg -match '[\s"`$]') {
+            '"' + ($arg -replace '"', '\"') + '"'
+        } else {
+            $arg
+        }
+    }
+
+    "cargo " + ($quotedArgs -join " ")
+}
+
+function Get-NewTrainingArtifacts {
+    param(
+        [string[]]$Directories,
+        [datetime]$StartedAt
+    )
+
+    foreach ($directory in $Directories) {
+        $resolved = Resolve-RepoPath -Path $directory
+        if (-not $resolved -or -not (Test-Path -LiteralPath $resolved)) {
+            continue
+        }
+
+        Get-ChildItem -LiteralPath $resolved -File -Filter "*.json" |
+            Where-Object { $_.LastWriteTime -ge $StartedAt.AddSeconds(-2) } |
+            Sort-Object LastWriteTime, Name
+    }
+}
 
 function Resolve-FormalDatasetKey {
     param(
@@ -64,7 +115,23 @@ foreach ($key in $auxKeys) {
 }
 Write-Host ""
 
-$args = @(
+$effectiveOutputDir = if (-not [string]::IsNullOrWhiteSpace($OutputDir)) {
+    $OutputDir
+} elseif ($Tracked) {
+    "config/model-bundles/generated"
+} else {
+    "artifacts/research/model-bundles/generated"
+}
+
+$effectiveManifestDir = if (-not [string]::IsNullOrWhiteSpace($ManifestDir)) {
+    $ManifestDir
+} elseif ($Tracked) {
+    "config/model-releases/generated"
+} else {
+    "artifacts/research/model-releases/generated"
+}
+
+$cargoArgs = @(
     "run", "-p", "fc-worker", "--",
     "research", "pipeline", "train-probability",
     "--market-scope", $MarketScope,
@@ -73,19 +140,78 @@ $args = @(
 )
 
 foreach ($key in $auxKeys) {
-    $args += @("--aux-dataset-key", $key)
+    $cargoArgs += @("--aux-dataset-key", $key)
 }
 
 if ($DryRun) {
-    $args += @("--dry-run")
+    $cargoArgs += @("--dry-run")
 }
 
-if ($Tracked) {
-    $args += @(
-        "--output-dir", "config/model-bundles/generated",
-        "--manifest-dir", "config/model-releases/generated"
+if ($Tracked -or -not [string]::IsNullOrWhiteSpace($OutputDir)) {
+    $cargoArgs += @("--output-dir", $effectiveOutputDir)
+}
+
+if ($Tracked -or -not [string]::IsNullOrWhiteSpace($ManifestDir)) {
+    $cargoArgs += @("--manifest-dir", $effectiveManifestDir)
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ReleasePrefix)) {
+    $cargoArgs += @("--release-prefix", $ReleasePrefix)
+}
+
+$startedAt = Get-Date
+$commandLine = Format-CommandLine -CommandArgs $cargoArgs
+Write-Host "Training command:"
+Write-Host "  $commandLine"
+Write-Host "Expected artifact directories:"
+Write-Host "  bundles  : $effectiveOutputDir"
+Write-Host "  manifests: $effectiveManifestDir"
+
+$logPath = $null
+if (-not $NoLog) {
+    $resolvedLogDir = Resolve-RepoPath -Path $LogDir
+    New-Item -ItemType Directory -Path $resolvedLogDir -Force | Out-Null
+    $mode = if ($DryRun) { "dry-run" } else { "train" }
+    $safeModelShape = $ModelShape -replace '[^A-Za-z0-9_.-]', '_'
+    $timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
+    $logPath = Join-Path $resolvedLogDir "$timestamp-$safeModelShape-$mode.log"
+    Write-Host "Log file:"
+    Write-Host "  $logPath"
+    Write-Host ""
+    "Started: $($startedAt.ToUniversalTime().ToString("o"))" | Set-Content -LiteralPath $logPath -Encoding utf8
+    "Command: $commandLine" | Add-Content -LiteralPath $logPath -Encoding utf8
+    "" | Add-Content -LiteralPath $logPath -Encoding utf8
+    & cargo @cargoArgs 2>&1 | Tee-Object -FilePath $logPath -Append
+} else {
+    Write-Host ""
+    & cargo @cargoArgs
+}
+
+$exitCode = $LASTEXITCODE
+$finishedAt = Get-Date
+$elapsed = New-TimeSpan -Start $startedAt -End $finishedAt
+
+Write-Host ""
+Write-Host ("Training command finished with exit code {0} after {1:n1}s." -f $exitCode, $elapsed.TotalSeconds)
+if ($logPath) {
+    "Finished: $($finishedAt.ToUniversalTime().ToString("o"))" | Add-Content -LiteralPath $logPath -Encoding utf8
+    "ExitCode: $exitCode" | Add-Content -LiteralPath $logPath -Encoding utf8
+    "ElapsedSeconds: $([Math]::Round($elapsed.TotalSeconds, 1))" | Add-Content -LiteralPath $logPath -Encoding utf8
+}
+
+if (-not $DryRun) {
+    $newArtifacts = @(
+        Get-NewTrainingArtifacts -Directories @($effectiveOutputDir, $effectiveManifestDir) -StartedAt $startedAt
     )
+    if ($newArtifacts.Count -gt 0) {
+        Write-Host "New or updated training artifacts:"
+        foreach ($artifact in $newArtifacts) {
+            $relative = Resolve-Path -LiteralPath $artifact.FullName -Relative
+            Write-Host ("  {0} ({1:n0} bytes)" -f $relative, $artifact.Length)
+        }
+    } else {
+        Write-Host "No new JSON artifacts were detected in expected output directories."
+    }
 }
 
-& cargo @args
-exit $LASTEXITCODE
+exit $exitCode
