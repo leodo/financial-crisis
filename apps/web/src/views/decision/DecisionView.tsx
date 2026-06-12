@@ -82,6 +82,7 @@ export default function DecisionView({
 }) {
   const {
     probabilityTrend,
+    recentChangeSummary,
     layerScoreChart,
     analogChart,
     currentRiskBand,
@@ -154,6 +155,13 @@ export default function DecisionView({
           <section className="surface">
             <SurfaceHeader title="当前结论怎么来的" icon={BadgeInfo} />
             <SignalLayerRows rows={signalLayerRows} />
+          </section>
+
+          <section className="surface">
+            <SurfaceHeader title="今日与本周变化" icon={History} />
+            <MetricGrid items={recentChangeSummary.metrics} />
+            <RuleBox label="变化口径">{recentChangeSummary.note}</RuleBox>
+            <RuleBox label="当前主要解释">{recentChangeSummary.driverNote}</RuleBox>
           </section>
 
           <section className="surface">
