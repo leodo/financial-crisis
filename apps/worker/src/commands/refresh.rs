@@ -365,8 +365,8 @@ async fn refresh_status(args: &[String]) -> Result<()> {
 
     println!("Free-data refresh status from {}", crate::sqlite_path());
     println!(
-        "{:<12} {:<12} {:<24} {:<12} {:<8} {}",
-        "source", "最近运行", "最近成功刷新", "抓取水位", "失败数", "证据"
+        "{:<12} {:<12} {:<24} {:<12} {:<8} 证据",
+        "source", "最近运行", "最近成功刷新", "抓取水位", "失败数"
     );
     for summary in summaries {
         println!("{}", render_status_row(&summary));

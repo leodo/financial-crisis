@@ -68,16 +68,32 @@ pub(super) fn probability_row_is_calibration_eligible(
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ProbabilityCalibrationStrategyInput<'a, 'row> {
+    pub(crate) calibration_raw_probabilities: &'a [f64],
+    pub(crate) calibration_labels: &'a [f64],
+    pub(crate) calibration_rows: &'a [&'row crate::ProbabilityTrainingRow],
+    pub(crate) horizon_days: u32,
+    pub(crate) label_mode: crate::ProbabilityTargetLabelMode,
+    pub(crate) evaluation_raw_probabilities: &'a [f64],
+    pub(crate) evaluation_rows: &'a [&'row crate::ProbabilityTrainingRow],
+    pub(crate) calibration_candidate: PlattCalibrationArtifact,
+}
+
 pub(crate) fn select_probability_calibration_strategy(
-    calibration_raw_probabilities: &[f64],
-    calibration_labels: &[f64],
-    calibration_rows: &[&crate::ProbabilityTrainingRow],
-    horizon_days: u32,
-    label_mode: crate::ProbabilityTargetLabelMode,
-    evaluation_raw_probabilities: &[f64],
-    evaluation_rows: &[&crate::ProbabilityTrainingRow],
-    calibration_candidate: PlattCalibrationArtifact,
+    input: ProbabilityCalibrationStrategyInput<'_, '_>,
 ) -> (Option<PlattCalibrationArtifact>, Vec<f64>) {
+    let ProbabilityCalibrationStrategyInput {
+        calibration_raw_probabilities,
+        calibration_labels,
+        calibration_rows,
+        horizon_days,
+        label_mode,
+        evaluation_raw_probabilities,
+        evaluation_rows,
+        calibration_candidate,
+    } = input;
+
     let raw_summary =
         crate::evaluate_probabilities(calibration_raw_probabilities, calibration_labels);
     let raw_regime_separation = super::super::evaluate_regime_separation_summary_refs(

@@ -4,6 +4,7 @@ mod diagnostics;
 
 pub(crate) use calibration::{
     probability_calibration_selection_rows, select_probability_calibration_strategy,
+    ProbabilityCalibrationStrategyInput,
 };
 pub(crate) use decision::{
     adjust_probability_decision_threshold_for_regime_support,

@@ -1,7 +1,7 @@
 use fc_domain::{
-    AssessmentScores, DataTrust, EventAssessment, EventConfirmationState, JpyCarrySnapshot,
-    JpyCarryState, MvpProbabilityInputStatus, MvpRiskState, MvpRiskStateCode,
-    ProbabilityDiagnostics, QualityGrade,
+    AssessmentScores, DataTrust, EventAssessment, EventConfirmationState, FreshnessStatus,
+    JpyCarrySnapshot, JpyCarryState, KeyIndicatorStatus, MvpProbabilityInputStatus, MvpRiskState,
+    MvpRiskStateCode, ProbabilityDiagnostics, QualityGrade,
 };
 
 const USDJPY_HIGH_TAIL_SUPPRESSOR_FEATURE: &str = "tail_pos__us_usdjpy_level__145";
@@ -12,6 +12,7 @@ pub(super) fn build_mvp_risk_state(
     jpy_carry: &JpyCarrySnapshot,
     event_assessment: &EventAssessment,
     probability_diagnostics: &ProbabilityDiagnostics,
+    key_indicators: &[KeyIndicatorStatus],
 ) -> MvpRiskState {
     let probability_input_status = if has_probability_semantic_anomaly(probability_diagnostics) {
         MvpProbabilityInputStatus::ReferenceOnly
@@ -19,8 +20,12 @@ pub(super) fn build_mvp_risk_state(
         MvpProbabilityInputStatus::Usable
     };
 
+    let stale_or_missing = stale_or_missing_key_indicators(key_indicators);
+    let delayed = delayed_key_indicators(key_indicators);
+
     let data_blocked = data_trust.coverage_score < 0.75
-        || matches!(data_trust.quality_grade, QualityGrade::D | QualityGrade::F);
+        || matches!(data_trust.quality_grade, QualityGrade::D | QualityGrade::F)
+        || !stale_or_missing.is_empty();
     let code = if data_blocked {
         MvpRiskStateCode::Observe
     } else {
@@ -46,6 +51,12 @@ pub(super) fn build_mvp_risk_state(
         jpy_carry_state_label(jpy_carry.state),
         jpy_carry.score
     ));
+    if !delayed.is_empty() {
+        primary_evidence.push(format!(
+            "{} 当前为延迟数据，相关读数按已发布的最新值解释，不是实时盘中值。",
+            join_indicator_labels(&delayed)
+        ));
+    }
 
     let mut blockers = Vec::new();
     if matches!(
@@ -54,8 +65,20 @@ pub(super) fn build_mvp_risk_state(
     ) {
         blockers.push("正式 5d/20d/60d 概率命中模型语义异常，只能作为参考输入。".to_string());
     }
-    if data_blocked {
+    if !stale_or_missing.is_empty() {
+        blockers.push(format!(
+            "{} 缺失或明显陈旧；这些近端关键指标已被降权，MVP 规则层只能保持观察，不能用旧值形成主动减仓/对冲结论。",
+            join_indicator_labels(&stale_or_missing)
+        ));
+    }
+    if data_blocked && stale_or_missing.is_empty() {
         blockers.push("关键指标覆盖或覆盖等级不足，MVP 规则层只能保持观察。".to_string());
+    }
+    if !delayed.is_empty() {
+        blockers.push(format!(
+            "{} 数据延迟；当前规则层结论按延迟值给出，需要等待最新值确认后再升级动作。",
+            join_indicator_labels(&delayed)
+        ));
     }
     if scores.overall_score < 45.0 && scores.trigger_score < 45.0 {
         blockers.push("总风险和触发压力尚未进入 45 分以上的准备区。".to_string());
@@ -73,6 +96,35 @@ pub(super) fn build_mvp_risk_state(
         blockers,
         next_actions: mvp_next_actions(code, probability_input_status),
     }
+}
+
+fn stale_or_missing_key_indicators(
+    key_indicators: &[KeyIndicatorStatus],
+) -> Vec<&KeyIndicatorStatus> {
+    key_indicators
+        .iter()
+        .filter(|indicator| {
+            matches!(
+                indicator.status,
+                FreshnessStatus::Stale | FreshnessStatus::Missing
+            )
+        })
+        .collect()
+}
+
+fn delayed_key_indicators(key_indicators: &[KeyIndicatorStatus]) -> Vec<&KeyIndicatorStatus> {
+    key_indicators
+        .iter()
+        .filter(|indicator| matches!(indicator.status, FreshnessStatus::Delayed))
+        .collect()
+}
+
+fn join_indicator_labels(indicators: &[&KeyIndicatorStatus]) -> String {
+    indicators
+        .iter()
+        .map(|indicator| indicator.display_name.as_str())
+        .collect::<Vec<_>>()
+        .join("、")
 }
 
 fn jpy_carry_state_label(state: JpyCarryState) -> &'static str {
@@ -227,10 +279,44 @@ fn mvp_next_actions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::NaiveDate;
     use fc_domain::{
         DataQualitySummary, EventAssessment, LogisticProbabilityFeatureContribution,
         ProbabilityHorizonOverlayDiagnostics,
     };
+
+    fn fresh_key_indicators() -> Vec<KeyIndicatorStatus> {
+        vec![key_indicator_with_status(
+            "us_external_usdjpy_level",
+            "USDJPY",
+            FreshnessStatus::Fresh,
+        )]
+    }
+
+    fn key_indicator_with_status(
+        indicator_id: &str,
+        display_name: &str,
+        status: FreshnessStatus,
+    ) -> KeyIndicatorStatus {
+        let present = status != FreshnessStatus::Missing;
+        let latest_as_of_date = present.then(|| NaiveDate::from_ymd_opt(2026, 6, 5).unwrap());
+        KeyIndicatorStatus {
+            indicator_id: indicator_id.to_string(),
+            display_name: display_name.to_string(),
+            entity_id: "us".to_string(),
+            source_id: present.then(|| "fred".to_string()),
+            dataset_id: present.then(|| "fred_daily".to_string()),
+            unit: "index".to_string(),
+            latest_value: present.then_some(20.0),
+            latest_as_of_date,
+            lag_days: present.then_some(5),
+            lag_business_days: present.then_some(2),
+            stale_threshold_days: 3,
+            status,
+            note: "test".to_string(),
+            lineage: None,
+        }
+    }
 
     fn data_trust() -> DataTrust {
         DataTrust {
@@ -317,6 +403,7 @@ mod tests {
             &quiet_carry(),
             &quiet_event(),
             &anomaly_diagnostics(),
+            &fresh_key_indicators(),
         );
 
         assert_eq!(state.code, MvpRiskStateCode::Observe);
@@ -353,6 +440,7 @@ mod tests {
             &quiet_carry(),
             &quiet_event(),
             &ProbabilityDiagnostics::default(),
+            &fresh_key_indicators(),
         );
 
         assert_eq!(state.code, MvpRiskStateCode::Prepare);
@@ -361,5 +449,64 @@ mod tests {
             MvpProbabilityInputStatus::Usable
         );
         assert_eq!(state.label, "提前准备");
+    }
+
+    #[test]
+    fn mvp_state_forces_observe_when_key_indicator_is_stale() {
+        let state = build_mvp_risk_state(
+            &AssessmentScores {
+                overall_score: 48.0,
+                structural_score: 46.0,
+                trigger_score: 42.0,
+                external_shock_score: 30.0,
+            },
+            &data_trust(),
+            &quiet_carry(),
+            &quiet_event(),
+            &ProbabilityDiagnostics::default(),
+            &[key_indicator_with_status(
+                "us_market_vix_close",
+                "VIX 收盘价",
+                FreshnessStatus::Stale,
+            )],
+        );
+
+        assert_eq!(state.code, MvpRiskStateCode::Observe);
+        assert!(state
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("VIX 收盘价")
+                && blocker.contains("不能用旧值形成主动减仓/对冲结论")));
+    }
+
+    #[test]
+    fn mvp_state_flags_delayed_key_indicator_without_forcing_observe() {
+        let state = build_mvp_risk_state(
+            &AssessmentScores {
+                overall_score: 48.0,
+                structural_score: 46.0,
+                trigger_score: 42.0,
+                external_shock_score: 30.0,
+            },
+            &data_trust(),
+            &quiet_carry(),
+            &quiet_event(),
+            &ProbabilityDiagnostics::default(),
+            &[key_indicator_with_status(
+                "us_external_usdjpy_level",
+                "USDJPY",
+                FreshnessStatus::Delayed,
+            )],
+        );
+
+        assert_eq!(state.code, MvpRiskStateCode::Prepare);
+        assert!(state
+            .primary_evidence
+            .iter()
+            .any(|evidence| evidence.contains("USDJPY") && evidence.contains("延迟数据")));
+        assert!(state
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("USDJPY") && blocker.contains("数据延迟")));
     }
 }

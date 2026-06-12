@@ -4,6 +4,10 @@ use super::*;
 fn parses_pipeline_train_defaults_to_formal_dataset() {
     let options = PipelineTrainOptions::parse(&[]).unwrap();
     assert_eq!(options.dataset_source, PipelineDatasetSource::Formal);
+    assert_eq!(
+        options.release_manifest_mode,
+        PipelineReleaseManifestMode::ReviewCandidate
+    );
     assert_eq!(options.model_shape, ProbabilityModelShape::LinearV1);
     assert!(!options.dry_run);
     assert_eq!(options.dataset_id, "formal_v1_main_1990_daily");
@@ -46,6 +50,10 @@ fn parses_pipeline_train_snapshot_override() {
     ];
     let options = PipelineTrainOptions::parse(&args).unwrap();
     assert_eq!(options.dataset_source, PipelineDatasetSource::Snapshot);
+    assert_eq!(
+        options.release_manifest_mode,
+        PipelineReleaseManifestMode::ReviewCandidate
+    );
     assert_eq!(options.model_shape, ProbabilityModelShape::LinearV1);
     assert_eq!(options.release_prefix, "custom_prefix");
     assert_eq!(

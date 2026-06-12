@@ -169,6 +169,7 @@ pub fn build_assessment_snapshot(
         &jpy_carry,
         &event_assessment,
         &probability_trace.probability_diagnostics,
+        &key_indicators,
     );
     let backtest_summary = build_backtest_summary(backtests, rolling_audit);
     let posture_guidance = build_posture_guidance(

@@ -518,6 +518,39 @@ fn release_has_cold_runtime_history(diagnostics: &crate::ReleaseRuntimeReviewDia
     all_normal && zero_floor_hits && no_usable_early_warning
 }
 
+pub(crate) fn print_operational_guardrail_summary(
+    baseline: &AssessmentSnapshot,
+    candidate: &AssessmentSnapshot,
+) {
+    println!("Operational guard summary:");
+    println!(
+        "  timely_warning_rate   {} -> {}",
+        crate::format_pct(baseline.backtest_summary.timely_warning_rate),
+        crate::format_pct(candidate.backtest_summary.timely_warning_rate)
+    );
+    println!(
+        "  actionable_precision  {} -> {}",
+        crate::format_pct(baseline.backtest_summary.rolling_audit.actionable_precision),
+        crate::format_pct(
+            candidate
+                .backtest_summary
+                .rolling_audit
+                .actionable_precision
+        )
+    );
+    println!(
+        "  longest_false_positive_episode_days  {} -> {}",
+        baseline
+            .backtest_summary
+            .rolling_audit
+            .longest_false_positive_episode_days,
+        candidate
+            .backtest_summary
+            .rolling_audit
+            .longest_false_positive_episode_days
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -720,37 +753,4 @@ mod tests {
             .iter()
             .any(|item| item.contains("latest runtime point")));
     }
-}
-
-pub(crate) fn print_operational_guardrail_summary(
-    baseline: &AssessmentSnapshot,
-    candidate: &AssessmentSnapshot,
-) {
-    println!("Operational guard summary:");
-    println!(
-        "  timely_warning_rate   {} -> {}",
-        crate::format_pct(baseline.backtest_summary.timely_warning_rate),
-        crate::format_pct(candidate.backtest_summary.timely_warning_rate)
-    );
-    println!(
-        "  actionable_precision  {} -> {}",
-        crate::format_pct(baseline.backtest_summary.rolling_audit.actionable_precision),
-        crate::format_pct(
-            candidate
-                .backtest_summary
-                .rolling_audit
-                .actionable_precision
-        )
-    );
-    println!(
-        "  longest_false_positive_episode_days  {} -> {}",
-        baseline
-            .backtest_summary
-            .rolling_audit
-            .longest_false_positive_episode_days,
-        candidate
-            .backtest_summary
-            .rolling_audit
-            .longest_false_positive_episode_days
-    );
 }

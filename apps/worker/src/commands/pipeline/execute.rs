@@ -177,6 +177,14 @@ fn print_training_artifacts_summary(artifacts: &PipelineArtifacts, options: &Pip
     println!("  dataset_label    {}", artifacts.dataset_label);
     println!("  model_shape      {}", options.model_shape.as_str());
     println!(
+        "  manifest_mode    {}",
+        options.release_manifest_mode.as_str()
+    );
+    println!(
+        "  release_state    {}/{}",
+        artifacts.release.manifest.status, artifacts.release.manifest.serving_status
+    );
+    println!(
         "  release_id       {}",
         artifacts.release.manifest.release_id
     );

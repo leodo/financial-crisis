@@ -28,6 +28,21 @@ impl PipelineDatasetSource {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PipelineReleaseManifestMode {
+    ReviewCandidate,
+    ApprovedFormalBootstrap,
+}
+
+impl PipelineReleaseManifestMode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::ReviewCandidate => "review_candidate",
+            Self::ApprovedFormalBootstrap => "approved_formal_bootstrap",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProbabilityModelShape {
     LinearV1,
     InteractionTailV1,
@@ -88,6 +103,7 @@ impl ProbabilityModelShape {
 #[derive(Debug, Clone)]
 pub(crate) struct PipelineTrainOptions {
     pub(crate) dataset_source: PipelineDatasetSource,
+    pub(crate) release_manifest_mode: PipelineReleaseManifestMode,
     pub(crate) model_shape: ProbabilityModelShape,
     pub(crate) dry_run: bool,
     pub(crate) dataset_id: String,
@@ -191,6 +207,7 @@ impl PipelineTrainOptions {
 
         Ok(Self {
             dataset_source,
+            release_manifest_mode: PipelineReleaseManifestMode::ReviewCandidate,
             model_shape,
             dry_run,
             dataset_id,
@@ -203,6 +220,11 @@ impl PipelineTrainOptions {
             release_prefix: release_prefix
                 .unwrap_or_else(|| default_release_prefix(dataset_source, model_shape)),
         })
+    }
+
+    pub(super) fn into_approved_formal_bootstrap(mut self) -> Self {
+        self.release_manifest_mode = PipelineReleaseManifestMode::ApprovedFormalBootstrap;
+        self
     }
 }
 
@@ -255,6 +277,7 @@ impl PipelineBootstrapOptions {
                 "bootstrap-formal-release only supports --dataset-source formal; snapshot is transitional research only and cannot be published as a formal release"
             );
         }
+        let train = train.into_approved_formal_bootstrap();
 
         Ok(Self {
             train,
@@ -301,7 +324,7 @@ fn default_release_prefix(
 
 #[cfg(test)]
 mod tests {
-    use super::{PipelineBootstrapOptions, PipelineDatasetSource};
+    use super::{PipelineBootstrapOptions, PipelineDatasetSource, PipelineReleaseManifestMode};
 
     #[test]
     fn bootstrap_formal_release_rejects_snapshot_dataset_source() {
@@ -330,6 +353,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(options.train.dataset_source, PipelineDatasetSource::Formal);
+        assert_eq!(
+            options.train.release_manifest_mode,
+            PipelineReleaseManifestMode::ApprovedFormalBootstrap
+        );
         assert_eq!(options.updated_by, "tester");
         assert!(options.activate);
         assert!(options.reload_api);

@@ -14,7 +14,8 @@ pub(crate) use threshold::{
     adjust_probability_decision_threshold_for_regime_support,
     build_probability_threshold_diagnostics, probability_calibration_selection_rows,
     probability_decision_threshold_selection, select_probability_calibration_strategy,
-    select_probability_decision_threshold, ProbabilityThresholdDiagnosticsInput,
+    select_probability_decision_threshold, ProbabilityCalibrationStrategyInput,
+    ProbabilityThresholdDiagnosticsInput,
 };
 #[cfg(test)]
 pub(crate) use threshold::{ProbabilityCalibrationSelection, ProbabilityThresholdSelection};
@@ -107,16 +108,17 @@ fn train_probability_head(
         .map(|row| crate::score_logistic_model_for_dataset(&raw_model, row))
         .collect::<Vec<_>>();
     let evaluation_row_refs = evaluation_rows.iter().collect::<Vec<_>>();
-    let (calibration, evaluation_probabilities) = select_probability_calibration_strategy(
-        &calibration_inputs,
-        &calibration_labels,
-        &calibration_selection.rows,
-        horizon_days,
-        label_mode,
-        &evaluation_raw_probabilities,
-        &evaluation_row_refs,
-        calibration_candidate,
-    );
+    let (calibration, evaluation_probabilities) =
+        select_probability_calibration_strategy(ProbabilityCalibrationStrategyInput {
+            calibration_raw_probabilities: &calibration_inputs,
+            calibration_labels: &calibration_labels,
+            calibration_rows: &calibration_selection.rows,
+            horizon_days,
+            label_mode,
+            evaluation_raw_probabilities: &evaluation_raw_probabilities,
+            evaluation_rows: &evaluation_row_refs,
+            calibration_candidate,
+        });
     let calibration_decision_probabilities = calibration.as_ref().map_or_else(
         || calibration_inputs.clone(),
         |calibration| {

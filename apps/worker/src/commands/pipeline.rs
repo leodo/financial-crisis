@@ -11,4 +11,6 @@ pub(crate) use execute::{
 };
 #[cfg(test)]
 pub(crate) use options::ProbabilityModelShape;
-pub(crate) use options::{PipelineDatasetSource, PipelineTrainOptions};
+pub(crate) use options::{
+    PipelineDatasetSource, PipelineReleaseManifestMode, PipelineTrainOptions,
+};

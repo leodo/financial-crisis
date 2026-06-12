@@ -38,8 +38,8 @@ use commands::{FeatureSnapshotBuildOptions, PointInTimeMode};
 #[cfg(test)]
 use commands::{
     FormalDatasetBuildOptions, FormalDatasetSummaryOptions, PipelineDatasetSource,
-    PipelineTrainOptions, PredictionSnapshotQueryOptions, ProbabilityModelShape,
-    RefreshLatestOptions,
+    PipelineReleaseManifestMode, PipelineTrainOptions, PredictionSnapshotQueryOptions,
+    ProbabilityModelShape, RefreshLatestOptions,
 };
 pub(crate) use fc_domain::load_crisis_scenario_catalog;
 #[cfg(test)]
@@ -83,7 +83,8 @@ pub(crate) use probability::{
     build_probability_threshold_diagnostics, probability_calibration_selection_rows,
     probability_decision_threshold_selection, select_probability_calibration_strategy,
     select_probability_decision_threshold, ProbabilityCalibrationSelection,
-    ProbabilityThresholdDiagnosticsInput, ProbabilityThresholdSelection,
+    ProbabilityCalibrationStrategyInput, ProbabilityThresholdDiagnosticsInput,
+    ProbabilityThresholdSelection,
 };
 pub(crate) use probability::{
     classify_probability_regime_separation, early_warning_regime_name, gap_retention_ratio,

@@ -38,7 +38,9 @@ pub(crate) use feature::{
 };
 #[cfg(test)]
 pub(crate) use pipeline::ProbabilityModelShape;
-pub(crate) use pipeline::{PipelineDatasetSource, PipelineTrainOptions};
+pub(crate) use pipeline::{
+    PipelineDatasetSource, PipelineReleaseManifestMode, PipelineTrainOptions,
+};
 #[cfg(test)]
 pub(crate) use refresh::RefreshLatestOptions;
 #[cfg(test)]
@@ -146,10 +148,10 @@ fn print_help() {
       Export a scenario-focused formal dataset slice as JSON + CSV, preserving split/label/feature columns for root-cause analysis of one crisis window.
 
   cargo run -p fc-worker -- research pipeline train-probability [--dry-run] [--dataset-source formal|snapshot] [--model-shape linear_v1|interaction_tail_v1|family_conditional_v1|family_hybrid_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--manifest-dir DIR] [--release-prefix PREFIX]
-      Train a probability bundle for research. By default it uses the latest persisted formal dataset with model-shape=linear_v1 and writes generated artifacts to ignored artifacts/research directories; `--dry-run` loads the same train/calibration/evaluation rows and prints topology counts without fitting or writing a bundle. `--dataset-source snapshot` is still allowed only for heuristic/transitional research snapshots, and generated manifests are marked candidate/shadow so they cannot be activated directly as formal releases.
+      Train a probability bundle for research. By default it uses the latest persisted formal dataset with model-shape=linear_v1 and writes generated artifacts to ignored artifacts/research directories; `--dry-run` loads the same train/calibration/evaluation rows and prints topology counts without fitting or writing a bundle. Generated manifests are marked candidate/shadow so they cannot be activated directly as formal releases; use bootstrap-formal-release only after explicit Go/No-Go review.
 
   cargo run -p fc-worker -- research pipeline bootstrap-formal-release [--dataset-source formal] [--model-shape linear_v1|interaction_tail_v1|family_conditional_v1|family_hybrid_v1] [--dataset-id ID] [--dataset-version VERSION] [--dataset-key KEY] [--aux-dataset-key KEY ...] [--market-scope SCOPE] [--release-id ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--output-dir DIR] [--manifest-dir DIR] [--release-prefix PREFIX] [--no-activate] [--no-reload-api] [--skip-operational-guard] [--api-reload-url URL] [--updated-by NAME]
-      Train a formal bundle from persisted formal datasets only, publish it into SQLite as a model release, optionally activate it, and optionally reload the API runtime. Snapshot-backed transitional datasets are rejected here so release publishing cannot fall back to prediction snapshots.
+      Train a formal bundle from persisted formal datasets only, generate an approved/healthy manifest, publish it into SQLite as a model release, optionally activate it, and optionally reload the API runtime. Snapshot-backed transitional datasets are rejected here so release publishing cannot fall back to prediction snapshots.
 
   cargo run -p fc-worker -- refresh latest-free [--fast-lookback-days N] [--slow-lookback-years N] [--fred-chunk-days N] [--skip-world-bank] [--include-gdelt] [--mvp-key-only] [--no-reload-api] [--api-reload-url URL]
       Refresh the latest free-source data set for the dashboard, then optionally POST /api/system/reload. Use --mvp-key-only for the fast daily path that refreshes only key FRED series before Treasury/BOJ/SEC.

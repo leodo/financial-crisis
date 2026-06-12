@@ -84,6 +84,7 @@ MVP 当前判定：
 - [ ] 在 MVP 页面数字可信之前，不把 formal 模型作为首页主结论。
 - [ ] 后续再修 `20d` 当前态过冷、`60d` 背景值、样本稀疏、标签和校准冲突。
 - [ ] 只有 release review 与 Go/No-Go 通过后，formal 概率才恢复为主决策输入。
+  - 2026-06-12：普通 `research pipeline train-probability` 生成的 formal manifest 已改为 `candidate/shadow`；只有显式 `bootstrap-formal-release` 路径才生成 `approved/healthy` manifest。这样 No-Go 候选不会因为训练来源是 formal dataset 就在文件层看起来可直接发布。
 
 ### 1.2 MVP 迭代执行顺序
 

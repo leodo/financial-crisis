@@ -35,16 +35,17 @@ fn probability_calibration_strategy_rejects_inverting_fit() {
         max_input: 0.82,
     };
 
-    let (calibration, evaluation_probabilities) = select_probability_calibration_strategy(
-        &raw_probabilities,
-        &labels,
-        &calibration_row_refs,
-        20,
-        ProbabilityTargetLabelMode::ForwardCrisis,
-        &raw_probabilities,
-        &evaluation_row_refs,
-        calibration_candidate,
-    );
+    let (calibration, evaluation_probabilities) =
+        select_probability_calibration_strategy(ProbabilityCalibrationStrategyInput {
+            calibration_raw_probabilities: &raw_probabilities,
+            calibration_labels: &labels,
+            calibration_rows: &calibration_row_refs,
+            horizon_days: 20,
+            label_mode: ProbabilityTargetLabelMode::ForwardCrisis,
+            evaluation_raw_probabilities: &raw_probabilities,
+            evaluation_rows: &evaluation_row_refs,
+            calibration_candidate,
+        });
 
     assert!(calibration.is_none());
     assert_eq!(evaluation_probabilities, raw_probabilities);
@@ -81,16 +82,17 @@ fn probability_calibration_strategy_keeps_inverting_fit_for_reversed_raw_ranking
     let calibration_candidate = fit_platt_calibration(&raw_probabilities, &labels);
     assert!(calibration_candidate.alpha < 0.0);
 
-    let (calibration, evaluation_probabilities) = select_probability_calibration_strategy(
-        &raw_probabilities,
-        &labels,
-        &calibration_row_refs,
-        20,
-        ProbabilityTargetLabelMode::ForwardCrisis,
-        &raw_probabilities,
-        &evaluation_row_refs,
-        calibration_candidate.clone(),
-    );
+    let (calibration, evaluation_probabilities) =
+        select_probability_calibration_strategy(ProbabilityCalibrationStrategyInput {
+            calibration_raw_probabilities: &raw_probabilities,
+            calibration_labels: &labels,
+            calibration_rows: &calibration_row_refs,
+            horizon_days: 20,
+            label_mode: ProbabilityTargetLabelMode::ForwardCrisis,
+            evaluation_raw_probabilities: &raw_probabilities,
+            evaluation_rows: &evaluation_row_refs,
+            calibration_candidate: calibration_candidate.clone(),
+        });
 
     assert_eq!(
         calibration.as_ref().map(|artifact| artifact.alpha),
@@ -143,16 +145,17 @@ fn probability_calibration_strategy_keeps_raw_when_calibration_flattens_early_wa
         max_input: 0.72,
     };
 
-    let (calibration, evaluation_probabilities) = select_probability_calibration_strategy(
-        &raw_probabilities,
-        &labels,
-        &calibration_row_refs,
-        20,
-        ProbabilityTargetLabelMode::ForwardCrisis,
-        &raw_probabilities,
-        &evaluation_row_refs,
-        flattening_calibration,
-    );
+    let (calibration, evaluation_probabilities) =
+        select_probability_calibration_strategy(ProbabilityCalibrationStrategyInput {
+            calibration_raw_probabilities: &raw_probabilities,
+            calibration_labels: &labels,
+            calibration_rows: &calibration_row_refs,
+            horizon_days: 20,
+            label_mode: ProbabilityTargetLabelMode::ForwardCrisis,
+            evaluation_raw_probabilities: &raw_probabilities,
+            evaluation_rows: &evaluation_row_refs,
+            calibration_candidate: flattening_calibration,
+        });
 
     assert!(calibration.is_none());
     assert_eq!(evaluation_probabilities, raw_probabilities);
@@ -219,16 +222,17 @@ fn probability_calibration_strategy_rejects_calibration_that_crushes_evaluation_
     let evaluation_row_refs = evaluation_rows.iter().collect::<Vec<_>>();
     let evaluation_raw_probabilities = vec![0.91, 0.84, 0.58, 0.12, 0.79];
 
-    let (calibration, evaluation_probabilities) = select_probability_calibration_strategy(
-        &calibration_raw_probabilities,
-        &calibration_labels,
-        &calibration_row_refs,
-        60,
-        ProbabilityTargetLabelMode::ForwardCrisis,
-        &evaluation_raw_probabilities,
-        &evaluation_row_refs,
-        calibration_candidate,
-    );
+    let (calibration, evaluation_probabilities) =
+        select_probability_calibration_strategy(ProbabilityCalibrationStrategyInput {
+            calibration_raw_probabilities: &calibration_raw_probabilities,
+            calibration_labels: &calibration_labels,
+            calibration_rows: &calibration_row_refs,
+            horizon_days: 60,
+            label_mode: ProbabilityTargetLabelMode::ForwardCrisis,
+            evaluation_raw_probabilities: &evaluation_raw_probabilities,
+            evaluation_rows: &evaluation_row_refs,
+            calibration_candidate,
+        });
 
     assert!(calibration.is_none());
     assert_eq!(evaluation_probabilities, evaluation_raw_probabilities);
