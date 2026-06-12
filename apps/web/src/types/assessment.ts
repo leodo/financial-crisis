@@ -401,11 +401,39 @@ export interface ScenarioDataCoverageCatalog {
   records: ScenarioDataCoverageRecord[];
 }
 
+export interface FreeDataSourceAlternative {
+  source_id: string;
+  dataset: string;
+  access_tier: string;
+  note: string;
+}
+
+export interface FreeDataSourceRecord {
+  indicator_id: string;
+  display_name: string;
+  primary_source_id: string;
+  primary_dataset: string;
+  primary_access_tier: string;
+  primary_timing_note: string;
+  alternatives: FreeDataSourceAlternative[];
+  missing_impact: string;
+}
+
+export interface FreeDataSourceCatalog {
+  catalog_id: string;
+  market_scope: string;
+  note: string;
+  source: string;
+  warning: string | null;
+  records: FreeDataSourceRecord[];
+}
+
 export interface AssessmentMethodResponse {
   method: AssessmentMethodVersions;
   note: string;
   history_provenance: HistoryProvenanceSummary;
   protected_stress_window_catalog: ProtectedStressWindowCatalog;
   scenario_data_coverage_catalog: ScenarioDataCoverageCatalog;
+  free_data_source_catalog: FreeDataSourceCatalog;
   runtime_thresholds: RuntimeThresholdDiagnostics;
 }

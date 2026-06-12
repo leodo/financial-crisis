@@ -178,8 +178,8 @@ export function useDecisionViewModel({
     [method]
   );
   const freeDataReliabilityRows = useMemo(
-    () => buildFreeDataReliabilityRows(assessment.key_indicators),
-    [assessment.key_indicators]
+    () => buildFreeDataReliabilityRows(assessment.key_indicators, method.free_data_source_catalog),
+    [assessment.key_indicators, method.free_data_source_catalog]
   );
   const whyNowDrivers = useMemo(
     () => buildWhyNowRiskDrivers(assessment, indicators),

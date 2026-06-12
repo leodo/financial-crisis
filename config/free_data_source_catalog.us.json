@@ -1,0 +1,68 @@
+{
+  "catalog_id": "free_data_source_catalog_v1",
+  "market_scope": "financial_system",
+  "note": "美国主线关键指标的免费数据源与替代源机器可读目录。它把每个关键指标的主源、免费替代源、访问层级和缺失影响写成同一份口径，避免替代源路径只散落在前端说明文案里。",
+  "records": [
+    {
+      "indicator_id": "us_external_usdjpy_level",
+      "display_name": "USDJPY",
+      "primary_source_id": "boj",
+      "primary_dataset": "boj_fx_daily",
+      "primary_access_tier": "official_free",
+      "primary_timing_note": "BOJ 免费官方日频点位，适合日频风险评估，不等同盘中实时价。",
+      "alternatives": [
+        {
+          "source_id": "fred",
+          "dataset": "DEXJPUS",
+          "access_tier": "official_free",
+          "note": "FRED DEXJPUS 可做免费日频兜底，但同样不是盘中价。"
+        }
+      ],
+      "missing_impact": "缺失或陈旧时降低日元套息风险可信度，并把主结论降级为观察。"
+    },
+    {
+      "indicator_id": "jp_rates_call_rate",
+      "display_name": "日本无担保隔夜拆借利率",
+      "primary_source_id": "boj",
+      "primary_dataset": "boj_rates_daily",
+      "primary_access_tier": "official_free",
+      "primary_timing_note": "BOJ 免费官方利率数据，用于美日短端利差。",
+      "alternatives": [],
+      "missing_impact": "缺失时只能降低日元套息风险可信度，当前无免费日频兜底源。"
+    },
+    {
+      "indicator_id": "us_liquidity_effr",
+      "display_name": "有效联邦基金利率",
+      "primary_source_id": "fred",
+      "primary_dataset": "EFFR",
+      "primary_access_tier": "official_free",
+      "primary_timing_note": "FRED EFFR 免费日频序列，反映美元短端资金成本。",
+      "alternatives": [
+        {
+          "source_id": "fred",
+          "dataset": "DFF",
+          "access_tier": "official_free",
+          "note": "FRED DFF 可作为长历史联邦基金利率补丁。"
+        }
+      ],
+      "missing_impact": "缺失时降低融资压力识别能力。"
+    },
+    {
+      "indicator_id": "us_market_vix_close",
+      "display_name": "VIX 收盘价",
+      "primary_source_id": "fred",
+      "primary_dataset": "VIXCLS",
+      "primary_access_tier": "official_free",
+      "primary_timing_note": "FRED VIXCLS 是当前免费主路径，日频收盘口径。",
+      "alternatives": [
+        {
+          "source_id": "yfinance",
+          "dataset": "^VIX",
+          "access_tier": "prototype",
+          "note": "yfinance ^VIX 仅作原型/盘中参考，未进入正式刷新链路。"
+        }
+      ],
+      "missing_impact": "缺失或陈旧时降低近端市场压力识别能力，并把主结论降级为观察。"
+    }
+  ]
+}

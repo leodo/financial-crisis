@@ -3,7 +3,7 @@ import {
   humanizeNarrativeCopy,
   sourceLabel
 } from "../../format";
-import type { AssessmentSnapshot } from "../../types";
+import type { AssessmentSnapshot, FreeDataSourceCatalog } from "../../types";
 
 type KeyIndicator = AssessmentSnapshot["key_indicators"][number];
 
@@ -31,7 +31,24 @@ export function keyIndicatorSourceTimingCopy(indicator: KeyIndicator): string {
   return `${sourceLabel(indicator.source_id)} 来源用于当前关键指标。`;
 }
 
-export function keyIndicatorFallbackCopy(indicator: KeyIndicator): string {
+export function keyIndicatorFallbackCopy(
+  indicator: KeyIndicator,
+  catalog?: FreeDataSourceCatalog
+): string {
+  const record = catalog?.records.find(
+    (item) => item.indicator_id === indicator.indicator_id
+  );
+  if (record) {
+    if (record.alternatives.length > 0) {
+      const paths = record.alternatives
+        .map((alt) => `${sourceLabel(alt.source_id)} ${alt.dataset}（${alt.note}）`)
+        .join("；");
+      return `替代路径：${paths}`;
+    }
+    return `替代路径：当前未配置专门兜底源。${record.missing_impact}`;
+  }
+
+  // 目录缺失时的静态兜底，保持与历史口径一致
   switch (indicator.indicator_id) {
     case "us_external_usdjpy_level":
       return "替代路径：FRED DEXJPUS 可做免费日频兜底，但同样不是盘中价。";

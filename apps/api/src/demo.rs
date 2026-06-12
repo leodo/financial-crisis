@@ -2,9 +2,9 @@ use std::env;
 
 use chrono::NaiveDate;
 use fc_domain::{
-    load_protected_stress_window_catalog, load_scenario_data_coverage_catalog, AlertEvent,
-    DataMode, Indicator, Observation, PredictionSnapshotRecord, UserRiskPreferences,
-    UserRiskProfile,
+    load_free_data_source_catalog, load_protected_stress_window_catalog,
+    load_scenario_data_coverage_catalog, AlertEvent, DataMode, Indicator, Observation,
+    PredictionSnapshotRecord, UserRiskPreferences, UserRiskProfile,
 };
 use fc_scoring::ScoringEngine;
 
@@ -102,6 +102,7 @@ pub(crate) fn build_app_data_from_inputs(
     let scoring = ScoringEngine::default();
     let protected_stress_window_catalog = load_protected_stress_window_catalog();
     let scenario_data_coverage_catalog = load_scenario_data_coverage_catalog();
+    let free_data_source_catalog = load_free_data_source_catalog();
     let threshold_diagnostics = runtime_threshold_diagnostics(serving_model.as_ref());
     let strict_thresholds =
         (!use_transitional_bridge).then(|| probability_action_thresholds(serving_model.as_ref()));
@@ -258,6 +259,7 @@ pub(crate) fn build_app_data_from_inputs(
             posture_guidance,
             protected_stress_window_catalog,
             scenario_data_coverage_catalog,
+            free_data_source_catalog,
             runtime_thresholds: threshold_diagnostics,
         },
         prediction_snapshots: vec![current_prediction_snapshot],

@@ -5,7 +5,7 @@ import {
   sourceLabel,
   unitLabel
 } from "../../format";
-import type { AssessmentSnapshot } from "../../types";
+import type { AssessmentSnapshot, FreeDataSourceCatalog } from "../../types";
 import type { DecisionNumberAuditRow } from "./numberAudit";
 import {
   keyIndicatorDecisionImpact,
@@ -16,7 +16,8 @@ import {
 } from "./dataSourceReliability";
 
 export function buildFreeDataReliabilityRows(
-  keyIndicators: AssessmentSnapshot["key_indicators"]
+  keyIndicators: AssessmentSnapshot["key_indicators"],
+  freeDataSourceCatalog?: FreeDataSourceCatalog
 ): DecisionNumberAuditRow[] {
   return keyIndicators.map((indicator) => ({
     id: `free-data-${indicator.entity_id}-${indicator.indicator_id}`,
@@ -29,7 +30,7 @@ export function buildFreeDataReliabilityRows(
     meta: keyIndicatorDecisionImpact(indicator),
     note: [
       keyIndicatorSourceTimingCopy(indicator),
-      keyIndicatorFallbackCopy(indicator),
+      keyIndicatorFallbackCopy(indicator, freeDataSourceCatalog),
       keyIndicatorLineageCopy(indicator.lineage, { includeEvidenceLevel: true })
     ].join(" ")
   }));
