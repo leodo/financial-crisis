@@ -1222,11 +1222,12 @@ MVP 当前判定：
      - 2026-06-11：SEC EDGAR connector 已把 response body 读取超时也接到 curl fallback；随后 `backfill sec-edgar --start 2026-06-09 --end 2026-06-11` 成功写入 16 个 payload、12 条事件观测和 success run，避免偶发 body timeout 让整批日频事件源长期显示失败。
      - 2026-06-11：当前 `/api/sources` 与浏览器实测显示 SEC EDGAR / World Bank 都恢复 `healthy`，数据可信度页摘要为 `源健康降级0`，首页顶栏不再显示 `生产源健康降级`；`just mvp-regression` 已改为按实时 `/api/sources` 动态验证降级数量，而不是硬编码 `2`。
      - 2026-06-11：来源页继续拆清 `最新观测`、`观测滞后`、`抓取水位`、`最近成功刷新` 四个口径；SEC 这类事件源允许最新观测日与抓取水位不同，不再让用户误以为两个数字冲突。GDELT / yfinance 这类未进入正式刷新链路的原型源改显示 `未进入正式刷新监控`，来源页也不再用 `近实时` 暗示日频/原型源有生产级盘中刷新证据。
-     - 后续仍需做系统级定时任务/cron 配置、失败自动重试策略和告警推送，本轮只完成“状态可见、不能误导”的 MVP 最小闭环。
-   - [~] 对 FRED/BOJ/Treasury/SEC/GDELT/公开市场数据分别显示最新日期、免费可得性和替代源；
+     - 2026-06-12：日频刷新已固化系统级定时任务与失败自动重试：`refresh latest-free` 新增 `--max-retries`（默认 2）/`--retry-backoff-secs`（默认 5）阶段级线性退避重试，单源瞬时网络抖动会先重试再落入 `ingest_runs` 失败证据；新增 `deploy/scheduled-refresh/`（systemd service+timer、cron、计划任务示例）。告警推送仍留作后续。
+   - [x] 对 FRED/BOJ/Treasury/SEC/GDELT/公开市场数据分别显示最新日期、免费可得性和替代源；
      - 已完成 sources 页状态标签补齐，支持 `partial_failure / failed / disabled` 的中文解释；
-     - 后续还需把替代源路径整理成机器可读 catalog，而不是只写在说明文案里。
-   - [ ] 对缺失或滞后的关键指标降权，而不是静默沿用旧值。
+     - 2026-06-12：已把替代源路径整理成机器可读 catalog `config/free_data_source_catalog.us.json`（crates/domain `free_data_source` 加载，env `FC_FREE_DATA_SOURCE_CATALOG_PATH` 可覆盖），并经 `/api/assessment/method` 暴露为 `free_data_source_catalog`；前端 `keyIndicatorFallbackCopy` 改为读取该目录，不再把替代源硬编码在文案里。
+   - [x] 对缺失或滞后的关键指标降权，而不是静默沿用旧值。
+     - 2026-06-12：`build_mvp_risk_state` 已接入 `key_indicators`；关键近端指标缺失/陈旧时强制主结论降级为观察，并在 blocker 里点名是哪个指标（“VIX 收盘价 缺失或明显陈旧… 不能用旧值形成主动减仓/对冲结论”）；延迟指标在证据和 blocker 中显式标注“按延迟值给出，需等最新值确认再升级动作”，不再静默沿用旧值。
 4. P2 正式概率模型修复：
    - [ ] 先完成 raw point-in-time feature store 与训练样本可行性审计，再决定是否继续重训；
    - [ ] 对 active release 的 USDJPY 高位 tail 负贡献、20d/60d 过冷、阈值过高分别做训练侧根因修复；

@@ -129,11 +129,12 @@ pub(crate) use support::{
     format_optional_date_with_lead, format_optional_date_with_reason, format_optional_days,
     format_optional_multiplier, format_optional_pct, format_optional_ratio, format_optional_score,
     format_pct, format_signed_count_delta, format_signed_pct_delta, format_trigger_codes,
-    open_sqlite_store, parse_date_arg, parse_positive_i64, path_to_string, posture_text,
-    raw_data_dir, raw_file_extension, read_probability_bundle, read_release_manifest,
-    reload_api_runtime, reload_api_runtime_with_history_options, round3, round6,
-    run_demo_ingestion, safe_divide, safe_ratio, simple_hash, sqlite_path, time_bucket_text,
-    truncate_text, write_raw_payload, ApiReloadHistoryMode,
+    open_sqlite_store, parse_date_arg, parse_non_negative_u32, parse_non_negative_u64,
+    parse_positive_i64, path_to_string, posture_text, raw_data_dir, raw_file_extension,
+    read_probability_bundle, read_release_manifest, reload_api_runtime,
+    reload_api_runtime_with_history_options, round3, round6, run_demo_ingestion, safe_divide,
+    safe_ratio, simple_hash, sqlite_path, time_bucket_text, truncate_text, write_raw_payload,
+    ApiReloadHistoryMode,
 };
 pub(crate) use training::{
     chronological_split, chronological_split_bounds, ensure_positive_labels, forward_crisis_label,

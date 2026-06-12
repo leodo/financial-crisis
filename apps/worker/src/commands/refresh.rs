@@ -29,6 +29,8 @@ pub(crate) struct RefreshLatestOptions {
     pub(crate) mvp_key_only: bool,
     pub(crate) reload_api: bool,
     pub(crate) api_reload_url: String,
+    pub(crate) max_retries: u32,
+    pub(crate) retry_backoff_secs: u64,
 }
 
 impl RefreshLatestOptions {
@@ -41,6 +43,8 @@ impl RefreshLatestOptions {
         let mut mvp_key_only = false;
         let mut reload_api = true;
         let mut api_reload_url = crate::DEFAULT_API_RELOAD_URL.to_string();
+        let mut max_retries = 2_u32;
+        let mut retry_backoff_secs = 5_u64;
         let mut index = 0;
 
         while index < args.len() {
@@ -79,6 +83,15 @@ impl RefreshLatestOptions {
                         .with_context(|| "--api-reload-url requires a URL")?
                         .clone();
                 }
+                "--max-retries" => {
+                    index += 1;
+                    max_retries = crate::parse_non_negative_u32(args.get(index), "--max-retries")?;
+                }
+                "--retry-backoff-secs" => {
+                    index += 1;
+                    retry_backoff_secs =
+                        crate::parse_non_negative_u64(args.get(index), "--retry-backoff-secs")?;
+                }
                 other => bail!("unknown refresh option: {other}"),
             }
             index += 1;
@@ -93,6 +106,8 @@ impl RefreshLatestOptions {
             mvp_key_only,
             reload_api,
             api_reload_url,
+            max_retries,
+            retry_backoff_secs,
         })
     }
 }
@@ -134,27 +149,29 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
     refresh_fred_stage(&options, fast_start, today, &mut stage_failures).await;
 
     println!("Stage 2/{total_stages}: Treasury yield curve");
-    record_stage_result(
+    run_stage_with_retry(
         "Treasury yield curve",
-        backfill_treasury_yield_with_options(
-            BackfillOptions {
-                start: fast_start,
-                end: today,
-                chunk_days: Some(options.fast_lookback_days.min(180)),
-                indicator_filter: None,
-                external_code_filter: None,
-                watermark_overlap_days: None,
-                respect_frequency_watermark: false,
-            }
-            .with_frequency_watermark_refresh(),
-        )
-        .await,
+        &options,
         &mut stage_failures,
-    );
+        || {
+            backfill_treasury_yield_with_options(
+                BackfillOptions {
+                    start: fast_start,
+                    end: today,
+                    chunk_days: Some(options.fast_lookback_days.min(180)),
+                    indicator_filter: None,
+                    external_code_filter: None,
+                    watermark_overlap_days: None,
+                    respect_frequency_watermark: false,
+                }
+                .with_frequency_watermark_refresh(),
+            )
+        },
+    )
+    .await;
 
     println!("Stage 3/{total_stages}: BOJ FX");
-    record_stage_result(
-        "BOJ FX",
+    run_stage_with_retry("BOJ FX", &options, &mut stage_failures, || {
         backfill_boj_with_options(BojBackfillOptions {
             dataset: BojDataset::FxDaily,
             options: BackfillOptions {
@@ -168,13 +185,11 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
             }
             .with_frequency_watermark_refresh(),
         })
-        .await,
-        &mut stage_failures,
-    );
+    })
+    .await;
 
     println!("Stage 4/{total_stages}: BOJ money market");
-    record_stage_result(
-        "BOJ money market",
+    run_stage_with_retry("BOJ money market", &options, &mut stage_failures, || {
         backfill_boj_with_options(BojBackfillOptions {
             dataset: BojDataset::MoneyMarketRates,
             options: BackfillOptions {
@@ -188,13 +203,11 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
             }
             .with_frequency_watermark_refresh(),
         })
-        .await,
-        &mut stage_failures,
-    );
+    })
+    .await;
 
     println!("Stage 5/{total_stages}: SEC EDGAR");
-    record_stage_result(
-        "SEC EDGAR",
+    run_stage_with_retry("SEC EDGAR", &options, &mut stage_failures, || {
         backfill_sec_edgar_with_options(
             BackfillOptions {
                 start: fast_start,
@@ -207,52 +220,57 @@ async fn refresh_latest_free(args: &[String]) -> Result<()> {
             }
             .with_frequency_watermark_refresh(),
         )
-        .await,
-        &mut stage_failures,
-    );
+    })
+    .await;
 
     let mut next_stage = 6;
     if !options.skip_world_bank {
         println!("Stage {next_stage}/{total_stages}: World Bank slow variables");
-        record_stage_result(
+        run_stage_with_retry(
             "World Bank slow variables",
-            backfill_world_bank_with_options(
-                BackfillOptions {
-                    start: slow_start,
-                    end: today,
-                    chunk_days: None,
-                    indicator_filter: None,
-                    external_code_filter: None,
-                    watermark_overlap_days: None,
-                    respect_frequency_watermark: false,
-                }
-                .with_frequency_watermark_refresh(),
-            )
-            .await,
+            &options,
             &mut stage_failures,
-        );
+            || {
+                backfill_world_bank_with_options(
+                    BackfillOptions {
+                        start: slow_start,
+                        end: today,
+                        chunk_days: None,
+                        indicator_filter: None,
+                        external_code_filter: None,
+                        watermark_overlap_days: None,
+                        respect_frequency_watermark: false,
+                    }
+                    .with_frequency_watermark_refresh(),
+                )
+            },
+        )
+        .await;
         next_stage += 1;
     }
 
     if options.include_gdelt {
         println!("Stage {next_stage}/{total_stages}: GDELT prototype events");
-        record_stage_result(
+        run_stage_with_retry(
             "GDELT prototype events",
-            backfill_gdelt_with_options(
-                BackfillOptions {
-                    start: fast_start,
-                    end: today,
-                    chunk_days: None,
-                    indicator_filter: None,
-                    external_code_filter: None,
-                    watermark_overlap_days: Some(7),
-                    respect_frequency_watermark: false,
-                }
-                .with_frequency_watermark_refresh(),
-            )
-            .await,
+            &options,
             &mut stage_failures,
-        );
+            || {
+                backfill_gdelt_with_options(
+                    BackfillOptions {
+                        start: fast_start,
+                        end: today,
+                        chunk_days: None,
+                        indicator_filter: None,
+                        external_code_filter: None,
+                        watermark_overlap_days: Some(7),
+                        respect_frequency_watermark: false,
+                    }
+                    .with_frequency_watermark_refresh(),
+                )
+            },
+        )
+        .await;
     }
 
     if !stage_failures.is_empty() {
@@ -299,27 +317,27 @@ async fn refresh_fred_stage(
             let label = external_code
                 .map(|code| format!("FRED {indicator_id}/{code}"))
                 .unwrap_or_else(|| format!("FRED {indicator_id}"));
-            let result = backfill_fred_with_options(FredBackfillOptions {
-                options: BackfillOptions {
-                    start: fast_start,
-                    end: today,
-                    chunk_days: Some(options.fred_chunk_days),
-                    indicator_filter: Some((*indicator_id).to_string()),
-                    external_code_filter: external_code.map(str::to_string),
-                    watermark_overlap_days: None,
-                    respect_frequency_watermark: false,
-                }
-                .with_frequency_watermark_refresh(),
-                fred_mode: FredBackfillMode::GraphCsv,
+            run_stage_with_retry(&label, options, stage_failures, || {
+                backfill_fred_with_options(FredBackfillOptions {
+                    options: BackfillOptions {
+                        start: fast_start,
+                        end: today,
+                        chunk_days: Some(options.fred_chunk_days),
+                        indicator_filter: Some((*indicator_id).to_string()),
+                        external_code_filter: external_code.map(str::to_string),
+                        watermark_overlap_days: None,
+                        respect_frequency_watermark: false,
+                    }
+                    .with_frequency_watermark_refresh(),
+                    fred_mode: FredBackfillMode::GraphCsv,
+                })
             })
             .await;
-            record_stage_result(&label, result, stage_failures);
         }
         return;
     }
 
-    record_stage_result(
-        "FRED market series",
+    run_stage_with_retry("FRED market series", options, stage_failures, || {
         backfill_fred_with_options(FredBackfillOptions {
             options: BackfillOptions {
                 start: fast_start,
@@ -333,9 +351,8 @@ async fn refresh_fred_stage(
             .with_frequency_watermark_refresh(),
             fred_mode: FredBackfillMode::GraphCsv,
         })
-        .await,
-        stage_failures,
-    );
+    })
+    .await;
 }
 
 fn record_stage_result(label: &str, result: Result<()>, stage_failures: &mut Vec<String>) {
@@ -344,6 +361,49 @@ fn record_stage_result(label: &str, result: Result<()>, stage_failures: &mut Vec
         tracing::warn!(%message, "refresh stage failed");
         println!("  warning: {message}");
         stage_failures.push(message);
+    }
+}
+
+/// 对单个抓取阶段执行带退避的自动重试。
+///
+/// 免费数据源（尤其 SEC EDGAR / FRED 图表 CSV）偶发网络超时，旧逻辑只记录一次失败。
+/// 这里在记录最终失败前，先按 `max_retries` 次、线性退避重试，避免单次瞬时网络抖动
+/// 让整批日频刷新缺一个源；只有所有重试都失败时才落入 `stage_failures`。
+async fn run_stage_with_retry<F, Fut>(
+    label: &str,
+    options: &RefreshLatestOptions,
+    stage_failures: &mut Vec<String>,
+    mut stage: F,
+) where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<()>>,
+{
+    let max_attempts = options.max_retries + 1;
+    for attempt in 1..=max_attempts {
+        match stage().await {
+            Ok(()) => return,
+            Err(error) => {
+                if attempt < max_attempts {
+                    let backoff = options.retry_backoff_secs * attempt as u64;
+                    println!(
+                        "  retry: {label} attempt {attempt}/{max_attempts} failed ({error:#}); retrying in {backoff}s"
+                    );
+                    tracing::warn!(
+                        label,
+                        attempt,
+                        max_attempts,
+                        backoff_secs = backoff,
+                        error = %format!("{error:#}"),
+                        "refresh stage failed; will retry"
+                    );
+                    if backoff > 0 {
+                        tokio::time::sleep(std::time::Duration::from_secs(backoff)).await;
+                    }
+                } else {
+                    record_stage_result(label, Err(error), stage_failures);
+                }
+            }
+        }
     }
 }
 

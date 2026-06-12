@@ -1,0 +1,9 @@
+# Financial Crisis 免费数据日频刷新 cron 示例
+#
+# 安装：crontab -e 后粘贴下面一行，并按实际路径修改。
+# 说明：refresh latest-free 已内置阶段级失败隔离与自动重试，单源失败不阻塞其它源；
+#       run 级证据写入 ingest_runs，可用 `fc-worker refresh status` 核对。
+#
+# 字段：分 时 日 月 周   命令
+# 下例为工作日（周一到周五）本地时间 06:30 刷新一次。
+30 6 * * 1-5 cd /opt/financial-crisis && /usr/local/bin/fc-worker refresh latest-free --mvp-key-only --fast-lookback-days 14 --fred-chunk-days 15 --max-retries 2 --retry-backoff-secs 10 >> /var/log/financial-crisis/refresh.log 2>&1

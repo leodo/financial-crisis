@@ -1,0 +1,21 @@
+[Unit]
+Description=Financial Crisis free-data daily refresh
+Documentation=file:///opt/financial-crisis/deploy/scheduled-refresh/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# 按实际部署路径修改
+WorkingDirectory=/opt/financial-crisis
+# 本地 SQLite 历史库路径；生产 PostgreSQL 部署可改用 FC_DATA_MODE=postgres + DATABASE_URL
+Environment=FC_SQLITE_PATH=/opt/financial-crisis/data/fc-local.sqlite
+# MVP 关键免费源快速路径：先刷 VIX/信用利差/STLFSI/EFFR/SOFR 等核心 FRED 小集合，
+# 再继续 Treasury/BOJ/SEC；失败阶段自动重试，单源失败不阻塞其它源。
+ExecStart=/usr/local/bin/fc-worker refresh latest-free --mvp-key-only --fast-lookback-days 14 --fred-chunk-days 15 --max-retries 2 --retry-backoff-secs 10
+# 整批刷新有重试退避，给足超时
+TimeoutStartSec=1200
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
