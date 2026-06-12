@@ -91,7 +91,7 @@ pub(super) fn score_release_formal_probability_slice_rows(
     rows.sort_by(|left, right| left.as_of_date.cmp(&right.as_of_date));
     rows.into_iter()
         .map(|row| {
-            let base_model_diagnostics = bundle
+            let base_model_diagnostics: Vec<ReleaseFormalProbabilityBaseModelDiagnostics> = bundle
                 .horizons
                 .iter()
                 .map(|horizon| {
@@ -124,6 +124,10 @@ pub(super) fn score_release_formal_probability_slice_rows(
                             runtime_final_probability: Some(score.final_probability),
                             monotonic_lift: 0.0,
                             configured_overlay_count: horizon.family_overlays.len() as u32,
+                            base_contributions: release_formal_probability_base_model_diagnostics(
+                                &base_model_diagnostics,
+                                horizon.horizon_days,
+                            ),
                             contributions: score.overlay_contributions,
                             overlay_audits: Vec::new(),
                         }
@@ -156,6 +160,19 @@ pub(super) fn release_formal_probability_base_model(
     row.base_model_diagnostics
         .iter()
         .find(|item| item.horizon_days == horizon_days)
+}
+
+fn release_formal_probability_base_model_diagnostics(
+    diagnostics: &[ReleaseFormalProbabilityBaseModelDiagnostics],
+    horizon_days: u32,
+) -> Vec<fc_domain::LogisticProbabilityFeatureContribution> {
+    let mut contributions = diagnostics
+        .iter()
+        .find(|item| item.horizon_days == horizon_days)
+        .map(|item| item.base_model.feature_contributions.clone())
+        .unwrap_or_default();
+    contributions.truncate(8);
+    contributions
 }
 
 pub(super) fn release_formal_probability_horizon(

@@ -1,48 +1,80 @@
 import {
   auditEpisodeClass,
   auditEpisodeLabel,
+  formatCount,
   formatDate,
   formatNumber,
   formatPercent,
   userProfileLabel
 } from "../../format";
-import type { AssessmentSnapshot } from "../../types";
+import type { AssessmentMethodResponse, AssessmentSnapshot } from "../../types";
 import type { MetricItem } from "../shared/panelHelpers";
+import {
+  buildBacktestCoverageScopeText,
+  buildBacktestHistoryCoverageText,
+  buildRollingAuditHistoryText,
+  buildRollingAuditScopeText
+} from "../shared/backtestCopy";
 import type { DecisionRollingAuditEpisodeRow } from "./builderTypes";
 import { describeRollingAuditBoundary } from "./logic";
+
+function zeroAwareRate(value: number, zeroLabel: string) {
+  return value === 0 ? zeroLabel : formatPercent(value);
+}
+
+function noActionSignalText(hasActionSignals: boolean, fallback = "无可评估") {
+  return hasActionSignals ? undefined : fallback;
+}
 
 export function buildBacktestSummaryMetrics(
   assessment: AssessmentSnapshot
 ): MetricItem[] {
+  const summary = assessment.backtest_summary;
+  const noLocalCoverage = summary.real_scenario_count === 0;
+  const noActionLeadSample = summary.avg_lead_time_days === null;
+  const localCoverageHint =
+    "本地覆盖场景为 0 表示当前 SQLite 历史窗口还没有直接覆盖这些危机场景，不是采集失败；页面仍会用模板参照场景辅助解释。";
+  const noActionWarningHint =
+    "当前回测口径没有形成满足提前量要求的动作级预警，所以这里不能理解成数据错了。";
+
   return [
     {
       label: "结构抬升率",
-      value: formatPercent(assessment.backtest_summary.structural_warning_rate)
+      value: formatPercent(summary.structural_warning_rate),
+      hint: noLocalCoverage ? "当前主要来自模板参照场景，不能当成本地 PIT 命中率。" : undefined
     },
     {
       label: "可执行预警率",
-      value: formatPercent(assessment.backtest_summary.timely_warning_rate)
+      value: zeroAwareRate(summary.timely_warning_rate, "未形成动作预警"),
+      hint: summary.timely_warning_rate === 0 ? noActionWarningHint : undefined
     },
-    { label: "漏报率", value: formatPercent(assessment.backtest_summary.missed_rate) },
+    {
+      label: "漏报率",
+      value: summary.missed_rate >= 1 && summary.timely_warning_rate === 0 ? "动作未命中" : formatPercent(summary.missed_rate),
+      hint: summary.missed_rate >= 1 && summary.timely_warning_rate === 0 ? noActionWarningHint : undefined
+    },
     {
       label: "平均结构提前量",
-      value: formatNumber(assessment.backtest_summary.avg_structural_lead_time_days, "d")
+      value: formatNumber(summary.avg_structural_lead_time_days, "d")
     },
     {
       label: "平均动作提前量",
-      value: formatNumber(assessment.backtest_summary.avg_lead_time_days, "d")
+      value: noActionLeadSample ? "暂无动作样本" : formatNumber(summary.avg_lead_time_days, "d"),
+      hint: noActionLeadSample ? noActionWarningHint : undefined
     },
     {
       label: "预警折返",
-      value: formatNumber(assessment.backtest_summary.total_false_positive_count)
+      value: formatCount(summary.total_false_positive_count)
     },
     {
-      label: "真实样本",
-      value: formatNumber(assessment.backtest_summary.real_scenario_count)
+      label: "本地覆盖场景",
+      value: noLocalCoverage ? "暂无覆盖" : formatCount(summary.real_scenario_count),
+      hint: noLocalCoverage ? localCoverageHint : undefined
     },
     {
-      label: "模板样本",
-      value: formatNumber(assessment.backtest_summary.fallback_scenario_count)
+      label: "模板参照场景",
+      value: formatCount(summary.fallback_scenario_count),
+      hint: noLocalCoverage ? "当前历史类比和提前量更多依赖模板参照，后续要继续补长历史 PIT 数据。" : undefined
     },
     {
       label: "用户风险档位",
@@ -51,58 +83,70 @@ export function buildBacktestSummaryMetrics(
   ];
 }
 
-export function buildBacktestHistoryCoverageText(
-  backtestSummary: AssessmentSnapshot["backtest_summary"]
-) {
-  return backtestSummary.history_start && backtestSummary.history_end
-    ? `${formatDate(backtestSummary.history_start)} - ${formatDate(backtestSummary.history_end)}`
-    : "当前没有可用历史区间。";
-}
+export { buildBacktestCoverageScopeText, buildBacktestHistoryCoverageText };
+export { buildRollingAuditHistoryText, buildRollingAuditScopeText };
 
 export function buildRollingAuditMetrics(
   assessment: AssessmentSnapshot
 ): MetricItem[] {
+  const rollingAudit = assessment.backtest_summary.rolling_audit;
+  const hasActionSignals = rollingAudit.actionable_signal_count > 0;
+  const noSignalHint =
+    "当前滚动窗口没有发出准备/对冲/防守动作信号，所以这里不是命中率为 0，而是样本分母为 0。";
+  const rollingAuditHint =
+    "这是全历史回放里的动作信号复核口径，用来评估误报边界；不是当前正式概率的实时准确率。";
+  const rollingAuditCountHint =
+    "这里统计的是历史回放评估点/区间数量，不是当前页面今天出现的事件条数。";
+
   return [
     {
-      label: "动作信号精度",
-      value: formatPercent(assessment.backtest_summary.rolling_audit.actionable_precision)
+      label: "动作信号精度（历史）",
+      value: hasActionSignals ? formatPercent(rollingAudit.actionable_precision) : "无动作信号",
+      hint: hasActionSignals ? rollingAuditHint : noSignalHint
     },
     {
-      label: "动作信号点",
-      value: formatNumber(assessment.backtest_summary.rolling_audit.actionable_signal_count)
+      label: "动作信号点（历史）",
+      value: noActionSignalText(hasActionSignals, "无") ?? formatCount(rollingAudit.actionable_signal_count),
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     },
     {
       label: "危机前命中点",
-      value: formatNumber(assessment.backtest_summary.rolling_audit.pre_crisis_signal_count)
+      value: noActionSignalText(hasActionSignals) ?? formatCount(rollingAudit.pre_crisis_signal_count),
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     },
     {
       label: "危机中信号点",
-      value: formatNumber(assessment.backtest_summary.rolling_audit.in_crisis_signal_count)
+      value: noActionSignalText(hasActionSignals) ?? formatCount(rollingAudit.in_crisis_signal_count),
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     },
     {
       label: "受保护压力点",
-      value: formatNumber(assessment.backtest_summary.rolling_audit.stress_window_signal_count)
+      value: noActionSignalText(hasActionSignals) ?? formatCount(rollingAudit.stress_window_signal_count),
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     },
     {
-      label: "纯误报点",
-      value: formatNumber(assessment.backtest_summary.rolling_audit.false_positive_signal_count)
+      label: "纯误报点（历史）",
+      value: noActionSignalText(hasActionSignals) ?? formatCount(rollingAudit.false_positive_signal_count),
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     },
     {
-      label: "误报区间",
-      value: formatNumber(assessment.backtest_summary.rolling_audit.false_positive_episode_count)
+      label: "误报区间（历史）",
+      value: noActionSignalText(hasActionSignals, "无") ?? formatCount(rollingAudit.false_positive_episode_count),
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     },
     {
-      label: "最长误报区间",
-      value: formatNumber(
-        assessment.backtest_summary.rolling_audit.longest_false_positive_episode_days,
-        "d"
-      )
+      label: "最长误报区间（历史）",
+      value: noActionSignalText(hasActionSignals, "无") ?? formatCount(rollingAudit.longest_false_positive_episode_days, "d"),
+      hint: hasActionSignals ? rollingAuditCountHint : noSignalHint
     }
   ];
 }
 
-export function buildRollingAuditBoundaryText(method: AssessmentSnapshot["method"]) {
-  return describeRollingAuditBoundary(method);
+export function buildRollingAuditBoundaryText(
+  assessment: AssessmentSnapshot,
+  method: AssessmentMethodResponse
+) {
+  return describeRollingAuditBoundary(method, assessment.backtest_summary.rolling_audit);
 }
 
 export function buildRollingAuditEpisodes(
@@ -113,8 +157,8 @@ export function buildRollingAuditEpisodes(
     classificationClass: auditEpisodeClass(episode.classification),
     classificationLabel: auditEpisodeLabel(episode.classification),
     interval: `${formatDate(episode.start_date)} - ${formatDate(episode.end_date)}`,
-    duration: formatNumber(episode.duration_days, "d"),
-    signalCount: formatNumber(episode.signal_count),
+    duration: formatCount(episode.duration_days, "d"),
+    signalCount: formatCount(episode.signal_count),
     note: episode.note
   }));
 }

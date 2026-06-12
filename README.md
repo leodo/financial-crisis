@@ -74,7 +74,7 @@
 - 当前 `/api/assessment/history` 和 `/api/backtests/timeline` 已支持 `from` / `to` / `limit` 查询参数，默认返回较长窗口，而不是旧版只看最近十几个点。
 - 当前 `/api/backtests` 已显式区分 `真实历史样本` 与 `模板参考样本`，避免把本地库尚未覆盖的历史危机误读为真实回测结果。
 - 当前 `/api/backtests` 与前端回测页已把 `结构性抬升提前量` 和 `可执行预警提前量` 分开展示，避免把几个月前的脆弱性积累误读成已经给出可执行清仓信号。
-- 当前 `backtest_summary.rolling_audit` 已接入全历史滚动审计，显式区分 `危机前命中`、`受保护压力窗口` 和 `纯误报`，同时展示最长的非危机动作区间，避免把 2022 这类系统压力阶段误写成纯噪声误报。
+- 当前 `backtest_summary.rolling_audit` 已接入独立的滚动审计历史窗口，优先复用可用的长 replay 历史，并显式区分 `危机前命中`、`受保护压力窗口` 和 `纯误报`，同时展示最长的非危机动作区间，避免把 2022 这类系统压力阶段误写成纯噪声误报。
 - 当前受保护压力窗口目录已经抽到 [config/protected_stress_windows.us.json](config/protected_stress_windows.us.json)，默认随构建一起发布，也可以用 `FC_PROTECTED_STRESS_WINDOWS_PATH` 覆盖。
 - 当前代码已经支持 `heuristic_mvp` 和 `formal_bundle_v1` 两种 probability mode，并且支持从本地 SQLite `prediction snapshots` 训练、发布、激活和回滚正式概率 release。
 - 当前 `/api/research/audit` 与前端“发布审计”页已经打通，用于核对 `release registry`、`runtime probability mode` 与每日 `prediction snapshot` 是否一致。
@@ -157,8 +157,8 @@ just stop
 - 面板展示的是免费日频/周频风险数据，不是逐笔行情。解读单个数值前，先看 `data mode`、指标日期和 stale warning。
 - API 默认每 `60` 秒自动重载一次本地库；也可以从前端右上角刷新按钮触发即时 reload。
 - `just audit-report` 会从当前运行中的 API 拉取 assessment/backtests/method，并输出一份 JSON + Markdown 审计报告；如果 API 仍是旧进程，命令会退回本地内置压力窗口目录并给出 warning。
-- 在 `sqlite` 模式下，API 每次启动或 reload 时都会把当前 assessment 和历史轨迹同步写入 `analytics_prediction_snapshots`，用于后续 release 审计、方法复盘和历史对照。
-- 从这一步开始，`/api/assessment/history` 在 `sqlite` 模式下会优先复用已落库的 `prediction snapshots`，只在缺口日期补算，因此 reload 的响应速度会明显快于“每次全历史重算”。
+- 在 `sqlite` 模式下，formal bundle 的历史轨迹优先写入并复用 `analytics_historical_replay_runs / analytics_historical_assessment_points`；`analytics_prediction_snapshots` 只保留当前运行快照、heuristic/兼容路径和旧桥接审计用途。
+- `/api/assessment/history` 对 formal bundle 会先查 historical replay cache；若 cache 不可用，会按 raw observations + PIT feature snapshot 重建，而不是静默退回旧 `prediction snapshots`。
 - 如果要核对线上到底是在跑 heuristic 还是 formal bundle，可以直接打开前端“发布审计”页，或者访问 `GET /api/research/audit`。
 
 ### 2. 使用本地 SQLite 历史库

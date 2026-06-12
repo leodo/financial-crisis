@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-01
+最后更新：2026-06-09
 
 已落地进展（2026-06-01）：
 
@@ -12,7 +12,10 @@
 - `historical replay run / point` 已落到 SQLite / domain store，strict/full rebuild 会把历史点级结果写入 replay store；
 - API 在命中同 `history_cache_key + date range + release_id` 的成功 replay run 时，已经会优先读取 replay points，而不是先退回旧 `prediction snapshots`；
 - API 默认历史路径对 `bundle-backed release` 也已改为 `replay-first`：若无可复用 replay cache，会直接基于原始观测全量重建并写回 replay store，而不是静默复用旧 `prediction snapshots`；
-- 但 `analytics_prediction_snapshots` 仍保留较大桥接职责，尚未完全退回到“运行审计 + 兼容视图”的次要角色。
+- API runtime 现在还能在“已有同口径 PIT snapshot，但缺失当天 exact snapshot”时直接按当天 `best_effort PIT` 可见性规则重建同日 `feature_snapshot`，不再把最后一个日期静默记成 prior-snapshot reuse；
+- 本地 SQLite production reload 已实测达到 `2000/2000 raw_pit_feature_replay`，说明默认历史轨迹与 research audit 都已经不再保留 `raw_pit_feature_reuse` 点；
+- `analytics_prediction_snapshots` 因此进一步退回到“当前运行审计 + 兼容视图”的次要角色，但训练/运行两侧的 PIT helper 仍有一部分重复逻辑，尚未完全收敛到共享层。
+- PIT feature 证据等级已改为保守解析：只有能从标准 feature snapshot id 中解析出与评估日一致的日期，才会标记为 `raw_pit_feature_replay`；非标准 id、兼容 id 或解析失败的 id 只能标记为 `raw_pit_feature_reuse`，避免把桥接残留误认为正式 PIT 证据。
 
 ## 1. 目标
 
@@ -161,6 +164,12 @@ created_at
 - `analytics_prediction_snapshots` 现在只保留“当前一次运行快照”与 heuristic / 兼容路径的桥接历史，不再承担 formal bundle 历史真源职责；
 - API 在 `bundle-backed formal release` 的 production runtime 刷新前，会先清掉该 release 已落库的旧历史 `prediction snapshots`，最终只保留最新 `as_of_date` 的当前运行审计快照；
 - release review / probability slice 触发的 `runtime_purpose=review` reload，当前会把 `runtime_purpose/history_mode/history_limit` 作为运行态配置保存在内存里，避免后台自动刷新把 review runtime 悄悄刷回 production 默认口径。
+
+补充边界（2026-06-09）：
+
+- `/api/research/audit` 已新增 `prediction_snapshot_audit`，把 `analytics_prediction_snapshots` 明确标成 `runtime_trace_and_legacy_bridge_only`；
+- 前端“发布审计”页已把“历史预测快照”改为“运行快照 / 旧桥接视图”，并展示 active release 快照数、其他 release 快照数、formal 截面数和 heuristic / 降级截面数；
+- 这一步不等于兼容路径已经完全移除，但已经把旧快照表从用户可见的 formal history 主证据链中降级为运行截面与桥接残留审计。
 
 明确禁止：
 

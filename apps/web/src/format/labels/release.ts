@@ -117,3 +117,113 @@ export function releaseReviewActionTypeLabel(actionType: string): string {
 export function releaseReviewVerdictLabel(passed: boolean): string {
   return passed ? "通过当前 guard" : "存在 guard blocker";
 }
+
+const RELEASE_REVIEW_SCENARIO_FAMILY_LABELS: Record<string, string> = {
+  acute_market_liquidity_crash: "急性流动性冲击",
+  systemic_credit_banking_crisis: "系统性信用 / 银行危机",
+  mixed_systemic_stress: "混合系统压力",
+  rate_shock_or_policy_dislocation: "利率冲击 / 政策错位"
+};
+
+export function releaseReviewScenarioFamilyLabel(family: string): string {
+  return RELEASE_REVIEW_SCENARIO_FAMILY_LABELS[family] ?? family;
+}
+
+const RELEASE_REVIEW_SCENARIO_TRAINING_ROLE_LABELS: Record<string, string> = {
+  mandatory: "主训练强制样本",
+  candidate_optional: "候选可选样本",
+  extension_only: "仅扩展样本",
+  no_positive_main: "不作主危机正例"
+};
+
+export function releaseReviewScenarioTrainingRoleLabel(role: string): string {
+  return RELEASE_REVIEW_SCENARIO_TRAINING_ROLE_LABELS[role] ?? role;
+}
+
+const RELEASE_REVIEW_SCENARIO_ROLE_LABELS: Record<string, string> = {
+  main_training: "正式主训练",
+  extension_training: "扩展训练",
+  protected_stress: "受保护压力",
+  historical_analog_only: "仅历史类比"
+};
+
+export function releaseReviewScenarioRoleLabel(role: string): string {
+  return role
+    .split(" + ")
+    .map((part) => RELEASE_REVIEW_SCENARIO_ROLE_LABELS[part] ?? part)
+    .join(" + ");
+}
+
+const RELEASE_REVIEW_SCENARIO_COVERAGE_PIT_LABELS: Record<string, string> = {
+  strict: "严格 PIT",
+  best_effort: "过渡 PIT",
+  "best_effort + partial strict": "过渡 PIT + 局部严格回放"
+};
+
+export function releaseReviewScenarioCoveragePitLabel(mode: string): string {
+  return RELEASE_REVIEW_SCENARIO_COVERAGE_PIT_LABELS[mode] ?? mode;
+}
+
+const SCENARIO_PACK_BLOCKER_LABELS: Record<string, string> = {
+  stable_pass: "稳定通过",
+  stable_pass_with_margin_erosion: "通过但边际变弱",
+  shared_missed_signal: "主线共享漏报",
+  shared_no_signal: "主线共享无信号",
+  posture_continuity: "执行连续性问题",
+  review_gate_gap: "严格评审门槛映射",
+  residual_review_l3: "残余 L3 转换问题",
+  candidate_regression: "候选版退化",
+  candidate_improvement: "候选版改善",
+  candidate_probability_continuity_regression: "候选版连续命中退化",
+  candidate_probability_level_drop: "候选版概率层级下沉",
+  dataset_coverage_gap: "数据覆盖缺口",
+  no_review_focus_signal: "待进一步人工复核"
+};
+
+export function scenarioPackBlockerLabel(key: string): string {
+  return SCENARIO_PACK_BLOCKER_LABELS[key] ?? key;
+}
+
+const SCENARIO_PACK_OUTCOME_LABELS: Record<string, string> = {
+  timely_to_timely: "两版都能及时预警",
+  missed_to_missed: "两版都未形成有效预警",
+  late_to_late: "两版都偏晚",
+  missed_to_timely: "候选版修复为及时预警",
+  missed_to_late: "候选版改善但仍偏晚",
+  timely_to_missed: "候选版从及时退化为漏报",
+  timely_to_late: "候选版从及时退化为偏晚",
+  late_to_missed: "候选版进一步退化为漏报",
+  late_to_timely: "候选版从偏晚修复为及时"
+};
+
+export function scenarioPackOutcomeLabel(outcome: string | null): string {
+  if (!outcome) {
+    return "未登记";
+  }
+  return SCENARIO_PACK_OUTCOME_LABELS[outcome] ?? outcome;
+}
+
+const HISTORY_EVIDENCE_TIER_LABELS: Record<string, string> = {
+  pit_feature_backed: "PIT 特征快照支撑",
+  pit_feature_reuse_transitional: "PIT 沿用旧快照",
+  raw_observation_transitional: "原始观测过渡",
+  snapshot_bridge_transitional: "旧快照桥接",
+  runtime_only: "运行时即时构造"
+};
+
+export function historyEvidenceTierLabel(tier: string): string {
+  return HISTORY_EVIDENCE_TIER_LABELS[tier] ?? tier;
+}
+
+const HISTORY_SOURCE_LABELS: Record<string, string> = {
+  raw_pit_feature_replay: "PIT 特征快照重放",
+  raw_pit_feature_reuse: "沿用旧 PIT 快照",
+  raw_observation_replay: "原始观测重放",
+  raw_observation_rebuild: "原始观测即时重建",
+  transitional_snapshot_bridge: "旧预测快照桥接",
+  runtime_only: "运行时即时构造"
+};
+
+export function historySourceLabel(source: string): string {
+  return HISTORY_SOURCE_LABELS[source] ?? source;
+}

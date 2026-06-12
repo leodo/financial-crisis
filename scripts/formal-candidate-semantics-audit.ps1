@@ -37,7 +37,20 @@ $FamilyFeatureNames = @(
     "family_proxy__rate_shock",
     "family_context__rate_shock__external_dimension_score",
     "family_proxy__jpy_carry",
-    "family_context__jpy_carry__external_dimension_score"
+    "family_context__jpy_carry__external_dimension_score",
+    "family_proxy__systemic_credit",
+    "family_context__systemic_credit__structural_score",
+    "family_context__systemic_credit__trigger_score",
+    "family_context__systemic_credit__external_dimension_score",
+    "family_proxy__mixed_systemic",
+    "family_context__mixed_systemic__trigger_score"
+)
+
+$BroadScoreFeatureNames = @(
+    "trigger_score",
+    "external_dimension_score",
+    "tail_pos__trigger_score__50",
+    "tail_pos__external_dimension_score__50"
 )
 
 function Resolve-ArtifactPath {
@@ -302,6 +315,9 @@ $usdJpyRows = foreach ($featureName in $UsdJpyFeatureNames) {
 $familyRows = foreach ($featureName in $FamilyFeatureNames) {
     New-WeightRow -BaselineMap $baselineMap -CandidateMap $candidateMap -FeatureName $featureName
 }
+$broadScoreRows = foreach ($featureName in $BroadScoreFeatureNames) {
+    New-WeightRow -BaselineMap $baselineMap -CandidateMap $candidateMap -FeatureName $featureName
+}
 
 $thresholdRows = New-ThresholdSummaryRows -BaselineEval $baselineEval -CandidateEval $candidateEval
 $thresholdTakeaway = Get-ThresholdRoleTakeaway -BaselineEval $baselineEval -CandidateEval $candidateEval
@@ -317,13 +333,13 @@ $guardrailRows = @(
         -MinAllowed 0.0 `
         -MaxAllowed 0.0
     New-GuardrailStatusRow `
-        -Item "curve/fed-funds interaction cap" `
+        -Item "curve/fed-funds interaction stabilizer band" `
         -Coverage "training_guardrail" `
         -EntryPoint "apps/worker/src/model/constraints.rs" `
-        -Rule "20d interaction__us_curve_10y2y_level__us_fed_funds_level should stay <= 0.46." `
+        -Rule "20d interaction__us_curve_10y2y_level__us_fed_funds_level should stay in 0.18..0.46 so high-rate inversion keeps a stabilizing offset without becoming too broad." `
         -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "interaction__us_curve_10y2y_level__us_fed_funds_level") `
         -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "interaction__us_curve_10y2y_level__us_fed_funds_level") `
-        -MinAllowed 0.0 `
+        -MinAllowed 0.18 `
         -MaxAllowed 0.46
     New-GuardrailStatusRow `
         -Item "USDJPY base-level band" `
@@ -334,6 +350,15 @@ $guardrailRows = @(
         -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "us_usdjpy_level") `
         -MinAllowed 0.30 `
         -MaxAllowed 0.40
+    New-GuardrailStatusRow `
+        -Item "USDJPY high-level tail band" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d tail_pos__us_usdjpy_level__145 must stay nonnegative and <= 0.18 so high USDJPY cannot become a large crisis-probability suppressor." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "tail_pos__us_usdjpy_level__145") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_pos__us_usdjpy_level__145") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.18
     New-GuardrailStatusRow `
         -Item "USDJPY external interaction cap" `
         -Coverage "training_guardrail" `
@@ -379,26 +404,131 @@ $guardrailRows = @(
         -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "family_context__jpy_carry__external_dimension_score") `
         -MinAllowed 0.0 `
         -MaxAllowed 0.10
-    [pscustomobject]@{
-        item = "USDJPY 20d change semantic migration"
-        coverage = "doc_only"
-        entry_point = "crates/domain/src/probability_bundle/features.rs ; apps/worker/src/model/constraints.rs"
-        rule = "Move toward high-level + change/vol + external confirmation semantics; no hard bound exists yet."
-        baseline = "base=$([math]::Round((Get-CoefficientWeight -Map $baselineMap -FeatureName 'us_usdjpy_change_20d'), 6)); tail=$([math]::Round((Get-CoefficientWeight -Map $baselineMap -FeatureName 'tail_abs_pos__us_usdjpy_change_20d__4'), 6)); trigger_x_change=$([math]::Round((Get-CoefficientWeight -Map $baselineMap -FeatureName 'interaction__trigger_score__us_usdjpy_change_20d'), 6))"
-        candidate = "base=$([math]::Round((Get-CoefficientWeight -Map $candidateMap -FeatureName 'us_usdjpy_change_20d'), 6)); tail=$([math]::Round((Get-CoefficientWeight -Map $candidateMap -FeatureName 'tail_abs_pos__us_usdjpy_change_20d__4'), 6)); trigger_x_change=$([math]::Round((Get-CoefficientWeight -Map $candidateMap -FeatureName 'interaction__trigger_score__us_usdjpy_change_20d'), 6))"
-        status = "doc_only"
-        notes = "still needs an explicit modeling guardrail or a dedicated derived-feature redesign"
-    }
-    [pscustomobject]@{
-        item = "bond-spread suppressor prohibition"
-        coverage = "doc_only"
-        entry_point = "apps/worker/src/model/constraints.rs"
-        rule = "tail_pos__us_baa_10y_spread_level__2 should not be turned into a new negative suppressor; currently no hard training guardrail exists."
-        baseline = [math]::Round((Get-CoefficientWeight -Map $baselineMap -FeatureName "tail_pos__us_baa_10y_spread_level__2"), 6)
-        candidate = [math]::Round((Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_pos__us_baa_10y_spread_level__2"), 6)
-        status = "doc_only"
-        notes = "currently a documented constraint, not an enforced training bound"
-    }
+    New-GuardrailStatusRow `
+        -Item "trigger score broad-lift cap" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d trigger_score should stay <= 0.45 in family-context heads so broad trigger pressure remains auxiliary instead of dominating false-positive windows." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "trigger_score") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "trigger_score") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.45
+    New-GuardrailStatusRow `
+        -Item "external-dimension broad-lift cap" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d external_dimension_score should stay <= 0.30 in family-context heads so external pressure stays contextual rather than a generic 20d driver." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "external_dimension_score") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "external_dimension_score") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.30
+    New-GuardrailStatusRow `
+        -Item "trigger high-tail broad-lift cap" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d tail_pos__trigger_score__50 should stay <= 0.18 in family-context heads so high trigger pressure cannot bypass the base broad-score cap." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "tail_pos__trigger_score__50") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_pos__trigger_score__50") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.18
+    New-GuardrailStatusRow `
+        -Item "external-dimension high-tail broad-lift cap" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d tail_pos__external_dimension_score__50 should stay <= 0.12 in family-context heads so external pressure remains contextual even through high-tail features." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "tail_pos__external_dimension_score__50") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_pos__external_dimension_score__50") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.12
+    New-GuardrailStatusRow `
+        -Item "systemic-credit proxy floor" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d family_proxy__systemic_credit should stay in 0.04..0.18 so systemic-credit context carries part of the positive-window signal." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "family_proxy__systemic_credit") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "family_proxy__systemic_credit") `
+        -MinAllowed 0.04 `
+        -MaxAllowed 0.18
+    New-GuardrailStatusRow `
+        -Item "systemic-credit structural context floor" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d family_context__systemic_credit__structural_score should stay in 0.04..0.24 so broad structural stress is gated through systemic-credit context." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "family_context__systemic_credit__structural_score") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "family_context__systemic_credit__structural_score") `
+        -MinAllowed 0.04 `
+        -MaxAllowed 0.24
+    New-GuardrailStatusRow `
+        -Item "systemic-credit trigger context floor" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d family_context__systemic_credit__trigger_score should stay in 0.06..0.22 so near-term trigger stress is gated through systemic-credit context." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "family_context__systemic_credit__trigger_score") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "family_context__systemic_credit__trigger_score") `
+        -MinAllowed 0.06 `
+        -MaxAllowed 0.22
+    New-GuardrailStatusRow `
+        -Item "systemic-credit external context floor" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d family_context__systemic_credit__external_dimension_score should stay in 0.04..0.18 so external stress only lifts 20d risk when systemic-credit context is present." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "family_context__systemic_credit__external_dimension_score") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "family_context__systemic_credit__external_dimension_score") `
+        -MinAllowed 0.04 `
+        -MaxAllowed 0.18
+    New-GuardrailStatusRow `
+        -Item "mixed-systemic proxy floor" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d family_proxy__mixed_systemic should stay in 0.04..0.18 so mixed-systemic context carries part of the positive-window signal." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "family_proxy__mixed_systemic") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "family_proxy__mixed_systemic") `
+        -MinAllowed 0.04 `
+        -MaxAllowed 0.18
+    New-GuardrailStatusRow `
+        -Item "mixed-systemic trigger context floor" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "20d family_context__mixed_systemic__trigger_score should stay in 0.08..0.26 so broad trigger stress is gated through mixed-systemic context." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "family_context__mixed_systemic__trigger_score") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "family_context__mixed_systemic__trigger_score") `
+        -MinAllowed 0.08 `
+        -MaxAllowed 0.26
+    New-GuardrailStatusRow `
+        -Item "USDJPY signed 20d change neutralization" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "Signed us_usdjpy_change_20d must stay pinned at 0; carry-speed risk should flow through absolute-change tail and jpy_carry family proxy." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "us_usdjpy_change_20d") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "us_usdjpy_change_20d") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.0
+    New-GuardrailStatusRow `
+        -Item "USDJPY signed trigger-change interaction neutralization" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "Signed interaction__trigger_score__us_usdjpy_change_20d must stay pinned at 0 to avoid turning carry direction into a suppressor." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "interaction__trigger_score__us_usdjpy_change_20d") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "interaction__trigger_score__us_usdjpy_change_20d") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.0
+    New-GuardrailStatusRow `
+        -Item "USDJPY absolute 20d change tail cap" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "tail_abs_pos__us_usdjpy_change_20d__4 should stay nonnegative and auxiliary, capped at 0.22." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "tail_abs_pos__us_usdjpy_change_20d__4") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_abs_pos__us_usdjpy_change_20d__4") `
+        -MinAllowed 0.0 `
+        -MaxAllowed 0.22
+    New-GuardrailStatusRow `
+        -Item "bond-spread high-tail suppressor prohibition" `
+        -Coverage "training_guardrail" `
+        -EntryPoint "apps/worker/src/model/constraints.rs" `
+        -Rule "tail_pos__us_baa_10y_spread_level__2 must stay nonnegative across forward-crisis horizons; high credit-spread tails cannot become crisis-probability suppressors." `
+        -BaselineValue (Get-CoefficientWeight -Map $baselineMap -FeatureName "tail_pos__us_baa_10y_spread_level__2") `
+        -CandidateValue (Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_pos__us_baa_10y_spread_level__2") `
+        -MinAllowed 0.0
     [pscustomobject]@{
         item = "20d threshold role"
         coverage = "partial_policy"
@@ -432,6 +562,9 @@ if ((Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_neg__us_curve_1
 if ((Get-CoefficientWeight -Map $candidateMap -FeatureName "us_usdjpy_level") -lt 0.30) {
     $takeaways += "candidate still pushes USDJPY base level below the current positive band; this is the blunt-suppression branch the audit is meant to avoid."
 }
+if ((Get-CoefficientWeight -Map $candidateMap -FeatureName "tail_pos__us_usdjpy_level__145") -lt 0.0) {
+    $takeaways += "candidate still lets high USDJPY tail act as a negative suppressor on 20d; this can hide carry-unwind risk and should be rejected by the training guardrail."
+}
 if ((Get-CoefficientWeight -Map $candidateMap -FeatureName "interaction__external_dimension_score__us_usdjpy_level") -gt 0.58) {
     $takeaways += "candidate still over-expands the USDJPY external interaction; keep this semantics in constrained context space instead."
 }
@@ -449,6 +582,7 @@ $summary = [pscustomobject]@{
     curve_rows = $curveRows
     usdjpy_rows = $usdJpyRows
     family_rows = $familyRows
+    broad_score_rows = $broadScoreRows
     guardrail_rows = $guardrailRows
     overlay_rows = $overlayRows
     takeaways = $takeaways | Select-Object -Unique
@@ -479,6 +613,10 @@ Write-Host ""
 
 Write-Host "JPY carry / rate_shock context weights"
 $familyRows | Format-Table -AutoSize
+Write-Host ""
+
+Write-Host "Broad score weights"
+$broadScoreRows | Format-Table -AutoSize
 Write-Host ""
 
 Write-Host "Family overlay audit status"

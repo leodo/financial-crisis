@@ -175,6 +175,23 @@ feature_set_version = feature_v1_YYYYMMDD
 - 历史回测：逐日重放
 - 受影响回刷：局部重算
 
+## 12.1 多来源冲突选择
+
+同一指标允许存在多个免费来源，例如 `USDJPY` 同时可由 BOJ 官方日频点位和
+FRED `DEXJPUS` 覆盖。正式运行、历史回放、训练样本和 lineage 展示必须使用同一套
+确定性选择规则，不能由数据库返回顺序或调用方自行 `max(date)` 决定。
+
+选择规则：
+
+1. 优先 `metadata_indicators.default_source_id` 对应来源。
+2. 若同一指标配置了 `metadata_external_indicator_mappings.priority`，优先级数字越小越优先。
+3. 同一来源同日仍有多条记录时，再按质量分、发布时间和来源 id 做稳定排序。
+4. 运行值和 lineage 必须按同一规则取数，避免值来自主源、追溯信息来自备用源。
+
+当前实现已在 SQLite observation loader 层完成同日多来源去重；API、worker 训练样本构建和
+当前面板都会沿用这一层输出。后续新增免费数据源时，必须先补 mapping priority，再允许进入
+正式 feature snapshot。
+
 ## 13. 与概率模型的接口
 
 模型输入：

@@ -2,7 +2,12 @@ import {
   compactFileReference,
   compactTechnicalId,
   describePostureClause,
+  formatDate,
   formatPercent,
+  formatProbabilityPercentExact,
+  formatProbabilityPercent,
+  historyEvidenceTierLabel,
+  historySourceLabel,
   humanizeMethodNote,
   methodVersionFieldLabel,
   pointInTimeModeLabel,
@@ -19,7 +24,28 @@ import type {
 } from "../../types";
 import type { DetailRowItem, MetricItem, VersionRowItem } from "../shared/panelHelpers";
 import { buildProbabilityOverlayViewModel } from "../shared/probabilityOverlay";
+import {
+  currentMvpRiskState,
+  mvpProbabilityInputIsAuditOnly
+} from "../decision/mvpRiskState";
+import { probabilityDiagnosticAnomalyHorizons } from "../decision/probabilityDiagnostics";
+import {
+  probabilityModelFinalSnapshotValue,
+  probabilityRuntimeReferenceNote,
+  probabilitySnapshotValue
+} from "../decision/signalLayerBuilders";
 import { methodContent } from "./content";
+
+function methodUserFacingCopy(text: string) {
+  return humanizeMethodNote(text)
+    .replaceAll("formal history 审计的正式证据层", "正式历史证据层")
+    .replaceAll("formal history 审计证据", "正式历史证据")
+    .replaceAll("formal history 审计", "正式历史证据复核")
+    .replaceAll("滚动审计", "滚动历史复核")
+    .replaceAll("replay 审计", "replay 复核")
+    .replaceAll("审计元数据", "训练覆盖元数据")
+    .replaceAll("审计", "复核");
+}
 
 export function useMethodViewModel({
   assessment,
@@ -30,6 +56,11 @@ export function useMethodViewModel({
   posture: PostureGuidance;
   method: AssessmentMethodResponse;
 }) {
+  const formatMethodActionProbability = (value: number) =>
+    value === 0 && !assessment.method.actionability_enabled
+      ? "未触发"
+      : formatProbabilityPercent(value);
+
   const heuristicMode = assessment.method.probability_mode === "heuristic_mvp";
   const degradedRelease = assessment.method.release_status === "degraded";
   const compactReleaseId = releaseIdLabel(assessment.method.release_id);
@@ -38,9 +69,20 @@ export function useMethodViewModel({
   );
   const protectedCatalogId = compactTechnicalId(method.protected_stress_window_catalog.catalog_id);
   const protectedCatalogSource = compactFileReference(method.protected_stress_window_catalog.source);
+  const scenarioCoverageCatalogId = compactTechnicalId(
+    method.scenario_data_coverage_catalog.catalog_id
+  );
+  const scenarioCoverageCatalogSource = compactFileReference(
+    method.scenario_data_coverage_catalog.source
+  );
   const actionModelVersion = assessment.method.actionability_model_version
     ? compactTechnicalId(assessment.method.actionability_model_version)
     : null;
+  const probabilityAnomalyHorizons = probabilityDiagnosticAnomalyHorizons(assessment);
+  const probabilityAuditOnly = mvpProbabilityInputIsAuditOnly(assessment);
+  const mvpRiskState = currentMvpRiskState(assessment);
+  const runtimeReferenceNote = probabilityRuntimeReferenceNote(assessment);
+  const modelFinalSnapshot = probabilityModelFinalSnapshotValue(assessment);
 
   const buildVersionRow = (label: string, rawValue: string): VersionRowItem => {
     const compact = compactTechnicalId(rawValue);
@@ -96,7 +138,11 @@ export function useMethodViewModel({
     {
       label: "概率模式",
       value: probabilityModeLabel(assessment.method.probability_mode),
-      hint: heuristicMode ? "当前仍是启发式过渡层。" : "当前已经切到正式概率包。"
+      hint: probabilityAuditOnly
+        ? "正式概率包已加载，但当前仅作参考输入；主结论仍看 MVP 规则层。"
+        : heuristicMode
+          ? "当前仍是启发式过渡层。"
+          : "当前已经切到正式概率包。"
     },
     {
       label: "动作层",
@@ -107,26 +153,50 @@ export function useMethodViewModel({
     },
     {
       label: "点位可见性",
-      value: pointInTimeModeLabel(assessment.method.point_in_time_mode)
+      value: pointInTimeModeLabel(assessment.method.point_in_time_mode),
+      hint: "这是历史特征可见性的构建口径，不是数据新鲜度或结论可信度。"
     },
     {
       label: "运行状态",
-      value: releaseServingStatusLabel(assessment.method.release_status)
+      value: releaseServingStatusLabel(assessment.method.release_status),
+      hint: probabilityAuditOnly
+        ? "这里只说明服务和 bundle 可加载，不代表正式概率已恢复为当前主结论。"
+        : "这是服务状态，不等同于模型结论可信度。"
     }
   ];
 
   const priorActionRows: Array<[string, string]> = [
     [
-      "危机先验",
-      `当前是 ${formatPercent(assessment.probabilities.p_5d)} / ${formatPercent(assessment.probabilities.p_20d)} / ${formatPercent(assessment.probabilities.p_60d)}，回答“风险窗口离现在有多近”。`
+      probabilityAuditOnly ? "危机先验（参考）" : "危机先验",
+      probabilityAuditOnly
+        ? `当前页面参考值 ${probabilitySnapshotValue(assessment.probabilities)}。${
+            runtimeReferenceNote ? `${runtimeReferenceNote} ` : ""
+          }${
+            probabilityAnomalyHorizons.length > 0
+              ? `命中 ${probabilityAnomalyHorizons.join(" / ")} 模型语义异常`
+              : "已被后端 MVP 状态降为参考输入"
+          }，只作为参考证据；当前不要把这组三期限直接理解成风险时距，主结论看 MVP 风险状态 ${mvpRiskState.label}。`
+        : runtimeReferenceNote
+          ? `当前页面值 ${probabilitySnapshotValue(
+              assessment.probabilities
+            )}；模型原始输出 ${modelFinalSnapshot}。当前回答“风险窗口离现在有多近”时，应优先按模型原始输出和异常诊断解释，不把运行口径参考值直接当成正式结论。`
+          : `当前是 ${formatProbabilityPercentExact(assessment.probabilities.p_5d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_20d)} / ${formatProbabilityPercentExact(assessment.probabilities.p_60d)}，回答“风险窗口离现在有多近”。`
     ],
     [
-      "动作概率",
-      `当前是 ${formatPercent(assessment.actionability.prepare)} / ${formatPercent(assessment.actionability.hedge)} / ${formatPercent(assessment.actionability.defend)}，回答“现在该不该准备、对冲或防守”；它和 60d / 20d / 5d 的危机先验不是一一对应关系。`
+      probabilityAuditOnly || !assessment.method.actionability_enabled
+        ? "动作信号（辅助）"
+        : "动作概率",
+      probabilityAuditOnly
+        ? `当前显示 ${formatMethodActionProbability(assessment.actionability.prepare)} / ${formatMethodActionProbability(assessment.actionability.hedge)} / ${formatMethodActionProbability(assessment.actionability.defend)}，它回答“现在该不该准备、对冲或防守”，但在参考态下仍要让位于 MVP 规则层主结论。`
+        : !assessment.method.actionability_enabled
+          ? `当前显示 ${formatMethodActionProbability(assessment.actionability.prepare)} / ${formatMethodActionProbability(assessment.actionability.hedge)} / ${formatMethodActionProbability(assessment.actionability.defend)}，但这一层仍由危机先验和评分层过渡映射而来，只适合作为辅助执行信号，不应当成正式校准后的独立动作概率。`
+          : `当前是 ${formatMethodActionProbability(assessment.actionability.prepare)} / ${formatMethodActionProbability(assessment.actionability.hedge)} / ${formatMethodActionProbability(assessment.actionability.defend)}，回答“现在该不该准备、对冲或防守”；它和 60d / 20d / 5d 的危机先验不是一一对应关系。`
     ],
     [
       "最终执行节奏",
-      `当前执行节奏为 ${postureLabel(assessment.posture)}，它是把危机先验、动作层、数据可信度和事件确认压缩后的执行结论。`
+      probabilityAuditOnly
+        ? `当前正式概率只作参考输入，页面主结论改用 MVP 风险状态：${mvpRiskState.label}。${mvpRiskState.summary}`
+        : `当前执行节奏为 ${postureLabel(assessment.posture)}，它是把危机先验、动作层、数据可信度和事件确认压缩后的执行结论。`
     ],
     [
       "动作头状态",
@@ -149,9 +219,91 @@ export function useMethodViewModel({
   const blockerClauses = posture.blocker_codes.map((code) => describePostureClause(code));
   const { overlayHeadlineMetrics, overlayHorizonRows, overlayAuditRows } =
     buildProbabilityOverlayViewModel(assessment);
+  const historyProvenance = method.history_provenance;
+  const historyProvenanceMetrics: MetricItem[] = [
+    {
+      label: "证据等级",
+      value: historyEvidenceTierLabel(historyProvenance.evidence_tier),
+      hint: methodUserFacingCopy(historyProvenance.note)
+    },
+    {
+      label: "历史轨迹点数",
+      value: `${historyProvenance.total_points}`,
+      hint: "默认历史窗口的回放点数，不是训练样本数量，也不是 Go/No-Go 通过次数。"
+    },
+    {
+      label: "PIT 快照支撑",
+      value: `${historyProvenance.feature_backed_points}/${historyProvenance.total_points || 0}`,
+      hint:
+        historyProvenance.latest_feature_backed_date !== null
+          ? `最近一条当天 PIT 快照支撑点日期：${formatDate(historyProvenance.latest_feature_backed_date)}；这是历史证据层，不代表当前正式概率可作主结论。`
+          : "当前默认历史窗口里还没有 PIT 快照支撑点。"
+    },
+    {
+      label: "沿用旧 PIT",
+      value: `${historyProvenance.reused_feature_snapshot_points}`,
+      hint:
+        historyProvenance.latest_reused_feature_snapshot_date !== null
+          ? `最近一条沿用旧 PIT 的点日期：${formatDate(historyProvenance.latest_reused_feature_snapshot_date)}`
+          : "当前默认历史窗口里没有沿用旧 PIT 的点。"
+    },
+    {
+      label: "旧快照桥接",
+      value: `${historyProvenance.snapshot_bridge_points}`,
+      hint:
+        historyProvenance.latest_snapshot_bridge_date !== null
+          ? `最近一条 bridge 点日期：${formatDate(historyProvenance.latest_snapshot_bridge_date)}`
+          : "当前默认历史窗口里没有 bridge 点。"
+    }
+  ];
+  const historyProvenanceRows: DetailRowItem[] = historyProvenance.sources
+    .filter((source) => source.count > 0)
+    .map((source) => ({
+      id: source.source_id,
+      title: historySourceLabel(source.source_id),
+      detail:
+        source.latest_as_of_date !== null
+          ? `共 ${source.count} 个点，最近日期 ${formatDate(source.latest_as_of_date)}`
+          : `共 ${source.count} 个点`,
+      note: methodUserFacingCopy(source.note),
+      meta: `${source.count}`
+    }));
+  const scenarioCoverageRecords = method.scenario_data_coverage_catalog.records;
+  const scenarioCoverageMetrics: MetricItem[] = [
+    {
+      label: "正式主训练",
+      value: `${scenarioCoverageRecords.filter((record) => record.usable_for_main_training).length}`
+    },
+    {
+      label: "扩展训练",
+      value: `${scenarioCoverageRecords.filter((record) => record.usable_for_extension_training).length}`
+    },
+    {
+      label: "受保护压力",
+      value: `${scenarioCoverageRecords.filter((record) => record.usable_for_protected_stress).length}`
+    },
+    {
+      label: "历史类比",
+      value: `${scenarioCoverageRecords.filter((record) => record.usable_for_historical_analog).length}`
+    }
+  ];
+  const scenarioCoverageRows = scenarioCoverageRecords.map((record) => ({
+    id: record.scenario_id,
+    scenarioLabel: record.scenario_label,
+    scenarioId: record.scenario_id,
+    roleSummary: record.recommended_role,
+    gradeSummary: `${record.coverage_grade} / ${record.point_in_time_mode}`,
+    sourceSummary: record.free_sources.join("、"),
+    statusSummary: record.current_status,
+    gapSummary:
+      record.blocking_gaps.length > 0
+        ? record.blocking_gaps.map(methodUserFacingCopy).join("；")
+        : "当前没有额外阻断缺口。"
+  }));
 
   const limitations = [
     methodContent.runtimeBoundarySummary,
+    methodUserFacingCopy(historyProvenance.note),
     heuristicMode
       ? `当前概率模式是 ${probabilityModeLabel(assessment.method.probability_mode)}，${methodContent.limitationModeHeuristic}`
       : `当前概率模式是 ${probabilityModeLabel(assessment.method.probability_mode)}，${methodContent.limitationModeFormal}`,
@@ -171,10 +323,19 @@ export function useMethodViewModel({
     overlayHeadlineMetrics,
     overlayHorizonRows,
     overlayAuditRows,
+    scenarioCoverageMetrics,
+    scenarioCoverageRows,
+    scenarioCoverageCatalogId,
+    scenarioCoverageCatalogSource,
+    scenarioCoverageCatalogNote: methodUserFacingCopy(method.scenario_data_coverage_catalog.note),
+    historyProvenanceMetrics,
+    historyProvenanceRows,
+    historyProvenanceNote: methodUserFacingCopy(historyProvenance.note),
+    historyProvenanceReplayRunId: historyProvenance.latest_replay_run_id,
     limitations,
     historyPolicyVersion,
     protectedCatalogId,
     protectedCatalogSource,
-    protectedCatalogNote: humanizeMethodNote(method.protected_stress_window_catalog.note)
+    protectedCatalogNote: methodUserFacingCopy(method.protected_stress_window_catalog.note)
   };
 }

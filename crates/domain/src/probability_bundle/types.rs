@@ -173,6 +173,18 @@ pub struct ProbabilityCalibrationRegimeEvidence {
     pub avg_objective_weight: f64,
     pub protected_action_window_count: u32,
     pub protected_action_window_rate: f64,
+    #[serde(default)]
+    pub episode_native_objective_row_count: u32,
+    #[serde(default)]
+    pub episode_native_objective_row_rate: f64,
+    #[serde(default)]
+    pub protected_no_positive_main_row_count: u32,
+    #[serde(default)]
+    pub protected_no_positive_main_row_rate: f64,
+    #[serde(default)]
+    pub protected_no_positive_main_avg_training_target: f64,
+    #[serde(default)]
+    pub protected_no_positive_main_avg_objective_weight: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -242,7 +242,7 @@ family_overlays == []
 
 1. 针对 `60d` 审计为什么 runtime replay 会从“正例反向”切换成“cooldown_bleed”，并区分到底是 base head、overlay，还是 calibration / floor 在主导；
 2. 既然“关闭 60d overlay”也没有改变 review 结论，而“继续加大 60d 权重/惩罚”又明显变差，下一步应直接审计 `60d interaction_tail + episode-native target + runtime threshold policy` 的耦合问题，而不是继续盲调权重；
-3. 对 `mixed_systemic` 先重做 proxy 定义（当前 `gate_active_total=0`，继续训练没有意义）；
+3. 完成 `mixed_systemic` proxy 与训练拓扑收口；早期 `gate_active_total=0` 已修复，当前剩余问题是 2011 protected extension rows 如何进入训练，以及 base head 负贡献如何治理；
    - `2026-06-06` 已把 proxy 从“overall/trigger/external/VIX”泛化分数改成
      “credit spread / curve inversion / NFCI”作为慢性压力锚点，`trigger / VIX / external`
      只做确认，同时把 overlay gate 从 `0.50` 下调到 `0.38`；
@@ -269,6 +269,36 @@ family_overlays == []
      2. `2011` 仍是“明显抬升但未正式命中”；
      3. 因此下一步重点已从“继续拍脑袋调 proxy”转成
         `strict gate / runtime floor / continuity facets` 的逐场景复核。
+   - `2026-06-09` funding-stress 专项审计进一步把 2011 的失败原因拆清：
+     1. 新增候选 scored slice 后，`mixed_systemic` 不再应归类为 proxy 缺失；2011 窗口里
+        `family_proxy__mixed_systemic` 已有有效 raw / normalized 值，overlay gate 也已打开；
+     2. 但 overlay 的平均增量仍小，base head 同时被 `fed_funds level`、`10y2y curve`、
+        `USDJPY level`、`external × USDJPY` 和 `curve × fed_funds` 等特征压低；
+     3. 这说明 2011 的下一步不是再单独降低 gate 或 floor，而是要验证：
+        这些负贡献是否来自 evaluation-only 样本不可训练、候选权重治理过强，
+        或本应迁入 `mixed_systemic / jpy_carry / rate_shock context` 的信号仍留在 base level。
+   - 同日后续修复已把 training loader 的 protected topology repair 从
+     `no_positive_main` 扩展到 `extension_only + mixed_systemic_stress + protected primary`：
+     1. 真实 funding-stress slice 显示 2011 共有 `213` 行，全部是 `extension_only + evaluation + protected_action_window=true`；
+     2. 其中 `205` 行是 `primary`，现在会以 `train_topology_repair` 进入 formal training；
+     3. `late_validation` 8 行仍保留在 evaluation，非 `mixed_systemic_stress` 的 `extension_only` 行也不会被泛化提升。
+   - 为避免每次验证这类训练拓扑都启动完整训练，`research pipeline train-probability --dry-run`
+     已成为标准预检入口：
+     1. `just formal-train-family-overlay-dry-run` 会自动解析最新 main / ext_stress / ext_acute dataset key；
+     2. 命令只加载训练输入并打印 train / calibration / evaluation 的 row count、`topology_repair` row count、protected row count，以及 `mixed_sys_primary_ext / mixed_sys_primary_repair` 计数；
+     3. 后续若继续调整 split repair 或 extension/protected 入口，必须先用 dry-run 证明真实样本路由，再进入完整 candidate retrain。
+   - `2026-06-09` 已完成这条拓扑修复的首轮完整候选验证：
+     1. dry-run 先确认 `topology_repair train=433`、`mixed_sys_primary_repair train=205`；
+     2. 新候选 `us_formal_family_hybrid_20260609T151925` 的 2011 `max p20d` 从 baseline `0.202` 抬到 `0.839`，说明 mixed-systemic primary repair 方向有效；
+     3. 但候选 `20d threshold` 同时升到 `0.900`，2011 仍没有 runtime-floor hit；`60d max` 仍只有 `0.0206`；
+     4. `default release review` 判为 no-go：`timely_warning_rate 50.0% -> 10.0%`、`runtime_floor_hit_count 91 -> 59`，虽然 precision 和最长误报改善，但代价是提前预警被压掉；
+     5. 因此 family overlay 的下一轮主线不应继续只加 protected rows，而应把 threshold candidate selection、cooldown penalty 和 `60d cold_across_all_regimes` 一起纳入训练/筛选治理。
+   - `2026-06-10` 已实现第一版 over-tight threshold repair 并重训候选 `us_formal_family_hybrid_20260609T162641`：
+     1. 20d `base threshold=0.900` 被修到 `final threshold=0.806`，calibration pre-warning hits 从 `3/116` 升到 `7/116`；
+     2. 2011 funding-stress 从 `0` 个 20d runtime hit 改善到 `3` 个，candidate `max p20d=0.839` 已高于 `0.806` floor；
+     3. 2022 rate-shock 的 20d hits 从 `48 -> 81`，说明阈值治理确实释放了一部分已经学到的信号；
+     4. 但 offline screen 仍是 `no_go_offline`：2023 regional banks positive-window hit rate 从 `80.0% -> 5.0%`，runtime floor hits `91 -> 69`，20d runtime regime 仍是 `cooldown_bleed`；
+     5. 结论：阈值治理方向有效但不是最终解，下一步需要同时约束 positive-window retention、cooldown 平均概率必须低于 positive-window，以及 `60d cold_across_all_regimes`。
 4. 对 `jpy_carry` 单独补 family proxy / protected stress 样本后再决定是否进入正式 overlay 训练；
    - `2026-06-06` 已把这条线继续前推到“真实可训练”：
      1. `proxy-only audit` 现在把 `protected_action_window` 和 gate-active carry rows
@@ -475,6 +505,28 @@ family_overlays == []
   - 结论：
     - `soft threshold` 这条思路本身可保留；
     - 但“只改 `jpy_carry proxy`”还不足以超过 `034053`。
+
+### 2026-06-09 JPY carry scenario-level audit
+
+已新增 `just formal-candidate-jpy-carry-audit`，不重训模型，直接从 SQLite formal dataset 行里按正式 resolver 公式重算 `family_proxy__jpy_carry`，检查高 FX 窗口里的 gate-active 行到底来自 protected / pre-warning 压力，还是普通汇率尖峰。
+
+首轮固定窗口结论：
+
+- `1987 Black Monday high-FX window`：gate-active `25` 行，supported `25` 行，ordinary `0` 行，最高 proxy `0.495687 @ 1987-11-05`。
+- `1990 early banking stress high-FX window`：gate-active `45` 行，supported `45` 行，ordinary `0` 行，最高 proxy `0.548219 @ 1990-10-18`。
+- `2024 JPY carry unwind watch window`：gate-active `29` 行，supported `0` 行，ordinary `29` 行，最高 proxy `0.562225 @ 2024-08-01`。
+
+这说明 `jpy_carry` 不是完全无效：1987 / 1990 的高 FX 压力能落在风险上下文里。但它也还不能直接晋升为干净的正式 overlay，因为 2024 这类普通汇率尖峰窗口会被当前 proxy 明显点亮。下一步应先收紧 proxy / gate：要求高位、快速变化和外部或流动性确认同时成立，或者把 2024 ordinary spike 作为 hard negative window 纳入 overlay 审计。
+
+同日第二轮已把 `family_proxy__jpy_carry` 收紧为“快速 USDJPY 变化 + 严格资金/信用/流动性确认，或结构确认后的 VIX/trigger 压力”。外部维度不再能单独确认自己，主要用于在系统性确认已经存在时加分。
+
+复跑固定窗口审计后：
+
+- `1987 Black Monday high-FX window`：gate-active `25` 行，supported `25` 行，ordinary `0` 行，最高 proxy `0.687932 @ 1987-11-05`。
+- `1990 early banking stress high-FX window`：gate-active `49` 行，supported `49` 行，ordinary `0` 行，最高 proxy `0.947626 @ 1990-10-18`。
+- `2024 JPY carry unwind watch window`：gate-active `0` 行，supported `0` 行，ordinary `0` 行，最高 proxy `0.267600 @ 2024-08-05`。
+
+结论更新为 `supported_with_ordinary_spikes_suppressed`：`jpy_carry` 仍可作为 1987 / 1990 这类受保护压力窗口的风险放大器，但 2024 ordinary FX spike 不再越过 overlay gate。
 
 - 候选 `us_formal_family_hybrid_20260604T061852`
   - 改动：

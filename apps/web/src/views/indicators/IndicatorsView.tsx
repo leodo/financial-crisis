@@ -21,7 +21,7 @@ export default function IndicatorsView({ indicators }: { indicators: IndicatorRi
           <SurfaceHeader title="当前指标摘要" icon={Table2} />
           <MetricGrid items={summaryMetrics} />
           <div className="driver-preview">
-            <strong>当前最需盯的指标</strong>
+            <strong>近端最需盯的指标</strong>
             <DetailRows items={focusRows} compact />
           </div>
         </section>
@@ -36,7 +36,7 @@ export default function IndicatorsView({ indicators }: { indicators: IndicatorRi
         <SurfaceHeader title="指标细项" icon={Table2} />
         <ResponsiveTable
           className="wide-table xwide-table"
-          columns={["指标", "最近读数", "评分依据", "风险分", "历史位置", "数据质量"]}
+          columns={["指标", "最近读数", "评分依据", "风险分", "历史位置", "指标级质量"]}
           note={indicatorsContent.tableNote}
         >
           {tableRows.map((risk) => (

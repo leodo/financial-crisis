@@ -37,20 +37,32 @@ pub(super) fn build_focus_diagnostic(
     let dominant_runtime_blocks = release_review_runtime_dominant_categories(&runtime_block_counts);
     let dominant_runtime_continuity_facets =
         release_review_runtime_dominant_categories(&runtime_continuity_facet_counts);
+    let baseline_actionable_point_count = actionable_point_count(
+        &prepared.baseline_pre_crisis_points,
+        baseline_use_transitional_bridge,
+        baseline_runtime_thresholds,
+    );
+    let candidate_actionable_point_count = actionable_point_count(
+        &prepared.candidate_pre_crisis_points,
+        candidate_use_transitional_bridge,
+        candidate_runtime_thresholds,
+    );
+    let baseline_primary_failure_mode = release_review_primary_failure_mode(
+        &dominant_runtime_blocks.baseline_categories,
+        dominant_runtime_blocks.baseline_count,
+        &dominant_runtime_continuity_facets.baseline_categories,
+        dominant_runtime_continuity_facets.baseline_count,
+    );
+    let candidate_primary_failure_mode = release_review_primary_failure_mode(
+        &dominant_runtime_blocks.candidate_categories,
+        dominant_runtime_blocks.candidate_count,
+        &dominant_runtime_continuity_facets.candidate_categories,
+        dominant_runtime_continuity_facets.candidate_count,
+    );
 
     crate::ReleaseReviewScenarioFocusDiagnostic {
-        baseline_primary_failure_mode: release_review_primary_failure_mode(
-            &dominant_runtime_blocks.baseline_categories,
-            dominant_runtime_blocks.baseline_count,
-            &dominant_runtime_continuity_facets.baseline_categories,
-            dominant_runtime_continuity_facets.baseline_count,
-        ),
-        candidate_primary_failure_mode: release_review_primary_failure_mode(
-            &dominant_runtime_blocks.candidate_categories,
-            dominant_runtime_blocks.candidate_count,
-            &dominant_runtime_continuity_facets.candidate_categories,
-            dominant_runtime_continuity_facets.candidate_count,
-        ),
+        baseline_primary_failure_mode,
+        candidate_primary_failure_mode,
         dominant_runtime_blocks,
         dominant_runtime_continuity_facets,
         scenario_id: prepared.baseline.scenario_id.clone(),
@@ -78,16 +90,8 @@ pub(super) fn build_focus_diagnostic(
             .and_then(|scenario| scenario.first_l3_date),
         baseline_first_non_normal_date: prepared.baseline_first_non_normal_date,
         candidate_first_non_normal_date: prepared.candidate_first_non_normal_date,
-        baseline_actionable_point_count: actionable_point_count(
-            &prepared.baseline_pre_crisis_points,
-            baseline_use_transitional_bridge,
-            baseline_runtime_thresholds,
-        ),
-        candidate_actionable_point_count: actionable_point_count(
-            &prepared.candidate_pre_crisis_points,
-            candidate_use_transitional_bridge,
-            candidate_runtime_thresholds,
-        ),
+        baseline_actionable_point_count,
+        candidate_actionable_point_count,
         baseline_runtime_floor_hit_point_count: prepared.baseline_runtime_floor_hit_point_count,
         candidate_runtime_floor_hit_point_count: prepared.candidate_runtime_floor_hit_point_count,
         baseline_max_p20d: release_review_max_metric(

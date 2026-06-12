@@ -48,7 +48,7 @@ fn forward_crisis_sign_projection_clips_wrong_direction_coefficients() {
     assert_eq!(weights[0], 0.0);
     assert_eq!(weights[1], 0.0);
     assert_eq!(weights[2], 0.0);
-    assert_eq!(weights[3], -0.7);
+    assert_eq!(weights[3], 0.0);
 }
 
 #[test]
@@ -73,12 +73,13 @@ fn forward_crisis_sign_projection_clips_wrong_direction_monotonic_interactions()
 }
 
 #[test]
-fn forward_crisis_tail_sign_projection_applies_on_20d_only() {
+fn forward_crisis_tail_sign_projection_applies_on_forward_horizons() {
     let feature_names = vec![
         "tail_neg__us_curve_10y2y_level__0".to_string(),
         "tail_pos__us_baa_10y_spread_level__2".to_string(),
+        "tail_pos__overall_score__55".to_string(),
     ];
-    let mut weights_20d = vec![-0.4, -0.1];
+    let mut weights_20d = vec![-0.4, -0.1, -0.2];
     crate::project_forward_crisis_sign_constraints(
         &mut weights_20d,
         &feature_names,
@@ -87,16 +88,18 @@ fn forward_crisis_tail_sign_projection_applies_on_20d_only() {
     );
     assert_eq!(weights_20d[0], 0.0);
     assert_eq!(weights_20d[1], 0.0);
+    assert_eq!(weights_20d[2], 0.0);
 
-    let mut weights_60d = vec![-0.4, -0.1];
+    let mut weights_60d = vec![-0.4, -0.1, -0.2];
     crate::project_forward_crisis_sign_constraints(
         &mut weights_60d,
         &feature_names,
         60,
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
-    assert_eq!(weights_60d[0], -0.4);
-    assert_eq!(weights_60d[1], -0.1);
+    assert_eq!(weights_60d[0], 0.0);
+    assert_eq!(weights_60d[1], 0.0);
+    assert_eq!(weights_60d[2], 0.0);
 }
 
 #[test]

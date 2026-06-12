@@ -23,7 +23,10 @@ export interface BacktestRollingAuditEpisode {
 }
 
 export interface BacktestRollingAudit {
+  history_start: string | null;
+  history_end: string | null;
   history_point_count: number;
+  scope_note: string;
   actionable_signal_count: number;
   pre_crisis_signal_count: number;
   in_crisis_signal_count: number;
@@ -40,6 +43,7 @@ export interface BacktestPerformanceSummary {
   scenario_count: number;
   real_scenario_count: number;
   fallback_scenario_count: number;
+  coverage_scope_note: string;
   structural_warning_rate: number;
   timely_warning_rate: number;
   missed_rate: number;

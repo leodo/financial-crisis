@@ -55,6 +55,32 @@ async fn assessment_current_includes_jpy_carry_funding_fields() {
     assert!(json["method"]["release_status"].is_string());
     assert!(json["method"]["action_playbook_version"].is_string());
     assert!(json["method"]["point_in_time_mode"].is_string());
+    assert!(json["mvp_risk_state"]["code"].is_string());
+    assert!(json["mvp_risk_state"]["label"].is_string());
+    assert!(json["mvp_risk_state"]["probability_input_status"].is_string());
+    assert!(json["mvp_risk_state"]["summary"].is_string());
+    assert!(json["mvp_risk_state"]["primary_evidence"].is_array());
+    assert!(json["mvp_risk_state"]["blockers"].is_array());
+    assert!(json["mvp_risk_state"]["next_actions"].is_array());
+    let analogs = json["historical_analogs"]
+        .as_array()
+        .expect("historical_analogs should be an array");
+    for scenario_id in [
+        "us_black_monday_1987",
+        "us_dotcom_unwind_2000",
+        "us_gfc_2008",
+        "us_funding_stress_2011",
+        "us_covid_liquidity_2020",
+        "us_rate_shock_2022",
+        "us_regional_banks_2023",
+    ] {
+        assert!(
+            analogs
+                .iter()
+                .any(|analog| analog["scenario_id"].as_str() == Some(scenario_id)),
+            "missing historical analog {scenario_id}"
+        );
+    }
     assert!(json["position_guidance"]["action_playbook_version"].is_string());
     assert!(json["position_guidance"]["execution_urgency"].is_string());
     assert!(json["position_guidance"]["confidence_gate"].is_string());
@@ -88,6 +114,14 @@ async fn assessment_current_includes_runtime_freshness_and_supporting_blocks() {
     assert_eq!(json["runtime"]["data_mode"], "demo");
     assert_eq!(json["runtime"]["demo_mode"], true);
     assert!(json["runtime"]["stale_warning"].is_string());
+    assert!(
+        json["runtime"]["latest_key_indicator_at"].is_null()
+            || json["runtime"]["latest_key_indicator_at"].is_string()
+    );
+    assert!(
+        json["runtime"]["latest_key_indicator_lag_days"].is_null()
+            || json["runtime"]["latest_key_indicator_lag_days"].is_number()
+    );
 
     let key_indicators = json["key_indicators"].as_array().unwrap();
     assert!(key_indicators.iter().any(|indicator| {
@@ -105,6 +139,15 @@ async fn assessment_current_includes_runtime_freshness_and_supporting_blocks() {
     assert!(json["method"]["actionability_enabled"].is_boolean());
     assert!(json["backtest_summary"]["timely_warning_rate"].is_number());
     assert!(json["backtest_summary"]["rolling_audit"]["actionable_precision"].is_number());
+    assert!(
+        json["backtest_summary"]["rolling_audit"]["history_start"].is_null()
+            || json["backtest_summary"]["rolling_audit"]["history_start"].is_string()
+    );
+    assert!(
+        json["backtest_summary"]["rolling_audit"]["history_end"].is_null()
+            || json["backtest_summary"]["rolling_audit"]["history_end"].is_string()
+    );
+    assert!(json["backtest_summary"]["rolling_audit"]["scope_note"].is_string());
     assert!(json["backtest_summary"]["rolling_audit"]["classified_episodes"].is_array());
     assert!(json["backtest_summary"]["rolling_audit"]["summary"].is_string());
     assert!(json["user_preferences"]["profile"].is_string());
@@ -148,6 +191,15 @@ async fn research_audit_endpoint_returns_runtime_audit_shape() {
     assert!(json["storage_mode"].is_string());
     assert!(json["runtime_probability_mode"].is_string());
     assert!(json["runtime_release_status"].is_string());
+    assert!(json["history_provenance"]["evidence_tier"].is_string());
+    assert!(json["history_provenance"]["dominant_source"].is_string());
+    assert!(json["history_provenance"]["sources"].is_array());
+    assert!(json["prediction_snapshot_audit"]["role"].is_string());
+    assert!(json["prediction_snapshot_audit"]["active_release_snapshot_count"].is_number());
+    assert!(json["prediction_snapshot_audit"]["other_release_snapshot_count"].is_number());
+    assert!(json["prediction_snapshot_audit"]["formal_probability_snapshot_count"].is_number());
+    assert!(json["prediction_snapshot_audit"]["heuristic_probability_snapshot_count"].is_number());
+    assert!(json["prediction_snapshot_audit"]["note"].is_string());
     assert!(json["latest_replay_run_id"].is_null() || json["latest_replay_run_id"].is_string());
     assert!(
         json["latest_release_review"].is_null()
@@ -156,6 +208,42 @@ async fn research_audit_endpoint_returns_runtime_audit_shape() {
                 && json["latest_release_review"]["historical_audit_actions"].is_array()
                 && json["latest_release_review"]["historical_audit_attribution"].is_array())
     );
+    assert!(
+        json["latest_scenario_pack_audit"].is_null()
+            || (json["latest_scenario_pack_audit"]["generated_at"].is_string()
+                && json["latest_scenario_pack_audit"]["blocker_counts"].is_array()
+                && json["latest_scenario_pack_audit"]["scenario_summaries"].is_array())
+    );
+    assert!(
+        json["latest_workstream_audit"].is_null()
+            || (json["latest_workstream_audit"]["generated_at"].is_string()
+                && json["latest_workstream_audit"]["workstream_summaries"].is_array()
+                && json["latest_workstream_audit"]["scenario_summaries"].is_array())
+    );
+    assert!(
+        json["latest_rate_shock_audit"].is_null()
+            || (json["latest_rate_shock_audit"]["generated_at"].is_string()
+                && json["latest_rate_shock_audit"]["phase_summaries"].is_array()
+                && json["latest_rate_shock_audit"]["action_level_summaries"].is_array())
+    );
+    assert!(
+        json["latest_runtime_contribution_audit"].is_null()
+            || (json["latest_runtime_contribution_audit"]["generated_at"].is_string()
+                && json["latest_runtime_contribution_audit"]["horizons"].is_array()
+                && json["latest_runtime_contribution_audit"]["takeaways"].is_array())
+    );
+    assert!(json["latest_dataset_summaries"].is_array());
+    if let Some(first_summary) = json["latest_dataset_summaries"]
+        .as_array()
+        .and_then(|rows| rows.first())
+    {
+        assert!(first_summary["generated_at"].is_string());
+        assert!(first_summary["dataset_key"].is_string());
+        assert!(first_summary["dataset"]["dataset_id"].is_string());
+        assert!(first_summary["split_summaries"].is_array());
+        assert!(first_summary["scenario_summaries"].is_array());
+        assert!(first_summary["coverage_catalog"]["dataset_intent"].is_string());
+    }
     assert!(json["releases"].is_array());
     assert!(json["replay_runs"].is_array());
     assert!(json["snapshots"].is_array());
@@ -324,8 +412,22 @@ async fn assessment_method_endpoint_returns_protected_stress_window_catalog() {
     assert!(json["method"]["action_playbook_version"].is_string());
     assert!(json["method"]["point_in_time_mode"].is_string());
     assert!(json["note"].is_string());
+    assert!(json["history_provenance"]["evidence_tier"].is_string());
+    assert!(json["history_provenance"]["dominant_source"].is_string());
+    assert!(json["history_provenance"]["total_points"].is_number());
+    assert!(json["history_provenance"]["feature_backed_points"].is_number());
+    assert!(json["history_provenance"]["reused_feature_snapshot_points"].is_number());
+    assert!(json["history_provenance"]["raw_observation_points"].is_number());
+    assert!(json["history_provenance"]["snapshot_bridge_points"].is_number());
+    assert!(json["history_provenance"]["runtime_only_points"].is_number());
+    assert!(json["history_provenance"]["note"].is_string());
+    assert!(json["history_provenance"]["sources"].is_array());
     assert!(json["protected_stress_window_catalog"]["catalog_id"].is_string());
     assert!(json["protected_stress_window_catalog"]["windows"].is_array());
+    assert!(json["scenario_data_coverage_catalog"]["catalog_id"].is_string());
+    assert!(json["scenario_data_coverage_catalog"]["records"].is_array());
+    assert!(json["free_data_source_catalog"]["catalog_id"].is_string());
+    assert!(json["free_data_source_catalog"]["records"].is_array());
     assert!(json["runtime_thresholds"]["prepare_p60d"].is_number());
     assert!(json["runtime_thresholds"]["hedge_p20d"].is_number());
     assert!(json["runtime_thresholds"]["defend_p5d"].is_number());

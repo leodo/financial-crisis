@@ -12,9 +12,79 @@ pub(crate) use cache::{
 };
 pub(crate) use transform::{
     assessment_history_point_from_assessment, historical_output_from_prediction_snapshots,
-    historical_replay_point_draft_from_assessment, merge_historical_outputs,
-    prediction_snapshot_from_assessment,
+    historical_output_from_replay_points, historical_replay_point_draft_from_assessment,
+    merge_historical_outputs, prediction_snapshot_from_assessment,
 };
+
+pub(crate) const HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE: &str = "transitional_snapshot_bridge";
+pub(crate) const HISTORY_SOURCE_RAW_OBSERVATION_REBUILD: &str = "raw_observation_rebuild";
+pub(crate) const HISTORY_SOURCE_RAW_OBSERVATION_REPLAY: &str = "raw_observation_replay";
+pub(crate) const HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY: &str = "raw_pit_feature_replay";
+pub(crate) const HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE: &str = "raw_pit_feature_reuse";
+
+pub(crate) fn pit_feature_history_source(
+    feature_snapshot_id: Option<&str>,
+    as_of_date: NaiveDate,
+    raw_source_if_none: &'static str,
+) -> &'static str {
+    match feature_snapshot_id {
+        Some(snapshot_id) => {
+            if feature_snapshot_matches_as_of_date(snapshot_id, as_of_date) {
+                HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY
+            } else {
+                HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE
+            }
+        }
+        None => raw_source_if_none,
+    }
+}
+
+fn feature_snapshot_matches_as_of_date(feature_snapshot_id: &str, as_of_date: NaiveDate) -> bool {
+    feature_snapshot_id
+        .split(':')
+        .nth(2)
+        .and_then(|raw| NaiveDate::parse_from_str(raw, "%Y-%m-%d").ok())
+        .is_some_and(|snapshot_date| snapshot_date == as_of_date)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pit_feature_history_source_only_marks_parseable_same_day_snapshots_as_replay() {
+        let as_of_date = NaiveDate::from_ymd_opt(2026, 6, 9).unwrap();
+
+        assert_eq!(
+            pit_feature_history_source(
+                Some("financial_system:us:2026-06-09:feature_formal_v1:best_effort"),
+                as_of_date,
+                HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
+            ),
+            HISTORY_SOURCE_RAW_PIT_FEATURE_REPLAY
+        );
+        assert_eq!(
+            pit_feature_history_source(
+                Some("financial_system:us:2026-06-08:feature_formal_v1:best_effort"),
+                as_of_date,
+                HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
+            ),
+            HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE
+        );
+        assert_eq!(
+            pit_feature_history_source(
+                Some("feature-snapshot-2026-06-09"),
+                as_of_date,
+                HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
+            ),
+            HISTORY_SOURCE_RAW_PIT_FEATURE_REUSE
+        );
+        assert_eq!(
+            pit_feature_history_source(None, as_of_date, HISTORY_SOURCE_RAW_OBSERVATION_REPLAY),
+            HISTORY_SOURCE_RAW_OBSERVATION_REPLAY
+        );
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct HistoricalAssessmentOutput {

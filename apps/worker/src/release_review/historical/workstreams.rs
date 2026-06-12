@@ -279,11 +279,26 @@ pub(crate) fn release_review_historical_audit_takeaways(
                     format_runtime_category_list(&row.scenarios)
                 ));
             }
-            _ => {
+            "prewarning_signal_gap" => {
                 takeaways.push(format!(
-                    "{} 个历史样本仍落在 residual release-review audit，涉及 {}。需要继续回到 block mix 与 continuity facets 做逐点复核。",
+                    "{} 个历史样本主要缺少可用的 pre-warning signal，涉及 {}。下一步应先回到训练样本、特征覆盖与标签窗口本身，确认为什么连 non-normal / runtime floor 都没有稳定形成。",
                     row.scenario_count,
                     format_runtime_category_list(&row.scenarios)
+                ));
+            }
+            "weak_signal_continuity" => {
+                takeaways.push(format!(
+                    "{} 个历史样本已经出现弱 pre-warning 信号但没有形成可执行延续，涉及 {}。下一步应优先复核 feature separation、months/prepare continuity 与阈值前置量。",
+                    row.scenario_count,
+                    format_runtime_category_list(&row.scenarios)
+                ));
+            }
+            _ => {
+                takeaways.push(format!(
+                    "{} 个历史样本仍落在 residual release-review audit，涉及 {}。{}",
+                    row.scenario_count,
+                    format_runtime_category_list(&row.scenarios),
+                    row.suggested_review,
                 ));
             }
         }

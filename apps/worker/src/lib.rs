@@ -38,8 +38,8 @@ use commands::{FeatureSnapshotBuildOptions, PointInTimeMode};
 #[cfg(test)]
 use commands::{
     FormalDatasetBuildOptions, FormalDatasetSummaryOptions, PipelineDatasetSource,
-    PipelineTrainOptions, PredictionSnapshotQueryOptions, ProbabilityModelShape,
-    RefreshLatestOptions,
+    PipelineReleaseManifestMode, PipelineTrainOptions, PredictionSnapshotQueryOptions,
+    ProbabilityModelShape, RefreshLatestOptions,
 };
 pub(crate) use fc_domain::load_crisis_scenario_catalog;
 #[cfg(test)]
@@ -80,37 +80,40 @@ use output_paths::{
 #[cfg(test)]
 pub(crate) use probability::{
     adjust_probability_decision_threshold_for_regime_support,
-    build_probability_threshold_diagnostics, classify_probability_regime_separation,
-    probability_calibration_selection_rows, probability_decision_threshold_selection,
-    select_probability_calibration_strategy, select_probability_decision_threshold,
-    ProbabilityCalibrationSelection, ProbabilityThresholdDiagnosticsInput,
+    build_probability_threshold_diagnostics, probability_calibration_selection_rows,
+    probability_decision_threshold_selection, select_probability_calibration_strategy,
+    select_probability_decision_threshold, ProbabilityCalibrationSelection,
+    ProbabilityCalibrationStrategyInput, ProbabilityThresholdDiagnosticsInput,
     ProbabilityThresholdSelection,
 };
 pub(crate) use probability::{
-    regime_positive_window_gap_floor, summarize_bundle_evaluation, train_horizon_bundle,
+    classify_probability_regime_separation, early_warning_regime_name, gap_retention_ratio,
+    lift_vs_baseline, summarize_bundle_evaluation, train_horizon_bundle,
 };
 pub(crate) use release_review::{
-    build_release_runtime_review_diagnostics, format_runtime_category_list, lift_vs_baseline,
-    release_review_historical_audit_takeaways, release_review_runtime_separation_takeaways,
-    render_release_review_markdown, summarize_release_review_failure_modes,
-    summarize_release_review_historical_audit_actions,
+    build_release_review_scenario_coverage, build_release_runtime_review_diagnostics,
+    format_runtime_category_list, release_review_historical_audit_takeaways,
+    release_review_runtime_separation_takeaways, render_release_review_markdown,
+    summarize_release_review_failure_modes, summarize_release_review_historical_audit_actions,
     summarize_release_review_historical_audit_attribution,
     summarize_release_review_historical_audit_priorities,
     summarize_release_review_historical_audit_workstreams_with_focus,
     ReleaseActionabilityLevelReview, ReleaseActionabilityReview,
     ReleaseReviewBacktestScenarioComparison, ReleaseReviewComparisonSummary,
     ReleaseReviewCountMetric, ReleaseReviewEnvelope, ReleaseReviewHistoricalAuditActionSummary,
-    ReleaseReviewRuntimeBlockCount, ReleaseReviewRuntimeDominantCategories,
-    ReleaseReviewRuntimeSeparationComparison, ReleaseReviewScalarMetric,
-    ReleaseReviewScenarioFocusDiagnostic, ReleaseReviewScenarioPointComparison,
-    ReleaseRuntimeReviewDiagnostics, ReleaseRuntimeSeparationSummary,
+    ReleaseReviewHistoricalAuditPriority, ReleaseReviewRuntimeBlockCount,
+    ReleaseReviewRuntimeDominantCategories, ReleaseReviewRuntimeSeparationComparison,
+    ReleaseReviewScalarMetric, ReleaseReviewScenarioCoverage,
+    ReleaseReviewScenarioCoverageCatalogSummary, ReleaseReviewScenarioFocusDiagnostic,
+    ReleaseReviewScenarioPointComparison, ReleaseRuntimeReviewDiagnostics,
+    ReleaseRuntimeSeparationSummary,
 };
 #[cfg(test)]
 pub(crate) use release_review::{
     classify_regime_separation, summarize_release_review_historical_audit_workstreams,
     summarize_release_runtime_regime_probabilities, summarize_release_runtime_regime_separation,
-    ReleaseReviewHistoricalAuditAttributionSummary, ReleaseReviewHistoricalAuditPriority,
-    ReleaseReviewHistoricalAuditWorkstreamSummary,
+    ReleaseReviewHistoricalAuditAttributionSummary, ReleaseReviewHistoricalAuditWorkstreamSummary,
+    ReleaseRuntimeLatestProbabilitySnapshot,
 };
 pub(crate) use reporting::write_formal_dataset_summary_report;
 pub(crate) use scenario::{
@@ -124,10 +127,11 @@ pub(crate) use support::{
     fetch_assessment_snapshot_for_guard, formal_dataset_key, format_bool_flag,
     format_optional_bool_flag, format_optional_count, format_optional_date,
     format_optional_date_with_lead, format_optional_date_with_reason, format_optional_days,
-    format_optional_multiplier, format_optional_pct, format_optional_ratio, format_pct,
-    format_signed_count_delta, format_signed_pct_delta, format_trigger_codes, open_sqlite_store,
-    parse_date_arg, parse_positive_i64, path_to_string, posture_text, raw_data_dir,
-    raw_file_extension, read_probability_bundle, read_release_manifest, reload_api_runtime,
+    format_optional_multiplier, format_optional_pct, format_optional_ratio, format_optional_score,
+    format_pct, format_signed_count_delta, format_signed_pct_delta, format_trigger_codes,
+    open_sqlite_store, parse_date_arg, parse_non_negative_u32, parse_non_negative_u64,
+    parse_positive_i64, path_to_string, posture_text, raw_data_dir, raw_file_extension,
+    read_probability_bundle, read_release_manifest, reload_api_runtime,
     reload_api_runtime_with_history_options, round3, round6, run_demo_ingestion, safe_divide,
     safe_ratio, simple_hash, sqlite_path, time_bucket_text, truncate_text, write_raw_payload,
     ApiReloadHistoryMode,
@@ -151,9 +155,9 @@ pub(crate) const DEFAULT_FORMAL_DATASET_ID: &str = "formal_v1_main_1990_daily";
 pub(crate) const DEFAULT_FORMAL_LABEL_VERSION: &str = "formal_label_v1_main";
 pub(crate) const DEFAULT_FORMAL_SCENARIO_SET_VERSION: &str = "scenario_v1_main";
 pub(crate) const DEFAULT_FORMAL_MAIN_CONTEXT_WINDOW_SET_ID: &str = "protected_stress_windows_v1";
-pub(crate) const FEATURE_SNAPSHOT_STATUS_READY: &str = "ready";
+pub(crate) const FEATURE_SNAPSHOT_STATUS_READY: &str = fc_domain::FEATURE_SNAPSHOT_STATUS_READY;
 pub(crate) const FEATURE_SNAPSHOT_STATUS_COVERAGE_OR_VISIBILITY_FAILED: &str =
-    "coverage_or_visibility_failed";
+    fc_domain::FEATURE_SNAPSHOT_STATUS_COVERAGE_OR_VISIBILITY_FAILED;
 
 pub async fn run_from_args(args: Vec<String>) -> anyhow::Result<()> {
     commands::run_from_args(args).await

@@ -218,6 +218,14 @@ pub(crate) fn format_optional_pct(value: Option<f64>) -> String {
     value.map(format_pct).unwrap_or_else(|| "—".to_string())
 }
 
+pub(crate) fn format_score(value: f64) -> String {
+    format!("{value:.1}")
+}
+
+pub(crate) fn format_optional_score(value: Option<f64>) -> String {
+    value.map(format_score).unwrap_or_else(|| "—".to_string())
+}
+
 pub(crate) fn format_optional_date(value: Option<NaiveDate>) -> String {
     value
         .map(|date| date.to_string())
@@ -318,6 +326,20 @@ pub(crate) fn parse_positive_i64(value: Option<&String>, option: &str) -> anyhow
         bail!("{option} requires a positive integer");
     }
     Ok(value)
+}
+
+pub(crate) fn parse_non_negative_u32(value: Option<&String>, option: &str) -> anyhow::Result<u32> {
+    value
+        .with_context(|| format!("{option} requires a non-negative integer"))?
+        .parse::<u32>()
+        .with_context(|| format!("{option} requires a non-negative integer"))
+}
+
+pub(crate) fn parse_non_negative_u64(value: Option<&String>, option: &str) -> anyhow::Result<u64> {
+    value
+        .with_context(|| format!("{option} requires a non-negative integer"))?
+        .parse::<u64>()
+        .with_context(|| format!("{option} requires a non-negative integer"))
 }
 
 pub(crate) async fn open_sqlite_store() -> anyhow::Result<SqliteStore> {

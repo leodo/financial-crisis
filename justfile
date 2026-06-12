@@ -24,10 +24,20 @@ dev-sqlite:
 status:
     ./scripts/dev-status.ps1
 
+# 针对 MVP 决策面板的运行时/渲染防回归检查；需要先启动 `just dev`。
+# 默认要求 API 使用本地 SQLite，并校验 USDJPY、关键近端指标、reference-only 主结论口径和首页 DOM 文案。
+mvp-regression:
+    node ./scripts/mvp-runtime-regression-check.mjs
+
 # 检查生成工件是否误入版本化目录。
 # 已暂存的版本化 artifact 会让命令失败，除非先补充证据说明并设置 ALLOW_TRACKED_ARTIFACTS=1。
 artifact-status:
     ./scripts/artifact-status.ps1
+
+# 检查当前仓库最大的源码热点文件，并在你直接改到这些大文件时阻止继续提交。
+# 如果这次修改本身就是拆分热点文件，可临时设置 `ALLOW_HOTSPOT_TOUCH=1` 后重跑，并在提交说明里写清原因。
+hotspot-status:
+    ./scripts/hotspot-status.ps1
 
 # 从正在运行的本地 API 导出一份滚动审计报告，默认写到 reports/rolling-audit。
 # 适合每次 refresh/backfill 后留存一份当前评估快照，便于复盘模型是否在“高压但未危机”的阶段过度频繁动作。
@@ -38,6 +48,11 @@ audit-report:
 # 适合检查当前有哪些候选版、激活版和历史版。
 release-list:
     cargo run -p fc-worker -- research release list
+
+# 汇总最近 candidate-screen 与 default release-review，快速回答“当前 active 之后有没有更适合切换的候选版”。
+# 用法：`just release-triage us_formal_family_hybrid_20260606T112926`
+release-triage baseline_release_id:
+    node ./scripts/release-candidate-triage.mjs {{baseline_release_id}}
 
 # 用“当前 active release”对比一个 candidate release，自动切换 API、以 strict_rebuild 方式重放历史、导出 review 报告，再恢复原 active。
 # 默认导出到忽略目录 artifacts/research/release-review，避免实验副产物长期污染 Git 工作区。
@@ -114,6 +129,11 @@ formal-history-backfill:
 formal-dataset-list:
     cargo run -p fc-worker -- research dataset list-main --market-scope financial_system
 
+# 一键导出当前 main / ext_stress / ext_acute 三套 formal dataset summary。
+# 它会自动挑选每个 dataset_id 当前最新的一版 key，并把 JSON/Markdown 写到 ignored 的 artifacts/research/dataset-summary-check。
+formal-dataset-summary-pack:
+    ./scripts/formal-dataset-summary-pack.ps1
+
 # 导出某个危机场景的 formal dataset 样本切片，便于逐日看 split / label / features。
 # 用法：`just formal-dataset-slice us_regional_banks_2023 2022-12-01 2023-03-15`
 formal-dataset-slice scenario_id from_date to_date:
@@ -140,17 +160,40 @@ formal-probability-compare baseline_release_id candidate_release_id scenario_id 
 formal-candidate-window-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-window-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 横向对比 `regional_banks` 正窗口与 2023-02 / 2023-07 误报窗口的 20d 特征贡献。
+# 适合判断候选为什么把 20d threshold 顶得过高：是正例独有信号，还是同一组特征也在抬误报窗口。
+# 用法：`just formal-candidate-separation-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260609T234038`
+formal-candidate-separation-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-separation-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
 # 对比两个候选在指定 horizon 的阈值、regime 概率分布和关键特征权重差异。
 # 适合在 window audit 之后快速判断“到底是 threshold 变了，还是 curve / USDJPY / family context 权重变了”。
 # 用法：`just formal-candidate-feature-audit us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`
 formal-candidate-feature-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-feature-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
+# 按 regime 聚合 formal-probability-compare 的 feature contribution，定位 positive-window 为什么输给 cooldown/normal。
+# 默认审计 `us_regional_banks_2023` 的 2023-02-01 -> 2023-05-15 窗口，覆盖正窗口和 cooldown，输出到 ignored artifacts 目录。
+# 用法：`just formal-candidate-regime-contribution-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260609T204721`
+formal-candidate-regime-contribution-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-regime-contribution-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
+# 对比 baseline / candidate 在 runtime replay slice 里的 base contribution，直接解释当前面板读数为什么被压低。
+# 默认读取当前 API as_of_date，输出到 ignored artifacts/research/runtime-contribution-audit。
+# 用法：`just formal-candidate-runtime-contribution-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260609T204721`
+formal-candidate-runtime-contribution-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-runtime-contribution-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
 # 进一步对齐 `curve / bond-spread / USDJPY / jpy carry / 20d threshold` 语义审计。
 # 会明确输出哪些约束已经在训练层落实，哪些还只是文档约束，以及最小代码入口在哪。
 # 用法：`just formal-candidate-semantics-audit us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`
 formal-candidate-semantics-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-semantics-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
+# 审计 JPY carry proxy 在 1987 / 1990 / 2024 高 FX 窗口里是否主要来自 protected/pre-warning 压力，而不是普通汇率尖峰。
+# 这个命令不重训模型，只从 SQLite formal dataset 行按正式 resolver 公式重算 `family_proxy__jpy_carry` 并导出 JSON。
+formal-candidate-jpy-carry-audit:
+    ./scripts/formal-candidate-jpy-carry-audit.ps1
 
 # 对比 baseline / candidate 的 strict release-review 工件，专门审计 timely warning / actionable lead time。
 # 会把 60d runtime separation、L2 但无 L3 的历史样本、Focus Scenarios 的 runtime block mix、
@@ -159,7 +202,56 @@ formal-candidate-semantics-audit baseline_release_id candidate_release_id:
 formal-candidate-leadtime-audit baseline_release_id candidate_release_id:
     ./scripts/formal-candidate-leadtime-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
 
-# 标准候选筛选入口：先跑三段窗口 compare，再跑 20d 特征/阈值审计，最后补一轮语义审计。
+# 对比指定 history mode 的 release-review 工件；当 API 最新审计是 default 口径时，用这个命令生成可被页面匹配的 lead-time audit。
+# 用法：`just formal-candidate-leadtime-audit-mode us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260609T162641 default`
+formal-candidate-leadtime-audit-mode baseline_release_id candidate_release_id history_mode:
+    ./scripts/formal-candidate-leadtime-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}} -HistoryMode {{history_mode}}
+
+# 用固定美国历史场景包一口气审计 baseline / candidate：
+# 直接把 1987、1990s、2000、2008、2011、2020、2022、2023 的 compare、coverage 和 release-review blocker
+# 收到同一份 JSON 里，优先回答“免费数据能不能覆盖、该用哪个 dataset、主要卡在 gate 还是 continuity”。
+# 用法：`just formal-candidate-scenario-pack-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260608T173701`
+formal-candidate-scenario-pack-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-scenario-pack-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
+# 固定审计 `1987 / 1998 / 2000-2001 / 2011` 的 prewarning_signal_gap：
+# 自动跑每个场景的 formal-probability-compare 与 formal dataset slice，合并输出样本覆盖、标签、
+# 动作 episode、阈值命中、近阈值行数和下一步诊断，直接回答“为什么没有形成提前预警”。
+# 用法：`just formal-candidate-prewarning-gap-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260608T173701`
+formal-candidate-prewarning-gap-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-prewarning-gap-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
+# 固定审计 `2011 美欧融资压力 / no_runtime_floor_signal`：
+# 在 prewarning-gap 总览之后继续下钻 funding stress 的 split、标签、20d/60d floor 距离、
+# mixed-systemic family context 与关键 feature separation，判断应先修训练拓扑/特征还是阈值。
+# 用法：`just formal-candidate-funding-stress-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260608T173701`
+formal-candidate-funding-stress-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-funding-stress-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
+# 对 `prewarning_signal_gap / weak_signal_continuity` 这类 residual workstream 直接拉 formal dataset slice，
+# 汇总样本覆盖、split、标签、episode 和 feature 覆盖，避免只知道“哪条线有问题”却不知道“数据证据长什么样”。
+# 用法：`just formal-candidate-workstream-audit us_formal_family_hybrid_20260605T202246 us_formal_family_hybrid_20260606T112926`
+formal-candidate-workstream-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-workstream-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
+# 固定审计 `2022 联储加息与久期冲击`：
+# 把 formal dataset slice 与 baseline/candidate 概率 compare 拼起来，直接看 primary / late_validation /
+# prepare / hedge 各自的 hit rate、最长连续命中、阈值距离和特征分离。
+# 用法：`just formal-candidate-rate-shock-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260608T173701`
+formal-candidate-rate-shock-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-rate-shock-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
+# 固定审计候选版的 cooldown bleed 与 false-positive 回归：
+# 读取或生成 default release review，导出结构化 JSON，直接列出 precision、最长误报、runtime floor、
+# 20d/60d cooldown regime、候选新增/拉长误报 episode 与 no-go 原因。
+# 用法：`just formal-candidate-cooldown-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260608T191024`
+formal-candidate-cooldown-audit baseline_release_id candidate_release_id:
+    ./scripts/formal-candidate-cooldown-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+
+# 标准候选筛选入口：先跑三段窗口 compare，再补 20d cross-window separation audit，然后读取或生成 default release review。
+# 它会把 20d cooldown bleed、动作精度、最长误报区间、runtime floor hit 和 threshold-policy blockers 纳入 no-go 判断，
+# 并把 screen 摘要写到 ignored 的 artifacts/research/candidate-screen，便于后续追踪“为什么不能只降 threshold”。
+# 然后跑 20d 特征/阈值审计、语义审计，最后补一轮美国历史场景包审计。
 # 适合 family-hybrid 主线的新候选第一轮筛查；只有这一步结论足够好，才继续跑 `release-review-fast`。
 # 用法：`just formal-candidate-screen us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930`
 formal-candidate-screen baseline_release_id candidate_release_id:
@@ -169,6 +261,11 @@ formal-candidate-screen baseline_release_id candidate_release_id:
 # 默认输出到忽略目录 artifacts/research/model-*/generated；如需回退旧的 prediction snapshot 过渡链路，可手动追加 `--dataset-source snapshot`。
 formal-train:
     cargo run -p fc-worker -- research pipeline train-probability --market-scope financial_system
+
+# 只加载 formal train/calibration/evaluation 数据并打印 split / topology repair 计数，不训练、不写 bundle。
+# 适合先验证样本是否真的进入训练拓扑。
+formal-train-dry-run:
+    cargo run -p fc-worker -- research pipeline train-probability --market-scope financial_system --dry-run
 
 # 和 `formal-train` 相同，但显式把 bundle / manifest 输出到版本化 generated 目录。
 # 只在需要把该候选版作为仓库长期证据保留时使用。
@@ -189,6 +286,11 @@ formal-train-interaction-tail-tracked:
 formal-train-family-overlay:
     ./scripts/formal-train-family-overlay.ps1
 
+# 自动解析最新 main + ext_stress + ext_acute key，只做训练拓扑 dry-run 审计。
+# 用来确认 2011 funding-stress 等 protected extension row 是否已进入 train_topology_repair。
+formal-train-family-overlay-dry-run:
+    ./scripts/formal-train-family-overlay.ps1 -DryRun
+
 # 和 `formal-train-family-overlay` 相同，但把 bundle / manifest 显式写到版本化 generated 目录。
 formal-train-family-overlay-tracked:
     ./scripts/formal-train-family-overlay.ps1 -Tracked
@@ -197,6 +299,10 @@ formal-train-family-overlay-tracked:
 # 只在 `5d/20d` 与 overlay 侧保留 family conditional 形态。
 formal-train-family-hybrid:
     ./scripts/formal-train-family-overlay.ps1 -ModelShape family_hybrid_v1
+
+# 使用 family-hybrid 模型形态做训练拓扑 dry-run，不训练、不写 bundle。
+formal-train-family-hybrid-dry-run:
+    ./scripts/formal-train-family-overlay.ps1 -DryRun -ModelShape family_hybrid_v1
 
 # 和 `formal-train-family-hybrid` 相同，但把 bundle / manifest 显式写到版本化 generated 目录。
 formal-train-family-hybrid-tracked:
@@ -237,6 +343,10 @@ lint:
 verify-artifacts:
     ./scripts/artifact-status.ps1
 
+# 本地治理门禁：如果直接改到了当前仓库前几位的大源码文件，要求先拆模块或显式说明原因。
+verify-hotspots:
+    ./scripts/hotspot-status.ps1
+
 # 只启动后端 API，默认地址 http://127.0.0.1:18080。
 api:
     cargo run -p fc-api
@@ -257,17 +367,22 @@ db-seed:
 db-check:
     cargo run -p fc-worker -- db check
 
+# 查看本地免费数据源最近是否真的抓取成功，以及最后成功的数据期。
+# 页面数字异常时，先跑这个命令确认数据源是否新鲜、是否有连续失败。
+refresh-status:
+    cargo run -p fc-worker -- refresh status
+
 # 一键刷新最近一段免费高频数据，并在 API 运行时自动触发 /api/system/reload。
-# 当前会串行刷新 FRED / Treasury / BOJ / SEC EDGAR，World Bank 可按需关闭。
-# 这是日常维护本地评估库的首选入口。
+# 默认跳过 World Bank 年频慢变量，保证日常刷新能在几分钟内完成。
+# 这是日常维护本地评估库的首选入口；需要慢变量时再单独运行 `just backfill-world-bank`。
 refresh-latest:
-    cargo run -p fc-worker -- refresh latest-free
+    cargo run -p fc-worker -- refresh latest-free --mvp-key-only --fast-lookback-days 14 --fred-chunk-days 15 --skip-world-bank
     ./scripts/dev-status.ps1
 
 # 在日常刷新基础上追加 GDELT prototype 事件源。
-# 适合想把新闻压力序列也一并拉进当前面板的场景。
+# 同样默认跳过 World Bank，避免把“看当下”的刷新命令拖成慢任务。
 refresh-latest-full:
-    cargo run -p fc-worker -- refresh latest-free --include-gdelt
+    cargo run -p fc-worker -- refresh latest-free --skip-world-bank --include-gdelt
     ./scripts/dev-status.ps1
 
 # 无需 API key，使用 FRED 图表 CSV 回填历史数据到本地 SQLite。
@@ -374,4 +489,4 @@ web-build:
 check-all: fmt-check test web-build
 
 # 完整本地门禁：版本化工件审计、Rust 格式检查、测试、clippy、前端构建。
-verify: verify-artifacts fmt-check test lint web-build
+verify: verify-artifacts verify-hotspots fmt-check test lint web-build

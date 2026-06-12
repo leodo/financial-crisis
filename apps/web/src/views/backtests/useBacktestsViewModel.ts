@@ -2,6 +2,7 @@ import {
   auditEpisodeClass,
   auditEpisodeLabel,
   backtestSignalSourceLabel,
+  formatCount,
   formatDate,
   formatNumber,
   formatPercent,
@@ -13,8 +14,29 @@ import type {
   BacktestScenarioSummary,
   BacktestWindowPoint
 } from "../../types";
-import type { LineChartModel } from "../decision/charts";
+import {
+  buildBacktestSummaryMetrics,
+  buildRollingAuditMetrics
+} from "../decision/buildersBacktests";
+import { buildProbabilityAxisMax, type LineChartModel } from "../decision/charts";
+import type { MetricItem } from "../shared/panelHelpers";
+import {
+  backtestReviewCopy,
+  buildBacktestCoverageScopeText,
+  buildBacktestHistoryCoverageText,
+  buildRollingAuditHistoryText,
+  buildRollingAuditScopeText
+} from "../shared/backtestCopy";
+import {
+  currentMvpRiskState,
+  mvpProbabilityInputIsAuditOnly,
+  mvpRiskStateDisplayLabel
+} from "../decision/mvpRiskState";
 import { backtestsContent } from "./content";
+
+function formatOptionalDays(value: number | null | undefined) {
+  return value === null || value === undefined ? "—" : `${value}d`;
+}
 
 export function useBacktestsViewModel({
   assessment,
@@ -25,9 +47,11 @@ export function useBacktestsViewModel({
   backtests: BacktestScenarioSummary[];
   timeline: BacktestWindowPoint[];
 }) {
+  const probabilityValues = timeline.flatMap((point) => [point.p_5d, point.p_20d, point.p_60d]);
+  const probabilityMax = probabilityValues.length > 0 ? Math.max(...probabilityValues) : 0;
   const chart: LineChartModel = {
     categories: timeline.map((point) => formatDate(point.as_of_date)),
-    maxValue: 1,
+    maxValue: buildProbabilityAxisMax(probabilityMax),
     valueType: "percent",
     series: [
       { label: "5日窗口", color: "#b45309", values: timeline.map((point) => point.p_5d) },
@@ -41,56 +65,74 @@ export function useBacktestsViewModel({
     ]
   };
 
-  const summaryMetrics = [
-    ["结构抬升率", formatPercent(assessment.backtest_summary.structural_warning_rate)],
-    ["可执行预警率", formatPercent(assessment.backtest_summary.timely_warning_rate)],
-    ["漏报率", formatPercent(assessment.backtest_summary.missed_rate)],
-    ["平均结构提前量", formatNumber(assessment.backtest_summary.avg_structural_lead_time_days, "d")],
-    ["平均动作提前量", formatNumber(assessment.backtest_summary.avg_lead_time_days, "d")],
-    ["预警折返", formatNumber(assessment.backtest_summary.total_false_positive_count)],
-    ["真实样本", formatNumber(assessment.backtest_summary.real_scenario_count)],
-    ["模板样本", formatNumber(assessment.backtest_summary.fallback_scenario_count)]
-  ] as Array<[string, string]>;
+  const summaryMetrics = buildBacktestSummaryMetrics(assessment);
+  const rollingMetrics = buildRollingAuditMetrics(assessment);
 
-  const rollingMetrics = [
-    ["动作信号精度", formatPercent(assessment.backtest_summary.rolling_audit.actionable_precision)],
-    ["动作信号点", formatNumber(assessment.backtest_summary.rolling_audit.actionable_signal_count)],
-    ["危机前命中点", formatNumber(assessment.backtest_summary.rolling_audit.pre_crisis_signal_count)],
-    ["危机中信号点", formatNumber(assessment.backtest_summary.rolling_audit.in_crisis_signal_count)],
-    ["受保护压力点", formatNumber(assessment.backtest_summary.rolling_audit.stress_window_signal_count)],
-    ["纯误报点", formatNumber(assessment.backtest_summary.rolling_audit.false_positive_signal_count)],
-    ["误报区间", formatNumber(assessment.backtest_summary.rolling_audit.false_positive_episode_count)],
-    [
-      "最长误报区间",
-      formatNumber(assessment.backtest_summary.rolling_audit.longest_false_positive_episode_days, "d")
-    ]
-  ] as Array<[string, string]>;
+  const historyRange = buildBacktestHistoryCoverageText(assessment.backtest_summary);
+  const coverageScopeText = buildBacktestCoverageScopeText(assessment.backtest_summary);
+  const rollingAuditHistoryRange = buildRollingAuditHistoryText(
+    assessment.backtest_summary.rolling_audit
+  );
+  const rollingAuditScopeText = buildRollingAuditScopeText(
+    assessment.backtest_summary.rolling_audit
+  );
+  const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
+  const mvpState = currentMvpRiskState(assessment);
 
-  const historyRange =
-    assessment.backtest_summary.history_start && assessment.backtest_summary.history_end
-      ? `${formatDate(assessment.backtest_summary.history_start)} - ${formatDate(assessment.backtest_summary.history_end)}`
-      : backtestsContent.noHistoryRange;
-
-  const currentPosture = postureLabel(assessment.posture);
-  const headlineMetrics = [
-    ["动作命中", formatPercent(assessment.backtest_summary.timely_warning_rate)],
-    ["纯误报区间", formatNumber(assessment.backtest_summary.rolling_audit.false_positive_episode_count)],
-    [
-      "最长误报",
-      formatNumber(assessment.backtest_summary.rolling_audit.longest_false_positive_episode_days, "d")
-    ],
-    ["当前执行节奏", currentPosture]
-  ] as Array<[string, string]>;
+  const currentPosture = auditOnly
+    ? mvpRiskStateDisplayLabel(mvpState.label)
+    : postureLabel(assessment.posture);
+  const hasActionSignals = assessment.backtest_summary.rolling_audit.actionable_signal_count > 0;
+  const historicalReplayCountHint =
+    "这是全历史滚动回放里的评估点/区间数量，不是今天新增事件数，也不是当前正式概率准确率。";
+  const headlineMetrics: MetricItem[] = [
+    {
+      label: "动作命中（场景回测）",
+      value:
+        assessment.backtest_summary.timely_warning_rate === 0
+          ? "未形成动作预警"
+          : formatPercent(assessment.backtest_summary.timely_warning_rate),
+      hint:
+        assessment.backtest_summary.timely_warning_rate === 0
+          ? "当前回测口径没有形成满足提前量要求的动作级预警，不等于采集失败。"
+          : "这是历史场景回测命中率，用来评估过去危机前是否提前亮灯；不是当前危机概率。"
+    },
+    {
+      label: "动作信号点（历史）",
+      value: hasActionSignals
+        ? formatCount(assessment.backtest_summary.rolling_audit.actionable_signal_count)
+        : "无",
+      hint: hasActionSignals
+        ? historicalReplayCountHint
+        : "当前滚动窗口没有准备/对冲/防守动作信号，精度没有可评估分母。"
+    },
+    {
+      label: "纯误报区间（历史）",
+      value: hasActionSignals
+        ? formatCount(assessment.backtest_summary.rolling_audit.false_positive_episode_count)
+        : "无",
+      hint: hasActionSignals
+        ? historicalReplayCountHint
+        : "当前滚动窗口没有准备/对冲/防守动作信号，因此没有可评估的纯误报区间。"
+    },
+    {
+      label: "当前执行节奏",
+      value: currentPosture,
+      hint: auditOnly
+        ? "当前主结论先按 MVP 规则层解释；回测页中的正式概率轨迹只保留为模型复核参考。"
+        : undefined
+    }
+  ];
 
   const scenarioRows = backtests.map((scenario) => ({
     id: scenario.scenario_id,
     name: scenario.name,
     signalSource: backtestSignalSourceLabel(scenario.signal_source),
     crisisRange: `${formatDate(scenario.crisis_start)} - ${formatDate(scenario.crisis_end)}`,
-    leadTime: `${scenario.lead_time_days ?? "—"}d`,
-    actionableLeadTime: `${scenario.actionable_lead_time_days ?? "—"}d`,
+    leadTime: formatOptionalDays(scenario.lead_time_days),
+    actionableLeadTime: formatOptionalDays(scenario.actionable_lead_time_days),
     peakScore: formatNumber(scenario.max_score),
-    falsePositives: formatNumber(scenario.false_positive_count),
+    falsePositives: formatCount(scenario.false_positive_count),
     note: humanizeNarrativeCopy(scenario.note)
   }));
 
@@ -100,9 +142,9 @@ export function useBacktestsViewModel({
     badgeLabel: auditEpisodeLabel(episode.classification),
     startDate: formatDate(episode.start_date),
     endDate: formatDate(episode.end_date),
-    duration: formatNumber(episode.duration_days, "d"),
-    signalCount: formatNumber(episode.signal_count),
-    note: humanizeNarrativeCopy(episode.note)
+    duration: formatCount(episode.duration_days, "d"),
+    signalCount: formatCount(episode.signal_count),
+    note: humanizeNarrativeCopy(backtestReviewCopy(episode.note))
   }));
 
   return {
@@ -111,7 +153,11 @@ export function useBacktestsViewModel({
     summaryMetrics,
     rollingMetrics,
     historyRange,
+    coverageScopeText,
+    rollingAuditHistoryRange,
+    rollingAuditScopeText,
     currentPosture,
+    auditOnly,
     scenarioRows,
     episodeRows
   };

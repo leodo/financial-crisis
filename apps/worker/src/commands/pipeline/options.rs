@@ -28,6 +28,21 @@ impl PipelineDatasetSource {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PipelineReleaseManifestMode {
+    ReviewCandidate,
+    ApprovedFormalBootstrap,
+}
+
+impl PipelineReleaseManifestMode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::ReviewCandidate => "review_candidate",
+            Self::ApprovedFormalBootstrap => "approved_formal_bootstrap",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProbabilityModelShape {
     LinearV1,
     InteractionTailV1,
@@ -88,7 +103,9 @@ impl ProbabilityModelShape {
 #[derive(Debug, Clone)]
 pub(crate) struct PipelineTrainOptions {
     pub(crate) dataset_source: PipelineDatasetSource,
+    pub(crate) release_manifest_mode: PipelineReleaseManifestMode,
     pub(crate) model_shape: ProbabilityModelShape,
+    pub(crate) dry_run: bool,
     pub(crate) dataset_id: String,
     pub(crate) dataset_version: Option<String>,
     pub(crate) dataset_key: Option<String>,
@@ -106,6 +123,7 @@ impl PipelineTrainOptions {
         let mut release_prefix = None;
         let mut dataset_source = PipelineDatasetSource::Formal;
         let mut model_shape = ProbabilityModelShape::LinearV1;
+        let mut dry_run = false;
         let mut dataset_id = crate::DEFAULT_FORMAL_DATASET_ID.to_string();
         let mut dataset_version = None;
         let mut dataset_key = None;
@@ -114,6 +132,7 @@ impl PipelineTrainOptions {
         let mut index = 0;
         while index < args.len() {
             match args[index].as_str() {
+                "--dry-run" => dry_run = true,
                 "--dataset-source" => {
                     index += 1;
                     dataset_source = PipelineDatasetSource::parse(
@@ -188,7 +207,9 @@ impl PipelineTrainOptions {
 
         Ok(Self {
             dataset_source,
+            release_manifest_mode: PipelineReleaseManifestMode::ReviewCandidate,
             model_shape,
+            dry_run,
             dataset_id,
             dataset_version,
             dataset_key,
@@ -199,6 +220,11 @@ impl PipelineTrainOptions {
             release_prefix: release_prefix
                 .unwrap_or_else(|| default_release_prefix(dataset_source, model_shape)),
         })
+    }
+
+    pub(super) fn into_approved_formal_bootstrap(mut self) -> Self {
+        self.release_manifest_mode = PipelineReleaseManifestMode::ApprovedFormalBootstrap;
+        self
     }
 }
 
@@ -251,6 +277,7 @@ impl PipelineBootstrapOptions {
                 "bootstrap-formal-release only supports --dataset-source formal; snapshot is transitional research only and cannot be published as a formal release"
             );
         }
+        let train = train.into_approved_formal_bootstrap();
 
         Ok(Self {
             train,
@@ -297,7 +324,7 @@ fn default_release_prefix(
 
 #[cfg(test)]
 mod tests {
-    use super::{PipelineBootstrapOptions, PipelineDatasetSource};
+    use super::{PipelineBootstrapOptions, PipelineDatasetSource, PipelineReleaseManifestMode};
 
     #[test]
     fn bootstrap_formal_release_rejects_snapshot_dataset_source() {
@@ -326,6 +353,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(options.train.dataset_source, PipelineDatasetSource::Formal);
+        assert_eq!(
+            options.train.release_manifest_mode,
+            PipelineReleaseManifestMode::ApprovedFormalBootstrap
+        );
         assert_eq!(options.updated_by, "tester");
         assert!(options.activate);
         assert!(options.reload_api);

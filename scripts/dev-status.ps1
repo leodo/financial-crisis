@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
+$DefaultSqlitePath = Join-Path $Root "data\fc-local.sqlite"
 $RunDir = Join-Path $Root ".run"
 $ApiPidFile = Join-Path $RunDir "fc-api.pid"
 $WebPidFile = Join-Path $RunDir "web.pid"
@@ -60,12 +61,17 @@ if ((Get-NetTCPConnection -LocalPort 18080 -State Listen -ErrorAction SilentlyCo
         if (-not $latestObservationAt) {
             $latestObservationAt = "-"
         }
+        $latestKeyObservationAt = $assessment.runtime.latest_key_indicator_at
+        if (-not $latestKeyObservationAt) {
+            $latestKeyObservationAt = $latestObservationAt
+        }
 
         Write-Host ""
         Write-Host "API runtime summary:"
         Write-Host ("  Data mode : {0}" -f $assessment.runtime.data_mode)
         Write-Host ("  As of     : {0}" -f $assessment.as_of_date)
         Write-Host ("  Latest    : {0}" -f $latestObservationAt)
+        Write-Host ("  Key latest: {0}" -f $latestKeyObservationAt)
         Write-Host ("  Generated : {0}" -f $assessment.runtime.generated_at)
 
         if ($usdJpy) {
@@ -75,6 +81,10 @@ if ((Get-NetTCPConnection -LocalPort 18080 -State Listen -ErrorAction SilentlyCo
                 $usdJpy.source_id,
                 $usdJpy.dataset_id,
                 $usdJpy.status)
+        }
+
+        if ($assessment.runtime.data_mode -eq "demo" -and (Test-Path -LiteralPath $DefaultSqlitePath)) {
+            Write-Warning "Local SQLite exists at data/fc-local.sqlite, but the API is still serving demo data. Run `just stop` and then `just dev` or `just dev-sqlite`."
         }
     } catch {
         Write-Warning "API is listening, but runtime summary could not be loaded from /api/assessment/current."

@@ -4,9 +4,11 @@ use serde::Serialize;
 
 use crate::{reporting, RuntimeThresholdDiagnosticsWire};
 
+mod coverage;
 mod historical;
 mod runtime;
 
+pub(crate) use coverage::build_release_review_scenario_coverage;
 #[cfg(test)]
 pub(crate) use historical::summarize_release_review_historical_audit_workstreams;
 pub(crate) use historical::{
@@ -17,8 +19,7 @@ pub(crate) use historical::{
     summarize_release_review_historical_audit_workstreams_with_focus,
 };
 pub(crate) use runtime::{
-    build_release_runtime_review_diagnostics, lift_vs_baseline,
-    release_review_runtime_separation_takeaways,
+    build_release_runtime_review_diagnostics, release_review_runtime_separation_takeaways,
 };
 #[cfg(test)]
 pub(crate) use runtime::{
@@ -68,6 +69,10 @@ pub(crate) struct ReleaseReviewScenarioPointComparison {
     pub(crate) candidate_p20d: Option<f64>,
     pub(crate) baseline_p60d: Option<f64>,
     pub(crate) candidate_p60d: Option<f64>,
+    pub(crate) baseline_overall_score: Option<f64>,
+    pub(crate) candidate_overall_score: Option<f64>,
+    pub(crate) baseline_external_shock_score: Option<f64>,
+    pub(crate) candidate_external_shock_score: Option<f64>,
     pub(crate) baseline_posture: Option<String>,
     pub(crate) candidate_posture: Option<String>,
     pub(crate) baseline_time_bucket: Option<String>,
@@ -171,6 +176,11 @@ pub(crate) struct ReleaseReviewHistoricalAuditPriority {
     pub(crate) candidate_gate_gap_profile: Option<String>,
     pub(crate) primary_workstream: String,
     pub(crate) suggested_review: String,
+    pub(crate) coverage_recommended_role: Option<String>,
+    pub(crate) coverage_grade: Option<String>,
+    pub(crate) coverage_point_in_time_mode: Option<String>,
+    pub(crate) coverage_current_status: Option<String>,
+    pub(crate) coverage_blocking_gaps: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -295,9 +305,23 @@ pub(crate) struct ReleaseRuntimeCount {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub(crate) struct ReleaseRuntimeLatestProbabilitySnapshot {
+    pub(crate) as_of_date: String,
+    pub(crate) p_5d: f64,
+    pub(crate) p_20d: f64,
+    pub(crate) p_60d: f64,
+    pub(crate) raw_p_5d: Option<f64>,
+    pub(crate) raw_p_20d: Option<f64>,
+    pub(crate) raw_p_60d: Option<f64>,
+    pub(crate) p20d_vs_p5d_ratio: Option<f64>,
+    pub(crate) p20d_vs_p60d_ratio: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct ReleaseRuntimeReviewDiagnostics {
     pub(crate) release_id: String,
     pub(crate) history_point_count: usize,
+    pub(crate) latest_probability_snapshot: Option<ReleaseRuntimeLatestProbabilitySnapshot>,
     pub(crate) posture_distribution: Vec<ReleaseRuntimeCount>,
     pub(crate) time_bucket_distribution: Vec<ReleaseRuntimeCount>,
     pub(crate) posture_trigger_distribution: Vec<ReleaseRuntimeClauseCount>,
@@ -361,6 +385,44 @@ pub(crate) struct ReleaseRuntimeSeparationSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub(crate) struct ReleaseReviewScenarioCoverageCatalogSummary {
+    pub(crate) catalog_id: String,
+    pub(crate) scenario_catalog_id: String,
+    pub(crate) market_scope: String,
+    pub(crate) source: String,
+    pub(crate) warning: Option<String>,
+    pub(crate) backtest_scenario_count: usize,
+    pub(crate) covered_backtest_scenario_count: usize,
+    pub(crate) focus_scenario_count: usize,
+    pub(crate) covered_focus_scenario_count: usize,
+    pub(crate) main_training_eligible_count: usize,
+    pub(crate) extension_training_eligible_count: usize,
+    pub(crate) protected_stress_eligible_count: usize,
+    pub(crate) historical_analog_eligible_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ReleaseReviewScenarioCoverage {
+    pub(crate) scenario_id: String,
+    pub(crate) scenario_name: String,
+    pub(crate) scenario_family: String,
+    pub(crate) training_role: String,
+    pub(crate) protected_window: bool,
+    pub(crate) in_backtest_comparison: bool,
+    pub(crate) in_focus_review: bool,
+    pub(crate) recommended_role: String,
+    pub(crate) coverage_grade: String,
+    pub(crate) point_in_time_mode: String,
+    pub(crate) current_status: String,
+    pub(crate) blocking_gaps: Vec<String>,
+    pub(crate) free_sources: Vec<String>,
+    pub(crate) usable_for_main_training: bool,
+    pub(crate) usable_for_extension_training: bool,
+    pub(crate) usable_for_protected_stress: bool,
+    pub(crate) usable_for_historical_analog: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct ReleaseReviewEnvelope {
     pub(crate) reviewed_at: String,
     pub(crate) market_scope: String,
@@ -377,6 +439,8 @@ pub(crate) struct ReleaseReviewEnvelope {
     pub(crate) candidate_runtime_review: ReleaseRuntimeReviewDiagnostics,
     pub(crate) baseline_actionability_review: ReleaseActionabilityReview,
     pub(crate) candidate_actionability_review: ReleaseActionabilityReview,
+    pub(crate) scenario_coverage_catalog: ReleaseReviewScenarioCoverageCatalogSummary,
+    pub(crate) scenario_coverages: Vec<ReleaseReviewScenarioCoverage>,
     pub(crate) scenario_focus: Vec<ReleaseReviewScenarioFocusDiagnostic>,
     pub(crate) historical_audit_workstreams: Vec<ReleaseReviewHistoricalAuditWorkstreamSummary>,
     pub(crate) historical_audit_priorities: Vec<ReleaseReviewHistoricalAuditPriority>,

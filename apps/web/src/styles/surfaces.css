@@ -110,6 +110,13 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.probability-trend-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
 .surface-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -211,9 +218,74 @@
   font-size: 17px;
 }
 
+.section-subhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-subhead strong {
+  color: #26343d;
+  font-size: 13px;
+}
+
+.section-subhead span {
+  color: #62707b;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.probability-trend-relative {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  border-top: 1px solid #e5edf2;
+  padding-top: 10px;
+}
+
+.risk-horizon-summary {
+  display: grid;
+  grid-template-columns: 0.85fr 1fr 1.35fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.risk-horizon-summary div {
+  border: 1px solid #dce7ed;
+  border-radius: 8px;
+  background: #f8fbfd;
+  min-width: 0;
+  padding: 10px;
+}
+
+.risk-horizon-summary span {
+  display: block;
+  color: #62707b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.risk-horizon-summary strong {
+  display: block;
+  margin-top: 3px;
+  color: #1f2d36;
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.risk-horizon-summary small {
+  display: block;
+  margin-top: 5px;
+  color: #54636d;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .probability-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
 }
 
@@ -248,6 +320,11 @@
   border-color: #efcbc4;
 }
 
+.probability-tile.model-anomaly {
+  background: #fffaf5;
+  border-color: #e9c999;
+}
+
 .tile-head {
   display: flex;
   align-items: center;
@@ -280,11 +357,127 @@
   line-height: 1;
 }
 
+.probability-model-warning {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #eccb96;
+  border-radius: 7px;
+  background: #fff5e8;
+  padding: 8px;
+}
+
+.probability-model-warning strong {
+  margin-top: 0;
+  color: #7c4a03;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.probability-tile .probability-model-warning small {
+  color: #6f4b18;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.probability-value-label {
+  color: #52616c;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.probability-reading-status {
+  border: 1px solid #e7c78f;
+  border-radius: 6px;
+  background: #fff7e8;
+  color: #754706;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+  padding: 6px 8px;
+}
+
+.probability-exact {
+  color: #475660;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.probability-distance-summary {
+  border: 1px solid #dbe7ee;
+  border-radius: 7px;
+  background: #f8fbfd;
+  padding: 8px;
+}
+
+.probability-distance-summary strong {
+  margin-top: 3px;
+  font-size: 20px;
+  line-height: 1.05;
+}
+
+.probability-distance-summary small {
+  margin-top: 5px;
+}
+
+.probability-distance-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.probability-distance-grid div {
+  border: 1px solid #e2ebf0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.78);
+  min-width: 0;
+  padding: 7px;
+}
+
+.probability-distance-grid strong {
+  margin-top: 3px;
+  color: #26343d;
+  font-size: 13px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.probability-raw {
+  color: #62707b;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.probability-reading-note {
+  border: 1px solid #dde8ee;
+  border-radius: 6px;
+  background: #f7fafb;
+  color: #41505a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  padding: 6px 8px;
+}
+
 .probability-tile p {
   margin: 0;
   color: #55636d;
   font-size: 12px;
   line-height: 1.55;
+}
+
+.probability-threshold {
+  border: 1px solid #dde7ed;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #2f3d46;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  padding: 6px 8px;
 }
 
 .probability-tile small,
@@ -294,6 +487,142 @@
   color: #62707b;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.probability-diagnostics {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #e6edf1;
+  padding-top: 8px;
+}
+
+.probability-diagnostics > span,
+.probability-chain span,
+.probability-gates > span {
+  color: #62707b;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.probability-chain {
+  display: grid;
+  gap: 3px;
+}
+
+.probability-chain strong,
+.probability-diagnostics > strong {
+  color: #26343d;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.probability-gates {
+  display: grid;
+  gap: 5px;
+}
+
+.probability-base-contributions {
+  display: grid;
+  gap: 5px;
+}
+
+.probability-base-contributions > span {
+  color: #62707b;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.probability-base-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  border-top: 1px solid #edf2f5;
+  padding-top: 5px;
+}
+
+.probability-base-row strong {
+  color: #34434d;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.probability-base-row small {
+  color: #70808a;
+  font-size: 11px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.probability-base-row em {
+  align-self: start;
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.probability-base-row em.base-positive {
+  background: #fff4e4;
+  border-color: #efcf9d;
+  color: #8a4d0a;
+}
+
+.probability-base-row em.base-negative {
+  background: #eef4f2;
+  border-color: #d7e5df;
+  color: #52645d;
+}
+
+.probability-base-row b {
+  color: #62707b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.probability-gate-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid #edf2f5;
+  padding-top: 5px;
+}
+
+.probability-gate-row strong {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #34434d;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.probability-gate-row small {
+  color: #62707b;
+  font-size: 11px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.probability-gate-row em {
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.probability-gate-row em.gate-active {
+  background: #fff4e4;
+  border-color: #efcf9d;
+  color: #8a4d0a;
+}
+
+.probability-gate-row em.gate-quiet {
+  background: #eef4f2;
+  border-color: #d7e5df;
+  color: #52645d;
 }
 
 .legend-note,

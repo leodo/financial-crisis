@@ -173,7 +173,7 @@ pub(super) fn family_overlay_audit_specs() -> [FamilyOverlayAuditSpec; 5] {
             min_scenario_count: 1,
             gate_slope: 8.0,
             blend_weight: 0.30,
-            note: "proxy-only audit: candidate rows include gate-active carry rows plus protected action windows, matching the overlay training dataset builder; gate tuned to the highest protected/pre-warning carry rows currently visible in free-history formal datasets",
+            note: "proxy-only audit: candidate rows include gate-active carry rows plus protected action windows, matching the overlay training dataset builder; proxy now requires fast USDJPY movement plus strict funding, credit, liquidity, or structurally confirmed market stress so ordinary 2024 FX spikes do not activate the gate",
         },
     ]
 }

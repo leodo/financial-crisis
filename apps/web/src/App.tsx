@@ -8,19 +8,31 @@ import {
   ShieldCheck
 } from "lucide-react";
 import {
-  formatDateTime,
+  formatDateTimeWithLocal,
   dataModeLabel,
   qualityLabel,
   timeBucketLabel
 } from "./format";
+import { probabilityDiagnosticAnomalyHorizons } from "./views/decision/probabilityDiagnostics";
+import {
+  currentMvpRiskState,
+  mvpProbabilityInputIsAuditOnly,
+  mvpRiskStateDisplayCopy,
+  mvpRiskStateDisplayLabel
+} from "./views/decision/mvpRiskState";
+import {
+  probabilityModelFinalSnapshotValue,
+  probabilityRuntimeReferenceNote,
+  probabilitySnapshotValue
+} from "./views/decision/signalLayerBuilders";
 import { useConsoleData, type ConsoleReadyData, type ConsoleDataSnapshot } from "./useConsoleData";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { RecoveryPanel } from "./components/RecoveryPanel";
 import { navItems, renderActiveView, type View } from "./viewRegistry";
 
 const VIEW_DATA_KEYS: Record<View, Array<keyof ConsoleReadyData>> = {
-  decision: ["assessment", "assessmentHistory", "method", "posture", "overview", "backtests"],
-  drivers: ["assessment", "overview", "posture"],
+  decision: ["assessment", "assessmentHistory", "method", "posture", "overview", "backtests", "indicators"],
+  drivers: ["assessment", "indicators", "overview", "posture"],
   events: ["assessment", "events"],
   backtests: ["assessment", "backtests", "backtestTimeline"],
   audit: ["assessment", "audit"],
@@ -34,7 +46,7 @@ const DATASET_LABELS: Record<keyof ConsoleReadyData, string> = {
   assessmentHistory: "概率轨迹",
   posture: "执行节奏建议",
   method: "方法与版本说明",
-  audit: "发布审计",
+  audit: "版本核对",
   overview: "维度总览",
   indicators: "指标细项",
   events: "事件确认",
@@ -42,6 +54,19 @@ const DATASET_LABELS: Record<keyof ConsoleReadyData, string> = {
   backtests: "历史回测摘要",
   backtestTimeline: "滚动回测轨迹"
 };
+
+function isView(value: string | null): value is View {
+  return value !== null && navItems.some((item) => item.id === value);
+}
+
+function initialViewFromLocation(): View {
+  if (typeof window === "undefined") {
+    return "decision";
+  }
+
+  const requestedView = new URLSearchParams(window.location.search).get("view");
+  return isView(requestedView) ? requestedView : "decision";
+}
 
 function buildReadyData(
   view: View,
@@ -78,8 +103,20 @@ function formatErrorText(error: unknown): string {
   return "未知错误";
 }
 
+function productionSourceIssueLabels(sources: ConsoleDataSnapshot["sources"]): string[] {
+  return (
+    sources
+      ?.filter(
+        (source) =>
+          source.production_allowed &&
+          ["delayed", "partial_failure", "failed"].includes(source.health.status)
+      )
+      .map((source) => source.display_name) ?? []
+  );
+}
+
 export default function App() {
-  const [view, setView] = useState<View>("decision");
+  const [view, setView] = useState<View>(() => initialViewFromLocation());
   const requiredKeys = VIEW_DATA_KEYS[view];
   const {
     assessment,
@@ -124,6 +161,8 @@ export default function App() {
   const viewError = firstQueryError(data, queryErrors, view);
   const hasViewError = viewError !== null && viewError !== undefined;
   const isViewLoading = !readyData && !viewError;
+  const showDecisionWarmup =
+    view === "decision" && Boolean(assessment.data) && !readyData && !viewError;
   const loadProgress = requiredKeys.map((key) => ({
     key,
     label: DATASET_LABELS[key],
@@ -138,19 +177,74 @@ export default function App() {
   const healthErrorText = formatErrorText(queries.systemHealth.error);
   const isAssessmentUnavailable = !assessment.data && queries.assessment.isError;
   const systemHealthOk = queries.systemHealth.data?.status === "ok";
-  const latestLagDays = assessment.data?.runtime.latest_observation_lag_days ?? null;
-  const hasDataLag = latestLagDays !== null && latestLagDays >= 5;
+  const latestLagDays =
+    assessment.data?.runtime.latest_key_indicator_lag_business_days ??
+    assessment.data?.runtime.latest_observation_lag_business_days ??
+    assessment.data?.runtime.latest_key_indicator_lag_days ??
+    assessment.data?.runtime.latest_observation_lag_days ??
+    null;
+  const hasDataLag =
+    !!assessment.data?.runtime.stale_warning && !assessment.data?.runtime.demo_mode;
+  const probabilityAnomalyHorizons = useMemo(
+    () => (assessment.data ? probabilityDiagnosticAnomalyHorizons(assessment.data) : []),
+    [assessment.data]
+  );
+  const probabilityAuditOnly = assessment.data
+    ? mvpProbabilityInputIsAuditOnly(assessment.data)
+    : false;
+  const mvpRiskState = assessment.data ? currentMvpRiskState(assessment.data) : null;
+  const sourceIssueLabels = useMemo(
+    () => productionSourceIssueLabels(data.sources),
+    [data.sources]
+  );
+  const sourceIssueSummary =
+    sourceIssueLabels.length > 0
+      ? `生产源健康降级 ${sourceIssueLabels.length}：${sourceIssueLabels.join("、")}`
+      : null;
+  const runtimeReferenceNote = assessment.data
+    ? probabilityRuntimeReferenceNote(assessment.data)
+    : null;
+  const riskWindowDisplayLabel = assessment.data
+    ? probabilityAuditOnly
+      ? mvpRiskStateDisplayLabel(mvpRiskState?.label ?? "观察为主")
+      : timeBucketLabel(assessment.data.time_to_risk_bucket)
+    : "—";
+  const riskWindowSummaryLabel =
+    probabilityAuditOnly
+      ? `MVP 风险状态 ${mvpRiskStateDisplayLabel(mvpRiskState?.label ?? "观察为主")}（${
+          probabilityAnomalyHorizons.length > 0
+            ? `${probabilityAnomalyHorizons.join(" / ")} 正式读数偏低`
+            : "正式概率仅作参考"
+        }）`
+      : assessment.data
+        ? `风险时距 ${timeBucketLabel(assessment.data.time_to_risk_bucket)}`
+        : "风险时距 —";
   const statusSummary = useMemo(() => {
     if (!assessment.data) {
       return null;
     }
 
     return [
-      `风险时距 ${timeBucketLabel(assessment.data.time_to_risk_bucket)}`,
-      `可信度 ${qualityLabel(assessment.data.data_trust.quality_grade)}`,
-      `最近数据 ${assessment.data.runtime.latest_observation_at ?? "—"}`
-    ];
-  }, [assessment.data]);
+      riskWindowSummaryLabel,
+      `关键数据覆盖 ${qualityLabel(assessment.data.data_trust.quality_grade)}`,
+      sourceIssueSummary,
+      `关键数据 ${assessment.data.runtime.latest_key_indicator_at ?? assessment.data.runtime.latest_observation_at ?? "—"}`
+    ].filter((item): item is string => item !== null);
+  }, [assessment.data, riskWindowSummaryLabel, sourceIssueSummary]);
+  const handleViewChange = (nextView: View) => {
+    setView(nextView);
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    if (nextView === "decision") {
+      url.searchParams.delete("view");
+    } else {
+      url.searchParams.set("view", nextView);
+    }
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  };
 
   return (
     <div className="app-shell">
@@ -170,7 +264,7 @@ export default function App() {
               <button
                 key={item.id}
                 className={view === item.id ? "nav-item active" : "nav-item"}
-                onClick={() => setView(item.id)}
+                onClick={() => handleViewChange(item.id)}
                 type="button"
                 title={item.label}
               >
@@ -209,12 +303,18 @@ export default function App() {
             </div>
             {assessment.data ? (
               <div className="meta-strip">
-                <span>评估日期 {assessment.data.as_of_date}</span>
+                <span>评估口径日期 {assessment.data.as_of_date}</span>
                 <span>数据模式 {dataModeLabel(assessment.data.runtime.data_mode)}</span>
-                <span>最近数据 {assessment.data.runtime.latest_observation_at ?? "—"}</span>
-                <span>生成时间 {formatDateTime(assessment.data.runtime.generated_at)}</span>
-                <span>风险时距 {timeBucketLabel(assessment.data.time_to_risk_bucket)}</span>
-                <span>可信度 {qualityLabel(assessment.data.data_trust.quality_grade)}</span>
+                <span>
+                  关键数据{" "}
+                  {assessment.data.runtime.latest_key_indicator_at ??
+                    assessment.data.runtime.latest_observation_at ??
+                    "—"}
+                </span>
+                <span>生成时间 {formatDateTimeWithLocal(assessment.data.runtime.generated_at)}</span>
+                <span>风险时距 {riskWindowDisplayLabel}</span>
+                <span>关键数据覆盖 {qualityLabel(assessment.data.data_trust.quality_grade)}</span>
+                {sourceIssueSummary ? <span>{sourceIssueSummary}</span> : null}
               </div>
             ) : null}
           </div>
@@ -257,7 +357,7 @@ export default function App() {
         {assessment.data && hasDataLag && view !== "decision" && (
           <RecoveryPanel
             details={[
-              `当前评估依赖的最新观测值落后 ${latestLagDays} 天。`,
+              `当前评估依赖的关键市场指标按工作日口径约落后 ${latestLagDays ?? "—"} 天。`,
               ...(statusSummary ?? []),
               "这套系统是免费日频/周频预警面板，不是盘中行情终端；近端风险判断必须保守解释。"
             ]}
@@ -269,7 +369,116 @@ export default function App() {
           />
         )}
 
-        {isViewLoading && (
+        {assessment.data && probabilityAuditOnly && !isAssessmentUnavailable && (
+          <section className="notice">
+            <strong>当前处于参考态</strong>
+            <div>
+              当前正式概率只作为参考输入，动作信号和预算边界也只作为辅助参考；
+              当前主结论优先看 MVP 风险状态 {mvpRiskStateDisplayLabel(mvpRiskState?.label ?? "观察为主")}。
+              {probabilityAnomalyHorizons.length > 0
+                ? ` 当前 ${probabilityAnomalyHorizons.join(" / ")} 命中模型方向异常。`
+                : ""}
+            </div>
+          </section>
+        )}
+
+        {showDecisionWarmup && assessment.data && (
+        <section className="warmup-panel" aria-live="polite">
+            <div className="warmup-head">
+              <div className="loading-state-icon" aria-hidden="true">
+                <Activity size={18} />
+              </div>
+              <div className="warmup-copy">
+                <strong>评估快照已返回，决策面板继续补齐其余模块</strong>
+                <p>
+                  当前不是白屏或无数据，而是明细模块还在加载。先看总风险、危机先验和执行节奏，
+                  其余图表会继续补齐。
+                </p>
+              </div>
+            </div>
+            <div className="warmup-metric-grid">
+              <div className="warmup-metric">
+                <span>总风险强度</span>
+                <strong>{assessment.data.scores.overall_score.toFixed(1)}</strong>
+                <small>先看压力位置，不等于危机概率</small>
+              </div>
+              <div className="warmup-metric">
+                <span>{probabilityAuditOnly ? "参考概率" : "危机先验"}</span>
+                <strong>
+                  {probabilityAuditOnly
+                    ? "规则层优先"
+                    : probabilitySnapshotValue(assessment.data.probabilities)}
+                </strong>
+                <small>
+                  {probabilityAuditOnly
+                    ? `当前页面参考值 ${probabilitySnapshotValue(
+                        assessment.data.probabilities
+                      )} 仅作参考值，当前不单独拿来判断风险时距。${
+                        runtimeReferenceNote ? ` ${runtimeReferenceNote}` : ""
+                      }`
+                    : runtimeReferenceNote
+                      ? `当前页面值 ${probabilitySnapshotValue(
+                          assessment.data.probabilities
+                        )}；模型原始输出 ${probabilityModelFinalSnapshotValue(
+                          assessment.data
+                        )}。`
+                    : "5d / 20d / 60d"}
+                </small>
+              </div>
+              <div className="warmup-metric">
+                <span>当前执行节奏</span>
+                <strong>
+                  {probabilityAuditOnly
+                    ? mvpRiskStateDisplayLabel(mvpRiskState?.label ?? "观察为主")
+                    : timeBucketLabel(assessment.data.time_to_risk_bucket)}
+                </strong>
+                <small>
+                  {probabilityAuditOnly
+                    ? mvpRiskStateDisplayCopy(mvpRiskState?.summary ?? "") ||
+                      `${probabilityAnomalyHorizons.join(
+                        " / "
+                      )} 概率读数偏低；完整面板会显示参考说明。`
+                    : assessment.data.posture_reason}
+                </small>
+              </div>
+              <div className="warmup-metric">
+                <span>最新关键观测</span>
+                <strong>
+                  {assessment.data.runtime.latest_key_indicator_at ??
+                    assessment.data.runtime.latest_observation_at ??
+                    "—"}
+                </strong>
+                <small>
+                  {assessment.data.runtime.stale_warning ?? "最新观测时间正常。"}
+                </small>
+              </div>
+            </div>
+            <div className="loading-state-grid">
+              {loadProgress.map((item) => (
+                <div
+                  key={item.key}
+                  className={
+                    item.ready
+                      ? "loading-chip ready"
+                      : item.error
+                        ? "loading-chip error"
+                        : "loading-chip pending"
+                  }
+                >
+                  <span>{item.label}</span>
+                  <strong>{item.ready ? "已就绪" : item.error ? "失败" : "加载中"}</strong>
+                </div>
+              ))}
+            </div>
+            <small className="loading-state-footer">
+              {pendingLabels.length > 0
+                ? `仍在等待：${pendingLabels.join("、")}。若超过 10 秒仍未进入完整面板，先执行 just status，再点右上角刷新。`
+                : "页面已经拿到全部模块，正在进入完整视图。"}
+            </small>
+          </section>
+        )}
+
+        {isViewLoading && !showDecisionWarmup && (
           <section className="loading-state-panel" aria-live="polite">
             <div className="loading-state-head">
               <div className="loading-state-icon" aria-hidden="true">

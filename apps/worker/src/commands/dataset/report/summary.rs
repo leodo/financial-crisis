@@ -2,12 +2,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::bail;
 use chrono::Utc;
-use fc_domain::{ActionabilityLevel, FormalDatasetRecord, FormalDatasetRowRecord};
+use fc_domain::{
+    load_scenario_data_coverage_catalog, ActionabilityLevel, FormalDatasetRecord,
+    FormalDatasetRowRecord, ScenarioDataCoverageCatalog,
+};
 
 use super::{
-    FormalDatasetFamilySummary, FormalDatasetQualitySummary, FormalDatasetRegimeSummary,
-    FormalDatasetScenarioSummary, FormalDatasetSplitSummary, FormalDatasetSummaryEnvelope,
-    ScenarioSummaryMetadata,
+    FormalDatasetCoverageCatalogSummary, FormalDatasetFamilySummary, FormalDatasetQualitySummary,
+    FormalDatasetRegimeSummary, FormalDatasetScenarioSummary, FormalDatasetSplitSummary,
+    FormalDatasetSummaryEnvelope, ScenarioCoverageMetadata, ScenarioSummaryMetadata,
 };
 
 pub(crate) fn build_formal_dataset_summary(
@@ -21,16 +24,29 @@ pub(crate) fn build_formal_dataset_summary(
     )?;
     let scenario_metadata =
         load_formal_dataset_scenario_metadata(&dataset.manifest.scenario_set_version)?;
+    let coverage_catalog = load_scenario_data_coverage_catalog();
+    let scenario_coverage_metadata =
+        load_formal_dataset_scenario_coverage_metadata(&coverage_catalog);
     let scenario_ranges = super::super::collect_formal_dataset_scenario_ranges(rows, &scenarios);
     let split_summaries = summarize_formal_dataset_splits(rows, &scenario_ranges);
-    let scenario_summaries =
-        summarize_formal_dataset_scenarios(rows, &scenario_ranges, &scenario_metadata);
+    let scenario_summaries = summarize_formal_dataset_scenarios(
+        rows,
+        &scenario_ranges,
+        &scenario_metadata,
+        &scenario_coverage_metadata,
+    );
     let family_summaries = summarize_formal_dataset_families(rows);
     let quality_summaries = summarize_formal_dataset_quality(rows);
     let regime_summaries = summarize_formal_dataset_regimes(rows, &scenarios);
+    let coverage_catalog = summarize_coverage_catalog(
+        &dataset.manifest.label_version,
+        &coverage_catalog,
+        &scenario_summaries,
+    );
     let recommendation = build_formal_dataset_recommendation(
         &dataset.manifest.label_version,
         &split_summaries,
+        &scenario_summaries,
         rows.len(),
     );
 
@@ -43,6 +59,7 @@ pub(crate) fn build_formal_dataset_summary(
         family_summaries,
         quality_summaries,
         regime_summaries,
+        coverage_catalog,
         recommendation,
     })
 }
@@ -136,11 +153,13 @@ fn summarize_formal_dataset_scenarios(
     rows: &[FormalDatasetRowRecord],
     scenario_ranges: &[super::super::ScenarioRowRange],
     scenario_metadata: &BTreeMap<String, ScenarioSummaryMetadata>,
+    scenario_coverage_metadata: &BTreeMap<String, ScenarioCoverageMetadata>,
 ) -> Vec<FormalDatasetScenarioSummary> {
     scenario_ranges
         .iter()
         .map(|range| {
             let metadata = scenario_metadata.get(&range.scenario_id);
+            let coverage = scenario_coverage_metadata.get(&range.scenario_id);
             FormalDatasetScenarioSummary {
                 scenario_id: range.scenario_id.clone(),
                 label: metadata.map(|item| item.label.clone()),
@@ -161,6 +180,22 @@ fn summarize_formal_dataset_scenarios(
                 default_horizon_roles: metadata
                     .map(|item| item.default_horizon_roles.clone())
                     .unwrap_or_default(),
+                coverage_recommended_role: coverage.map(|item| item.recommended_role.clone()),
+                coverage_grade: coverage.map(|item| item.coverage_grade.clone()),
+                coverage_point_in_time_mode: coverage.map(|item| item.point_in_time_mode.clone()),
+                coverage_current_status: coverage.map(|item| item.current_status.clone()),
+                coverage_blocking_gaps: coverage
+                    .map(|item| item.blocking_gaps.clone())
+                    .unwrap_or_default(),
+                coverage_free_sources: coverage
+                    .map(|item| item.free_sources.clone())
+                    .unwrap_or_default(),
+                usable_for_main_training: coverage.map(|item| item.usable_for_main_training),
+                usable_for_extension_training: coverage
+                    .map(|item| item.usable_for_extension_training),
+                usable_for_protected_stress: coverage.map(|item| item.usable_for_protected_stress),
+                usable_for_historical_analog: coverage
+                    .map(|item| item.usable_for_historical_analog),
             }
         })
         .collect()
@@ -242,11 +277,21 @@ fn summarize_formal_dataset_regimes(
 fn build_formal_dataset_recommendation(
     label_version: &str,
     split_summaries: &[FormalDatasetSplitSummary],
+    scenario_summaries: &[FormalDatasetScenarioSummary],
     total_rows: usize,
 ) -> String {
     let evaluation = split_summaries
         .iter()
         .find(|split| split.split_name == "evaluation");
+    let coverage_mismatches = scenario_coverage_mismatches(label_version, scenario_summaries);
+    if !coverage_mismatches.is_empty() {
+        return format!(
+            "当前数据集包含 {} 个与 {} 覆盖口径不一致的场景：{}。应先修正场景角色或数据覆盖配置，再拿这版数据集训练或做 release review。",
+            coverage_mismatches.len(),
+            dataset_intent_text(label_version),
+            coverage_mismatches.join("、")
+        );
+    }
     if total_rows < 5_000 {
         return "样本量仍偏小，先继续补历史数据，再用这版数据集训练正式候选版。".to_string();
     }
@@ -305,6 +350,42 @@ fn build_formal_dataset_recommendation(
     "样本量、split 和覆盖率已具备基础研究条件，可以进入正式训练与 release review。".to_string()
 }
 
+fn summarize_coverage_catalog(
+    label_version: &str,
+    coverage_catalog: &ScenarioDataCoverageCatalog,
+    scenario_summaries: &[FormalDatasetScenarioSummary],
+) -> FormalDatasetCoverageCatalogSummary {
+    FormalDatasetCoverageCatalogSummary {
+        catalog_id: coverage_catalog.catalog_id.clone(),
+        scenario_catalog_id: coverage_catalog.scenario_catalog_id.clone(),
+        market_scope: coverage_catalog.market_scope.clone(),
+        source: coverage_catalog.source.clone(),
+        warning: coverage_catalog.warning.clone(),
+        dataset_intent: dataset_intent_text(label_version).to_string(),
+        aligned_scenario_count: scenario_summaries
+            .iter()
+            .filter(|scenario| scenario_is_aligned_with_dataset(label_version, scenario))
+            .count(),
+        total_scenario_count: scenario_summaries.len(),
+        main_training_eligible_count: scenario_summaries
+            .iter()
+            .filter(|scenario| scenario.usable_for_main_training == Some(true))
+            .count(),
+        extension_training_eligible_count: scenario_summaries
+            .iter()
+            .filter(|scenario| scenario.usable_for_extension_training == Some(true))
+            .count(),
+        protected_stress_eligible_count: scenario_summaries
+            .iter()
+            .filter(|scenario| scenario.usable_for_protected_stress == Some(true))
+            .count(),
+        historical_analog_eligible_count: scenario_summaries
+            .iter()
+            .filter(|scenario| scenario.usable_for_historical_analog == Some(true))
+            .count(),
+    }
+}
+
 fn forward_label_rate(rows: &[&FormalDatasetRowRecord], horizon_days: u32) -> f64 {
     let positives = rows
         .iter()
@@ -349,6 +430,51 @@ where
     rows.iter().map(|row| accessor(row)).sum::<f64>() / rows.len() as f64
 }
 
+fn dataset_intent_text(label_version: &str) -> &'static str {
+    match super::super::formal_dataset_split_profile(label_version) {
+        super::super::FormalDatasetSplitProfile::Main => "main_training + protected_context",
+        super::super::FormalDatasetSplitProfile::ExtensionAcute
+        | super::super::FormalDatasetSplitProfile::ExtensionStress => "extension_training",
+    }
+}
+
+fn scenario_is_aligned_with_dataset(
+    label_version: &str,
+    scenario: &FormalDatasetScenarioSummary,
+) -> bool {
+    match super::super::formal_dataset_split_profile(label_version) {
+        super::super::FormalDatasetSplitProfile::Main => {
+            scenario.usable_for_main_training.unwrap_or(false)
+                || scenario.usable_for_protected_stress.unwrap_or(false)
+        }
+        super::super::FormalDatasetSplitProfile::ExtensionAcute
+        | super::super::FormalDatasetSplitProfile::ExtensionStress => {
+            scenario.usable_for_extension_training.unwrap_or(false)
+        }
+    }
+}
+
+fn scenario_coverage_mismatches(
+    label_version: &str,
+    scenario_summaries: &[FormalDatasetScenarioSummary],
+) -> Vec<String> {
+    scenario_summaries
+        .iter()
+        .filter(|scenario| {
+            let has_coverage = scenario.usable_for_main_training.is_some()
+                || scenario.usable_for_extension_training.is_some();
+            has_coverage && !scenario_is_aligned_with_dataset(label_version, scenario)
+        })
+        .map(|scenario| {
+            format!(
+                "{} ({})",
+                scenario.label.as_deref().unwrap_or(&scenario.scenario_id),
+                scenario.scenario_id
+            )
+        })
+        .collect()
+}
+
 fn load_formal_dataset_scenario_metadata(
     scenario_set_version: &str,
 ) -> anyhow::Result<BTreeMap<String, ScenarioSummaryMetadata>> {
@@ -387,4 +513,168 @@ fn load_formal_dataset_scenario_metadata(
             )
         })
         .collect())
+}
+
+fn load_formal_dataset_scenario_coverage_metadata(
+    coverage_catalog: &ScenarioDataCoverageCatalog,
+) -> BTreeMap<String, ScenarioCoverageMetadata> {
+    coverage_catalog
+        .records
+        .iter()
+        .map(|record| {
+            (
+                record.scenario_id.clone(),
+                ScenarioCoverageMetadata {
+                    recommended_role: record.recommended_role.clone(),
+                    coverage_grade: record.coverage_grade.clone(),
+                    point_in_time_mode: record.point_in_time_mode.clone(),
+                    current_status: record.current_status.clone(),
+                    blocking_gaps: record.blocking_gaps.clone(),
+                    free_sources: record.free_sources.clone(),
+                    usable_for_main_training: record.usable_for_main_training,
+                    usable_for_extension_training: record.usable_for_extension_training,
+                    usable_for_protected_stress: record.usable_for_protected_stress,
+                    usable_for_historical_analog: record.usable_for_historical_analog,
+                },
+            )
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_formal_dataset_recommendation, scenario_coverage_mismatches,
+        scenario_is_aligned_with_dataset,
+    };
+    use crate::commands::dataset::report::{
+        FormalDatasetScenarioSummary, FormalDatasetSplitSummary,
+    };
+    use chrono::NaiveDate;
+
+    fn sample_split_summary() -> FormalDatasetSplitSummary {
+        FormalDatasetSplitSummary {
+            split_name: "evaluation".to_string(),
+            row_count: 100,
+            positive_5d_count: 10,
+            positive_5d_rate: 0.1,
+            positive_20d_count: 12,
+            positive_20d_rate: 0.12,
+            positive_60d_count: 15,
+            positive_60d_rate: 0.15,
+            prepare_primary_count: 12,
+            prepare_primary_rate: 0.12,
+            hedge_primary_count: 12,
+            hedge_primary_rate: 0.12,
+            defend_primary_count: 6,
+            defend_primary_rate: 0.06,
+            late_validation_row_count: 8,
+            late_validation_row_rate: 0.08,
+            protected_row_count: 10,
+            protected_row_rate: 0.10,
+            avg_coverage_score: 0.9,
+            avg_core_feature_coverage: 0.9,
+            avg_trigger_feature_coverage: 0.9,
+            avg_external_feature_coverage: 0.9,
+            scenario_count: 3,
+        }
+    }
+
+    fn sample_scenario_summary(
+        scenario_id: &str,
+        label: &str,
+        usable_for_main_training: Option<bool>,
+        usable_for_extension_training: Option<bool>,
+    ) -> FormalDatasetScenarioSummary {
+        FormalDatasetScenarioSummary {
+            scenario_id: scenario_id.to_string(),
+            label: Some(label.to_string()),
+            row_count: 100,
+            split_count: 2,
+            first_as_of_date: NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+            last_as_of_date: NaiveDate::from_ymd_opt(2020, 2, 1).unwrap(),
+            family: Some("mixed_systemic_stress".to_string()),
+            training_role: Some("main".to_string()),
+            protected_window: Some(false),
+            episode_template_id: Some("generic".to_string()),
+            default_horizon_roles: vec![20, 60],
+            coverage_recommended_role: Some("main_training".to_string()),
+            coverage_grade: Some("A".to_string()),
+            coverage_point_in_time_mode: Some("best_effort".to_string()),
+            coverage_current_status: Some("ready".to_string()),
+            coverage_blocking_gaps: Vec::new(),
+            coverage_free_sources: vec!["FRED".to_string()],
+            usable_for_main_training,
+            usable_for_extension_training,
+            usable_for_protected_stress: Some(false),
+            usable_for_historical_analog: Some(true),
+        }
+    }
+
+    #[test]
+    fn main_dataset_accepts_protected_context_coverage() {
+        let mut scenario = sample_scenario_summary(
+            "us_bond_massacre_1994",
+            "1994 联储加息与债市暴跌",
+            Some(false),
+            Some(true),
+        );
+        scenario.usable_for_protected_stress = Some(true);
+        assert!(scenario_is_aligned_with_dataset(
+            "formal_label_v1_main",
+            &scenario
+        ));
+        let recommendation = build_formal_dataset_recommendation(
+            "formal_label_v1_main",
+            &[sample_split_summary()],
+            &[scenario],
+            10_000,
+        );
+        assert!(!recommendation.contains("覆盖口径不一致"));
+    }
+
+    #[test]
+    fn main_dataset_rejects_extension_only_scenario_without_protected_context() {
+        let scenario = sample_scenario_summary(
+            "us_black_monday_1987",
+            "1987 黑色星期一",
+            Some(false),
+            Some(true),
+        );
+        assert!(!scenario_is_aligned_with_dataset(
+            "formal_label_v1_main",
+            &scenario
+        ));
+        let mismatches = scenario_coverage_mismatches("formal_label_v1_main", &[scenario.clone()]);
+        assert_eq!(mismatches.len(), 1);
+        let recommendation = build_formal_dataset_recommendation(
+            "formal_label_v1_main",
+            &[sample_split_summary()],
+            &[scenario],
+            10_000,
+        );
+        assert!(recommendation.contains("覆盖口径不一致"));
+        assert!(recommendation.contains("us_black_monday_1987"));
+    }
+
+    #[test]
+    fn extension_dataset_accepts_extension_training_coverage() {
+        let scenario = sample_scenario_summary(
+            "us_black_monday_1987",
+            "1987 黑色星期一",
+            Some(false),
+            Some(true),
+        );
+        assert!(scenario_is_aligned_with_dataset(
+            "formal_label_v1_ext_acute",
+            &scenario
+        ));
+        let recommendation = build_formal_dataset_recommendation(
+            "formal_label_v1_ext_acute",
+            &[sample_split_summary()],
+            &[scenario],
+            10_000,
+        );
+        assert!(!recommendation.contains("覆盖口径不一致"));
+    }
 }

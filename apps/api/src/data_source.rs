@@ -1,20 +1,30 @@
 use std::{env, fs};
 
 use anyhow::Context;
-use chrono::{Duration, Utc};
-use fc_domain::{DataMode, ModelReleaseRecord, ProbabilityBundle};
+use chrono::{Duration, NaiveDate, Utc};
+use fc_domain::{AssessmentHistoryPoint, DataMode, ModelReleaseRecord, ProbabilityBundle};
 use fc_storage::{PostgresStore, SqliteStore};
 
 use crate::{
     assessment::ServingModelContext,
-    demo::{build_app_data_from_inputs, build_demo_data, load_user_preferences, BuiltAppData},
+    demo::{
+        build_app_data_from_inputs, build_demo_data, load_user_preferences, BuiltAppData,
+        ScenarioBacktestContext,
+    },
     history_builder::{
         build_assessment_history, load_sqlite_assessment_history, HistoryQueryWindow,
+    },
+    history_replay::{
+        expected_prediction_snapshot_method_version, historical_output_from_replay_points,
     },
     AppData,
 };
 
+mod lineage;
+
 const EVENT_LOOKBACK_DAYS: i64 = 30;
+const SCENARIO_BACKTEST_REPLAY_MAX_STALENESS_DAYS: i64 = 7;
+const SCENARIO_BACKTEST_REPLAY_SCAN_LIMIT: usize = 512;
 
 #[derive(Debug, Clone)]
 pub enum AppDataSource {
@@ -132,9 +142,108 @@ async fn load_postgres_app_data(
         None,
         as_of_date,
         historical.history_points,
+        None,
         user_preferences,
     )
     .app_data)
+}
+
+async fn load_sqlite_scenario_backtest_context(
+    store: &SqliteStore,
+    serving_model: Option<&ServingModelContext>,
+    as_of_date: NaiveDate,
+    default_history: &[AssessmentHistoryPoint],
+) -> anyhow::Result<Option<ScenarioBacktestContext>> {
+    let default_history_start = default_history.first().map(|point| point.as_of_date);
+    let default_history_end = default_history.last().map(|point| point.as_of_date);
+    let default_history_point_count = default_history.len();
+    let release_filter = serving_model.map(|context| context.release.manifest.release_id.as_str());
+    let expected_history_cache_key = expected_prediction_snapshot_method_version(serving_model);
+
+    let Some(best_run) = store
+        .list_historical_replay_runs(
+            Some("financial_system"),
+            release_filter,
+            None,
+            Some(as_of_date),
+            Some(SCENARIO_BACKTEST_REPLAY_SCAN_LIMIT),
+        )
+        .await?
+        .into_iter()
+        .filter(|run| run.history_cache_key == expected_history_cache_key)
+        .filter(|run| {
+            as_of_date
+                .signed_duration_since(run.to_date)
+                .num_days()
+                .clamp(0, i64::MAX)
+                <= SCENARIO_BACKTEST_REPLAY_MAX_STALENESS_DAYS
+        })
+        .filter(|run| run.point_count > default_history_point_count)
+        .max_by(|left, right| {
+            left.point_count
+                .cmp(&right.point_count)
+                .then_with(|| left.created_at.cmp(&right.created_at))
+        })
+    else {
+        return Ok(None);
+    };
+
+    let replay_points = store
+        .list_historical_assessment_points(
+            Some(&best_run.replay_run_id),
+            Some("financial_system"),
+            release_filter,
+            Some(best_run.from_date),
+            Some(best_run.to_date),
+            None,
+        )
+        .await?;
+    let mut history = historical_output_from_replay_points(replay_points).history_points;
+    append_default_tail_to_replay_history(&mut history, default_history);
+    if history.len() <= default_history_point_count {
+        return Ok(None);
+    }
+
+    let coverage_scope_note =
+        match (history.first(), history.last(), default_history_start, default_history_end) {
+            (Some(history_start), Some(history_end), Some(default_start), Some(default_end)) => {
+                format!(
+                    "这里的“本地覆盖场景 / 模板参照场景”按场景回测历史窗口 {} 到 {} 统计；当前已优先复用本地 SQLite 中更长的 persisted replay 历史，而不是只看默认运行窗口 {} 到 {}。它回答的是危机场景目录里有多少样本能直接落在这段本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。",
+                    history_start.as_of_date,
+                    history_end.as_of_date,
+                    default_start,
+                    default_end
+                )
+            }
+            (Some(history_start), Some(history_end), _, _) => format!(
+                "这里的“本地覆盖场景 / 模板参照场景”按场景回测历史窗口 {} 到 {} 统计；当前已优先复用本地 SQLite 中更长的 persisted replay 历史。它回答的是危机场景目录里有多少样本能直接落在这段本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。",
+                history_start.as_of_date,
+                history_end.as_of_date
+            ),
+            _ => "这里的“本地覆盖场景 / 模板参照场景”按场景回测历史窗口统计；当前已优先复用本地 SQLite 中更长的 persisted replay 历史。它回答的是危机场景目录里有多少样本能直接落在这段本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。".to_string(),
+        };
+
+    Ok(Some(ScenarioBacktestContext {
+        history,
+        coverage_scope_note,
+    }))
+}
+
+fn append_default_tail_to_replay_history(
+    history: &mut Vec<AssessmentHistoryPoint>,
+    default_history: &[AssessmentHistoryPoint],
+) {
+    let Some(replay_end) = history.last().map(|point| point.as_of_date) else {
+        return;
+    };
+
+    history.extend(
+        default_history
+            .iter()
+            .filter(|point| point.as_of_date > replay_end)
+            .cloned(),
+    );
+    history.sort_by_key(|point| point.as_of_date);
 }
 
 async fn load_sqlite_app_data(
@@ -178,6 +287,13 @@ async fn load_sqlite_app_data(
         history_build_mode,
     )
     .await?;
+    let scenario_backtest_context = load_sqlite_scenario_backtest_context(
+        &store,
+        serving_model.as_ref(),
+        as_of_date,
+        &assessment_history,
+    )
+    .await?;
     let bundle_backed_runtime_release = serving_model.as_ref().and_then(|serving_model| {
         serving_model.probability_bundle.as_ref()?;
         Some((
@@ -185,7 +301,7 @@ async fn load_sqlite_app_data(
             serving_model.release.manifest.release_id.clone(),
         ))
     });
-    let built: BuiltAppData = build_app_data_from_inputs(
+    let mut built: BuiltAppData = build_app_data_from_inputs(
         DataMode::Sqlite,
         indicators,
         observations,
@@ -193,8 +309,15 @@ async fn load_sqlite_app_data(
         serving_model,
         as_of_date,
         assessment_history,
+        scenario_backtest_context,
         user_preferences,
     );
+    lineage::enrich_sqlite_key_indicator_lineage(
+        &store,
+        as_of_date,
+        &mut built.app_data.assessment,
+    )
+    .await;
     if let Some((market_scope, release_id)) = bundle_backed_runtime_release {
         if let Err(error) = store
             .delete_prediction_snapshot_history_for_release(&market_scope, &release_id, as_of_date)
@@ -317,9 +440,10 @@ mod tests {
 
     use chrono::{Duration, Utc};
     use fc_domain::{
-        HorizonEvaluationSummary, LogisticProbabilityModel, ModelReleaseManifest,
-        ModelReleaseRecord, PredictionSnapshotRecord, ProbabilityBundle, ProbabilityCoefficient,
-        ProbabilityFeatureStat, ProbabilityHorizonBundle,
+        HistoricalAssessmentPointRecord, HistoricalReplayRunRecord, HorizonEvaluationSummary,
+        LogisticProbabilityModel, ModelReleaseManifest, ModelReleaseRecord,
+        PredictionSnapshotRecord, ProbabilityBundle, ProbabilityCoefficient,
+        ProbabilityDiagnostics, ProbabilityFeatureStat, ProbabilityHorizonBundle,
     };
     use fc_storage::SqliteStore;
     use uuid::Uuid;
@@ -450,6 +574,78 @@ mod tests {
             posture_trigger_codes: vec!["legacy_snapshot_only".to_string()],
             posture_blocker_codes: Vec::new(),
             recorded_at: Utc::now(),
+        }
+    }
+
+    fn replay_run(
+        replay_run_id: &str,
+        release_id: &str,
+        method_version: &str,
+        from_date: chrono::NaiveDate,
+        to_date: chrono::NaiveDate,
+        source_watermark: &str,
+        point_count: usize,
+    ) -> HistoricalReplayRunRecord {
+        HistoricalReplayRunRecord {
+            replay_run_id: replay_run_id.to_string(),
+            release_id: Some(release_id.to_string()),
+            market_scope: "financial_system".to_string(),
+            from_date,
+            to_date,
+            history_cache_key: method_version.to_string(),
+            feature_set_version: "feature_formal_v1_main_20260531".to_string(),
+            label_version: "formal_label_v1_main".to_string(),
+            point_in_time_mode: "best_effort".to_string(),
+            runtime_policy_version: "history_runtime_policy_v1".to_string(),
+            action_playbook_version: "action_playbook_v1_20260531".to_string(),
+            protected_window_catalog_id: "protected_stress_windows_v1".to_string(),
+            source_watermark: source_watermark.to_string(),
+            status: "success".to_string(),
+            point_count,
+            failure_reason: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    fn replay_point(
+        replay_run_id: &str,
+        release_id: &str,
+        as_of_date: chrono::NaiveDate,
+        overall_score: f64,
+        p_20d: f64,
+        posture: &str,
+    ) -> HistoricalAssessmentPointRecord {
+        HistoricalAssessmentPointRecord {
+            replay_run_id: replay_run_id.to_string(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            release_id: Some(release_id.to_string()),
+            as_of_date,
+            feature_snapshot_id: Some(format!("feature-snapshot-{as_of_date}")),
+            point_in_time_mode: "best_effort".to_string(),
+            runtime_policy_version: "history_runtime_policy_v1".to_string(),
+            action_playbook_version: "action_playbook_v1_20260531".to_string(),
+            overall_score,
+            structural_score: overall_score,
+            trigger_score: overall_score / 2.0,
+            external_shock_score: overall_score / 3.0,
+            raw_p_5d: 0.02,
+            raw_p_20d: p_20d,
+            raw_p_60d: (p_20d + 0.05).min(0.95),
+            calibrated_p_5d: 0.02,
+            calibrated_p_20d: p_20d,
+            calibrated_p_60d: (p_20d + 0.05).min(0.95),
+            posture: posture.to_string(),
+            time_to_risk_bucket: "weeks".to_string(),
+            actionability_prepare: p_20d,
+            actionability_hedge: (p_20d / 2.0).min(0.95),
+            actionability_defend: 0.0,
+            probability_diagnostics: ProbabilityDiagnostics::default(),
+            posture_trigger_codes: vec!["replay_history".to_string()],
+            posture_blocker_codes: Vec::new(),
+            coverage_score: 1.0,
+            freshness_status: "fresh".to_string(),
+            generated_at: Utc::now(),
         }
     }
 
@@ -626,6 +822,139 @@ mod tests {
         assert_eq!(snapshots.len(), 1);
         assert_eq!(snapshots[0].as_of_date, as_of_date);
         assert_ne!(snapshots[0].overall_score, 99.0);
+
+        let _ = std::fs::remove_file(sqlite_path);
+        let _ = std::fs::remove_file(bundle_path);
+    }
+
+    #[tokio::test]
+    async fn sqlite_runtime_prefers_recent_long_replay_history_for_scenario_backtests() {
+        let sqlite_path = temp_sqlite_path();
+        let bundle_path = temp_bundle_path();
+        std::fs::write(
+            &bundle_path,
+            serde_json::to_string(&test_probability_bundle()).unwrap(),
+        )
+        .unwrap();
+
+        let store = SqliteStore::connect(&sqlite_path).await.unwrap();
+        store.migrate().await.unwrap();
+        store.seed_fred_metadata().await.unwrap();
+
+        let indicators = demo_indicators();
+        for indicator in &indicators {
+            store.upsert_indicator(indicator).await.unwrap();
+        }
+        let as_of_date = Utc::now().date_naive();
+        let observations = demo_observations(as_of_date);
+        store.insert_observations(&observations).await.unwrap();
+
+        let release = test_release(&bundle_path.to_string_lossy(), "active", "healthy");
+        let release_id = release.manifest.release_id.clone();
+        store.upsert_model_release(&release).await.unwrap();
+        store
+            .activate_model_release("financial_system", &release_id, "test")
+            .await
+            .unwrap();
+
+        let serving_model =
+            build_serving_model_context(release.clone(), ServingRuntimePurpose::Production);
+        let method_version = expected_prediction_snapshot_method_version(Some(&serving_model));
+        let stale_source_watermark = "us_observations=2026-05-31";
+        let replay_run_id = "scenario-backtest-long-run";
+        let replay_from = chrono::NaiveDate::from_ymd_opt(2022, 12, 15).unwrap();
+        let replay_to = as_of_date - Duration::days(1);
+        let replay_dates = (0_i64..100)
+            .map(|offset| replay_from + Duration::days(offset))
+            .chain(std::iter::once(replay_to))
+            .collect::<Vec<_>>();
+        store
+            .upsert_historical_replay_run(&replay_run(
+                replay_run_id,
+                &release_id,
+                &method_version,
+                replay_from,
+                replay_to,
+                stale_source_watermark,
+                replay_dates.len(),
+            ))
+            .await
+            .unwrap();
+        let replay_points = replay_dates
+            .iter()
+            .map(|date| {
+                let in_regional_bank_window = *date
+                    >= chrono::NaiveDate::from_ymd_opt(2023, 2, 15).unwrap()
+                    && *date <= chrono::NaiveDate::from_ymd_opt(2023, 3, 20).unwrap();
+                let overall_score = if in_regional_bank_window { 78.0 } else { 52.0 };
+                let p_20d = if in_regional_bank_window { 0.36 } else { 0.08 };
+                let posture = if in_regional_bank_window {
+                    "hedge"
+                } else {
+                    "normal"
+                };
+                replay_point(
+                    replay_run_id,
+                    &release_id,
+                    *date,
+                    overall_score,
+                    p_20d,
+                    posture,
+                )
+            })
+            .collect::<Vec<_>>();
+        store
+            .replace_historical_assessment_points(replay_run_id, &replay_points)
+            .await
+            .unwrap();
+
+        let data = load_app_data_with_runtime_options(
+            &AppDataSource::Sqlite {
+                path: sqlite_path.to_string_lossy().to_string(),
+            },
+            30,
+            AssessmentHistoryBuildMode::Default,
+            ServingRuntimePurpose::Production,
+        )
+        .await
+        .unwrap();
+
+        assert!(data.assessment_history.len() <= 30);
+        assert!(data.assessment_history.len() < replay_dates.len());
+        assert!(
+            data.backtests
+                .iter()
+                .any(|scenario| scenario.signal_source
+                    == fc_domain::BacktestSignalSource::RealHistory),
+            "scenario backtests should reuse persisted long replay history when it exists"
+        );
+        assert_eq!(
+            data.assessment.backtest_summary.history_start,
+            Some(replay_from)
+        );
+        assert_eq!(
+            data.assessment.backtest_summary.history_end,
+            Some(as_of_date)
+        );
+        assert_eq!(
+            data.assessment.backtest_summary.rolling_audit.history_start,
+            Some(replay_from)
+        );
+        assert_eq!(
+            data.assessment.backtest_summary.rolling_audit.history_end,
+            Some(as_of_date)
+        );
+        assert!(data
+            .assessment
+            .backtest_summary
+            .coverage_scope_note
+            .contains("persisted replay 历史"));
+        assert!(data
+            .assessment
+            .backtest_summary
+            .rolling_audit
+            .scope_note
+            .contains("persisted replay 历史"));
 
         let _ = std::fs::remove_file(sqlite_path);
         let _ = std::fs::remove_file(bundle_path);

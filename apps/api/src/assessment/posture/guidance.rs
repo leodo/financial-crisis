@@ -8,7 +8,7 @@ use fc_domain::{
     TimeToRiskBucket, UserRiskPreferences,
 };
 
-use super::super::{format_probability_threshold, ProbabilityActionThresholds};
+use super::super::{common::format_probability_percent, ProbabilityActionThresholds};
 use clauses::{
     build_posture_clause_diagnostics, prepare_continuity_bridge_signal,
     prepare_probability_plateau_signal,
@@ -76,6 +76,7 @@ pub(in super::super) fn build_time_to_risk_bucket(
         trigger_score,
         external_shock_score,
         breadth_score,
+        thresholds,
     );
     let prepare_probability_plateau = prepare_probability_plateau_signal(
         probabilities,
@@ -203,7 +204,10 @@ pub(in super::super) fn build_posture_guidance(
         reasons.push("美日短端利差仍偏高，套息资金在风险释放阶段更容易形成拥挤平仓。".to_string());
     }
     if conviction_score < 0.55 {
-        reasons.push("当前信号可信度一般，仓位动作应保留二次确认。".to_string());
+        reasons.push(
+            "当前动作升级证据不足，仓位动作应保留二次确认；低分含义是风险广度、压力或共振尚未打开。"
+                .to_string(),
+        );
     }
     if let Some(analog) = analogs.first() {
         reasons.push(format!(
@@ -233,43 +237,45 @@ pub(in super::super) fn build_posture_guidance(
     let upgrade_condition = match posture {
         DecisionPosture::Normal => {
             format!(
-                "若 p_60d 升至 {} 以上且 structural score 抬升，或外部冲击与结构脆弱性同步恶化，则升级为 prepare。",
-                format_probability_threshold(thresholds.prepare_p60d)
+                "若 60日危机先验 升至 {} 以上且 结构性风险强度 抬升，或外部冲击与结构脆弱性同步恶化，则升级为 准备档。",
+                format_probability_percent(thresholds.prepare_p60d)
             )
         }
         DecisionPosture::Prepare => {
             format!(
-                "若 p_20d 升至 {} 以上，且 trigger、external、breadth 至少一项同步恶化，则升级为 hedge。",
-                format_probability_threshold(thresholds.hedge_p20d)
+                "若 20日危机先验 升至 {} 以上，且 触发压力、外部冲击、风险广度 至少一项同步恶化，则升级为 对冲档。",
+                format_probability_percent(thresholds.hedge_p20d)
             )
         }
         DecisionPosture::Hedge => {
             format!(
-                "若 p_5d 升至 {} 以上、数据质量不低于 B，且 trigger / external / event 至少两类确认，则升级为 defend。",
-                format_probability_threshold(thresholds.defend_p5d)
+                "若 5日危机先验 升至 {} 以上、数据质量不低于 B，且 触发压力 / 外部冲击 / 事件确认 至少两类同步确认，则升级为 防守档。",
+                format_probability_percent(thresholds.defend_p5d)
             )
         }
-        DecisionPosture::Defend => "除非 p_5d 明显回落且触发层缓解，否则保持 defend。".to_string(),
+        DecisionPosture::Defend => {
+            "除非 5日危机先验 明显回落且触发层缓解，否则维持 防守档。".to_string()
+        }
     };
 
     let downgrade_condition = match posture {
-        DecisionPosture::Normal => "维持 normal，直到结构与触发层重新抬升。".to_string(),
+        DecisionPosture::Normal => "维持 正常观察，直到结构与触发层重新抬升。".to_string(),
         DecisionPosture::Prepare => {
             format!(
-                "若 p_60d 回落到 {} 以下且 structural score 不再继续抬升，则降回 normal。",
-                format_probability_threshold(thresholds.downgrade_prepare_p60d())
+                "若 60日危机先验 回落到 {} 以下且 结构性风险强度 不再继续抬升，则降回 正常观察。",
+                format_probability_percent(thresholds.downgrade_prepare_p60d())
             )
         }
         DecisionPosture::Hedge => {
             format!(
-                "若 p_20d 连续回落到 {} 以下、外部冲击降温且 trigger score 下降，则降回 prepare。",
-                format_probability_threshold(thresholds.downgrade_hedge_p20d())
+                "若 20日危机先验 连续回落到 {} 以下、外部冲击降温且 触发压力 下降，则降回 准备档。",
+                format_probability_percent(thresholds.downgrade_hedge_p20d())
             )
         }
         DecisionPosture::Defend => {
             format!(
-                "若 p_5d 连续回落到 {} 以下、触发层缓和且没有新的高等级事件确认，可先降回 hedge。",
-                format_probability_threshold(thresholds.downgrade_defend_p5d())
+                "若 5日危机先验 连续回落到 {} 以下、触发层缓和且没有新的高等级事件确认，可先降回 对冲档。",
+                format_probability_percent(thresholds.downgrade_defend_p5d())
             )
         }
     };

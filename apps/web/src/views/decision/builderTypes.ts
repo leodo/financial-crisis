@@ -14,6 +14,7 @@ export interface DecisionKeyIndicatorRow {
   id: string;
   title: string;
   detail: string;
+  meta?: string;
   note: string;
 }
 
@@ -35,8 +36,10 @@ export interface DecisionSignalLayerRowModel {
 export interface DecisionAnalogRow {
   id: string;
   title: string;
+  similarity: string;
+  historicalLead: string;
+  gap: string;
   detail: string;
-  score: string;
 }
 
 export interface DecisionRollingAuditEpisodeRow {

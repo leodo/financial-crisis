@@ -4,8 +4,10 @@ import {
   describePostureClause,
   formatDate,
   formatDateTime,
+  formatDateTimeWithLocal,
   formatNumber,
   formatPercent,
+  formatPercentPrecise,
   formatSignedNumber,
   freshnessLabel,
   pointInTimeModeLabel,
@@ -30,41 +32,66 @@ import type {
   DecisionKeyIndicatorRow,
   DecisionRuntimeCard,
   DecisionRuntimeNotice,
-  DecisionScoreBandRow,
-  DecisionSignalLayerRowModel
+  DecisionScoreBandRow
 } from "./builderTypes";
 import { decisionContent } from "./content";
+import { decisionReliabilityHint, decisionReliabilityLabel } from "./decisionReliability";
 import {
   RISK_SCORE_BANDS,
   describeProbabilityMode,
   describeReleaseHealth
 } from "./logic";
+import {
+  currentMvpRiskState,
+  mvpProbabilityInputIsAuditOnly,
+  mvpRiskStateDetail,
+  mvpRiskStateDisplayLabel
+} from "./mvpRiskState";
+import {
+  actionEvidenceHint,
+  actionEvidenceScore,
+  actionEvidenceStatus,
+  actionSourceSummary,
+  formatActionProbability,
+  hasRuntimeProbabilityOverride,
+  probabilitySnapshotDetail,
+  probabilitySnapshotValue
+} from "./signalLayerBuilders";
 
-function formatOptionalNumber(value: number | null, unit?: string) {
-  return value === null ? "—" : formatNumber(value, unit);
+export { buildSignalLayerRows } from "./signalLayerBuilders";
+
+function formatLagSummary(
+  calendarLagDays: number | null | undefined,
+  businessLagDays: number | null | undefined
+) {
+  if (calendarLagDays === null || calendarLagDays === undefined) {
+    return "当前没有可用滞后信息。";
+  }
+  if (businessLagDays === null || businessLagDays === undefined) {
+    return `自然日滞后 ${calendarLagDays} 天。`;
+  }
+  return `自然日滞后 ${calendarLagDays} 天；按工作日口径约 ${businessLagDays} 天。`;
 }
 
-function actionSourceSummary(assessment: AssessmentSnapshot) {
-  if (!assessment.method.actionability_enabled) {
-    return {
-      label: "过渡动作映射",
-      detail: "当前线上版本还没有独立动作模型，先用危机先验和评分层映射准备、对冲和防守。"
-    };
+function indicatorSourceTimingLabel(
+  item: AssessmentSnapshot["key_indicators"][number]
+): string {
+  if (item.indicator_id === "us_external_usdjpy_level") {
+    if (item.source_id === "boj") {
+      return "BOJ 9:00 JST 官方点位，非盘中价";
+    }
+    if (item.source_id === "fred") {
+      return "FRED DEXJPUS 日频，非盘中价";
+    }
   }
+  return sourceLabel(item.source_id);
+}
 
-  const actionModel =
-    assessment.method.actionability_model_version
-      ? compactTechnicalId(assessment.method.actionability_model_version).value
-      : "动作模型";
-  const fusionPolicy =
-    assessment.method.fusion_policy_version
-      ? compactTechnicalId(assessment.method.fusion_policy_version).value
-      : "融合层";
-
-  return {
-    label: "双层动作模型",
-    detail: `当前已启用独立动作模型和融合层：${actionModel} / ${fusionPolicy}`
-  };
+function formatActionCurrentValue(value: number, actionabilityEnabled: boolean): string {
+  if (value === 0 && !actionabilityEnabled) {
+    return "当前未触发；过渡动作层没有形成可执行动作信号。";
+  }
+  return `当前值 ${formatPercentPrecise(value)}。`;
 }
 
 export function buildTriggerClauses(posture: PostureGuidance) {
@@ -97,25 +124,35 @@ export function buildRuntimeCards(
   assessment: AssessmentSnapshot,
   usdJpyIndicator: AssessmentSnapshot["key_indicators"][number] | undefined
 ): DecisionRuntimeCard[] {
+  const probabilityIsReferenceOnly = mvpProbabilityInputIsAuditOnly(assessment);
+  const hasRuntimeOverride = hasRuntimeProbabilityOverride(assessment);
   return [
     {
       label: "最新关键观测",
-      value: formatDate(assessment.runtime.latest_observation_at),
-      detail:
-        assessment.runtime.latest_observation_lag_days === null
-          ? "当前没有可用滞后信息。"
-          : `距离请求日滞后 ${assessment.runtime.latest_observation_lag_days} 天。`
+      value: formatDate(assessment.runtime.latest_key_indicator_at ?? assessment.runtime.latest_observation_at),
+      detail: formatLagSummary(
+        assessment.runtime.latest_key_indicator_lag_days ??
+          assessment.runtime.latest_observation_lag_days,
+        assessment.runtime.latest_key_indicator_lag_business_days ??
+          assessment.runtime.latest_observation_lag_business_days
+      )
     },
     {
       label: "本次评估生成",
-      value: formatDateTime(assessment.runtime.generated_at),
-      detail: decisionContent.prelude.generatedHint
+      value: formatDateTimeWithLocal(assessment.runtime.generated_at),
+      detail: `${decisionContent.prelude.generatedHint} 这里同时显示 UTC 与浏览器本地时间，避免跨时区误判刷新状态。`
+    },
+    {
+      label:
+        probabilityIsReferenceOnly || hasRuntimeOverride ? "运行口径参考概率" : "当前概率快照",
+      value: probabilitySnapshotValue(assessment.probabilities),
+      detail: probabilitySnapshotDetail(assessment)
     },
     {
       label: "当前 USDJPY",
       value: formatNumber(usdJpyIndicator?.latest_value),
       detail: usdJpyIndicator?.latest_as_of_date
-        ? `${formatDate(usdJpyIndicator.latest_as_of_date)} · ${sourceLabel(usdJpyIndicator.source_id)} · ${freshnessLabel(usdJpyIndicator.status)}`
+        ? `${formatDate(usdJpyIndicator.latest_as_of_date)} · ${indicatorSourceTimingLabel(usdJpyIndicator)} · ${freshnessLabel(usdJpyIndicator.status)}`
         : "缺少 USDJPY 最新观测。"
     },
     {
@@ -127,10 +164,32 @@ export function buildRuntimeCards(
 }
 
 export function buildHeroMetrics(assessment: AssessmentSnapshot): MetricItem[] {
+  const evidenceScore = actionEvidenceScore(assessment);
+  const state = currentMvpRiskState(assessment);
   return [
-    { label: "结论把握度", value: formatPercent(assessment.conviction_score) },
-    { label: "数据覆盖", value: formatPercent(assessment.data_trust.coverage_score) },
-    { label: "风险强度", value: formatNumber(assessment.scores.overall_score) }
+    {
+      label: "MVP 风险状态",
+      value: mvpRiskStateDisplayLabel(state.label),
+      hint: mvpRiskStateDetail(assessment),
+      valueClassName: "metric-value-token"
+    },
+    {
+      label: "结论可靠性",
+      value: decisionReliabilityLabel(assessment),
+      hint: decisionReliabilityHint(assessment),
+      valueClassName: "metric-value-token"
+    },
+    {
+      label: "动作升级证据",
+      value: actionEvidenceStatus(evidenceScore),
+      hint: actionEvidenceHint(assessment),
+      valueClassName: "metric-value-token"
+    },
+    {
+      label: "关键指标覆盖",
+      value: formatPercent(assessment.data_trust.coverage_score),
+      hint: "衡量当前关键指标覆盖度；不等同于全部免费源都健康。"
+    }
   ];
 }
 
@@ -138,22 +197,51 @@ export function buildRiskHorizonActionMetrics(
   assessment: AssessmentSnapshot
 ): MetricItem[] {
   const actionSource = actionSourceSummary(assessment);
+  const actionValuesAreAuxiliary =
+    !assessment.method.actionability_enabled || mvpProbabilityInputIsAuditOnly(assessment);
+  const prepareLabel = assessment.method.actionability_enabled ? "准备动作" : "准备动作（过渡）";
+  const hedgeLabel = assessment.method.actionability_enabled ? "对冲动作" : "对冲动作（过渡）";
+  const defendLabel = assessment.method.actionability_enabled ? "防守动作" : "防守动作（过渡）";
 
   return [
     {
-      label: "准备动作",
-      value: formatPercent(assessment.actionability.prepare),
-      hint: decisionContent.riskHorizon.actionHints.prepare
+      label: prepareLabel,
+      value: actionValuesAreAuxiliary
+        ? "辅助信号"
+        : formatActionProbability(
+            assessment.actionability.prepare,
+            assessment.method.actionability_enabled
+          ),
+      hint: `${decisionContent.riskHorizon.actionHints.prepare} ${formatActionCurrentValue(
+        assessment.actionability.prepare,
+        assessment.method.actionability_enabled
+      )}`
     },
     {
-      label: "对冲动作",
-      value: formatPercent(assessment.actionability.hedge),
-      hint: decisionContent.riskHorizon.actionHints.hedge
+      label: hedgeLabel,
+      value: actionValuesAreAuxiliary
+        ? "辅助信号"
+        : formatActionProbability(
+            assessment.actionability.hedge,
+            assessment.method.actionability_enabled
+          ),
+      hint: `${decisionContent.riskHorizon.actionHints.hedge} ${formatActionCurrentValue(
+        assessment.actionability.hedge,
+        assessment.method.actionability_enabled
+      )}`
     },
     {
-      label: "防守动作",
-      value: formatPercent(assessment.actionability.defend),
-      hint: decisionContent.riskHorizon.actionHints.defend
+      label: defendLabel,
+      value: actionValuesAreAuxiliary
+        ? "辅助信号"
+        : formatActionProbability(
+            assessment.actionability.defend,
+            assessment.method.actionability_enabled
+          ),
+      hint: `${decisionContent.riskHorizon.actionHints.defend} ${formatActionCurrentValue(
+        assessment.actionability.defend,
+        assessment.method.actionability_enabled
+      )}`
     },
     {
       label: "动作头来源",
@@ -211,54 +299,105 @@ export function buildKeyIndicatorRows(
     title: `${item.display_name} · ${freshnessLabel(item.status)}`,
     detail: `${formatNumber(item.latest_value)} ${unitLabel(item.unit)} · 日期 ${
       item.latest_as_of_date ? formatDate(item.latest_as_of_date) : "—"
-    } · 来源 ${sourceLabel(item.source_id)}${item.lag_days !== null ? ` · 滞后 ${item.lag_days} 天` : ""}`,
-    note: humanizeNarrativeCopy(item.note)
+    } · 来源 ${indicatorSourceTimingLabel(item)}${
+      item.lag_days !== null
+        ? ` · ${formatLagSummary(item.lag_days, item.lag_business_days)}`
+        : ""
+    }`,
+    meta: keyIndicatorLineageMeta(item.lineage),
+    note: keyIndicatorLineageNote(item.note, item.lineage)
   }));
 }
 
-export function buildSignalLayerRows(
-  assessment: AssessmentSnapshot,
-  method: AssessmentMethodResponse,
-  posture: PostureGuidance
-): DecisionSignalLayerRowModel[] {
-  const actionabilitySource = actionSourceSummary(assessment).detail;
-
-  return [
-    {
-      id: "prior",
-      title: "危机先验",
-      description: "先看未来 5d / 20d / 60d 进入风险窗口的概率，回答“离风险还有多远”。",
-      value: `${formatPercent(assessment.probabilities.p_5d)} / ${formatPercent(assessment.probabilities.p_20d)} / ${formatPercent(assessment.probabilities.p_60d)}`,
-      detail: `当前进入线：准备 ${formatPercent(method.runtime_thresholds.prepare_p60d)} / 对冲 ${formatPercent(method.runtime_thresholds.hedge_p20d)} / 防守 ${formatPercent(method.runtime_thresholds.defend_p5d)}`
-    },
-    {
-      id: "actionability",
-      title: "动作概率",
-      description: "再看准备 / 对冲 / 防守，回答“现在该不该开始准备、加保护、保流动性”。",
-      value: `${formatPercent(assessment.actionability.prepare)} / ${formatPercent(assessment.actionability.hedge)} / ${formatPercent(assessment.actionability.defend)}`,
-      detail: actionabilitySource
-    },
-    {
-      id: "posture",
-      title: "最终执行节奏",
-      description: "最后再叠加数据可信度、事件确认、日元套息放大器和用户偏好，压成一档执行节奏。",
-      value: `${postureLabel(assessment.posture)} / ${timeBucketLabel(assessment.time_to_risk_bucket)}`,
-      detail: posture.summary
-    }
-  ];
+function keyIndicatorLineageMeta(
+  lineage: AssessmentSnapshot["key_indicators"][number]["lineage"]
+): string | undefined {
+  if (!lineage) {
+    return undefined;
+  }
+  const rawRef = lineage.raw_payload_id ? `raw ${lineage.raw_payload_id.slice(0, 8)}` : undefined;
+  const runRef = lineage.run_status ? `run ${runStatusLabel(lineage.run_status)}` : undefined;
+  const evidenceLabel = lineageEvidenceLabel(lineage.evidence_level);
+  return [evidenceLabel, runRef, rawRef].filter(Boolean).join(" · ");
 }
 
-export function buildAnalogRows(
-  historicalAnalogs: AssessmentSnapshot["historical_analogs"]
-): DecisionAnalogRow[] {
-  return historicalAnalogs.map((analog) => ({
+function keyIndicatorLineageNote(
+  note: string,
+  lineage: AssessmentSnapshot["key_indicators"][number]["lineage"]
+): string {
+  const baseNote = humanizeNarrativeCopy(note);
+  if (!lineage) {
+    return baseNote;
+  }
+  const fetchedAt = lineage.fetched_at ? `抓取时间 ${formatDateTime(lineage.fetched_at)}` : null;
+  const recordsWritten =
+    lineage.records_written !== null ? `写入 ${lineage.records_written} 条` : null;
+  return [baseNote, `追溯：${lineage.note}`, fetchedAt, recordsWritten]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function lineageEvidenceLabel(
+  evidenceLevel: NonNullable<
+    AssessmentSnapshot["key_indicators"][number]["lineage"]
+  >["evidence_level"]
+) {
+  const labels: Record<
+    NonNullable<AssessmentSnapshot["key_indicators"][number]["lineage"]>["evidence_level"],
+    string
+  > = {
+    run_raw_observation: "run+raw",
+    raw_observation: "raw",
+    observation_only: "仅观测",
+    missing: "无追溯"
+  };
+  return labels[evidenceLevel];
+}
+
+function runStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    success: "成功",
+    failed: "失败",
+    running: "运行中",
+    skipped: "跳过"
+  };
+  return labels[status] ?? status;
+}
+
+export function analogLeadText(leadDays: number | null, actionableDays: number | null): string {
+  if (leadDays !== null && actionableDays !== null) {
+    return `结构抬升约领先 ${Math.round(leadDays).toLocaleString("zh-CN")} 天，可执行预警约领先 ${Math.round(actionableDays).toLocaleString("zh-CN")} 天`;
+  }
+  if (leadDays !== null) {
+    return `结构抬升约领先 ${Math.round(leadDays).toLocaleString("zh-CN")} 天，但未形成可执行预警`;
+  }
+  if (actionableDays !== null) {
+    return `可执行预警约领先 ${Math.round(actionableDays).toLocaleString("zh-CN")} 天`;
+  }
+  return "无可用提前量估计";
+}
+
+export function buildAnalogRows(assessment: AssessmentSnapshot): DecisionAnalogRow[] {
+  return assessment.historical_analogs.map((analog) => ({
     id: analog.scenario_id,
     title: analog.name,
-    detail: humanizeNarrativeCopy(
-      `相似度 ${formatNumber(analog.similarity_score)} · 结构抬升 ${formatOptionalNumber(analog.lead_time_days, "d")} · 可执行预警 ${formatOptionalNumber(analog.actionable_lead_time_days, "d")} · ${analog.note}`
-    ),
-    score: formatNumber(analog.similarity_score)
+    similarity: `${formatNumber(analog.similarity_score)} /100`,
+    historicalLead: analogLeadText(analog.lead_time_days, analog.actionable_lead_time_days),
+    gap: historicalEvidenceDifference(assessment.scores.overall_score, analog.peak_score),
+    detail: humanizeNarrativeCopy(analog.note)
   }));
+}
+
+function historicalEvidenceDifference(currentScore: number, historicalPeakScore: number): string {
+  const gap = historicalPeakScore - currentScore;
+  const absoluteGap = formatNumber(Math.abs(gap));
+  if (Math.abs(gap) < 0.05) {
+    return `接近历史峰值 ${formatNumber(historicalPeakScore)}`;
+  }
+  if (gap > 0) {
+    return `低于历史峰值 ${absoluteGap} 分`;
+  }
+  return `高于历史峰值 ${absoluteGap} 分`;
 }
 
 export function buildActionPlanMetrics(
@@ -268,6 +407,8 @@ export function buildActionPlanMetrics(
   const releaseHealth = describeReleaseHealth(assessment.method.release_status);
   const compactReleaseId = releaseIdLabel(assessment.method.release_id);
   const governance = assessment.position_guidance.governance;
+  const budgetIsReference =
+    mvpProbabilityInputIsAuditOnly(assessment) || !assessment.method.actionability_enabled;
 
   return [
     { label: "概率模式", value: probabilityMode.label, hint: probabilityMode.hint },
@@ -281,15 +422,27 @@ export function buildActionPlanMetrics(
     {
       label: "动作框架",
       value: assessment.position_guidance.capital_preservation_overlay_enabled
-        ? "资本保全"
-        : "分层防守",
-      hint: compactTechnicalId(assessment.position_guidance.action_playbook_version).value
+        ? budgetIsReference
+          ? "资本保全（参考）"
+          : "资本保全"
+        : budgetIsReference
+          ? "分层防守（参考）"
+          : "分层防守",
+      hint: `${compactTechnicalId(assessment.position_guidance.action_playbook_version).value}${
+        budgetIsReference ? " · 当前先按预算参考解读" : ""
+      }`
     },
     {
       label: "建议性质",
-      value: governance.system_budget_only ? "系统预算建议" : "可执行指令",
+      value: governance.system_budget_only
+        ? budgetIsReference
+          ? "系统预算参考"
+          : "系统预算建议"
+        : "可执行指令",
       hint: governance.system_budget_only
-        ? "只回答系统层面的减震、对冲和现金预算，不替代个性化投资建议。"
+        ? budgetIsReference
+          ? "当前预算数字只作为系统层参考边界，不替代个性化投资建议，也不应直接照抄执行。"
+          : "只回答系统层面的减震、对冲和现金预算，不替代个性化投资建议。"
         : "当前版本允许直接执行。"
     },
     {
@@ -330,7 +483,11 @@ export function buildJpyCarryMetrics(
       label: "美日利差",
       value: formatSignedNumber(assessment.jpy_carry.us_jp_short_rate_diff, 2, "%")
     },
-    { label: "20d 波动", value: formatNumber(assessment.jpy_carry.realized_vol_20d) },
+    {
+      label: "20d 日收益波动",
+      value: formatPercentPrecise(assessment.jpy_carry.realized_vol_20d),
+      hint: "USDJPY 20 日窗口日变化率标准差；后端返回小数口径，页面按百分比展示。"
+    },
     {
       label: "融资压力",
       value: formatNumber(assessment.jpy_carry.funding_pressure_score)

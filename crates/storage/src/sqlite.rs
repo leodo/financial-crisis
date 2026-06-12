@@ -68,6 +68,7 @@ pub struct ExternalIndicatorMapping {
 #[derive(Debug, Clone)]
 pub struct RawResponseRecord {
     pub raw_payload_id: Uuid,
+    pub run_id: Option<String>,
     pub source_id: String,
     pub dataset_id: String,
     pub request_url: String,
@@ -77,6 +78,57 @@ pub struct RawResponseRecord {
     pub content_length: i64,
     pub raw_file_path: String,
     pub fetched_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IngestionRunRecord {
+    pub run_id: String,
+    pub job_id: Option<String>,
+    pub source_id: String,
+    pub dataset_id: String,
+    pub target_id: Option<String>,
+    pub run_mode: String,
+    pub status: String,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub attempt: i64,
+    pub watermark_before_json: Option<String>,
+    pub watermark_after_json: Option<String>,
+    pub records_read: i64,
+    pub records_written: i64,
+    pub error_type: Option<String>,
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IngestionSourceHealthSummary {
+    pub source_id: String,
+    pub latest_dataset_id: Option<String>,
+    pub latest_target_id: Option<String>,
+    pub latest_status: Option<String>,
+    pub latest_started_at: Option<DateTime<Utc>>,
+    pub latest_finished_at: Option<DateTime<Utc>>,
+    pub last_success_at: Option<DateTime<Utc>>,
+    pub last_successful_period: Option<NaiveDate>,
+    pub total_run_count: i64,
+    pub successful_run_count: i64,
+    pub failed_run_count: i64,
+    pub failures_after_last_success: i64,
+    pub latest_error_message: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ObservationLineageRecord {
+    pub indicator_id: String,
+    pub entity_id: String,
+    pub as_of_date: NaiveDate,
+    pub raw_payload_id: Option<String>,
+    pub run_id: Option<String>,
+    pub run_status: Option<String>,
+    pub fetched_at: Option<DateTime<Utc>>,
+    pub records_written: Option<i64>,
+    pub response_hash: Option<String>,
+    pub raw_file_path: Option<String>,
 }
 
 impl SqliteStore {

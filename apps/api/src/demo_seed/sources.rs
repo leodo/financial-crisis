@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
 use chrono::{NaiveDate, Utc};
 use fc_domain::{DataSource, Observation, SourceHealth, SourcePriority, SourceStatus};
+use fc_storage::IngestionSourceHealthSummary;
 
 pub(crate) fn sources_demo() -> Vec<DataSource> {
     vec![
@@ -80,6 +83,18 @@ pub(crate) fn sources_runtime(
     observations: &[Observation],
     as_of_date: NaiveDate,
 ) -> Vec<DataSource> {
+    sources_runtime_with_ingestion_health(observations, as_of_date, &[])
+}
+
+fn sources_runtime_with_ingestion_health(
+    observations: &[Observation],
+    as_of_date: NaiveDate,
+    ingestion_health: &[IngestionSourceHealthSummary],
+) -> Vec<DataSource> {
+    let ingestion_health_by_source = ingestion_health
+        .iter()
+        .map(|summary| (summary.source_id.as_str(), summary))
+        .collect::<HashMap<_, _>>();
     let gdelt_has_data = observations
         .iter()
         .any(|observation| observation.source_id == "gdelt");
@@ -95,6 +110,7 @@ pub(crate) fn sources_runtime(
             96.0,
             true,
             "FRED graph CSV is the default no-key source; official API remains optional.",
+            ingestion_health_by_source.get("fred").copied(),
         ),
         live_source(
             observations,
@@ -107,6 +123,7 @@ pub(crate) fn sources_runtime(
             96.0,
             true,
             "Official no-key Treasury yield curve data.",
+            ingestion_health_by_source.get("treasury").copied(),
         ),
         live_source(
             observations,
@@ -119,6 +136,7 @@ pub(crate) fn sources_runtime(
             88.0,
             true,
             "Official SEC JSON filings metadata aggregated into daily event features. No paid key is required.",
+            ingestion_health_by_source.get("sec_edgar").copied(),
         ),
         live_source(
             observations,
@@ -131,6 +149,7 @@ pub(crate) fn sources_runtime(
             90.0,
             true,
             "Official World Bank Indicators API.",
+            ingestion_health_by_source.get("world_bank").copied(),
         ),
         live_source(
             observations,
@@ -143,6 +162,7 @@ pub(crate) fn sources_runtime(
             84.0,
             true,
             "Official BOJ FX and money-market endpoints are used for the JPY carry monitor.",
+            ingestion_health_by_source.get("boj").copied(),
         ),
         if gdelt_has_data {
             live_source(
@@ -156,6 +176,7 @@ pub(crate) fn sources_runtime(
                 66.0,
                 false,
                 "GDELT 聚合新闻压力序列已支持本地回填和运行时展示，但仍属于 prototype 辅助信号。",
+                ingestion_health_by_source.get("gdelt").copied(),
             )
         } else {
             source(
@@ -177,7 +198,7 @@ pub(crate) fn sources_runtime(
             SourceStatus::Prototype,
             62.0,
             false,
-            "Development-only market data prototype; not a production dependency。",
+            "Development-only market data prototype; not a production dependency.",
         ),
     ]
 }
@@ -194,6 +215,7 @@ fn live_source(
     fallback_quality_score: f64,
     production_allowed: bool,
     license_note: &str,
+    ingestion_health: Option<&IngestionSourceHealthSummary>,
 ) -> DataSource {
     let latest = observations
         .iter()
@@ -209,9 +231,13 @@ fn live_source(
             } else {
                 SourceStatus::Healthy
             };
+            let status = source_status_with_ingestion_health(status, ingestion_health);
             let message = format!(
-                "latest observation {} (lag {}d, dataset={})",
-                observation.as_of_date, lag_days, observation.dataset_id
+                "latest observation {} (lag {}d, dataset={}){}",
+                observation.as_of_date,
+                lag_days,
+                observation.dataset_id,
+                ingestion_health_note(ingestion_health)
             );
             runtime_source(
                 source_id,
@@ -226,8 +252,13 @@ fn live_source(
                 },
                 production_allowed,
                 license_note,
-                observation.publication_time.or(Some(Utc::now())),
+                ingestion_health
+                    .and_then(|summary| summary.last_success_at)
+                    .or(observation.publication_time),
                 Some(lag_days.saturating_mul(86_400)),
+                ingestion_health
+                    .map(|summary| summary.failures_after_last_success.max(0) as u32)
+                    .unwrap_or(0),
                 message,
             )
         }
@@ -236,15 +267,63 @@ fn live_source(
             display_name,
             source_type,
             priority,
-            SourceStatus::Delayed,
+            source_status_with_ingestion_health(SourceStatus::Delayed, ingestion_health),
             fallback_quality_score,
             production_allowed,
             license_note,
+            ingestion_health.and_then(|summary| summary.last_success_at),
             None,
-            None,
-            "connector available, but no local observations are loaded yet".to_string(),
+            ingestion_health
+                .map(|summary| summary.failures_after_last_success.max(0) as u32)
+                .unwrap_or(0),
+            ingestion_health
+                .map(|_| {
+                    format!(
+                        "connector available, but no local observations are loaded yet{}",
+                        ingestion_health_note(ingestion_health)
+                    )
+                })
+                .unwrap_or_else(|| {
+                    "connector available, but no local observations are loaded yet".to_string()
+                }),
         ),
     }
+}
+
+fn source_status_with_ingestion_health(
+    base_status: SourceStatus,
+    ingestion_health: Option<&IngestionSourceHealthSummary>,
+) -> SourceStatus {
+    let Some(summary) = ingestion_health else {
+        return base_status;
+    };
+    if summary.failures_after_last_success > 0 || summary.latest_status.as_deref() == Some("failed")
+    {
+        return SourceStatus::PartialFailure;
+    }
+    base_status
+}
+
+fn ingestion_health_note(ingestion_health: Option<&IngestionSourceHealthSummary>) -> String {
+    let Some(summary) = ingestion_health else {
+        return String::new();
+    };
+
+    let success_note = summary
+        .last_success_at
+        .map(|timestamp| format!("最近成功刷新 {}", timestamp.to_rfc3339()))
+        .unwrap_or_else(|| "暂无成功刷新记录".to_string());
+    let period_note = summary
+        .last_successful_period
+        .map(|period| format!(", 抓取水位 {period}"))
+        .unwrap_or_default();
+    let failure_note = if summary.failures_after_last_success > 0 {
+        format!(", 成功后失败 {} 次", summary.failures_after_last_success)
+    } else {
+        String::new()
+    };
+
+    format!("; {success_note}{period_note}{failure_note}")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -301,6 +380,7 @@ fn runtime_source(
     license_note: &str,
     last_success_at: Option<chrono::DateTime<Utc>>,
     lag_seconds: Option<i64>,
+    consecutive_failures: u32,
     message: String,
 ) -> DataSource {
     DataSource {
@@ -316,7 +396,7 @@ fn runtime_source(
             status,
             last_success_at,
             lag_seconds,
-            consecutive_failures: 0,
+            consecutive_failures,
             quality_score,
             message,
         },

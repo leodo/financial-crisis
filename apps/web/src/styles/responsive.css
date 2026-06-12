@@ -6,6 +6,10 @@
   .backtests-band-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .warmup-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1024px) {
@@ -30,6 +34,7 @@
   .band-grid,
   .dimension-detail-grid,
   .sources-top-grid,
+  .probability-trend-drilldowns,
   .audit-review-layout {
     grid-template-columns: 1fr;
   }
@@ -67,8 +72,32 @@
   }
 
   .probability-grid,
-  .hero-metrics {
+  .hero-metrics,
+  .risk-horizon-summary,
+  .probability-trend-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .section-subhead {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .section-subhead span {
+    text-align: left;
+  }
+
+  .probability-gate-row {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  .probability-distance-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .probability-gate-row em {
+    justify-self: flex-start;
   }
 
   .signal-layer-row {
@@ -97,8 +126,11 @@
   .dashboard-columns,
   .surface-grid,
   .runtime-card-grid,
+  .risk-horizon-summary,
   .probability-grid,
   .mini-metrics,
+  .probability-trend-metrics,
+  .warmup-metric-grid,
   .sources-top-grid,
   .audit-review-metrics {
     grid-template-columns: 1fr;
@@ -157,6 +189,10 @@
   }
 
   .recovery-head {
+    flex-direction: column;
+  }
+
+  .warmup-head {
     flex-direction: column;
   }
 

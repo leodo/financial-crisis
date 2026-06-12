@@ -55,6 +55,16 @@ pub(crate) struct FormalDatasetScenarioSummary {
     protected_window: Option<bool>,
     episode_template_id: Option<String>,
     default_horizon_roles: Vec<u32>,
+    coverage_recommended_role: Option<String>,
+    coverage_grade: Option<String>,
+    coverage_point_in_time_mode: Option<String>,
+    coverage_current_status: Option<String>,
+    coverage_blocking_gaps: Vec<String>,
+    coverage_free_sources: Vec<String>,
+    usable_for_main_training: Option<bool>,
+    usable_for_extension_training: Option<bool>,
+    usable_for_protected_stress: Option<bool>,
+    usable_for_historical_analog: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -80,6 +90,22 @@ pub(crate) struct FormalDatasetRegimeSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub(crate) struct FormalDatasetCoverageCatalogSummary {
+    catalog_id: String,
+    scenario_catalog_id: String,
+    market_scope: String,
+    source: String,
+    warning: Option<String>,
+    dataset_intent: String,
+    aligned_scenario_count: usize,
+    total_scenario_count: usize,
+    main_training_eligible_count: usize,
+    extension_training_eligible_count: usize,
+    protected_stress_eligible_count: usize,
+    historical_analog_eligible_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct FormalDatasetSummaryEnvelope {
     pub(crate) generated_at: String,
     pub(crate) dataset_key: String,
@@ -89,6 +115,7 @@ pub(crate) struct FormalDatasetSummaryEnvelope {
     pub(crate) family_summaries: Vec<FormalDatasetFamilySummary>,
     pub(crate) quality_summaries: Vec<FormalDatasetQualitySummary>,
     pub(crate) regime_summaries: Vec<FormalDatasetRegimeSummary>,
+    pub(crate) coverage_catalog: FormalDatasetCoverageCatalogSummary,
     pub(crate) recommendation: String,
 }
 
@@ -114,4 +141,18 @@ struct ScenarioSummaryMetadata {
     protected_window: bool,
     episode_template_id: String,
     default_horizon_roles: Vec<u32>,
+}
+
+#[derive(Debug, Clone)]
+struct ScenarioCoverageMetadata {
+    recommended_role: String,
+    coverage_grade: String,
+    point_in_time_mode: String,
+    current_status: String,
+    blocking_gaps: Vec<String>,
+    free_sources: Vec<String>,
+    usable_for_main_training: bool,
+    usable_for_extension_training: bool,
+    usable_for_protected_stress: bool,
+    usable_for_historical_analog: bool,
 }

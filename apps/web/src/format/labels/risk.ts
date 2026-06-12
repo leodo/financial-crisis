@@ -98,8 +98,8 @@ export function dataModeLabel(mode: DataMode): string {
 
 export function backtestSignalSourceLabel(source: BacktestSignalSource): string {
   const labels: Record<BacktestSignalSource, string> = {
-    real_history: "真实历史",
-    fallback_template: "模板参考"
+    real_history: "本地窗口覆盖",
+    fallback_template: "模板参照"
   };
   return labels[source];
 }
@@ -134,6 +134,16 @@ export function eventStateLabel(state: EventConfirmationState): string {
     escalating: "升级中"
   };
   return labels[state];
+}
+
+export function eventSignalListLabel(state: EventConfirmationState): string {
+  return state === "confirmed" || state === "escalating" ? "已确认信号" : "近期观察信号";
+}
+
+export function eventSignalListEmptyText(state: EventConfirmationState): string {
+  return state === "confirmed" || state === "escalating"
+    ? "当前没有新增确认信号。"
+    : "当前没有近期观察信号；事件层暂不支持动作升级。";
 }
 
 export function userProfileLabel(profile: UserRiskProfile): string {

@@ -127,6 +127,19 @@ export function DriverList({
   rows: AssessmentSnapshot["top_risk_drivers"];
   reverse?: boolean;
 }) {
+  const reliefLabel = (score: number) => {
+    if (score <= 20) {
+      return "低压";
+    }
+    if (score <= 45) {
+      return "缓冲";
+    }
+    if (score <= 60) {
+      return "中性";
+    }
+    return "仍有压力";
+  };
+
   return (
     <DetailRows
       items={rows.map((row) => ({
@@ -136,7 +149,7 @@ export function DriverList({
             ? indicatorRefLabel(row.indicator_id)
             : humanizeNarrativeCopy(row.display_name),
         detail: humanizeNarrativeCopy(row.explanation),
-        meta: formatNumber(reverse ? 100 - row.score : row.score)
+        meta: reverse ? reliefLabel(row.score) : formatNumber(row.score)
       }))}
     />
   );

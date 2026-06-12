@@ -1,9 +1,12 @@
 use std::collections::BTreeSet;
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
 use fc_domain::{
-    AlertEvent, AssessmentSnapshot, BacktestWindowPoint, DataMode, DecisionPosture, Indicator,
-    Observation, PostureGuidance, TimeToRiskBucket, UserRiskPreferences,
+    assessment_cutoff_utc, build_formal_feature_snapshot_record,
+    build_formal_observation_feature_map, observation_is_visible_for_date_for_point_in_time_mode,
+    observation_visible_at_for_point_in_time_mode, AlertEvent, AssessmentSnapshot,
+    BacktestWindowPoint, DataMode, DecisionPosture, FeatureSnapshotRecord, Indicator, Observation,
+    PostureGuidance, TimeToRiskBucket, UserRiskPreferences,
 };
 use fc_scoring::ScoringEngine;
 use fc_storage::SqliteStore;
@@ -15,8 +18,9 @@ use crate::demo_seed::{build_alerts, select_recent_alerts_for_date};
 use crate::history_replay::{
     assessment_history_point_from_assessment, historical_output_from_prediction_snapshots,
     historical_replay_point_draft_from_assessment, load_cached_historical_replay_output,
-    merge_historical_outputs, persist_historical_replay_output,
+    merge_historical_outputs, persist_historical_replay_output, pit_feature_history_source,
     prediction_snapshot_from_assessment, HistoricalAssessmentOutput,
+    HISTORY_SOURCE_RAW_OBSERVATION_REBUILD, HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
 };
 
 const HISTORY_PREPARE_HYSTERESIS_PLATEAU_P20D_FLOOR: f64 = 0.45;
@@ -28,17 +32,23 @@ const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_FLOOR: f64 = 44.0;
 const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_P20D_FLOOR: f64 = 0.49;
 const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_P60D_FLOOR: f64 = 0.75;
 const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_STRUCTURAL_FLOOR: f64 = 36.0;
-const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_EXTERNAL_FLOOR: f64 = 44.0;
-const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_P20D_FLOOR: f64 = 0.35;
+const HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_EXTERNAL_FLOOR: f64 = 43.0;
+const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_P20D_FLOOR: f64 = 0.25;
 const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_P60D_FLOOR: f64 = 0.65;
 const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_OVERALL_FLOOR: f64 = 43.5;
-const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_STRUCTURAL_FLOOR: f64 = 60.0;
+const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_STRUCTURAL_FLOOR: f64 = 58.0;
 const HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_TRIGGER_CEILING: f64 = 30.0;
+const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_DAYS: u8 = 1;
+const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_P60D_FLOOR: f64 = 0.75;
+const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_OVERALL_FLOOR: f64 = 42.0;
+const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_STRUCTURAL_FLOOR: f64 = 55.0;
+const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_TRIGGER_CEILING: f64 = 28.0;
 const HISTORY_PREPARE_HYSTERESIS_TRIGGER_CODE: &str = "prepare_history_hysteresis";
 
 #[derive(Debug, Clone, Copy, Default)]
 struct HistoricalPrepareHysteresisState {
     active: bool,
+    carry_grace_days_remaining: u8,
 }
 
 impl HistoricalPrepareHysteresisState {
@@ -50,13 +60,15 @@ impl HistoricalPrepareHysteresisState {
     ) {
         if !enabled {
             self.active = false;
+            self.carry_grace_days_remaining = 0;
             return;
         }
 
+        let was_active = self.active;
         let continuation_supported = history_prepare_hysteresis_supported(assessment)
-            || (self.active && history_prepare_hysteresis_extreme_carry_supported(assessment))
-            || (self.active && history_prepare_hysteresis_structural_carry_supported(assessment));
-        if self.active && continuation_supported {
+            || (was_active && history_prepare_hysteresis_extreme_carry_supported(assessment))
+            || (was_active && history_prepare_hysteresis_structural_carry_supported(assessment));
+        if was_active && continuation_supported {
             if matches!(assessment.posture, DecisionPosture::Normal) {
                 assessment.posture = DecisionPosture::Prepare;
                 posture_guidance.posture = DecisionPosture::Prepare;
@@ -76,8 +88,20 @@ impl HistoricalPrepareHysteresisState {
             }
         }
 
-        self.active = history_prepare_hysteresis_anchor(assessment, posture_guidance)
-            || (self.active && continuation_supported);
+        let anchored = history_prepare_hysteresis_anchor(assessment, posture_guidance);
+        let grace_supported = was_active
+            && !continuation_supported
+            && self.carry_grace_days_remaining > 0
+            && history_prepare_hysteresis_carry_grace_supported(assessment);
+
+        self.active = anchored || (was_active && continuation_supported) || grace_supported;
+        self.carry_grace_days_remaining = if anchored || (was_active && continuation_supported) {
+            HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_DAYS
+        } else if grace_supported {
+            self.carry_grace_days_remaining.saturating_sub(1)
+        } else {
+            0
+        };
     }
 }
 
@@ -132,6 +156,14 @@ fn history_prepare_hysteresis_structural_carry_supported(assessment: &Assessment
             >= HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_STRUCTURAL_FLOOR
         && assessment.scores.trigger_score
             <= HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_TRIGGER_CEILING
+}
+
+fn history_prepare_hysteresis_carry_grace_supported(assessment: &AssessmentSnapshot) -> bool {
+    assessment.probabilities.p_60d >= HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_P60D_FLOOR
+        && assessment.scores.overall_score >= HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_OVERALL_FLOOR
+        && assessment.scores.structural_score
+            >= HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_STRUCTURAL_FLOOR
+        && assessment.scores.trigger_score <= HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_TRIGGER_CEILING
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -270,7 +302,7 @@ async fn rebuild_full_release_history_from_raw(
     rebuild_dates: &[NaiveDate],
     persist_prediction_snapshots: bool,
 ) -> anyhow::Result<HistoricalAssessmentOutput> {
-    let rebuilt = build_assessment_history_for_dates(
+    let mut rebuilt = build_assessment_history_for_dates(
         DataMode::Sqlite,
         &ScoringEngine::default(),
         indicators,
@@ -280,13 +312,285 @@ async fn rebuild_full_release_history_from_raw(
         user_preferences,
         rebuild_dates,
     );
+    attach_feature_snapshot_context(
+        store,
+        serving_model,
+        indicators,
+        observations,
+        rebuild_dates,
+        &mut rebuilt,
+    )
+    .await?;
     if persist_prediction_snapshots {
         store
             .upsert_prediction_snapshots(&rebuilt.prediction_snapshots)
             .await?;
     }
-    persist_historical_replay_output(store, observations, serving_model, &rebuilt).await?;
+    if let Some(replay_run_id) =
+        persist_historical_replay_output(store, observations, serving_model, &rebuilt).await?
+    {
+        for point in &mut rebuilt.history_points {
+            point.replay_run_id = Some(replay_run_id.clone());
+            point.history_source = Some(
+                pit_feature_history_source(
+                    point.feature_snapshot_id.as_deref(),
+                    point.as_of_date,
+                    HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
+                )
+                .to_string(),
+            );
+        }
+    }
     Ok(rebuilt)
+}
+
+async fn attach_feature_snapshot_context(
+    store: &SqliteStore,
+    serving_model: Option<&ServingModelContext>,
+    indicators: &[Indicator],
+    observations: &[Observation],
+    rebuild_dates: &[NaiveDate],
+    output: &mut HistoricalAssessmentOutput,
+) -> anyhow::Result<()> {
+    let Some(serving_model) = serving_model else {
+        return Ok(());
+    };
+    let Some(_) = serving_model.probability_bundle.as_ref() else {
+        return Ok(());
+    };
+    let Some(from_date) = rebuild_dates.first().copied() else {
+        return Ok(());
+    };
+    let Some(to_date) = rebuild_dates.last().copied() else {
+        return Ok(());
+    };
+
+    let snapshot_ids = load_feature_snapshot_ids_for_history_range(
+        store,
+        serving_model,
+        indicators,
+        observations,
+        from_date,
+        to_date,
+        rebuild_dates,
+    )
+    .await?;
+
+    for point in &mut output.history_points {
+        point.feature_snapshot_id = snapshot_ids.get(&point.as_of_date).cloned();
+        point.history_source = Some(
+            pit_feature_history_source(
+                point.feature_snapshot_id.as_deref(),
+                point.as_of_date,
+                HISTORY_SOURCE_RAW_OBSERVATION_REBUILD,
+            )
+            .to_string(),
+        );
+    }
+
+    for point in &mut output.replay_point_drafts {
+        point.feature_snapshot_id = snapshot_ids.get(&point.as_of_date).cloned();
+    }
+
+    Ok(())
+}
+
+async fn load_feature_snapshot_ids_for_history_range(
+    store: &SqliteStore,
+    serving_model: &ServingModelContext,
+    indicators: &[Indicator],
+    observations: &[Observation],
+    from_date: NaiveDate,
+    to_date: NaiveDate,
+    rebuild_dates: &[NaiveDate],
+) -> anyhow::Result<std::collections::BTreeMap<NaiveDate, String>> {
+    let target_dates = rebuild_dates.iter().copied().collect::<BTreeSet<_>>();
+    let snapshots = store
+        .list_feature_snapshots_for_mode(
+            &serving_model.release.manifest.market_scope,
+            &serving_model.release.manifest.feature_set_version,
+            &serving_model.release.manifest.point_in_time_mode,
+            Some(from_date),
+            Some(to_date),
+        )
+        .await?;
+
+    let mut latest_by_date = std::collections::BTreeMap::<NaiveDate, FeatureSnapshotRecord>::new();
+    for snapshot in snapshots {
+        if snapshot.entity_id != "us" {
+            continue;
+        }
+        match latest_by_date.get(&snapshot.as_of_date) {
+            Some(existing) if existing.created_at >= snapshot.created_at => {}
+            _ => {
+                latest_by_date.insert(snapshot.as_of_date, snapshot);
+            }
+        }
+    }
+
+    let mut materialized_snapshots = Vec::new();
+    let mut rebuilt_snapshots = Vec::new();
+    let mut latest_snapshot = latest_by_date
+        .iter()
+        .next()
+        .map(|(_, snapshot)| snapshot.clone());
+    for target_date in target_dates.iter().copied() {
+        if let Some(snapshot) = latest_by_date.get(&target_date).cloned() {
+            latest_snapshot = Some(snapshot);
+            continue;
+        }
+
+        let Some(prior_snapshot) = latest_snapshot.as_ref() else {
+            continue;
+        };
+        if can_materialize_exact_carry_forward_snapshot(
+            prior_snapshot,
+            observations,
+            target_date,
+            &serving_model.release.manifest.point_in_time_mode,
+        ) {
+            let exact_snapshot = materialize_carry_forward_snapshot(prior_snapshot, target_date);
+            latest_by_date.insert(target_date, exact_snapshot.clone());
+            latest_snapshot = Some(exact_snapshot.clone());
+            materialized_snapshots.push(exact_snapshot);
+        }
+    }
+
+    if !materialized_snapshots.is_empty() {
+        store
+            .upsert_feature_snapshots(&materialized_snapshots)
+            .await?;
+    }
+
+    for target_date in target_dates.iter().copied() {
+        if latest_by_date.contains_key(&target_date) {
+            continue;
+        }
+        let exact_snapshot = build_exact_feature_snapshot_for_date(
+            indicators,
+            observations,
+            serving_model,
+            target_date,
+        )?;
+        latest_by_date.insert(target_date, exact_snapshot.clone());
+        rebuilt_snapshots.push(exact_snapshot);
+    }
+
+    if !rebuilt_snapshots.is_empty() {
+        store.upsert_feature_snapshots(&rebuilt_snapshots).await?;
+    }
+
+    let effective_snapshot_ids = latest_by_date
+        .into_iter()
+        .map(|(date, snapshot)| {
+            (
+                date,
+                feature_snapshot_id(
+                    &snapshot.entity_id,
+                    &snapshot.market_scope,
+                    snapshot.as_of_date,
+                    &snapshot.feature_set_version,
+                    &snapshot.point_in_time_mode,
+                ),
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    let mut bound_snapshot_ids = std::collections::BTreeMap::new();
+    let mut current_snapshot_id = None::<String>;
+    for target_date in target_dates {
+        if let Some(snapshot_id) = effective_snapshot_ids.get(&target_date) {
+            current_snapshot_id = Some(snapshot_id.clone());
+        }
+        if let Some(snapshot_id) = current_snapshot_id.clone() {
+            bound_snapshot_ids.insert(target_date, snapshot_id);
+        }
+    }
+
+    Ok(bound_snapshot_ids)
+}
+
+fn build_exact_feature_snapshot_for_date(
+    indicators: &[Indicator],
+    observations: &[Observation],
+    serving_model: &ServingModelContext,
+    as_of_date: NaiveDate,
+) -> anyhow::Result<FeatureSnapshotRecord> {
+    let point_in_time_mode = serving_model.release.manifest.point_in_time_mode.as_str();
+    let scoring = ScoringEngine::default();
+    let scoring_output = scoring.score_with_observation_filter(
+        indicators,
+        observations,
+        as_of_date,
+        "us",
+        &serving_model.release.manifest.market_scope,
+        |observation| {
+            observation_is_visible_for_date_for_point_in_time_mode(
+                observation,
+                as_of_date,
+                point_in_time_mode,
+            )
+        },
+    );
+    let observation_feature_map =
+        build_formal_observation_feature_map(observations, as_of_date, point_in_time_mode);
+    Ok(build_formal_feature_snapshot_record(
+        as_of_date,
+        "us",
+        &serving_model.release.manifest.market_scope,
+        &serving_model.release.manifest.feature_set_version,
+        &serving_model.release.manifest.point_in_time_mode,
+        &scoring_output.indicator_risks,
+        observation_feature_map.features,
+        observation_feature_map.latest_visible_at,
+        scoring_output.snapshot.overall_score,
+        scoring_output.snapshot.structural_score,
+        scoring_output.snapshot.trigger_score,
+        Utc::now(),
+    ))
+}
+
+fn materialize_carry_forward_snapshot(
+    prior_snapshot: &FeatureSnapshotRecord,
+    as_of_date: NaiveDate,
+) -> FeatureSnapshotRecord {
+    let mut snapshot = prior_snapshot.clone();
+    snapshot.as_of_date = as_of_date;
+    snapshot.created_at = Utc::now();
+    snapshot
+}
+
+fn can_materialize_exact_carry_forward_snapshot(
+    prior_snapshot: &FeatureSnapshotRecord,
+    observations: &[Observation],
+    as_of_date: NaiveDate,
+    point_in_time_mode: &str,
+) -> bool {
+    if as_of_date <= prior_snapshot.as_of_date {
+        return false;
+    }
+    let Some(prior_latest_visible_at) = prior_snapshot.latest_visible_at else {
+        return false;
+    };
+
+    observations
+        .iter()
+        .filter_map(|observation| {
+            observation_visible_at_for_point_in_time_mode(observation, point_in_time_mode)
+        })
+        .all(|visible_at| {
+            visible_at <= prior_latest_visible_at || visible_at > assessment_cutoff_utc(as_of_date)
+        })
+}
+
+fn feature_snapshot_id(
+    entity_id: &str,
+    market_scope: &str,
+    as_of_date: NaiveDate,
+    feature_set_version: &str,
+    point_in_time_mode: &str,
+) -> String {
+    format!("{market_scope}:{entity_id}:{as_of_date}:{feature_set_version}:{point_in_time_mode}")
 }
 
 fn uses_bundle_backed_history(serving_model: Option<&ServingModelContext>) -> bool {

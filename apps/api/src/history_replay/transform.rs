@@ -11,11 +11,12 @@ use crate::assessment::{
 };
 
 use super::{
-    expected_prediction_snapshot_method_version, HistoricalAssessmentOutput,
-    HistoricalReplayPointDraft,
+    expected_prediction_snapshot_method_version, pit_feature_history_source,
+    HistoricalAssessmentOutput, HistoricalReplayPointDraft, HISTORY_SOURCE_RAW_OBSERVATION_REBUILD,
+    HISTORY_SOURCE_RAW_OBSERVATION_REPLAY, HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE,
 };
 
-pub(super) fn historical_output_from_replay_points(
+pub(crate) fn historical_output_from_replay_points(
     points: Vec<HistoricalAssessmentPointRecord>,
 ) -> HistoricalAssessmentOutput {
     let mut latest_by_date = BTreeMap::<chrono::NaiveDate, HistoricalAssessmentPointRecord>::new();
@@ -206,6 +207,7 @@ fn historical_probability_diagnostics(
                 runtime_final_probability: horizon.runtime_final_probability,
                 monotonic_lift: horizon.monotonic_lift,
                 configured_overlay_count: horizon.configured_overlay_count,
+                base_contributions: horizon.base_contributions.clone(),
                 contributions: horizon.contributions.clone(),
                 overlay_audits: Vec::new(),
             })
@@ -247,6 +249,9 @@ pub(crate) fn assessment_history_point_from_assessment(
         external_shock_score: assessment.scores.external_shock_score,
         posture_trigger_codes: posture_guidance.trigger_codes.clone(),
         posture_blocker_codes: posture_guidance.blocker_codes.clone(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: Some(HISTORY_SOURCE_RAW_OBSERVATION_REBUILD.to_string()),
     }
 }
 
@@ -267,6 +272,9 @@ fn assessment_history_point_from_prediction_snapshot(
         external_shock_score: snapshot.external_shock_score,
         posture_trigger_codes: snapshot.posture_trigger_codes.clone(),
         posture_blocker_codes: snapshot.posture_blocker_codes.clone(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: Some(HISTORY_SOURCE_TRANSITIONAL_SNAPSHOT_BRIDGE.to_string()),
     }
 }
 
@@ -287,6 +295,16 @@ fn assessment_history_point_from_historical_replay_point(
         external_shock_score: point.external_shock_score,
         posture_trigger_codes: point.posture_trigger_codes.clone(),
         posture_blocker_codes: point.posture_blocker_codes.clone(),
+        replay_run_id: Some(point.replay_run_id.clone()),
+        feature_snapshot_id: point.feature_snapshot_id.clone(),
+        history_source: Some(
+            pit_feature_history_source(
+                point.feature_snapshot_id.as_deref(),
+                point.as_of_date,
+                HISTORY_SOURCE_RAW_OBSERVATION_REPLAY,
+            )
+            .to_string(),
+        ),
     }
 }
 

@@ -3,7 +3,10 @@ import {
   probabilityModeLabel,
   releaseServingStatusLabel
 } from "../../format";
-import type { AssessmentSnapshot } from "../../types";
+import type {
+  AssessmentMethodResponse,
+  AssessmentSnapshot
+} from "../../types";
 
 export function describeProbabilityMode(method: AssessmentSnapshot["method"]) {
   if (method.probability_mode === "heuristic_mvp") {
@@ -37,16 +40,38 @@ export function describeReleaseHealth(status: string) {
   return releaseServingStatusLabel(status);
 }
 
-export function describeRollingAuditBoundary(method: AssessmentSnapshot["method"]) {
-  if (method.probability_mode.startsWith("formal_bundle") && method.point_in_time_mode !== "strict") {
-    return "当前长历史动作审计仍在兼容旧快照口径，因为历史快照里的正式概率常被校准下限压得很平。它更适合比较哪些阶段风险在升温、误报有没有收缩，还不能直接当成最终正式模型的命中率。";
+export function describeRollingAuditBoundary(
+  method: AssessmentMethodResponse,
+  rollingAudit: AssessmentSnapshot["backtest_summary"]["rolling_audit"]
+) {
+  if (method.method.probability_mode === "heuristic_mvp") {
+    return "当前滚动历史复核主要用于解释启发式动作层在历史上的表现，不能把它当成正式概率模型命中率。";
   }
 
-  if (method.probability_mode === "heuristic_mvp") {
-    return "当前滚动审计主要用于解释启发式动作层在历史上的表现，不能把它当成正式概率模型命中率。";
+  if (rollingAudit.history_point_count > method.history_provenance.total_points) {
+    return `这组滚动历史复核当前复用了比默认运行历史更长的 replay 窗口（${rollingAudit.history_point_count} 点，对比默认 ${method.history_provenance.total_points} 点）。它更适合看长历史里的命中/误报分布；上面 method 区块里的 PIT 证据层说明只对应默认运行历史，不等于这组长历史已经全部进入 raw PIT 正式口径。`;
   }
 
-  return "当前滚动审计可以帮助比较模型在不同历史阶段是否稳定，但仍要结合数据覆盖和历史可见点位一起解释。";
+  if (method.history_provenance.snapshot_bridge_points > 0) {
+    return `当前默认历史轨迹里仍有 ${method.history_provenance.snapshot_bridge_points}/${method.history_provenance.total_points} 个点来自旧 snapshot bridge。它更适合比较哪些阶段风险在升温、误报有没有收缩，还不能直接当成最终正式模型的命中率。`;
+  }
+
+  if (method.history_provenance.raw_observation_points > 0) {
+    return `当前默认历史轨迹已经避开旧 snapshot bridge，但仍有 ${method.history_provenance.raw_observation_points}/${method.history_provenance.total_points} 个点只是 raw observation 过渡口径。它已经比旧 bridge 更接近正式历史证据，但仍要结合 PIT 特征落库覆盖一起解释。`;
+  }
+
+  if (method.history_provenance.reused_feature_snapshot_points > 0) {
+    return `当前默认历史轨迹里虽然已经有 ${method.history_provenance.feature_backed_points}/${method.history_provenance.total_points} 个点绑定到当天 PIT feature snapshot，但仍有 ${method.history_provenance.reused_feature_snapshot_points}/${method.history_provenance.total_points} 个点沿用了更早日期的 PIT snapshot。它已经明显强于 raw observation / bridge，但还不能当成完全精确的 raw PIT formal history。`;
+  }
+
+  if (
+    method.history_provenance.feature_backed_points > 0 &&
+    method.history_provenance.feature_backed_points === method.history_provenance.total_points
+  ) {
+    return `当前默认历史轨迹 ${method.history_provenance.feature_backed_points}/${method.history_provenance.total_points} 个点都绑定到已落库 PIT feature snapshot，滚动历史复核已经进入正式历史证据层；后续重点应放在模型本体命中率和样本覆盖，而不是再把它当成旧 bridge 兼容结果。`;
+  }
+
+  return "当前滚动历史复核可以帮助比较模型在不同历史阶段是否稳定，但仍要结合数据覆盖、PIT 可见性和 release review 一起解释。";
 }
 
 export const RISK_SCORE_BANDS = [
@@ -102,6 +127,12 @@ export function describeTimeBucket(bucket: AssessmentSnapshot["time_to_risk_buck
   return mapping[bucket];
 }
 
+export function analogPhaseLabel(phase: string): string {
+  if (phase === "acute_window") return "接近爆发期";
+  if (phase === "pre_break") return "压力升温期";
+  return "结构积累期";
+}
+
 export function describeAnalogWindow(
   analog: AssessmentSnapshot["historical_analogs"][number] | undefined,
   bucket: AssessmentSnapshot["time_to_risk_bucket"]
@@ -110,17 +141,19 @@ export function describeAnalogWindow(
     return describeTimeBucket(bucket);
   }
 
+  const phase = analogPhaseLabel(analog.reference_phase);
+
   if (analog.lead_time_days === null && analog.actionable_lead_time_days === null) {
-    return `当前最接近 ${analog.name} 的压力阶段，但该历史样本没有可用提前量估计。`;
+    return `当前最接近 ${analog.name}（${phase}），但该历史样本没有可用提前量估计。`;
   }
 
   if (analog.actionable_lead_time_days === null) {
-    return `当前最接近 ${analog.name} 的结构脆弱阶段，历史上大约提前 ${analog.lead_time_days} 天先出现类似压力，但危机前未形成足够强的可执行预警。`;
+    return `当前最接近 ${analog.name}（${phase}），历史上约提前 ${analog.lead_time_days} 天出现结构信号，但未形成可执行预警。`;
   }
 
   if (analog.lead_time_days === null) {
-    return `当前最接近 ${analog.name} 的风险窗口，历史上大约提前 ${analog.actionable_lead_time_days} 天进入可执行预警。`;
+    return `当前最接近 ${analog.name}（${phase}），历史上约提前 ${analog.actionable_lead_time_days} 天进入可执行预警。`;
   }
 
-  return `当前最接近 ${analog.name} 的风险窗口，历史上大约提前 ${analog.lead_time_days} 天进入结构抬升，并在约提前 ${analog.actionable_lead_time_days} 天进入可执行预警。`;
+  return `当前最接近 ${analog.name}（${phase}），历史上约提前 ${analog.lead_time_days} 天进入结构抬升，约提前 ${analog.actionable_lead_time_days} 天进入可执行预警。`;
 }

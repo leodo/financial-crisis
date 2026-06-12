@@ -1,6 +1,7 @@
 use fc_domain::{
-    observation_history_for_indicator, observation_value_difference_from_tail, DataTrust,
-    IndicatorRisk, JpyCarrySnapshot, JpyCarryState, Observation, RiskContributor, RiskDimension,
+    observation_history_for_indicator, observation_value_difference_from_tail,
+    ActionEvidenceBreakdown, DataTrust, FreshnessStatus, IndicatorRisk, JpyCarrySnapshot,
+    JpyCarryState, KeyIndicatorStatus, Observation, QualityGrade, RiskContributor, RiskDimension,
     RiskSnapshot,
 };
 
@@ -55,8 +56,17 @@ pub(super) fn build_data_trust(
     if !has_jpy_data {
         warnings.push("JPY carry 模块缺少 USDJPY 历史数据，外部冲击识别能力受限。".to_string());
     }
-    if snapshot.data_quality_summary.blocked_indicator_count > 0 {
-        warnings.push("存在被阻断的核心指标，建议先补齐数据再做强动作。".to_string());
+    let (blocked_core_count, blocked_auxiliary_count) =
+        blocked_indicator_counts_by_decision_role(indicator_risks);
+    if blocked_core_count > 0 {
+        warnings.push(format!(
+            "存在 {blocked_core_count} 个核心指标缺少或被阻断，建议先补齐数据再做强动作。"
+        ));
+    }
+    if blocked_auxiliary_count > 0 {
+        warnings.push(format!(
+            "存在 {blocked_auxiliary_count} 个辅助/原型指标缺少观测；它不会单独触发强结论，但会降低事件层覆盖。"
+        ));
     }
 
     DataTrust {
@@ -68,6 +78,95 @@ pub(super) fn build_data_trust(
         data_quality_summary: snapshot.data_quality_summary.clone(),
         warnings,
     }
+}
+
+pub(super) fn apply_key_indicator_freshness_guard(
+    mut data_trust: DataTrust,
+    key_indicators: &[KeyIndicatorStatus],
+) -> DataTrust {
+    let missing_count = key_indicators
+        .iter()
+        .filter(|indicator| indicator.status == FreshnessStatus::Missing)
+        .count();
+    let stale_count = key_indicators
+        .iter()
+        .filter(|indicator| indicator.status == FreshnessStatus::Stale)
+        .count();
+    let delayed_count = key_indicators
+        .iter()
+        .filter(|indicator| indicator.status == FreshnessStatus::Delayed)
+        .count();
+
+    if missing_count > 0 {
+        data_trust.coverage_score = round3(data_trust.coverage_score.min(0.68));
+        data_trust.quality_grade = cap_quality_grade(data_trust.quality_grade, QualityGrade::D);
+        data_trust.data_quality_summary.blocked_indicator_count += missing_count;
+        data_trust.warnings.push(format!(
+            "存在 {missing_count} 个关键近端指标缺失；系统必须降级结论可信度，不能用旧值或空值形成高置信判断。"
+        ));
+    }
+
+    if stale_count > 0 {
+        data_trust.coverage_score = round3(data_trust.coverage_score.min(0.74));
+        data_trust.quality_grade = cap_quality_grade(data_trust.quality_grade, QualityGrade::D);
+        data_trust.data_quality_summary.stale_indicator_count += stale_count;
+        data_trust.warnings.push(format!(
+            "存在 {stale_count} 个关键近端指标明显陈旧；当前值只能作为历史参照，短期仓位结论必须降级。"
+        ));
+    }
+
+    if delayed_count > 0 && missing_count == 0 && stale_count == 0 {
+        data_trust.coverage_score = round3(data_trust.coverage_score.min(0.88));
+        data_trust.quality_grade = cap_quality_grade(data_trust.quality_grade, QualityGrade::B);
+        data_trust.data_quality_summary.stale_indicator_count += delayed_count;
+        data_trust.warnings.push(format!(
+            "存在 {delayed_count} 个关键近端指标延迟；系统最多按中高可信解释，不能直接给高置信动作结论。"
+        ));
+    }
+
+    data_trust.data_quality_summary.grade = data_trust.quality_grade;
+    data_trust
+}
+
+fn cap_quality_grade(current: QualityGrade, cap: QualityGrade) -> QualityGrade {
+    if quality_rank(current) > quality_rank(cap) {
+        cap
+    } else {
+        current
+    }
+}
+
+fn quality_rank(grade: QualityGrade) -> u8 {
+    match grade {
+        QualityGrade::A => 4,
+        QualityGrade::B => 3,
+        QualityGrade::C => 2,
+        QualityGrade::D => 1,
+        QualityGrade::F => 0,
+    }
+}
+
+fn blocked_indicator_counts_by_decision_role(indicator_risks: &[IndicatorRisk]) -> (usize, usize) {
+    indicator_risks
+        .iter()
+        .filter(|risk| matches!(risk.quality_grade, fc_domain::QualityGrade::F))
+        .fold((0, 0), |(core, auxiliary), risk| {
+            if is_auxiliary_or_prototype_indicator(risk) {
+                (core, auxiliary + 1)
+            } else {
+                (core + 1, auxiliary)
+            }
+        })
+}
+
+fn is_auxiliary_or_prototype_indicator(risk: &IndicatorRisk) -> bool {
+    let quality_tier = risk.indicator.quality_tier.as_str();
+    quality_tier.eq_ignore_ascii_case("supplemental")
+        || quality_tier.eq_ignore_ascii_case("best_effort")
+        || matches!(
+            risk.indicator.default_source_id.as_str(),
+            "gdelt" | "yfinance"
+        )
 }
 
 pub(super) fn build_jpy_carry_snapshot(
@@ -199,23 +298,50 @@ pub(super) fn build_relief_drivers(indicator_risks: &[IndicatorRisk]) -> Vec<Ris
     rows
 }
 
-pub(super) fn build_conviction_score(
+pub(super) fn build_action_evidence_breakdown(
     snapshot: &RiskSnapshot,
     data_trust: &DataTrust,
     breadth_score: f64,
-) -> f64 {
-    let breadth_component = scaled_pressure(breadth_score, 32.0, 35.0);
-    let quality_component = data_trust.coverage_score;
-    let agreement_component = if snapshot.structural_score >= 55.0 && snapshot.trigger_score >= 55.0
-    {
-        0.18
+) -> ActionEvidenceBreakdown {
+    let data_quality_weight = 0.10;
+    let breadth_weight = 0.30;
+    let risk_pressure_weight = 0.48;
+    let agreement_high_component = 0.12;
+    let agreement_low_component = 0.0;
+    let data_quality_component = data_trust.coverage_score * data_quality_weight;
+    let weighted_breadth_component = scaled_pressure(breadth_score, 20.0, 45.0) * breadth_weight;
+    let risk_pressure_component = (scaled_pressure(snapshot.overall_score, 45.0, 25.0) * 0.16
+        + scaled_pressure(snapshot.structural_score, 45.0, 25.0) * 0.18
+        + scaled_pressure(snapshot.trigger_score, 45.0, 25.0) * 0.14)
+        .min(risk_pressure_weight);
+    let structural_trigger_agreement =
+        snapshot.structural_score >= 55.0 && snapshot.trigger_score >= 55.0;
+    let agreement_component = if structural_trigger_agreement {
+        agreement_high_component
     } else {
-        0.05
+        agreement_low_component
     };
-    round3(
-        (quality_component * 0.48 + breadth_component * 0.34 + agreement_component)
-            .clamp(0.12, 0.95),
-    )
+    let score = round3(
+        (data_quality_component
+            + weighted_breadth_component
+            + risk_pressure_component
+            + agreement_component)
+            .clamp(0.02, 0.95),
+    );
+    ActionEvidenceBreakdown {
+        score,
+        data_quality_component: round3(data_quality_component),
+        breadth_component: round3(weighted_breadth_component),
+        risk_pressure_component: round3(risk_pressure_component),
+        agreement_component: round3(agreement_component),
+        data_quality_weight,
+        breadth_weight,
+        risk_pressure_weight,
+        agreement_high_component,
+        agreement_low_component,
+        breadth_score: round1(breadth_score),
+        structural_trigger_agreement,
+    }
 }
 
 pub(super) fn high_risk_breadth(snapshot: &RiskSnapshot) -> f64 {
@@ -292,4 +418,199 @@ fn ratio(present: usize, total: usize) -> f64 {
         return 0.0;
     }
     present as f64 / total as f64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{NaiveDate, Utc};
+    use fc_domain::{
+        DataQualitySummary, Frequency, Indicator, QualityGrade, RiskDirection, RiskLevel,
+    };
+
+    fn risk_with_quality(
+        indicator_id: &str,
+        display_name: &str,
+        dimension: RiskDimension,
+        source_id: &str,
+        quality_tier: &str,
+        quality_grade: QualityGrade,
+    ) -> IndicatorRisk {
+        IndicatorRisk {
+            indicator: Indicator {
+                indicator_id: indicator_id.to_string(),
+                display_name: display_name.to_string(),
+                dimension,
+                description: "test".to_string(),
+                unit: "count".to_string(),
+                frequency: Frequency::Daily,
+                risk_direction: RiskDirection::HigherIsRiskier,
+                default_source_id: source_id.to_string(),
+                quality_tier: quality_tier.to_string(),
+            },
+            latest_observation: None,
+            score: 0.0,
+            level: RiskLevel::Normal,
+            percentile: None,
+            change_30d: None,
+            score_basis: "缺少观测".to_string(),
+            score_input_value: None,
+            score_input_unit: None,
+            quality_grade,
+            contribution: 0.0,
+        }
+    }
+
+    fn baseline_data_trust() -> DataTrust {
+        DataTrust {
+            coverage_score: 0.97,
+            core_feature_coverage: 1.0,
+            trigger_feature_coverage: 0.95,
+            external_feature_coverage: 1.0,
+            quality_grade: QualityGrade::A,
+            data_quality_summary: DataQualitySummary {
+                overall_score: 94.0,
+                grade: QualityGrade::A,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count: 0,
+            },
+            warnings: Vec::new(),
+        }
+    }
+
+    fn key_indicator_with_status(status: FreshnessStatus) -> KeyIndicatorStatus {
+        let latest_as_of_date = (status != FreshnessStatus::Missing)
+            .then(|| NaiveDate::from_ymd_opt(2026, 6, 5).unwrap());
+        KeyIndicatorStatus {
+            indicator_id: "us_external_usdjpy_level".to_string(),
+            display_name: "USDJPY".to_string(),
+            entity_id: "us".to_string(),
+            source_id: latest_as_of_date.map(|_| "boj".to_string()),
+            dataset_id: latest_as_of_date.map(|_| "boj_fx_daily".to_string()),
+            unit: "jpy_per_usd".to_string(),
+            latest_value: latest_as_of_date.map(|_| 160.0),
+            latest_as_of_date,
+            lag_days: latest_as_of_date.map(|_| 5),
+            lag_business_days: latest_as_of_date.map(|_| 2),
+            stale_threshold_days: 3,
+            status,
+            note: "test".to_string(),
+            lineage: None,
+        }
+    }
+
+    fn snapshot_with_blocked_count(blocked_indicator_count: usize) -> RiskSnapshot {
+        RiskSnapshot {
+            as_of_date: NaiveDate::from_ymd_opt(2026, 6, 9).unwrap(),
+            entity_id: "us".to_string(),
+            market_scope: "financial_system".to_string(),
+            overall_score: 0.0,
+            overall_level: RiskLevel::Normal,
+            structural_score: 0.0,
+            trigger_score: 0.0,
+            level_reason: "test".to_string(),
+            dimensions: Vec::new(),
+            top_contributors: Vec::new(),
+            data_quality_summary: DataQualitySummary {
+                overall_score: 88.0,
+                grade: QualityGrade::B,
+                stale_indicator_count: 0,
+                low_quality_indicator_count: 0,
+                prototype_source_count: 0,
+                blocked_indicator_count,
+            },
+            generated_at: Utc::now(),
+            method_version: "test".to_string(),
+        }
+    }
+
+    #[test]
+    fn data_trust_warns_auxiliary_when_gdelt_news_is_missing() {
+        let risks = vec![risk_with_quality(
+            "global_news_financial_stress_count",
+            "金融压力新闻数量",
+            RiskDimension::EventsSentiment,
+            "gdelt",
+            "supplemental",
+            QualityGrade::F,
+        )];
+
+        let trust = build_data_trust(&snapshot_with_blocked_count(1), &risks, true);
+
+        assert!(trust
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("辅助/原型指标缺少观测")));
+        assert!(!trust
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("核心指标")));
+    }
+
+    #[test]
+    fn data_trust_preserves_core_blocker_warning_for_core_missing_indicator() {
+        let risks = vec![risk_with_quality(
+            "us_market_vix_close",
+            "VIX 收盘价",
+            RiskDimension::MarketStress,
+            "fred",
+            "core",
+            QualityGrade::F,
+        )];
+
+        let trust = build_data_trust(&snapshot_with_blocked_count(1), &risks, true);
+
+        assert!(trust
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("核心指标缺少或被阻断")));
+    }
+
+    #[test]
+    fn key_indicator_missing_caps_data_trust_below_high_confidence() {
+        let trust = apply_key_indicator_freshness_guard(
+            baseline_data_trust(),
+            &[key_indicator_with_status(FreshnessStatus::Missing)],
+        );
+
+        assert!(trust.coverage_score <= 0.68);
+        assert_eq!(trust.quality_grade, QualityGrade::D);
+        assert_eq!(trust.data_quality_summary.grade, QualityGrade::D);
+        assert!(trust
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("关键近端指标缺失")));
+    }
+
+    #[test]
+    fn key_indicator_stale_caps_data_trust_below_high_confidence() {
+        let trust = apply_key_indicator_freshness_guard(
+            baseline_data_trust(),
+            &[key_indicator_with_status(FreshnessStatus::Stale)],
+        );
+
+        assert!(trust.coverage_score <= 0.74);
+        assert_eq!(trust.quality_grade, QualityGrade::D);
+        assert!(trust
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("关键近端指标明显陈旧")));
+    }
+
+    #[test]
+    fn key_indicator_delayed_caps_data_trust_to_medium_high_confidence() {
+        let trust = apply_key_indicator_freshness_guard(
+            baseline_data_trust(),
+            &[key_indicator_with_status(FreshnessStatus::Delayed)],
+        );
+
+        assert!(trust.coverage_score <= 0.88);
+        assert_eq!(trust.quality_grade, QualityGrade::B);
+        assert!(trust
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("关键近端指标延迟")));
+    }
 }

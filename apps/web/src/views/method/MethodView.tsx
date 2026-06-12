@@ -40,6 +40,15 @@ export default function MethodView({
     overlayHeadlineMetrics,
     overlayHorizonRows,
     overlayAuditRows,
+    scenarioCoverageMetrics,
+    scenarioCoverageRows,
+    scenarioCoverageCatalogId,
+    scenarioCoverageCatalogSource,
+    scenarioCoverageCatalogNote,
+    historyProvenanceMetrics,
+    historyProvenanceRows,
+    historyProvenanceNote,
+    historyProvenanceReplayRunId,
     limitations,
     historyPolicyVersion,
     protectedCatalogId,
@@ -82,8 +91,9 @@ export default function MethodView({
 
         <section className="surface">
           <SurfaceHeader title="当前运行阈值" icon={History} />
+          <RuleBox label="怎么看这些百分比">{methodContent.runtimeThresholdNote}</RuleBox>
           <MetricPairsGrid pairs={runtimeMetrics} />
-          <RuleBox label="历史审计策略版本">
+          <RuleBox label="历史评估策略版本">
             <span title={historyPolicyVersion.hint}>{historyPolicyVersion.value}</span>
           </RuleBox>
           <RuleBox label="当前执行条款">
@@ -101,6 +111,22 @@ export default function MethodView({
             </div>
           </RuleBox>
         </section>
+      </section>
+
+      <section className="surface">
+        <SurfaceHeader title="历史轨迹证据来源" icon={History} />
+        <RuleBox label="怎么看">{historyProvenanceNote}</RuleBox>
+        <MetricGrid items={historyProvenanceMetrics} />
+        {historyProvenanceReplayRunId ? (
+          <RuleBox label="最近 replay run">
+            <span title={historyProvenanceReplayRunId}>{historyProvenanceReplayRunId}</span>
+          </RuleBox>
+        ) : null}
+        {historyProvenanceRows.length > 0 ? (
+          <DetailRows items={historyProvenanceRows} />
+        ) : (
+          <RuleBox label="当前状态">当前默认历史窗口里还没有可用 provenance 统计。</RuleBox>
+        )}
       </section>
 
       <section className="surface">
@@ -135,6 +161,43 @@ export default function MethodView({
             ))}
           </ResponsiveTable>
         ) : null}
+      </section>
+
+      <section className="surface">
+        <SurfaceHeader title="历史场景数据覆盖" icon={History} />
+        <RuleBox label="怎么看">{methodContent.scenarioCoverageIntro}</RuleBox>
+        <MetricPairsGrid
+          pairs={[
+            ["覆盖版本", scenarioCoverageCatalogId.value],
+            ["市场范围", method.scenario_data_coverage_catalog.market_scope.toUpperCase()],
+            ["场景数量", `${method.scenario_data_coverage_catalog.records.length}`]
+          ]}
+        />
+        <MetricGrid items={scenarioCoverageMetrics} />
+        <RuleBox label="配置来源">
+          <span title={scenarioCoverageCatalogSource.hint}>
+            {scenarioCoverageCatalogSource.value}
+          </span>
+        </RuleBox>
+        <RuleBox label="目录说明">{scenarioCoverageCatalogNote}</RuleBox>
+        {method.scenario_data_coverage_catalog.warning ? (
+          <RuleBox label="配置告警">{method.scenario_data_coverage_catalog.warning}</RuleBox>
+        ) : null}
+        <ResponsiveTable
+          className="wide-table"
+          columns={["场景", "推荐角色", "覆盖 / PIT", "免费主源", "当前状态 / 主要缺口"]}
+          note={methodContent.scenarioCoverageTableNote}
+        >
+          {scenarioCoverageRows.map((row) => (
+            <tr key={row.id}>
+              <StackedTableCell title={row.scenarioLabel} details={row.scenarioId} />
+              <td>{row.roleSummary}</td>
+              <td>{row.gradeSummary}</td>
+              <td>{row.sourceSummary}</td>
+              <StackedTableCell title={row.statusSummary} details={row.gapSummary} />
+            </tr>
+          ))}
+        </ResponsiveTable>
       </section>
 
       <section className="surface">

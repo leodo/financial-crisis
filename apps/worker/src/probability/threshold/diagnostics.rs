@@ -11,7 +11,7 @@ use super::{
     decision::{
         probability_prediction_count_ceiling_from_actual_positive_count,
         probability_threshold_decision_metrics, regime_aware_threshold_prediction_ceiling,
-        threshold_has_usable_early_warning_support,
+        threshold_has_usable_early_warning_support, threshold_has_usable_forward_crisis_support,
     },
     ProbabilityCalibrationRegimeEvidenceBucket, ProbabilityCalibrationSelection,
     ProbabilityThresholdDecisionMetrics, ProbabilityThresholdDiagnosticsInput,
@@ -83,8 +83,31 @@ pub(crate) fn build_probability_threshold_diagnostics(
         "not_applicable".to_string()
     } else if base_metrics.regime_hits.early_warning_row_count == 0 {
         "no_early_warning_rows".to_string()
-    } else if threshold_has_usable_early_warning_support(base_metrics.regime_hits, horizon_days) {
+    } else if threshold_has_usable_forward_crisis_support(base_metrics.regime_hits, horizon_days) {
         "base_threshold_has_usable_early_warning_gap".to_string()
+    } else if threshold_has_usable_early_warning_support(base_metrics.regime_hits, horizon_days)
+        && base_metrics.regime_hits.positive_window_hit_count == 0
+    {
+        "base_hits_early_warning_but_no_positive_window_hits".to_string()
+    } else if threshold_has_usable_early_warning_support(base_metrics.regime_hits, horizon_days) {
+        "base_hits_early_warning_but_positive_window_support_is_too_weak".to_string()
+    } else if actual_positive_count == 0 {
+        "no_positive_labels".to_string()
+    } else if repair_applied
+        && early_warning_probability_cap
+            .is_some_and(|cap| cap < base_threshold && (final_threshold - cap).abs() < 0.000_5)
+    {
+        "repaired_to_early_warning_cap".to_string()
+    } else if repair_applied
+        && regime_summary
+            .as_ref()
+            .and_then(|summary| summary.early_warning_lift_vs_normal)
+            .unwrap_or_default()
+            < 1.5
+    {
+        "repaired_over_tight_threshold_below_lift_guardrail".to_string()
+    } else if repair_applied {
+        "repaired_to_regime_support_candidate".to_string()
     } else if regime_summary
         .as_ref()
         .and_then(|summary| summary.early_warning_lift_vs_normal)
@@ -94,16 +117,10 @@ pub(crate) fn build_probability_threshold_diagnostics(
         "early_warning_lift_below_guardrail".to_string()
     } else if base_metrics.regime_hits.early_warning_hit_count > 0 {
         "base_hits_early_warning_but_gap_is_too_weak".to_string()
-    } else if actual_positive_count == 0 {
-        "no_positive_labels".to_string()
     } else if !repair_applied {
         "repair_considered_but_no_better_candidate".to_string()
-    } else if early_warning_probability_cap
-        .is_some_and(|cap| cap < base_threshold && (final_threshold - cap).abs() < 0.000_5)
-    {
-        "repaired_to_early_warning_cap".to_string()
     } else {
-        "repaired_to_regime_support_candidate".to_string()
+        "repair_not_classified".to_string()
     };
 
     ProbabilityThresholdDiagnosticsWire {
@@ -195,6 +212,19 @@ fn build_probability_calibration_regime_evidence(
         let row_ptr = row as *const crate::ProbabilityTrainingRow;
         let regime = row.regime_for_horizon(horizon_days);
         let hard_label = row.label_for_horizon(label_mode, horizon_days);
+        let training_target =
+            crate::model::probability_training_target_label(row, horizon_days, label_mode);
+        let objective_weight =
+            probability_calibration_objective_weight(row, horizon_days, label_mode);
+        let uses_episode_native_objective = label_mode
+            == crate::ProbabilityTargetLabelMode::ForwardCrisis
+            && crate::model::forward_crisis_has_episode_native_objective(row, horizon_days);
+        let protected_no_positive_main_row = label_mode
+            == crate::ProbabilityTargetLabelMode::ForwardCrisis
+            && crate::model::forward_crisis_is_protected_no_positive_main_episode_row(
+                row,
+                horizon_days,
+            );
         let bucket = buckets.entry(regime).or_default();
         bucket.full_row_count += 1;
         if probability_row_is_calibration_eligible(row, horizon_days, label_mode) {
@@ -210,12 +240,18 @@ fn build_probability_calibration_regime_evidence(
             bucket.positive_label_count += 1;
         }
         bucket.hard_label_sum += hard_label;
-        bucket.training_target_sum +=
-            crate::model::probability_training_target_label(row, horizon_days, label_mode);
-        bucket.objective_weight_sum +=
-            probability_calibration_objective_weight(row, horizon_days, label_mode);
+        bucket.training_target_sum += training_target;
+        bucket.objective_weight_sum += objective_weight;
         if row.protected_action_window {
             bucket.protected_action_window_count += 1;
+        }
+        if uses_episode_native_objective {
+            bucket.episode_native_objective_row_count += 1;
+        }
+        if protected_no_positive_main_row {
+            bucket.protected_no_positive_main_row_count += 1;
+            bucket.protected_no_positive_main_training_target_sum += training_target;
+            bucket.protected_no_positive_main_objective_weight_sum += objective_weight;
         }
     }
 
@@ -266,6 +302,24 @@ fn build_probability_calibration_regime_evidence(
                 protected_action_window_rate: crate::round3(crate::safe_divide(
                     bucket.protected_action_window_count as f64,
                     row_count,
+                )),
+                episode_native_objective_row_count: bucket.episode_native_objective_row_count,
+                episode_native_objective_row_rate: crate::round3(crate::safe_divide(
+                    bucket.episode_native_objective_row_count as f64,
+                    row_count,
+                )),
+                protected_no_positive_main_row_count: bucket.protected_no_positive_main_row_count,
+                protected_no_positive_main_row_rate: crate::round3(crate::safe_divide(
+                    bucket.protected_no_positive_main_row_count as f64,
+                    row_count,
+                )),
+                protected_no_positive_main_avg_training_target: crate::round3(crate::safe_divide(
+                    bucket.protected_no_positive_main_training_target_sum,
+                    bucket.protected_no_positive_main_row_count as f64,
+                )),
+                protected_no_positive_main_avg_objective_weight: crate::round3(crate::safe_divide(
+                    bucket.protected_no_positive_main_objective_weight_sum,
+                    bucket.protected_no_positive_main_row_count as f64,
                 )),
             })
         })

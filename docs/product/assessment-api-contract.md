@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-01
+最后更新：2026-06-09
 
 ## 1. 目标
 
@@ -53,7 +53,7 @@ entity_id
 
 ### 3.6 `GET /api/assessment/method`
 
-返回方法版本、说明，以及当前滚动审计使用的受保护压力窗口目录。
+返回方法版本、说明、默认历史轨迹的 provenance 摘要，以及当前滚动审计使用的受保护压力窗口目录。
 
 ### 3.7 `POST /api/system/reload`
 
@@ -78,7 +78,21 @@ entity_id
   },
   "time_to_risk_bucket": "now",
   "posture": "defend",
-  "conviction_score": 0.95,
+  "conviction_score": 0.87,
+  "action_evidence": {
+    "score": 0.87,
+    "data_quality_component": 0.10,
+    "breadth_component": 0.30,
+    "risk_pressure_component": 0.35,
+    "agreement_component": 0.12,
+    "data_quality_weight": 0.10,
+    "breadth_weight": 0.30,
+    "risk_pressure_weight": 0.48,
+    "agreement_high_component": 0.12,
+    "agreement_low_component": 0.0,
+    "breadth_score": 67.0,
+    "structural_trigger_agreement": true
+  },
   "scores": {
     "overall_score": 63.1,
     "structural_score": 61.8,
@@ -161,6 +175,9 @@ entity_id
   },
   "backtest_summary": {
     "scenario_count": 3,
+    "real_scenario_count": 3,
+    "fallback_scenario_count": 0,
+    "coverage_scope_note": "这里的“本地覆盖场景 / 模板参照场景”按场景回测历史窗口 2007-05-03 到 2026-05-31 统计；它回答的是危机场景目录里有多少样本能直接落在这段本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。",
     "structural_warning_rate": 0.667,
     "timely_warning_rate": 0.667,
     "missed_rate": 0.333,
@@ -168,8 +185,13 @@ entity_id
     "avg_lead_time_days": 11.5,
     "median_lead_time_days": 15.0,
     "total_false_positive_count": 2,
+    "history_start": "2007-05-03",
+    "history_end": "2026-05-31",
     "rolling_audit": {
+      "history_start": "1990-01-02",
+      "history_end": "2026-05-31",
       "history_point_count": 4971,
+      "scope_note": "这里的滚动审计按滚动审计历史窗口 1990-01-02 到 2026-05-31 统计；当前已优先复用本地 SQLite 中更长的 persisted replay 历史，而不是只看默认运行窗口 2025-09-15 到 2026-05-31。它回答的是这套动作规则在更长历史里的命中/误报分布，不等于默认运行历史轨迹的 PIT 证据层说明。",
       "actionable_signal_count": 464,
       "pre_crisis_signal_count": 9,
       "in_crisis_signal_count": 331,
@@ -196,7 +218,7 @@ entity_id
           "note": "未落入危机前 20 日窗口，也不在受保护压力窗口内。"
         }
       ],
-      "summary": "全历史滚动审计覆盖 2007-05-03 到 2026-05-31；动作级信号共 464 个评估点，其中危机前 9 个、危机中 331 个、受保护压力窗口 114 个、纯误报 10 个，形成 3 段纯误报区间，动作信号精度约为 92%。"
+      "summary": "全历史滚动审计覆盖 1990-01-02 到 2026-05-31；动作级信号共 464 个评估点，其中危机前 9 个、危机中 331 个、受保护压力窗口 114 个、纯误报 10 个，形成 3 段纯误报区间，动作信号精度约为 92%。"
     },
     "summary": "当前回测覆盖 3 个真实危机样本；结构性抬升至少提前 7 天出现的比例约为 67%，可执行预警至少提前 7 天出现的比例约为 67%。"
   },
@@ -229,6 +251,14 @@ entity_id
 }
 ```
 
+兼容说明：
+
+- `conviction_score` 仍保留给旧调用方，但它是 `action_evidence.score` 的兼容别名。
+- `action_evidence.score` 表示“动作升级证据”，用于判断是否足以从观察推进到准备、对冲或防守。
+- 它不是“结论把握度”，也不是危机发生概率。结论可靠性应结合 `data_trust`、`method.probability_mode`、`method.release_status`、`runtime.latest_key_indicator_at` 和 `runtime.stale_warning` 解释。
+- 当数据覆盖高、风险广度低、整体/结构/触发压力低、结构/触发未共振时，该值应保持低位，含义是“数据可用但还不足以升级仓位动作”。
+- 数据覆盖只提供小额可信底座；风险广度、风险压力和结构/触发共振才会显著推高动作升级证据。
+
 ## 4.1 `method` 响应结构
 
 ```json
@@ -251,6 +281,36 @@ entity_id
     "point_in_time_mode": "best_effort"
   },
   "note": "assessment 概率、风险强度和 posture 为不同层的输出；当前版本为启发式 MVP，不是校准后的正式危机概率模型。页面应优先检查 data_mode、关键指标日期和 stale warning，再解释当前数值。",
+  "history_provenance": {
+    "evidence_tier": "pit_feature_reuse_transitional",
+    "dominant_source": "raw_pit_feature_replay",
+    "total_points": 180,
+    "feature_backed_points": 132,
+    "reused_feature_snapshot_points": 48,
+    "raw_observation_points": 0,
+    "snapshot_bridge_points": 0,
+    "runtime_only_points": 0,
+    "latest_feature_backed_date": "2026-05-28",
+    "latest_reused_feature_snapshot_date": "2026-05-30",
+    "latest_raw_observation_date": null,
+    "latest_snapshot_bridge_date": null,
+    "latest_replay_run_id": "replay:financial_system:20260609T101500Z",
+    "note": "默认历史轨迹里已有 132/180 个点绑定到当天 PIT feature snapshot，但仍有 48/180 个点沿用了更早日期的 PIT snapshot；它已经明显强于 raw observation / bridge，但还不是完全精确的 raw PIT formal history。",
+    "sources": [
+      {
+        "source_id": "raw_pit_feature_replay",
+        "count": 132,
+        "latest_as_of_date": "2026-05-28",
+        "note": "这类点已经绑定到已落库的 PIT feature snapshot，可作为 formal history 审计的正式证据层。"
+      },
+      {
+        "source_id": "raw_pit_feature_reuse",
+        "count": 48,
+        "latest_as_of_date": "2026-05-30",
+        "note": "这类点虽然绑定到了已落库的 PIT feature snapshot，但复用了更早日期的 snapshot，不是当天精确 PIT，仍属于 formal history 的过渡口径。"
+      }
+    ]
+  },
   "protected_stress_window_catalog": {
     "catalog_id": "us_protected_stress_windows_v1",
     "market_scope": "us",
@@ -431,12 +491,28 @@ lag_days
 stale_threshold_days
 status
 note
+lineage
 ```
 
 说明：
 
 - 关键指标 freshness 至少覆盖 `USDJPY`、日本隔夜拆借利率、`EFFR`、`VIX`
 - 用于解释“为什么页面现在显示的值可能与真实市场有偏差”
+- SQLite 模式下，`lineage` 用于解释“这条值从哪来”，优先展示 `ingest_runs -> raw_responses -> ts_indicator_observations` 三层证据；旧数据若缺少 run 记录，也要明确降级为 `raw_observation` 或 `observation_only`，不能伪装成完整抓取链路。
+
+`lineage` 字段：
+
+```text
+evidence_level        // run_raw_observation | raw_observation | observation_only | missing
+note
+raw_payload_id
+run_id
+run_status
+fetched_at
+records_written
+response_hash
+raw_file_path
+```
 
 ### 5.11 EventAssessment
 
@@ -454,6 +530,9 @@ recent_events[]
 
 ```text
 scenario_count
+real_scenario_count
+fallback_scenario_count
+coverage_scope_note
 structural_warning_rate
 timely_warning_rate
 missed_rate
@@ -461,6 +540,8 @@ avg_structural_lead_time_days
 avg_lead_time_days
 median_lead_time_days
 total_false_positive_count
+history_start
+history_end
 rolling_audit
 summary
 ```
@@ -469,14 +550,19 @@ summary
 
 - `lead_time_days`：结构性抬升提前量。
 - `actionable_lead_time_days`：可执行预警提前量。
+- `real_scenario_count` / `fallback_scenario_count`：统计的是“危机场景目录里有多少样本被当前场景回测历史窗口直接覆盖”，不是默认历史轨迹是否已经进入 PIT 正式证据层。
+- `coverage_scope_note`：把“场景回测历史窗口”与“危机场景目录覆盖”这两个口径拆开说明，避免把最近 260 个 PIT 点和更早危机场景样本混为一谈。
 - `timely_warning_rate`：按可执行预警口径统计，不再把仅有结构性脆弱的样本算作动作级命中。
 - `total_false_positive_count` 仍表示场景内 `预警折返/动作信号回落次数`。
-- 真正的全样本滚动审计在 `rolling_audit` 中展示，并区分受保护压力窗口与纯误报。
+- `rolling_audit` 现在拥有独立的历史窗口与口径说明，不再默认等同于上面的场景回测窗口或默认运行窗口。
 
 ### 5.13 BacktestRollingAudit
 
 ```text
+history_start
+history_end
 history_point_count
+scope_note
 actionable_signal_count
 pre_crisis_signal_count
 in_crisis_signal_count
@@ -518,12 +604,44 @@ note
 ```text
 method
 note
+history_provenance
 protected_stress_window_catalog
+runtime_thresholds
 ```
 
 说明：
 
+- `history_provenance` 用于解释当前默认历史轨迹到底有多少点已经绑定到 PIT feature snapshot、还有多少点仍是 raw observation 过渡口径，或者是否还残留旧 prediction snapshot bridge；
 - `protected_stress_window_catalog` 用于解释滚动审计里哪些非危机动作区间被视为“可接受的系统压力防守”。
+
+### 5.15.1 HistoryProvenanceSummary
+
+```text
+evidence_tier
+dominant_source
+total_points
+feature_backed_points
+reused_feature_snapshot_points
+raw_observation_points
+snapshot_bridge_points
+runtime_only_points
+latest_feature_backed_date
+latest_reused_feature_snapshot_date
+latest_raw_observation_date
+latest_snapshot_bridge_date
+latest_replay_run_id
+note
+sources[]
+```
+
+说明：
+
+- `evidence_tier` 当前取值包括：
+  - `pit_feature_backed`
+  - `raw_observation_transitional`
+  - `snapshot_bridge_transitional`
+  - `runtime_only`
+- `sources[]` 会进一步列出每种 `history_source` 的点数、最近日期和解释文案，供方法页和审计页说明“这条概率轨迹能不能当正式历史证据”。
 
 ### 5.16 ProtectedStressWindowCatalog
 
@@ -618,13 +736,41 @@ GET /api/research/audit
 - `active_release_id`
 - `runtime_probability_mode`
 - `runtime_release_status`
+- `history_provenance`
+- `prediction_snapshot_audit`
 - `latest_snapshot_date`
+- `latest_replay_run_id`
+- `latest_release_review`
+- `latest_scenario_pack_audit`
 - `note`
 - `releases[]`
+- `replay_runs[]`
 - `snapshots[]`
 
 用途：
 
 - 核对当前 API 实际在跑 `heuristic_mvp` 还是 `formal_bundle_v1`
+- 直接查看当前默认历史轨迹到底是 `PIT feature-backed` 正式证据、`raw observation` 过渡口径，还是仍残留旧 `snapshot bridge`
+- 查看 `prediction snapshots` 当前只作为运行快照 / 旧桥接视图，而不是 formal history 主证据链
 - 查看本地 release registry 中有哪些 candidate / approved / active 版本
+- 查看最近一条 replay run 是否和当前 runtime / active release 对得上
 - 查看 `prediction snapshots` 是否跟 active release 对齐
+- 查看最近一次 release review 对应的固定美国历史场景包结论，直接区分稳定通过、共享漏报、共享无信号、执行连续性问题与严格门槛映射问题
+
+### 10.1 PredictionSnapshotAuditSummary
+
+```text
+role
+active_release_snapshot_count
+other_release_snapshot_count
+formal_probability_snapshot_count
+heuristic_probability_snapshot_count
+note
+```
+
+说明：
+
+- `role` 当前固定为 `runtime_trace_and_legacy_bridge_only`，表示 `analytics_prediction_snapshots` 只用于运行截面、降级识别和旧桥接残留审计；
+- `active_release_snapshot_count` / `other_release_snapshot_count` 用于检查快照是否和当前 active release 对齐；
+- `formal_probability_snapshot_count` / `heuristic_probability_snapshot_count` 用于识别正式概率截面和启发式降级截面；
+- `note` 必须明确提示这张表不是 `formal history` 主证据链，正式历史证据应优先看 `history_provenance` 与 `historical replay run / point`。

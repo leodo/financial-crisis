@@ -1,6 +1,8 @@
 use chrono::NaiveDate;
 use fc_domain::{DataMode, FreshnessStatus, KeyIndicatorStatus, Observation};
 
+use super::freshness::business_lag_days;
+
 pub(in super::super) fn build_key_indicator_statuses(
     observations: &[Observation],
     requested_as_of_date: NaiveDate,
@@ -42,13 +44,16 @@ pub(in super::super) fn build_key_indicator_statuses(
 
             let latest_as_of_date = latest.map(|observation| observation.as_of_date);
             let lag_days = latest_as_of_date.map(|date| (requested_as_of_date - date).num_days());
+            let lag_business_days =
+                latest_as_of_date.map(|date| business_lag_days(date, requested_as_of_date));
+            let freshness_lag_days = lag_business_days.unwrap_or_else(|| lag_days.unwrap_or_default());
             let status = if matches!(data_mode, DataMode::Demo) {
                 FreshnessStatus::Stale
             } else if latest.is_none() {
                 FreshnessStatus::Missing
-            } else if lag_days.unwrap_or_default() > stale_threshold_days * 3 {
+            } else if freshness_lag_days > stale_threshold_days * 3 {
                 FreshnessStatus::Stale
-            } else if lag_days.unwrap_or_default() > stale_threshold_days {
+            } else if freshness_lag_days > stale_threshold_days {
                 FreshnessStatus::Delayed
             } else {
                 FreshnessStatus::Fresh
@@ -58,12 +63,38 @@ pub(in super::super) fn build_key_indicator_statuses(
                 "demo 示例数据，不代表真实市场最新值。".to_string()
             } else {
                 match status {
-                    FreshnessStatus::Fresh => "关键指标处于可接受的新鲜度范围。".to_string(),
+                    FreshnessStatus::Fresh => {
+                        if let (Some(calendar_lag), Some(business_lag)) =
+                            (lag_days, lag_business_days)
+                        {
+                            if calendar_lag >= 3 && business_lag <= stale_threshold_days {
+                                format!(
+                                    "显示日期跨了 {calendar_lag} 个自然日，但按工作日口径约 {business_lag} 天，主要受周末或非工作日影响。"
+                                )
+                            } else {
+                                "关键指标处于可接受的新鲜度范围。".to_string()
+                            }
+                        } else {
+                            "关键指标处于可接受的新鲜度范围。".to_string()
+                        }
+                    }
                     FreshnessStatus::Delayed => {
-                        "指标有一定滞后，近端风险判断要结合其他证据。".to_string()
+                        match (lag_days, lag_business_days) {
+                            (Some(calendar_lag), Some(business_lag)) => format!(
+                                "指标有一定滞后（自然日 {calendar_lag} 天 / 工作日约 {business_lag} 天），近端风险判断要结合其他证据。"
+                            ),
+                            _ => "指标有一定滞后，近端风险判断要结合其他证据。".to_string(),
+                        }
                     }
                     FreshnessStatus::Stale => {
-                        "指标明显陈旧，不能把当前显示值当成实时市场状态。".to_string()
+                        match (lag_days, lag_business_days) {
+                            (Some(calendar_lag), Some(business_lag)) => format!(
+                                "指标明显陈旧（自然日 {calendar_lag} 天 / 工作日约 {business_lag} 天），不能把当前显示值当成实时市场状态。"
+                            ),
+                            _ => {
+                                "指标明显陈旧，不能把当前显示值当成实时市场状态。".to_string()
+                            }
+                        }
                     }
                     FreshnessStatus::Missing => "缺少该指标最新值。".to_string(),
                 }
@@ -79,9 +110,11 @@ pub(in super::super) fn build_key_indicator_statuses(
                 latest_value: latest.map(|observation| observation.value),
                 latest_as_of_date,
                 lag_days,
+                lag_business_days,
                 stale_threshold_days,
                 status,
                 note,
+                lineage: None,
             }
         },
     )

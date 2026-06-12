@@ -9,7 +9,8 @@ use crate::{
 };
 
 use super::{
-    format_datetime, parse_date, parse_optional_date, parse_optional_datetime, SqliteStore,
+    format_datetime, parse_date, parse_optional_date, parse_optional_datetime,
+    ObservationLineageRecord, SqliteStore,
 };
 
 impl SqliteStore {
@@ -137,11 +138,77 @@ impl SqliteStore {
 
                 quality_flags_json
 
-            FROM ts_indicator_observations
+            FROM (
 
-            WHERE entity_id IN ({placeholders})
+                SELECT
 
-              AND as_of_date <= {date_placeholder}
+                    observation.indicator_id,
+
+                    observation.entity_id,
+
+                    observation.as_of_date,
+
+                    observation.period_start,
+
+                    observation.period_end,
+
+                    observation.frequency,
+
+                    observation.value,
+
+                    observation.unit,
+
+                    observation.source_id,
+
+                    observation.dataset_id,
+
+                    observation.revision_time,
+
+                    observation.publication_time,
+
+                    observation.quality_score,
+
+                    observation.quality_flags_json,
+
+                    ROW_NUMBER() OVER (
+
+                        PARTITION BY
+                            observation.indicator_id,
+                            observation.entity_id,
+                            observation.as_of_date,
+                            observation.frequency
+
+                        ORDER BY
+                            CASE
+                                WHEN indicator.default_source_id IS NOT NULL
+                                 AND observation.source_id = indicator.default_source_id
+                                    THEN 0
+                                ELSE 1
+                            END,
+                            COALESCE(mapping.priority, 9999),
+                            observation.quality_score DESC,
+                            COALESCE(observation.publication_time, '') DESC,
+                            observation.source_id
+
+                    ) AS source_rank
+
+                FROM ts_indicator_observations observation
+
+                LEFT JOIN metadata_indicators indicator
+                    ON indicator.indicator_id = observation.indicator_id
+
+                LEFT JOIN metadata_external_indicator_mappings mapping
+                    ON mapping.indicator_id = observation.indicator_id
+                   AND mapping.source_id = observation.source_id
+                   AND mapping.dataset_id = observation.dataset_id
+
+                WHERE observation.entity_id IN ({placeholders})
+
+                  AND observation.as_of_date <= {date_placeholder}
+
+            )
+
+            WHERE source_rank = 1
 
             ORDER BY indicator_id, entity_id, as_of_date
 
@@ -204,6 +271,79 @@ impl SqliteStore {
                 })
             })
             .collect()
+    }
+
+    pub async fn load_latest_observation_lineage(
+        &self,
+        indicator_id: &str,
+        entity_id: &str,
+        as_of_date: NaiveDate,
+    ) -> Result<Option<ObservationLineageRecord>, StorageError> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                observation.indicator_id,
+                observation.entity_id,
+                observation.as_of_date,
+                observation.raw_payload_id,
+                raw.run_id,
+                raw.response_hash,
+                raw.raw_file_path,
+                raw.fetched_at,
+                run.status AS run_status,
+                run.records_written
+            FROM ts_indicator_observations observation
+            LEFT JOIN metadata_indicators indicator
+                ON indicator.indicator_id = observation.indicator_id
+            LEFT JOIN metadata_external_indicator_mappings mapping
+                ON mapping.indicator_id = observation.indicator_id
+               AND mapping.source_id = observation.source_id
+               AND mapping.dataset_id = observation.dataset_id
+            LEFT JOIN raw_responses raw
+                ON raw.raw_payload_id = observation.raw_payload_id
+            LEFT JOIN ingest_runs run
+                ON run.run_id = raw.run_id
+            WHERE observation.indicator_id = ?1
+              AND observation.entity_id = ?2
+              AND observation.as_of_date <= ?3
+            ORDER BY
+                observation.as_of_date DESC,
+                CASE
+                    WHEN indicator.default_source_id IS NOT NULL
+                     AND observation.source_id = indicator.default_source_id
+                        THEN 0
+                    ELSE 1
+                END,
+                COALESCE(mapping.priority, 9999),
+                observation.quality_score DESC,
+                COALESCE(observation.publication_time, '') DESC,
+                observation.source_id
+            LIMIT 1
+            "#,
+        )
+        .bind(indicator_id)
+        .bind(entity_id)
+        .bind(as_of_date.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(|row| {
+            Ok(ObservationLineageRecord {
+                indicator_id: row.try_get("indicator_id")?,
+                entity_id: row.try_get("entity_id")?,
+                as_of_date: parse_date(row.try_get::<String, _>("as_of_date")?.as_str())?,
+                raw_payload_id: row.try_get("raw_payload_id")?,
+                run_id: row.try_get("run_id")?,
+                run_status: row.try_get("run_status")?,
+                fetched_at: parse_optional_datetime(
+                    row.try_get::<Option<String>, _>("fetched_at")?,
+                )?,
+                records_written: row.try_get("records_written")?,
+                response_hash: row.try_get("response_hash")?,
+                raw_file_path: row.try_get("raw_file_path")?,
+            })
+        })
+        .transpose()
     }
 
     pub async fn upsert_indicator(&self, indicator: &Indicator) -> Result<(), StorageError> {

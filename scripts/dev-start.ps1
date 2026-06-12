@@ -176,6 +176,39 @@ function Wait-ForHttpOk {
     return $false
 }
 
+function Wait-ForPortsReleased {
+    param(
+        [int[]]$Ports,
+        [int]$TimeoutSeconds = 15
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        if (-not (Test-PortBusy -Ports $Ports)) {
+            return $true
+        }
+
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+
+    return $false
+}
+
+function Get-ApiRuntimeMetadata {
+    param([string]$Url)
+
+    try {
+        $assessment = Invoke-RestMethod -Uri $Url -Method Get -TimeoutSec 5 -ErrorAction Stop
+        return [PSCustomObject]@{
+            DataMode            = [string]$assessment.runtime.data_mode
+            AsOfDate            = [string]$assessment.as_of_date
+            LatestObservationAt = [string]$assessment.runtime.latest_observation_at
+        }
+    } catch {
+        return $null
+    }
+}
+
 function Test-PortBusy {
     param([int[]]$Ports)
 
@@ -256,40 +289,6 @@ if (-not (Test-Path -LiteralPath (Join-Path $Root "apps/web/node_modules"))) {
 }
 
 $ApiPorts = @(18080)
-$ForeignApiListeners = Get-ForeignListenerPids -Ports $ApiPorts
-if ($ForeignApiListeners.Count -gt 0) {
-    $ForeignApiListenerText = $ForeignApiListeners -join ","
-    throw "fc-api could not start because port(s) $($ApiPorts -join ',') are already in use by non-project PID(s) $ForeignApiListenerText. Stop those processes or change the bind port first."
-}
-
-Remove-StalePidFile -PidFile $ApiPidFile
-if (Test-ProcessAlive -PidFile $ApiPidFile) {
-    $ExistingApiPid = [int](Get-RecordedProcessId -PidFile $ApiPidFile)
-    if (-not (Test-PortBusy -Ports $ApiPorts)) {
-        Write-Host "fc-api recorded PID $ExistingApiPid is alive but not listening; stopping stale process before build."
-        Stop-ProjectProcessTree -Name "fc-api stale process" -ProcessId $ExistingApiPid
-        Remove-Item -LiteralPath $ApiPidFile -Force -ErrorAction SilentlyContinue
-    }
-}
-
-$ApiAlreadyRunning = Adopt-ProjectListener -Name "fc-api" -PidFile $ApiPidFile -Ports $ApiPorts
-if (-not $ApiAlreadyRunning) {
-    Write-Host "Building API binary..."
-    Push-Location $Root
-    cargo build -p fc-api
-    Pop-Location
-} else {
-    Write-Host "fc-api is already running; skipping API rebuild."
-}
-
-if (-not (Test-Path -LiteralPath $ApiBinary)) {
-    throw "API binary was not produced at $ApiBinary"
-}
-
-$EscapedRoot = $Root.Path.Replace("'", "''")
-$EscapedApiLog = $ApiLog.Replace("'", "''")
-$EscapedWebLog = $WebLog.Replace("'", "''")
-$EscapedApiBinary = $ApiBinary.Replace("'", "''")
 $DefaultSqlitePath = Join-Path $Root "data\fc-local.sqlite"
 $ApiDataMode = $env:FC_DATA_MODE
 $ApiSqlitePath = $env:FC_SQLITE_PATH
@@ -309,6 +308,63 @@ if (-not $ApiDataMode) {
 } elseif ($ApiDataMode -eq "sqlite" -and -not $ApiSqlitePath) {
     $ApiSqlitePath = "data/fc-local.sqlite"
 }
+
+$ForeignApiListeners = Get-ForeignListenerPids -Ports $ApiPorts
+if ($ForeignApiListeners.Count -gt 0) {
+    $ForeignApiListenerText = $ForeignApiListeners -join ","
+    throw "fc-api could not start because port(s) $($ApiPorts -join ',') are already in use by non-project PID(s) $ForeignApiListenerText. Stop those processes or change the bind port first."
+}
+
+Remove-StalePidFile -PidFile $ApiPidFile
+if (Test-ProcessAlive -PidFile $ApiPidFile) {
+    $ExistingApiPid = [int](Get-RecordedProcessId -PidFile $ApiPidFile)
+    if (-not (Test-PortBusy -Ports $ApiPorts)) {
+        Write-Host "fc-api recorded PID $ExistingApiPid is alive but not listening; stopping stale process before build."
+        Stop-ProjectProcessTree -Name "fc-api stale process" -ProcessId $ExistingApiPid
+        Remove-Item -LiteralPath $ApiPidFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+$ApiAlreadyRunning = Adopt-ProjectListener -Name "fc-api" -PidFile $ApiPidFile -Ports $ApiPorts
+if ($ApiAlreadyRunning) {
+    $ExistingApiPid = [int](Get-RecordedProcessId -PidFile $ApiPidFile)
+    $ExistingRuntime = Get-ApiRuntimeMetadata -Url "http://127.0.0.1:18080/api/assessment/current"
+    $RestartReason = $null
+
+    if (-not $ExistingRuntime) {
+        $RestartReason = "current runtime could not be inspected"
+    } elseif ($ExistingRuntime.DataMode -ne $ApiDataMode) {
+        $RestartReason = "current mode is $($ExistingRuntime.DataMode), expected $ApiDataMode"
+    }
+
+    if ($RestartReason) {
+        Write-Host "Restarting adopted fc-api because $RestartReason."
+        Stop-ProjectProcessTree -Name "fc-api mode mismatch" -ProcessId $ExistingApiPid
+        Remove-Item -LiteralPath $ApiPidFile -Force -ErrorAction SilentlyContinue
+        if (-not (Wait-ForPortsReleased -Ports $ApiPorts -TimeoutSeconds 20)) {
+            throw "fc-api was stopped for a mode mismatch, but port $($ApiPorts -join ',') did not release in time."
+        }
+        $ApiAlreadyRunning = $false
+    }
+}
+
+if (-not $ApiAlreadyRunning) {
+    Write-Host "Building API binary..."
+    Push-Location $Root
+    cargo build -p fc-api
+    Pop-Location
+} else {
+    Write-Host "fc-api is already running; skipping API rebuild."
+}
+
+if (-not (Test-Path -LiteralPath $ApiBinary)) {
+    throw "API binary was not produced at $ApiBinary"
+}
+
+$EscapedRoot = $Root.Path.Replace("'", "''")
+$EscapedApiLog = $ApiLog.Replace("'", "''")
+$EscapedWebLog = $WebLog.Replace("'", "''")
+$EscapedApiBinary = $ApiBinary.Replace("'", "''")
 
 $EscapedApiDataMode = $ApiDataMode.Replace("'", "''")
 $EscapedApiSqlitePath = ""

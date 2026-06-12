@@ -1,4 +1,7 @@
-use std::fs;
+use std::{
+    fs,
+    io::{self, Write},
+};
 
 use chrono::Utc;
 use fc_domain::{
@@ -8,7 +11,7 @@ use fc_domain::{
 use fc_storage::SqliteStore;
 use serde::Serialize;
 
-use crate::commands::{PipelineDatasetSource, PipelineTrainOptions};
+use crate::commands::{PipelineDatasetSource, PipelineReleaseManifestMode, PipelineTrainOptions};
 
 use super::types::PipelineArtifacts;
 use super::{
@@ -38,41 +41,60 @@ pub(crate) async fn train_probability_pipeline(
     options: &PipelineTrainOptions,
 ) -> anyhow::Result<PipelineArtifacts> {
     let generated_at = Utc::now();
+    log_training_progress("Loading probability training input...");
     let training =
         crate::commands::pipeline::load_probability_training_input(store, options).await?;
+    log_training_progress(format!(
+        "Loaded probability training input: dataset={} train={} calibration={} evaluation={} features={}",
+        training.dataset_label,
+        training.train_rows.len(),
+        training.calibration_rows.len(),
+        training.evaluation_rows.len(),
+        training.feature_names.len(),
+    ));
     let bundle_feature_names = probability_feature_names_for_transform(
         &training.feature_names,
         options.model_shape.feature_transform(),
     );
     let crisis_prior_label_mode = ProbabilityTargetLabelMode::ForwardCrisis;
-    let horizons = [5_u32, 20_u32, 60_u32]
-        .into_iter()
-        .map(|horizon| {
-            let base_feature_names = probability_feature_names_for_transform(
-                &training.feature_names,
-                options
-                    .model_shape
-                    .base_feature_transform_for_horizon(horizon),
-            );
-            let overlay_feature_names = probability_feature_names_for_transform(
-                &training.feature_names,
-                options
-                    .model_shape
-                    .overlay_feature_transform_for_horizon(horizon),
-            );
-            crate::train_horizon_bundle(
-                &training.train_rows,
-                &training.calibration_rows,
-                &training.evaluation_rows,
-                &base_feature_names,
-                &overlay_feature_names,
-                horizon,
-                crisis_prior_label_mode,
-            )
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
+    let mut horizons = Vec::new();
+    for horizon in [5_u32, 20_u32, 60_u32] {
+        log_training_progress(format!(
+            "Training probability horizon {horizon}d with model_shape={}...",
+            options.model_shape.as_str()
+        ));
+        let base_feature_names = probability_feature_names_for_transform(
+            &training.feature_names,
+            options
+                .model_shape
+                .base_feature_transform_for_horizon(horizon),
+        );
+        let overlay_feature_names = probability_feature_names_for_transform(
+            &training.feature_names,
+            options
+                .model_shape
+                .overlay_feature_transform_for_horizon(horizon),
+        );
+        let horizon_bundle = crate::train_horizon_bundle(
+            &training.train_rows,
+            &training.calibration_rows,
+            &training.evaluation_rows,
+            &base_feature_names,
+            &overlay_feature_names,
+            horizon,
+            crisis_prior_label_mode,
+        )?;
+        log_training_progress(format!("Finished probability horizon {horizon}d."));
+        horizons.push(horizon_bundle);
+    }
 
+    log_training_progress("Training actionability head if eligible...");
     let actionability = maybe_train_actionability_bundle(&training, &generated_at)?;
+    log_training_progress(if actionability.is_some() {
+        "Actionability head enabled for this bundle."
+    } else {
+        "Actionability head omitted for this bundle."
+    });
     let aggregate_evaluation = crate::summarize_bundle_evaluation(&horizons);
     let release_suffix = generated_at.format("%Y%m%dT%H%M%S").to_string();
     let release_id = format!("{}_{}", options.release_prefix, release_suffix);
@@ -101,7 +123,8 @@ pub(crate) async fn train_probability_pipeline(
         .join(format!("{release_id}-evaluation.json"));
     fs::create_dir_all(&options.output_dir)?;
     fs::create_dir_all(&manifest_dir)?;
-    let (release_status, serving_status) = release_manifest_state(training.dataset_source);
+    let (release_status, serving_status) =
+        release_manifest_state(training.dataset_source, options.release_manifest_mode);
 
     let release = ModelReleaseRecord {
         manifest: ModelReleaseManifest {
@@ -163,6 +186,12 @@ pub(crate) async fn train_probability_pipeline(
         &evaluation_path,
         serde_json::to_string_pretty(&evaluation_report)?,
     )?;
+    log_training_progress(format!(
+        "Wrote probability bundle artifacts: bundle={} manifest={} evaluation={}",
+        bundle_path.display(),
+        manifest_path.display(),
+        evaluation_path.display(),
+    ));
 
     Ok(PipelineArtifacts {
         release,
@@ -173,6 +202,11 @@ pub(crate) async fn train_probability_pipeline(
         dataset_source: training.dataset_source.as_str().to_string(),
         dataset_label: training.dataset_label,
     })
+}
+
+fn log_training_progress(message: impl AsRef<str>) {
+    println!("{}", message.as_ref());
+    let _ = io::stdout().flush();
 }
 
 fn maybe_train_actionability_bundle(
@@ -232,10 +266,15 @@ fn bundle_note(
     }
 }
 
-fn release_manifest_state(dataset_source: PipelineDatasetSource) -> (&'static str, &'static str) {
-    match dataset_source {
-        PipelineDatasetSource::Formal => ("approved", "healthy"),
-        PipelineDatasetSource::Snapshot => ("candidate", "shadow"),
+fn release_manifest_state(
+    dataset_source: PipelineDatasetSource,
+    mode: PipelineReleaseManifestMode,
+) -> (&'static str, &'static str) {
+    match (dataset_source, mode) {
+        (PipelineDatasetSource::Formal, PipelineReleaseManifestMode::ApprovedFormalBootstrap) => {
+            ("approved", "healthy")
+        }
+        _ => ("candidate", "shadow"),
     }
 }
 
@@ -244,8 +283,20 @@ fn release_manifest_note(
     options: &PipelineTrainOptions,
 ) -> String {
     match training.dataset_source {
+        PipelineDatasetSource::Formal
+            if matches!(
+                options.release_manifest_mode,
+                PipelineReleaseManifestMode::ApprovedFormalBootstrap
+            ) =>
+        {
+            format!(
+                "Generated by `research pipeline bootstrap-formal-release` from formal dataset {} with model_shape={}.",
+                training.dataset_label,
+                options.model_shape.as_str()
+            )
+        }
         PipelineDatasetSource::Formal => format!(
-            "Generated by `research pipeline train-probability` from formal dataset {} with model_shape={}.",
+            "Generated by `research pipeline train-probability` from formal dataset {} with model_shape={}. This manifest is research-only, marked shadow, and is not eligible for direct activation as a formal release.",
             training.dataset_label,
             options.model_shape.as_str()
         ),
@@ -259,14 +310,28 @@ fn release_manifest_note(
 
 #[cfg(test)]
 mod tests {
-    use crate::commands::PipelineDatasetSource;
+    use crate::commands::{PipelineDatasetSource, PipelineReleaseManifestMode};
 
     use super::release_manifest_state;
 
     #[test]
-    fn formal_dataset_source_generates_approved_healthy_release_state() {
+    fn formal_train_probability_generates_candidate_shadow_release_state() {
         assert_eq!(
-            release_manifest_state(PipelineDatasetSource::Formal),
+            release_manifest_state(
+                PipelineDatasetSource::Formal,
+                PipelineReleaseManifestMode::ReviewCandidate
+            ),
+            ("candidate", "shadow")
+        );
+    }
+
+    #[test]
+    fn formal_bootstrap_generates_approved_healthy_release_state() {
+        assert_eq!(
+            release_manifest_state(
+                PipelineDatasetSource::Formal,
+                PipelineReleaseManifestMode::ApprovedFormalBootstrap
+            ),
             ("approved", "healthy")
         );
     }
@@ -274,7 +339,21 @@ mod tests {
     #[test]
     fn snapshot_dataset_source_generates_candidate_shadow_release_state() {
         assert_eq!(
-            release_manifest_state(PipelineDatasetSource::Snapshot),
+            release_manifest_state(
+                PipelineDatasetSource::Snapshot,
+                PipelineReleaseManifestMode::ReviewCandidate
+            ),
+            ("candidate", "shadow")
+        );
+    }
+
+    #[test]
+    fn snapshot_bootstrap_mode_still_generates_candidate_shadow_release_state() {
+        assert_eq!(
+            release_manifest_state(
+                PipelineDatasetSource::Snapshot,
+                PipelineReleaseManifestMode::ApprovedFormalBootstrap
+            ),
             ("candidate", "shadow")
         );
     }

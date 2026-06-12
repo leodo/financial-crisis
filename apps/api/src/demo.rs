@@ -2,7 +2,8 @@ use std::env;
 
 use chrono::NaiveDate;
 use fc_domain::{
-    load_protected_stress_window_catalog, AlertEvent, DataMode, Indicator, Observation,
+    load_free_data_source_catalog, load_protected_stress_window_catalog,
+    load_scenario_data_coverage_catalog, AlertEvent, DataMode, Indicator, Observation,
     PredictionSnapshotRecord, UserRiskPreferences, UserRiskProfile,
 };
 use fc_scoring::ScoringEngine;
@@ -46,6 +47,12 @@ pub(crate) struct BuiltAppData {
     pub(crate) prediction_snapshots: Vec<PredictionSnapshotRecord>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ScenarioBacktestContext {
+    pub(crate) history: Vec<fc_domain::AssessmentHistoryPoint>,
+    pub(crate) coverage_scope_note: String,
+}
+
 pub fn build_demo_data(_max_history_points: usize) -> AppData {
     let as_of_date = NaiveDate::from_ymd_opt(2026, 5, 30).expect("valid date");
     let indicators = indicators();
@@ -73,6 +80,7 @@ pub fn build_demo_data(_max_history_points: usize) -> AppData {
         None,
         as_of_date,
         historical.history_points,
+        None,
         user_preferences,
     )
     .app_data
@@ -87,14 +95,33 @@ pub(crate) fn build_app_data_from_inputs(
     serving_model: Option<ServingModelContext>,
     as_of_date: NaiveDate,
     mut assessment_history: Vec<fc_domain::AssessmentHistoryPoint>,
+    scenario_backtest_context: Option<ScenarioBacktestContext>,
     user_preferences: UserRiskPreferences,
 ) -> BuiltAppData {
     let use_transitional_bridge = use_transitional_actionable_bridge(serving_model.as_ref());
     let scoring = ScoringEngine::default();
     let protected_stress_window_catalog = load_protected_stress_window_catalog();
+    let scenario_data_coverage_catalog = load_scenario_data_coverage_catalog();
+    let free_data_source_catalog = load_free_data_source_catalog();
     let threshold_diagnostics = runtime_threshold_diagnostics(serving_model.as_ref());
     let strict_thresholds =
         (!use_transitional_bridge).then(|| probability_action_thresholds(serving_model.as_ref()));
+    let scenario_backtest_history = scenario_backtest_context
+        .as_ref()
+        .map(|context| context.history.as_slice())
+        .unwrap_or(assessment_history.as_slice());
+    let rolling_audit_history = scenario_backtest_context
+        .as_ref()
+        .map(|context| context.history.as_slice())
+        .unwrap_or(assessment_history.as_slice());
+    let default_history_start = assessment_history.first().map(|point| point.as_of_date);
+    let default_history_end = assessment_history.last().map(|point| point.as_of_date);
+    let scenario_backtest_history_start = scenario_backtest_history
+        .first()
+        .map(|point| point.as_of_date);
+    let scenario_backtest_history_end = scenario_backtest_history
+        .last()
+        .map(|point| point.as_of_date);
     let output = scoring.score(
         &indicators,
         &observations,
@@ -106,7 +133,7 @@ pub(crate) fn build_app_data_from_inputs(
         .map(|thresholds| {
             build_backtests_with_thresholds(
                 &output.snapshot,
-                &assessment_history,
+                scenario_backtest_history,
                 use_transitional_bridge,
                 Some(thresholds),
             )
@@ -114,14 +141,14 @@ pub(crate) fn build_app_data_from_inputs(
         .unwrap_or_else(|| {
             build_backtests(
                 &output.snapshot,
-                &assessment_history,
+                scenario_backtest_history,
                 use_transitional_bridge,
             )
         });
-    let rolling_audit = strict_thresholds
+    let mut rolling_audit = strict_thresholds
         .map(|thresholds| {
             build_rolling_backtest_audit_with_thresholds(
-                &assessment_history,
+                rolling_audit_history,
                 &protected_stress_window_catalog.windows,
                 use_transitional_bridge,
                 Some(thresholds),
@@ -129,15 +156,46 @@ pub(crate) fn build_app_data_from_inputs(
         })
         .unwrap_or_else(|| {
             build_rolling_backtest_audit(
-                &assessment_history,
+                rolling_audit_history,
                 &protected_stress_window_catalog.windows,
                 use_transitional_bridge,
             )
         });
+    rolling_audit.scope_note = match (
+        scenario_backtest_context.as_ref(),
+        rolling_audit.history_start,
+        rolling_audit.history_end,
+        default_history_start,
+        default_history_end,
+    ) {
+        (Some(_), Some(start), Some(end), Some(default_start), Some(default_end)) => format!(
+            "这里的滚动审计按滚动审计历史窗口 {start} 到 {end} 统计；当前已优先复用本地 SQLite 中更长的 persisted replay 历史，而不是只看默认运行窗口 {default_start} 到 {default_end}。它回答的是这套动作规则在更长历史里的命中/误报分布，不等于默认运行历史轨迹的 PIT 证据层说明。"
+        ),
+        (Some(_), Some(start), Some(end), _, _) => format!(
+            "这里的滚动审计按滚动审计历史窗口 {start} 到 {end} 统计；当前已优先复用本地 SQLite 中更长的 persisted replay 历史。它回答的是这套动作规则在更长历史里的命中/误报分布，不等于默认运行历史轨迹的 PIT 证据层说明。"
+        ),
+        (_, Some(start), Some(end), _, _) => format!(
+            "这里的滚动审计按滚动审计历史窗口 {start} 到 {end} 统计，用于观察当前运行口径下动作规则的命中、受保护压力窗口和纯误报分布。"
+        ),
+        _ => "这里的滚动审计按当前滚动审计历史窗口统计，用于观察动作规则的命中、受保护压力窗口和纯误报分布。".to_string(),
+    };
     let alerts = stored_alerts
         .map(|alerts| select_recent_alerts_for_date(&alerts, as_of_date))
         .unwrap_or_else(|| build_alerts(&output.snapshot));
-    let backtest_summary = build_backtest_summary(&backtests, Some(&rolling_audit));
+    let mut backtest_summary = build_backtest_summary(&backtests, Some(&rolling_audit));
+    backtest_summary.history_start = scenario_backtest_history_start;
+    backtest_summary.history_end = scenario_backtest_history_end;
+    if let Some(context) = scenario_backtest_context.as_ref() {
+        backtest_summary.coverage_scope_note = context.coverage_scope_note.clone();
+    } else {
+        backtest_summary.coverage_scope_note =
+            match (scenario_backtest_history_start, scenario_backtest_history_end) {
+                (Some(start), Some(end)) => format!(
+                    "这里的“本地覆盖场景 / 模板参照场景”按场景回测历史窗口 {start} 到 {end} 统计；它回答的是危机场景目录里有多少样本能直接落在这段本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。"
+                ),
+                _ => "这里的“本地覆盖场景 / 模板参照场景”按当前场景回测历史窗口统计；它回答的是危机场景目录里有多少样本能直接落在本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。".to_string(),
+            };
+    }
     let (assessment, posture_guidance, probability_trace) = build_assessment_snapshot(
         data_mode,
         &output.snapshot,
@@ -153,13 +211,16 @@ pub(crate) fn build_app_data_from_inputs(
         backtest_summary,
         ..assessment
     };
-    let current_history_point = assessment_history_point_from_assessment(
+    let mut current_history_point = assessment_history_point_from_assessment(
         &assessment,
         &posture_guidance,
         &probability_trace,
     );
     match assessment_history.last_mut() {
         Some(last) if last.as_of_date == current_history_point.as_of_date => {
+            current_history_point.replay_run_id = last.replay_run_id.clone();
+            current_history_point.feature_snapshot_id = last.feature_snapshot_id.clone();
+            current_history_point.history_source = last.history_source.clone();
             *last = current_history_point;
         }
         _ => assessment_history.push(current_history_point),
@@ -197,6 +258,8 @@ pub(crate) fn build_app_data_from_inputs(
             assessment_history,
             posture_guidance,
             protected_stress_window_catalog,
+            scenario_data_coverage_catalog,
+            free_data_source_catalog,
             runtime_thresholds: threshold_diagnostics,
         },
         prediction_snapshots: vec![current_prediction_snapshot],

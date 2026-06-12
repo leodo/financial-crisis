@@ -28,7 +28,7 @@ export default function SourcesView({
     <section className="workspace">
       <section className="sources-top-grid">
         <section className="surface">
-          <SurfaceHeader title="当前可信度摘要" icon={Database} />
+          <SurfaceHeader title="数据覆盖与源健康摘要" icon={Database} />
           <MetricGrid items={summaryMetrics} />
           <MetricPairsGrid pairs={coverageMetrics} />
           <BulletList items={warnings} emptyText={sourcesContent.warningsEmpty} />
@@ -44,7 +44,7 @@ export default function SourcesView({
         <SurfaceHeader title="源状态" icon={Database} />
         <ResponsiveTable
           className="wide-table"
-          columns={["数据源", "最新状态", "质量", "正式评估", "说明"]}
+          columns={["数据源", "最新状态", "源健康分", "使用建议", "说明"]}
           note={sourcesContent.tableNote}
         >
           {sourceRows.map((source) => (
@@ -61,8 +61,8 @@ export default function SourcesView({
               <StackedTableCell title={source.status} details={source.statusDetail} />
               <StackedTableCell title={source.qualityScore} details={source.qualityDetail} />
               <StackedTableCell
-                title={source.productionAllowed}
-                details={source.productionDetail}
+                title={source.usageLabel}
+                details={[source.usageDetail, `${source.productionAllowed} · ${source.productionDetail}`]}
               />
               <StackedTableCell title={source.healthMessage} details={source.licenseNote} />
             </tr>

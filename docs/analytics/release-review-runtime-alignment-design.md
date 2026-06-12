@@ -430,6 +430,8 @@ The release-review alignment work now has a fixed offline entrypoint:
 
 - `scripts/formal-candidate-leadtime-audit.ps1`
 - `just formal-candidate-leadtime-audit <baseline> <candidate>`
+- `scripts/formal-candidate-scenario-pack-audit.ps1`
+- `just formal-candidate-scenario-pack-audit <baseline> <candidate>`
 
 This audit is intentionally narrower than the full release-review report. It exists to answer, in one pass:
 
@@ -441,6 +443,19 @@ This audit is intentionally narrower than the full release-review report. It exi
 4. whether the dominant blocker is still `review_gate_gap`,
    `posture_bucket_normal`, or another runtime block family;
 5. which `Historical Audit Workstreams / Actions` remain active for the candidate.
+
+The new `scenario-pack-audit` is broader and complements the lead-time audit:
+
+1. it runs a fixed US history pack spanning `1987 / 1990s / 2000 / 2008 / 2011 / 2020 / 2022 / 2023`;
+2. it automatically chooses `formal_v1_main_1990_daily`, `formal_v1_ext_stress_1990_daily`,
+   or `formal_v1_ext_acute_pre1990` per scenario instead of relying on manual dataset memory;
+3. it merges `formal-probability-compare`, scenario coverage grade / free sources / blocking gaps,
+   and release-review blocker labels into one JSON artifact;
+4. it exists to answer, in one pass, whether a scenario is blocked by
+   free-data coverage, `review_gate_gap`, `posture_continuity`, or residual `L3` conversion.
+5. it now also distinguishes non-blocker states such as `stable_pass`,
+   `stable_pass_with_margin_erosion`, `shared_missed_signal`, and `shared_no_signal`,
+   so the output no longer collapses every non-focus case into one vague bucket.
 
 ## 9. 2026-06-06 当前结论
 
@@ -797,3 +812,41 @@ Validated runtime result on `2026-06-07`:
    with the strict-review failure reason;
 3. runtime `/api/assessment/method` now remains on baseline
    `us_formal_family_hybrid_20260605T202246`.
+
+### 12.4 2026-06-08 narrow `prepare/weeks` score-confirmation rescue
+
+The next targeted experiment stayed deliberately narrow:
+
+- do not lower the generic `prepare` score-confirmation floor;
+- only rescue `prepare / weeks` points that simultaneously carry
+  `prepare_probability_plateau` and `prepare_history_hysteresis`;
+- still require the relaxed plateau probability shape
+  (`p20d >= relaxed plateau threshold`, `p60d >= 0.65`);
+- and add a small score guard
+  (`overall >= 51.5`, `external_shock_score >= 33.0`).
+
+This is meant to catch the exact `regional_banks` early-window setup that had
+already crossed runtime evidence but was still just below the previous strict
+confirmation line.
+
+Validated `default` review result after rerunning:
+
+1. `timely_warning_rate` stayed `10.0% -> 10.0%`;
+2. `strict_actionable_point_count` improved `80 -> 84`;
+3. `runtime_floor_hit_count` stayed `90 -> 91`;
+4. `actionable_precision` stayed `70.5%`;
+5. `longest_false_positive_episode_days` stayed `13`.
+
+Point-level evidence changed as intended:
+
+- `2022-12-09 .. 2022-12-12` in `us_regional_banks_2023` now convert to
+  strict actionable;
+- `2022-12-08` and `2022-12-13` still remain in
+  `prepare_weeks_score_confirmation`, so the clause did not blindly clear the
+  whole window;
+- `2023-05-04 .. 2023-05-07` still remain blocked because the external-shock
+  side is weaker, which keeps the clause from broadening into a generic
+  post-crisis permissive path.
+
+The practical conclusion is that this repair is behaving like a point-targeted
+strict L3 sync, not a broad threshold relaxation.

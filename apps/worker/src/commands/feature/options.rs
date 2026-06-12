@@ -27,6 +27,13 @@ impl PointInTimeMode {
             ),
         }
     }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::BestEffort => "best_effort",
+            Self::Strict => "strict",
+        }
+    }
 }
 
 impl FeatureSnapshotBuildOptions {

@@ -14,7 +14,8 @@ pub(crate) use threshold::{
     adjust_probability_decision_threshold_for_regime_support,
     build_probability_threshold_diagnostics, probability_calibration_selection_rows,
     probability_decision_threshold_selection, select_probability_calibration_strategy,
-    select_probability_decision_threshold, ProbabilityThresholdDiagnosticsInput,
+    select_probability_decision_threshold, ProbabilityCalibrationStrategyInput,
+    ProbabilityThresholdDiagnosticsInput,
 };
 #[cfg(test)]
 pub(crate) use threshold::{ProbabilityCalibrationSelection, ProbabilityThresholdSelection};
@@ -106,15 +107,18 @@ fn train_probability_head(
         .iter()
         .map(|row| crate::score_logistic_model_for_dataset(&raw_model, row))
         .collect::<Vec<_>>();
-    let (calibration, evaluation_probabilities) = select_probability_calibration_strategy(
-        &calibration_inputs,
-        &calibration_labels,
-        &calibration_selection.rows,
-        horizon_days,
-        label_mode,
-        &evaluation_raw_probabilities,
-        calibration_candidate,
-    );
+    let evaluation_row_refs = evaluation_rows.iter().collect::<Vec<_>>();
+    let (calibration, evaluation_probabilities) =
+        select_probability_calibration_strategy(ProbabilityCalibrationStrategyInput {
+            calibration_raw_probabilities: &calibration_inputs,
+            calibration_labels: &calibration_labels,
+            calibration_rows: &calibration_selection.rows,
+            horizon_days,
+            label_mode,
+            evaluation_raw_probabilities: &evaluation_raw_probabilities,
+            evaluation_rows: &evaluation_row_refs,
+            calibration_candidate,
+        });
     let calibration_decision_probabilities = calibration.as_ref().map_or_else(
         || calibration_inputs.clone(),
         |calibration| {
@@ -356,6 +360,28 @@ pub(crate) fn classify_probability_regime_separation(
         return "weak_regime_separation";
     }
     "mixed_or_unclear"
+}
+
+pub(crate) fn lift_vs_baseline(value: f64, baseline: f64) -> Option<f64> {
+    if baseline.abs() <= f64::EPSILON {
+        return None;
+    }
+    Some(crate::round6(value / baseline))
+}
+
+pub(crate) fn early_warning_regime_name(horizon_days: u32) -> &'static str {
+    match horizon_days {
+        5 => "positive_window",
+        20 | 60 => "pre_warning_buffer",
+        _ => "positive_window",
+    }
+}
+
+pub(crate) fn gap_retention_ratio(raw_gap: f64, calibrated_gap: f64) -> Option<f64> {
+    if raw_gap.abs() <= f64::EPSILON {
+        return None;
+    }
+    Some(crate::round6(calibrated_gap / raw_gap))
 }
 
 pub(crate) fn summarize_bundle_evaluation(

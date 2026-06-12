@@ -1,4 +1,8 @@
-import { formatPercent, formatSignedNumber } from "../../format";
+import {
+  formatPercent,
+  formatProbabilityPercentExact,
+  formatSignedNumber
+} from "../../format";
 import type { AssessmentSnapshot } from "../../types";
 import type { DetailRowItem, MetricItem } from "./panelHelpers";
 
@@ -80,7 +84,7 @@ export function buildProbabilityOverlayViewModel(assessment: AssessmentSnapshot)
       value: `${activeContributionCount}`
     },
     {
-      label: "审计 family",
+      label: "已覆盖 family",
       value: `${auditedFamilyCount}`
     }
   ];
@@ -100,8 +104,8 @@ export function buildProbabilityOverlayViewModel(assessment: AssessmentSnapshot)
             .join("；");
     return {
       id: `overlay-${horizon.horizon_days}`,
-      title: `${overlayHorizonLabel(horizon.horizon_days)} · ${horizon.configured_overlay_count > 0 ? `${horizon.configured_overlay_count} 个已挂载 overlay` : "当前仅保留审计元数据"}`,
-      detail: `base raw ${formatPercent(horizon.raw_probability)}，base calibrated ${formatPercent(horizon.calibrated_probability)}，overlay final ${formatPercent(horizon.final_probability)}，runtime final ${formatPercent(runtimeFinalProbability)}。${monotonicLift > 0 ? `单调约束额外抬升 ${formatPercent(monotonicLift)}。` : ""}${runtimeContributionSummary}`,
+      title: `${overlayHorizonLabel(horizon.horizon_days)} · ${horizon.configured_overlay_count > 0 ? `${horizon.configured_overlay_count} 个已挂载 overlay` : "当前仅保留训练登记"}`,
+      detail: `base raw ${formatProbabilityPercentExact(horizon.raw_probability)}，base calibrated ${formatProbabilityPercentExact(horizon.calibrated_probability)}，overlay final ${formatProbabilityPercentExact(horizon.final_probability)}，runtime final ${formatProbabilityPercentExact(runtimeFinalProbability)}。${monotonicLift > 0 ? `单调约束额外抬升 ${formatProbabilityPercentExact(monotonicLift)}。` : ""}${runtimeContributionSummary}`,
       meta: formatSignedNumber(
         monotonicLift > 0
           ? monotonicLift * 100
@@ -113,8 +117,8 @@ export function buildProbabilityOverlayViewModel(assessment: AssessmentSnapshot)
         monotonicLift > 0
           ? "当前 runtime 对这个窗口施加了跨 horizon 单调 gap 约束。"
           : horizon.overlay_audits.length > 0
-          ? `训练审计覆盖 ${horizon.overlay_audits.length} 个 family。`
-          : "当前没有 family-level 训练审计。"
+          ? `训练覆盖 ${horizon.overlay_audits.length} 个 family。`
+          : "当前没有 family-level 训练覆盖信息。"
     };
   });
 

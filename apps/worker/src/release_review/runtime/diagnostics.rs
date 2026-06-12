@@ -10,8 +10,8 @@ use crate::{
 
 use super::{
     super::{
-        ReleaseRuntimeClauseCount, ReleaseRuntimeCount, ReleaseRuntimeReviewDiagnostics,
-        ReleaseRuntimeSeparationSummary,
+        ReleaseRuntimeClauseCount, ReleaseRuntimeCount, ReleaseRuntimeLatestProbabilitySnapshot,
+        ReleaseRuntimeReviewDiagnostics, ReleaseRuntimeSeparationSummary,
     },
     regimes::{
         summarize_release_runtime_regime_probabilities, summarize_release_runtime_regime_separation,
@@ -107,6 +107,7 @@ pub(crate) fn build_release_runtime_review_diagnostics(
     ReleaseRuntimeReviewDiagnostics {
         release_id: release_id.to_string(),
         history_point_count: history.len(),
+        latest_probability_snapshot: build_latest_probability_snapshot(history),
         posture_distribution,
         time_bucket_distribution,
         posture_trigger_distribution,
@@ -118,6 +119,31 @@ pub(crate) fn build_release_runtime_review_diagnostics(
         points_at_or_above_hedge_p20d,
         points_at_or_above_defend_p5d,
         note: notes.join(" "),
+    }
+}
+
+fn build_latest_probability_snapshot(
+    history: &[AssessmentHistoryPoint],
+) -> Option<ReleaseRuntimeLatestProbabilitySnapshot> {
+    let latest = history.last()?;
+    Some(ReleaseRuntimeLatestProbabilitySnapshot {
+        as_of_date: latest.as_of_date.to_string(),
+        p_5d: round6(latest.p_5d),
+        p_20d: round6(latest.p_20d),
+        p_60d: round6(latest.p_60d),
+        raw_p_5d: latest.raw_p_5d.map(round6),
+        raw_p_20d: latest.raw_p_20d.map(round6),
+        raw_p_60d: latest.raw_p_60d.map(round6),
+        p20d_vs_p5d_ratio: probability_ratio(latest.p_20d, latest.p_5d),
+        p20d_vs_p60d_ratio: probability_ratio(latest.p_20d, latest.p_60d),
+    })
+}
+
+fn probability_ratio(numerator: f64, denominator: f64) -> Option<f64> {
+    if denominator > 0.0 {
+        Some(round6(numerator / denominator))
+    } else {
+        None
     }
 }
 

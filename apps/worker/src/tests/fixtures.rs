@@ -194,6 +194,9 @@ pub(super) fn runtime_history_point(
         external_shock_score: 20.0,
         posture_trigger_codes: Vec::new(),
         posture_blocker_codes: Vec::new(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: None,
     }
 }
 
@@ -226,6 +229,9 @@ pub(super) fn runtime_history_point_with_state(
             .map(|code| (*code).to_string())
             .collect(),
         posture_blocker_codes: Vec::new(),
+        replay_run_id: None,
+        feature_snapshot_id: None,
+        history_source: None,
     }
 }
 

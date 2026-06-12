@@ -194,11 +194,18 @@ pub(crate) fn compare_probability_guardrails(
     }
 
     for horizon in &summary.regime_separation_summaries {
-        if horizon.horizon_days == 20
+        if let Some(threshold_regression) =
+            probability_threshold_acceptance_regression(&bundle, horizon)
+        {
+            regressions.push(threshold_regression);
+        }
+
+        if matches!(horizon.horizon_days, 20 | 60)
             && horizon.positive_window_avg_probability <= horizon.normal_avg_probability
         {
             regressions.push(format!(
-                "20d positive_window avg {} is at or below normal {} in bundle evaluation",
+                "{}d positive_window avg {} is at or below normal {} in bundle evaluation",
+                horizon.horizon_days,
                 crate::format_pct(horizon.positive_window_avg_probability),
                 crate::format_pct(horizon.normal_avg_probability),
             ));
@@ -217,6 +224,53 @@ pub(crate) fn compare_probability_guardrails(
     }
 
     Ok(regressions)
+}
+
+fn probability_threshold_acceptance_regression(
+    bundle: &fc_domain::ProbabilityBundle,
+    horizon: &fc_domain::RegimeSeparationEvaluationSummary,
+) -> Option<String> {
+    if !matches!(horizon.horizon_days, 20 | 60) {
+        return None;
+    }
+
+    let threshold = bundle
+        .horizons
+        .iter()
+        .find(|candidate| candidate.horizon_days == horizon.horizon_days)
+        .and_then(|candidate| candidate.decision_threshold)?;
+
+    if horizon.positive_window_sample_count > 0
+        && threshold > horizon.positive_window_avg_probability + 0.005
+    {
+        return Some(format!(
+            "{}d decision threshold {} sits above positive_window avg {} in bundle evaluation",
+            horizon.horizon_days,
+            crate::format_pct(threshold),
+            crate::format_pct(horizon.positive_window_avg_probability),
+        ));
+    }
+
+    let final_summary = bundle
+        .horizons
+        .iter()
+        .find(|candidate| candidate.horizon_days == horizon.horizon_days)
+        .and_then(|candidate| candidate.threshold_diagnostics.as_ref())
+        .map(|diagnostics| &diagnostics.final_summary)?;
+
+    if final_summary.cooldown_row_count > 0
+        && final_summary.positive_window_row_count > 0
+        && final_summary.cooldown_hit_rate + 0.001 >= final_summary.positive_window_hit_rate
+    {
+        return Some(format!(
+            "{}d threshold hit rates keep cooldown {:.1}% at or above positive_window {:.1}% in bundle diagnostics",
+            horizon.horizon_days,
+            final_summary.cooldown_hit_rate * 100.0,
+            final_summary.positive_window_hit_rate * 100.0,
+        ));
+    }
+
+    None
 }
 
 pub(crate) fn compare_operational_guardrails(
@@ -258,6 +312,20 @@ pub(crate) fn compare_operational_guardrails(
     regressions
 }
 
+pub(crate) fn compare_release_review_count_guardrails(
+    comparison: &crate::ReleaseReviewComparisonSummary,
+) -> Vec<String> {
+    let mut regressions = Vec::new();
+    let runtime_floor_hits = &comparison.runtime_floor_hit_count;
+    if runtime_floor_hits.delta <= -5 {
+        regressions.push(format!(
+            "runtime_floor_hit_count dropped from {} to {}",
+            runtime_floor_hits.baseline, runtime_floor_hits.candidate
+        ));
+    }
+    regressions
+}
+
 pub(crate) fn compare_runtime_sanity_guardrails(
     baseline: &crate::ReleaseRuntimeReviewDiagnostics,
     candidate: &crate::ReleaseRuntimeReviewDiagnostics,
@@ -277,12 +345,13 @@ pub(crate) fn compare_runtime_sanity_guardrails(
     }
 
     for summary in &candidate.regime_separation_summaries {
-        if summary.horizon_days == 20
+        if matches!(summary.horizon_days, 20 | 60)
             && summary.positive_window_avg_probability <= summary.normal_avg_probability
         {
             regressions.push(format!(
-                "candidate {} keeps 20d positive_window avg {} at or below normal {} in runtime history",
+                "candidate {} keeps {}d positive_window avg {} at or below normal {} in runtime history",
                 candidate.release_id,
+                summary.horizon_days,
                 crate::format_pct(summary.positive_window_avg_probability),
                 crate::format_pct(summary.normal_avg_probability),
             ));
@@ -294,6 +363,37 @@ pub(crate) fn compare_runtime_sanity_guardrails(
                 summary.horizon_days,
                 crate::format_pct(summary.post_crisis_cooldown_avg_probability),
                 crate::format_pct(summary.positive_window_avg_probability),
+            ));
+        }
+    }
+
+    for horizon_days in [20, 60] {
+        push_positive_window_retention_regression(
+            &mut regressions,
+            baseline,
+            candidate,
+            horizon_days,
+        );
+    }
+
+    if latest_snapshot_has_cold_20d(candidate) {
+        if let Some(snapshot) = candidate.latest_probability_snapshot.as_ref() {
+            regressions.push(format!(
+                "candidate {} latest runtime point {} has incoherent 20d horizon: p20d={} vs p5d={} and p60d={}",
+                candidate.release_id,
+                snapshot.as_of_date,
+                format_probability_precise(snapshot.p_20d),
+                format_probability_precise(snapshot.p_5d),
+                format_probability_precise(snapshot.p_60d),
+            ));
+        }
+    }
+
+    if latest_snapshot_has_cold_20d(baseline) {
+        if let Some(snapshot) = baseline.latest_probability_snapshot.as_ref() {
+            regressions.push(format!(
+                "baseline {} latest runtime point {} is also 20d-cold, so relative guardrails alone are not a sufficient promotion test",
+                baseline.release_id, snapshot.as_of_date
             ));
         }
     }
@@ -313,6 +413,77 @@ pub(crate) fn compare_runtime_sanity_guardrails(
     }
 
     regressions
+}
+
+fn runtime_separation_summary_for_horizon(
+    diagnostics: &crate::ReleaseRuntimeReviewDiagnostics,
+    horizon_days: u32,
+) -> Option<&crate::ReleaseRuntimeSeparationSummary> {
+    diagnostics
+        .regime_separation_summaries
+        .iter()
+        .find(|summary| summary.horizon_days == horizon_days)
+}
+
+fn latest_snapshot_has_cold_20d(diagnostics: &crate::ReleaseRuntimeReviewDiagnostics) -> bool {
+    let Some(snapshot) = diagnostics.latest_probability_snapshot.as_ref() else {
+        return false;
+    };
+
+    (snapshot.p_5d > 0.0 || snapshot.p_60d > 0.0)
+        && snapshot.p_20d < snapshot.p_5d * 0.25
+        && snapshot.p_20d < snapshot.p_60d * 0.25
+}
+
+fn push_positive_window_retention_regression(
+    regressions: &mut Vec<String>,
+    baseline: &crate::ReleaseRuntimeReviewDiagnostics,
+    candidate: &crate::ReleaseRuntimeReviewDiagnostics,
+    horizon_days: u32,
+) {
+    let (Some(baseline_summary), Some(candidate_summary)) = (
+        runtime_separation_summary_for_horizon(baseline, horizon_days),
+        runtime_separation_summary_for_horizon(candidate, horizon_days),
+    ) else {
+        return;
+    };
+
+    let baseline_positive = baseline_summary.positive_window_avg_probability;
+    if baseline_positive <= 0.0 {
+        return;
+    }
+
+    let candidate_positive = candidate_summary.positive_window_avg_probability;
+    let positive_retention = candidate_positive / baseline_positive;
+    let positive_delta = candidate_positive - baseline_positive;
+    if positive_retention < 0.75 || positive_delta <= -0.06 {
+        regressions.push(format!(
+            "candidate {} retained only {} of {}d positive_window avg probability in runtime history: {} -> {}",
+            candidate.release_id,
+            crate::format_pct(positive_retention),
+            horizon_days,
+            crate::format_pct(baseline_positive),
+            crate::format_pct(candidate_positive),
+        ));
+    }
+}
+
+fn format_probability_precise(value: f64) -> String {
+    let percent = value * 100.0;
+    let absolute = percent.abs();
+    if absolute == 0.0 {
+        return "0%".to_string();
+    }
+    if absolute < 0.0001 {
+        return format!("{percent:.6}%");
+    }
+    if absolute < 0.01 {
+        return format!("{percent:.4}%");
+    }
+    if absolute < 0.1 {
+        return format!("{percent:.3}%");
+    }
+    format!("{percent:.2}%")
 }
 
 fn release_has_cold_runtime_history(diagnostics: &crate::ReleaseRuntimeReviewDiagnostics) -> bool {
@@ -378,4 +549,208 @@ pub(crate) fn print_operational_guardrail_summary(
             .rolling_audit
             .longest_false_positive_episode_days
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scalar_metric() -> crate::ReleaseReviewScalarMetric {
+        crate::ReleaseReviewScalarMetric {
+            baseline: 0.0,
+            candidate: 0.0,
+            delta: 0.0,
+        }
+    }
+
+    fn count_metric(baseline: u32, candidate: u32) -> crate::ReleaseReviewCountMetric {
+        crate::ReleaseReviewCountMetric {
+            baseline,
+            candidate,
+            delta: candidate as i64 - baseline as i64,
+        }
+    }
+
+    fn comparison_with_runtime_floor_hits(
+        baseline: u32,
+        candidate: u32,
+    ) -> crate::ReleaseReviewComparisonSummary {
+        crate::ReleaseReviewComparisonSummary {
+            timely_warning_rate: scalar_metric(),
+            strict_actionable_point_count: count_metric(0, 0),
+            runtime_floor_hit_count: count_metric(baseline, candidate),
+            actionable_precision: scalar_metric(),
+            longest_false_positive_episode_days: count_metric(0, 0),
+            current_p_5d: scalar_metric(),
+            current_p_20d: scalar_metric(),
+            current_p_60d: scalar_metric(),
+            runtime_separation_summary: Vec::new(),
+            backtest_scenarios: Vec::new(),
+        }
+    }
+
+    fn runtime_separation_summary(
+        horizon_days: u32,
+        positive_window_avg_probability: f64,
+    ) -> crate::ReleaseRuntimeSeparationSummary {
+        let normal_avg_probability = (positive_window_avg_probability * 0.5).min(0.10);
+        let post_crisis_cooldown_avg_probability = normal_avg_probability * 0.8;
+        crate::ReleaseRuntimeSeparationSummary {
+            horizon_days,
+            early_warning_regime: "positive_window".to_string(),
+            normal_avg_probability,
+            pre_warning_buffer_avg_probability: normal_avg_probability + 0.01,
+            positive_window_avg_probability,
+            in_crisis_avg_probability: positive_window_avg_probability + 0.05,
+            post_crisis_cooldown_avg_probability,
+            early_warning_raw_lift_vs_normal: Some(2.0),
+            early_warning_calibrated_lift_vs_normal: Some(2.0),
+            early_warning_gap_retention: Some(1.0),
+            positive_window_calibrated_lift_vs_normal: Some(2.0),
+            positive_window_gap_vs_normal: Some(
+                positive_window_avg_probability - normal_avg_probability,
+            ),
+            in_crisis_raw_lift_vs_normal: Some(2.5),
+            in_crisis_calibrated_lift_vs_normal: Some(2.5),
+            post_crisis_cooldown_calibrated_lift_vs_normal: Some(0.8),
+            post_crisis_cooldown_gap_vs_normal: Some(
+                post_crisis_cooldown_avg_probability - normal_avg_probability,
+            ),
+            max_non_normal_calibrated_lift_vs_normal: Some(2.5),
+            max_non_normal_threshold_hit_rate: Some(0.25),
+            diagnosis: "usable_early_warning_separation".to_string(),
+        }
+    }
+
+    fn runtime_review_with_positive_window(
+        release_id: &str,
+        horizon_days: u32,
+        positive_window_avg_probability: f64,
+    ) -> crate::ReleaseRuntimeReviewDiagnostics {
+        crate::ReleaseRuntimeReviewDiagnostics {
+            release_id: release_id.to_string(),
+            history_point_count: 100,
+            latest_probability_snapshot: None,
+            posture_distribution: Vec::new(),
+            time_bucket_distribution: Vec::new(),
+            posture_trigger_distribution: Vec::new(),
+            posture_blocker_distribution: Vec::new(),
+            regime_probability_summaries: Vec::new(),
+            regime_separation_summaries: vec![runtime_separation_summary(
+                horizon_days,
+                positive_window_avg_probability,
+            )],
+            runtime_thresholds: None,
+            points_at_or_above_prepare_p60d: None,
+            points_at_or_above_hedge_p20d: None,
+            points_at_or_above_defend_p5d: None,
+            note: "test".to_string(),
+        }
+    }
+
+    fn runtime_review_with_20d_positive_window(
+        release_id: &str,
+        positive_window_avg_probability: f64,
+    ) -> crate::ReleaseRuntimeReviewDiagnostics {
+        runtime_review_with_positive_window(release_id, 20, positive_window_avg_probability)
+    }
+
+    #[test]
+    fn release_review_count_guardrails_reject_runtime_floor_hit_regression() {
+        let regressions =
+            compare_release_review_count_guardrails(&comparison_with_runtime_floor_hits(91, 69));
+
+        assert!(regressions
+            .iter()
+            .any(|item| item.contains("runtime_floor_hit_count dropped from 91 to 69")));
+    }
+
+    #[test]
+    fn release_review_count_guardrails_allow_small_runtime_floor_noise() {
+        let regressions =
+            compare_release_review_count_guardrails(&comparison_with_runtime_floor_hits(9, 7));
+
+        assert!(regressions.is_empty());
+    }
+
+    #[test]
+    fn runtime_sanity_guardrails_reject_positive_window_retention_regression() {
+        let baseline = runtime_review_with_20d_positive_window("baseline", 0.80);
+        let candidate = runtime_review_with_20d_positive_window("regional_banks_candidate", 0.05);
+
+        let regressions = compare_runtime_sanity_guardrails(&baseline, &candidate);
+
+        assert!(regressions.iter().any(|item| {
+            item.contains(
+                "candidate regional_banks_candidate retained only 6.2% of 20d positive_window avg probability",
+            )
+        }));
+    }
+
+    #[test]
+    fn runtime_sanity_guardrails_reject_60d_positive_window_retention_regression() {
+        let baseline = runtime_review_with_positive_window("baseline", 60, 0.70);
+        let candidate = runtime_review_with_positive_window("sixty_day_candidate", 60, 0.30);
+
+        let regressions = compare_runtime_sanity_guardrails(&baseline, &candidate);
+
+        assert!(regressions.iter().any(|item| {
+            item.contains(
+                "candidate sixty_day_candidate retained only 42.9% of 60d positive_window avg probability",
+            )
+        }));
+    }
+
+    fn latest_snapshot(
+        as_of_date: &str,
+        p_5d: f64,
+        p_20d: f64,
+        p_60d: f64,
+    ) -> crate::ReleaseRuntimeLatestProbabilitySnapshot {
+        crate::ReleaseRuntimeLatestProbabilitySnapshot {
+            as_of_date: as_of_date.to_string(),
+            p_5d,
+            p_20d,
+            p_60d,
+            raw_p_5d: Some(p_5d),
+            raw_p_20d: Some(p_20d),
+            raw_p_60d: Some(p_60d),
+            p20d_vs_p5d_ratio: Some(p_20d / p_5d),
+            p20d_vs_p60d_ratio: Some(p_20d / p_60d),
+        }
+    }
+
+    #[test]
+    fn runtime_sanity_guardrails_reject_latest_20d_horizon_incoherence() {
+        let mut baseline = runtime_review_with_20d_positive_window("baseline", 0.80);
+        baseline.latest_probability_snapshot =
+            Some(latest_snapshot("2026-06-09", 0.0010, 0.0005, 0.0012));
+        let mut candidate = runtime_review_with_20d_positive_window("candidate", 0.80);
+        candidate.latest_probability_snapshot =
+            Some(latest_snapshot("2026-06-09", 0.0014, 0.000067, 0.00076));
+
+        let regressions = compare_runtime_sanity_guardrails(&baseline, &candidate);
+
+        assert!(regressions.iter().any(|item| {
+            item.contains(
+                "candidate candidate latest runtime point 2026-06-09 has incoherent 20d horizon",
+            )
+        }));
+    }
+
+    #[test]
+    fn runtime_sanity_guardrails_allow_mild_latest_20d_neighbor_gap() {
+        let mut baseline = runtime_review_with_20d_positive_window("baseline", 0.80);
+        baseline.latest_probability_snapshot =
+            Some(latest_snapshot("2026-06-09", 0.0010, 0.0005, 0.0012));
+        let mut candidate = runtime_review_with_20d_positive_window("candidate", 0.80);
+        candidate.latest_probability_snapshot =
+            Some(latest_snapshot("2026-06-09", 0.0010, 0.00035, 0.0011));
+
+        let regressions = compare_runtime_sanity_guardrails(&baseline, &candidate);
+
+        assert!(!regressions
+            .iter()
+            .any(|item| item.contains("latest runtime point")));
+    }
 }

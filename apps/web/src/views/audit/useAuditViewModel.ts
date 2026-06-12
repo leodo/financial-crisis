@@ -4,19 +4,30 @@ import {
   formatDate,
   formatDateTime,
   formatPercent,
+  formatProbabilityBasisPoints,
+  formatProbabilityDecimal,
+  formatProbabilityPercentExact,
   freshnessLabel,
+  historyEvidenceTierLabel,
+  historySourceLabel,
   humanizeAuditNote,
   pointInTimeModeLabel,
   postureLabel,
   probabilityModeLabel,
   releaseReviewActionTypeLabel,
   releaseReviewAttributionLabel,
+  releaseReviewScenarioCoveragePitLabel,
+  releaseReviewScenarioFamilyLabel,
   releaseReviewHistoryModeLabel,
+  releaseReviewScenarioRoleLabel,
+  releaseReviewScenarioTrainingRoleLabel,
   releaseReviewVerdictLabel,
   releaseReviewWorkstreamLabel,
   releaseManifestStatusLabel,
   releaseIdLabel,
   releaseServingStatusLabel,
+  scenarioPackBlockerLabel,
+  scenarioPackOutcomeLabel,
   timeBucketLabel
 } from "../../format";
 import type {
@@ -26,9 +37,55 @@ import type {
   ResearchAuditResponse,
   TimeToRiskBucket
 } from "../../types";
-import type { MetricItem } from "../shared/panelHelpers";
+import type { DetailRowItem, MetricItem } from "../shared/panelHelpers";
+import { currentMvpRiskState } from "../decision/mvpRiskState";
 import { buildProbabilityOverlayViewModel } from "../shared/probabilityOverlay";
 import { auditContent } from "./content";
+import { buildDatasetSummarySection } from "./datasetSummarySection";
+import { buildWorkstreamAuditSection } from "./workstreamSection";
+
+function rateShockPhaseLabel(label: string): string {
+  return (
+    {
+      primary: "主阶段",
+      late_validation: "后验确认",
+      outside: "窗口外"
+    }[label] ?? label
+  );
+}
+
+function rateShockActionLevelLabel(label: string): string {
+  return (
+    {
+      prepare: "准备",
+      hedge: "对冲",
+      defend: "防守",
+      none: "无动作"
+    }[label] ?? label
+  );
+}
+
+function rateShockContinuityFocusLabel(label: string): string {
+  return (
+    {
+      prepare_primary: "准备窗口 x 主阶段",
+      hedge_primary: "对冲窗口 x 主阶段",
+      primary_phase: "主阶段总览",
+      late_validation: "后验确认"
+    }[label] ?? label
+  );
+}
+
+function formatSnapshotProbabilityDecimalSummary(
+  label: string,
+  values: [number, number, number]
+): string {
+  return `${label} ${values.map(formatProbabilityDecimal).join(" / ")}`;
+}
+
+function formatSnapshotProbabilityBasisPointSummary(values: [number, number, number]): string {
+  return `概率基点 ${values.map(formatProbabilityBasisPoints).join(" / ")}`;
+}
 
 export function useAuditViewModel({
   assessment,
@@ -41,32 +98,48 @@ export function useAuditViewModel({
   const activeLikeStatuses = new Set(["active", "approved"]);
   const inactiveStatuses = new Set(["archived", "rolled_back", "retired"]);
   const uniqueSnapshotDates = new Set(audit.snapshots.map((snapshot) => snapshot.as_of_date)).size;
+  const probabilityInputReferenceOnly =
+    currentMvpRiskState(assessment).probability_input_status === "reference_only";
 
   const runtimeMetrics: MetricItem[] = [
     {
       label: "概率层",
       value: probabilityModeLabel(audit.runtime_probability_mode),
+      hint: "这是 API 当前加载的概率服务层，不代表当前概率已可作为主结论。",
       valueClassName: "metric-value-token"
     },
     {
       label: "服务状态",
       value: releaseServingStatusLabel(audit.runtime_release_status),
+      hint:
+        probabilityInputReferenceOnly
+          ? "服务状态正常只说明 bundle 可加载；当前正式概率仍是参考输入。"
+          : "服务状态正常不等于 release review 或 Go/No-Go 自动通过。",
       valueClassName: "metric-value-token"
     },
     {
       label: "当前生效版本",
       value: activeRelease.value,
+      hint: activeRelease.hint ?? "线上 active release id；不是候选晋升结论。",
       valueClassName: "metric-value-token"
     },
-    { label: "最新快照", value: formatDate(audit.latest_snapshot_date) }
+    {
+      label: "最新快照",
+      value: formatDate(audit.latest_snapshot_date),
+      hint: "运行快照日期，不是实时行情时间。"
+    }
   ];
 
   const summaryMetrics: MetricItem[] = [
-    { label: "登记版本数", value: `${audit.releases.length}` },
+    {
+      label: "登记版本数",
+      value: `${audit.releases.length}`,
+      hint: "release registry 中的历史/候选/归档总数，不代表可上线版本数。"
+    },
     {
       label: "当前 / 已批准",
       value: `${audit.releases.filter((release) => activeLikeStatuses.has(release.status)).length}`,
-      hint: "仍属于当前可运行版本或已批准候选。"
+      hint: "登记状态计数，不代表这些版本都适合作为当前主结论。"
     },
     {
       label: "已归档 / 回退",
@@ -76,14 +149,75 @@ export function useAuditViewModel({
     {
       label: "回放批次",
       value: `${audit.replay_runs.length}`,
-      hint: audit.latest_replay_run_id ? `最新 run: ${audit.latest_replay_run_id}` : "当前没有可展示的 replay run"
+      hint: audit.latest_replay_run_id
+        ? `历史回放任务批次数；最新 run: ${audit.latest_replay_run_id}`
+        : "当前没有可展示的 replay run"
     },
     {
       label: "快照覆盖",
       value: `${uniqueSnapshotDates} 天`,
-      hint: `${audit.snapshots.length} 条历史预测记录`
+      hint: `${audit.snapshots.length} 条历史预测记录；这是运行快照覆盖，不是模型训练样本数。`
     }
   ];
+  const provenanceMetrics: MetricItem[] = [
+    {
+      label: "历史证据等级",
+      value: historyEvidenceTierLabel(audit.history_provenance.evidence_tier),
+      hint: audit.history_provenance.note
+    },
+    {
+      label: "PIT 快照支撑",
+      value: `${audit.history_provenance.feature_backed_points}/${audit.history_provenance.total_points}`,
+      hint: "历史证据层覆盖，不代表当前正式概率已经恢复主结论。"
+    },
+    {
+      label: "沿用旧 PIT",
+      value: `${audit.history_provenance.reused_feature_snapshot_points}`
+    },
+    {
+      label: "原始观测过渡",
+      value: `${audit.history_provenance.raw_observation_points}`
+    },
+    {
+      label: "旧快照桥接",
+      value: `${audit.history_provenance.snapshot_bridge_points}`
+    }
+  ];
+  const provenanceRows: DetailRowItem[] = audit.history_provenance.sources
+    .filter((source) => source.count > 0)
+    .map((source) => ({
+      id: source.source_id,
+      title: historySourceLabel(source.source_id),
+      detail:
+        source.latest_as_of_date !== null
+          ? `共 ${source.count} 个点，最近日期 ${formatDate(source.latest_as_of_date)}`
+          : `共 ${source.count} 个点`,
+      note: source.note,
+      meta: `${source.count}`
+    }));
+  const snapshotAuditMetrics: MetricItem[] = [
+    {
+      label: "当前 active",
+      value: `${audit.prediction_snapshot_audit.active_release_snapshot_count}`,
+      hint: "和当前 active release 对得上的运行快照条数。"
+    },
+    {
+      label: "其他 release",
+      value: `${audit.prediction_snapshot_audit.other_release_snapshot_count}`,
+      hint: "旧 release 保留下来的运行快照，仅用于对比轨迹或排查回退。"
+    },
+    {
+      label: "正式概率",
+      value: `${audit.prediction_snapshot_audit.formal_probability_snapshot_count}`,
+      hint: "这些仍只是运行时概率截面，不等于 formal history 证据。"
+    },
+    {
+      label: "启发式 / 降级",
+      value: `${audit.prediction_snapshot_audit.heuristic_probability_snapshot_count}`,
+      hint: "用于识别 bundle 加载失败后是否回退到启发式层。"
+    }
+  ];
+  const snapshotAuditNote = audit.prediction_snapshot_audit.note;
 
   const methodSummary = `当前运行的是 ${probabilityModeLabel(assessment.method.probability_mode)}，服务状态 ${releaseServingStatusLabel(assessment.method.release_status)}，对应版本 ${releaseIdLabel(assessment.method.release_id).value}。`;
   const {
@@ -119,15 +253,30 @@ export function useAuditViewModel({
 
   const snapshotRows = audit.snapshots.map((snapshot) => {
     const compact = releaseIdLabel(snapshot.release_id);
+    const calibratedValues: [number, number, number] = [
+      snapshot.calibrated_p_5d,
+      snapshot.calibrated_p_20d,
+      snapshot.calibrated_p_60d
+    ];
+    const rawValues: [number, number, number] = [
+      snapshot.raw_p_5d,
+      snapshot.raw_p_20d,
+      snapshot.raw_p_60d
+    ];
+    const snapshotScope =
+      snapshot.release_id === audit.active_release_id ? "当前线上快照" : "历史/候选快照";
     return {
       id: `${snapshot.as_of_date}-${snapshot.release_id ?? "inline"}-${snapshot.recorded_at}`,
       asOfDate: formatDate(snapshot.as_of_date),
       releaseId: snapshot.release_id ? compact.value : "内联快照",
-      pointInTimeMode: pointInTimeModeLabel(snapshot.point_in_time_mode),
+      pointInTimeMode: [snapshotScope, pointInTimeModeLabel(snapshot.point_in_time_mode)],
       probabilityMode: probabilityModeLabel(snapshot.probability_mode),
       releaseStatus: releaseServingStatusLabel(snapshot.release_status),
-      calibratedSummary: `${formatPercent(snapshot.calibrated_p_5d)} / ${formatPercent(snapshot.calibrated_p_20d)} / ${formatPercent(snapshot.calibrated_p_60d)}`,
-      rawSummary: `${formatPercent(snapshot.raw_p_5d)} / ${formatPercent(snapshot.raw_p_20d)} / ${formatPercent(snapshot.raw_p_60d)}`,
+      calibratedSummary: `${formatProbabilityPercentExact(snapshot.calibrated_p_5d)} / ${formatProbabilityPercentExact(snapshot.calibrated_p_20d)} / ${formatProbabilityPercentExact(snapshot.calibrated_p_60d)}`,
+      rawSummary: `${formatProbabilityPercentExact(snapshot.raw_p_5d)} / ${formatProbabilityPercentExact(snapshot.raw_p_20d)} / ${formatProbabilityPercentExact(snapshot.raw_p_60d)}`,
+      calibratedDecimalSummary: formatSnapshotProbabilityDecimalSummary("接口小数", calibratedValues),
+      rawDecimalSummary: formatSnapshotProbabilityDecimalSummary("原始接口小数", rawValues),
+      calibratedBasisPointSummary: formatSnapshotProbabilityBasisPointSummary(calibratedValues),
       posture: postureLabel(snapshot.posture as DecisionPosture),
       timeBucket: timeBucketLabel(snapshot.time_to_risk_bucket as TimeToRiskBucket),
       triggerLabels: snapshot.posture_trigger_codes.map((code) => describePostureClause(code).label),
@@ -201,6 +350,46 @@ export function useAuditViewModel({
       ]
     : [];
 
+  const latestReleaseReviewCoverageSource = latestReleaseReview
+    ? compactFileReference(latestReleaseReview.scenario_coverage_catalog.source)
+    : null;
+
+  const latestReleaseReviewCoverageMetrics: MetricItem[] =
+    latestReleaseReview && latestReleaseReview.scenario_coverages.length > 0
+      ? [
+          {
+            label: "覆盖目录",
+            value: latestReleaseReview.scenario_coverage_catalog.catalog_id || "未登记",
+            hint: latestReleaseReviewCoverageSource?.hint
+          },
+          {
+            label: "回测覆盖（目录）",
+            value: `${latestReleaseReview.scenario_coverage_catalog.covered_backtest_scenario_count}/${latestReleaseReview.scenario_coverage_catalog.backtest_scenario_count}`,
+            hint: "scenario catalog 覆盖数，不是当前模型通过率。"
+          },
+          {
+            label: "重点覆盖（目录）",
+            value: `${latestReleaseReview.scenario_coverage_catalog.covered_focus_scenario_count}/${latestReleaseReview.scenario_coverage_catalog.focus_scenario_count}`,
+            hint: "重点历史场景覆盖数，不是当前风险事件数。"
+          },
+          {
+            label: "主训练可用（目录）",
+            value: `${latestReleaseReview.scenario_coverage_catalog.main_training_eligible_count}`,
+            hint: "目录层可训练场景数，不等于候选版已可上线。"
+          },
+          {
+            label: "扩展可用（目录）",
+            value: `${latestReleaseReview.scenario_coverage_catalog.extension_training_eligible_count}`,
+            hint: "扩展训练候选场景数，仍需 release review 判断。"
+          },
+          {
+            label: "受保护压力（目录）",
+            value: `${latestReleaseReview.scenario_coverage_catalog.protected_stress_eligible_count}`,
+            hint: `protected stress 场景目录数；历史类比可用 ${latestReleaseReview.scenario_coverage_catalog.historical_analog_eligible_count} 个`
+          }
+        ]
+      : [];
+
   const latestReleaseReviewActionRows =
     latestReleaseReview?.historical_audit_actions.map((row, index) => ({
       id: `${row.workstream}-${row.action_type}-${index}`,
@@ -225,10 +414,291 @@ export function useAuditViewModel({
       ]
     })) ?? [];
 
+  const latestReleaseReviewCoverageRows =
+    latestReleaseReview?.scenario_coverages
+      .slice()
+      .sort((left, right) => {
+        return (
+          Number(right.in_focus_review) - Number(left.in_focus_review) ||
+          Number(right.in_backtest_comparison) - Number(left.in_backtest_comparison) ||
+          Number(right.usable_for_main_training) - Number(left.usable_for_main_training) ||
+          left.scenario_name.localeCompare(right.scenario_name, "zh-CN")
+        );
+      })
+      .map((row) => {
+        const allowedRoles = [
+          row.usable_for_main_training ? releaseReviewScenarioRoleLabel("main_training") : null,
+          row.usable_for_extension_training ? releaseReviewScenarioRoleLabel("extension_training") : null,
+          row.usable_for_protected_stress ? releaseReviewScenarioRoleLabel("protected_stress") : null,
+          row.usable_for_historical_analog ? releaseReviewScenarioRoleLabel("historical_analog_only") : null
+        ].filter((item): item is string => item !== null);
+        const scenarioTags = [
+          row.in_focus_review ? "重点复核" : null,
+          row.in_backtest_comparison ? "回测对比" : null,
+          row.protected_window ? "受保护窗口" : null
+        ].filter((item): item is string => item !== null);
+
+        return {
+          id: row.scenario_id,
+          scenarioLabel: row.scenario_name,
+          scenarioDetails: [
+            row.scenario_id,
+            scenarioTags.length > 0 ? scenarioTags.join(" / ") : null
+          ].filter((item): item is string => item !== null),
+          familySummary: releaseReviewScenarioFamilyLabel(row.scenario_family),
+          trainingRoleSummary: releaseReviewScenarioTrainingRoleLabel(row.training_role),
+          coverageRoleSummary: releaseReviewScenarioRoleLabel(row.recommended_role),
+          allowedSummary:
+            allowedRoles.length > 0
+              ? `可用: ${allowedRoles.join("、")}`
+              : "当前没有可用目录角色。",
+          gradeSummary: `${row.coverage_grade} / ${releaseReviewScenarioCoveragePitLabel(row.point_in_time_mode)}`,
+          sourceSummary: row.free_sources.length > 0 ? row.free_sources.join("、") : "未登记免费主源",
+          statusSummary: row.current_status,
+          gapSummary:
+            row.blocking_gaps.length > 0
+              ? row.blocking_gaps.join("；")
+              : "当前没有额外阻断缺口。"
+        };
+      }) ?? [];
+
+  const latestScenarioPackAudit = audit.latest_scenario_pack_audit;
+  const latestScenarioPackAuditSource = latestScenarioPackAudit
+    ? compactFileReference(latestScenarioPackAudit.source)
+    : null;
+  const scenarioPackBlockerCount = (key: string) =>
+    latestScenarioPackAudit?.blocker_counts.find((row) => row.key === key)?.count ?? 0;
+  const latestScenarioPackAuditMetrics: MetricItem[] = latestScenarioPackAudit
+    ? [
+        {
+          label: "场景 compare 覆盖",
+          value: `${latestScenarioPackAudit.compare_ok_count}/${latestScenarioPackAudit.scenario_summaries.length}`
+        },
+        {
+          label: "稳定通过",
+          value: `${scenarioPackBlockerCount("stable_pass")}`
+        },
+        {
+          label: "通过但边际变弱",
+          value: `${scenarioPackBlockerCount("stable_pass_with_margin_erosion")}`
+        },
+        {
+          label: "共享漏报",
+          value: `${scenarioPackBlockerCount("shared_missed_signal")}`
+        },
+        {
+          label: "共享无信号",
+          value: `${scenarioPackBlockerCount("shared_no_signal")}`
+        },
+        {
+          label: "执行连续性问题",
+          value: `${scenarioPackBlockerCount("posture_continuity")}`
+        }
+      ]
+    : [];
+
+  const blockerPriority: Record<string, number> = {
+    candidate_regression: 0,
+    posture_continuity: 1,
+    review_gate_gap: 2,
+    residual_review_l3: 3,
+    stable_pass_with_margin_erosion: 4,
+    shared_missed_signal: 5,
+    shared_no_signal: 6,
+    stable_pass: 7,
+    candidate_improvement: 8
+  };
+
+  const latestScenarioPackAuditRows =
+    latestScenarioPackAudit?.scenario_summaries
+      .slice()
+      .sort((left, right) => {
+        return (
+          (blockerPriority[left.blocker_class] ?? 99) - (blockerPriority[right.blocker_class] ?? 99) ||
+          left.scenario_label.localeCompare(right.scenario_label, "zh-CN")
+        );
+      })
+      .map((row) => {
+        const timingSummary =
+          row.candidate_actionable_lead_time_days !== null
+            ? `候选动作提前 ${row.candidate_actionable_lead_time_days} 天`
+            : row.candidate_lead_time_days !== null
+              ? `候选 L2 提前 ${row.candidate_lead_time_days} 天`
+              : "当前没有有效 lead time";
+        const timingDetails = [
+          scenarioPackOutcomeLabel(row.outcome),
+          row.positive_window_retention_20d !== null
+            ? `20d 连续命中保留 ${formatPercent(row.positive_window_retention_20d)}`
+            : null,
+          row.overall_avg_delta_p_20d !== null
+            ? `20d 均值变化 ${formatPercent(row.overall_avg_delta_p_20d)}`
+            : null
+        ].filter((item): item is string => item !== null);
+        const scenarioTags = [
+          releaseReviewScenarioFamilyLabel(row.family),
+          releaseReviewScenarioTrainingRoleLabel(row.training_role),
+          row.protected_window ? "受保护窗口" : null
+        ].filter((item): item is string => item !== null);
+        const coverageDetails = [
+          row.current_status,
+          row.compare_dataset_key
+            ? `Dataset: ${row.compare_dataset_key}`
+            : row.attempted_datasets.length > 0
+              ? `Tried: ${row.attempted_datasets.join(" / ")}`
+              : null,
+          row.free_sources.length > 0 ? `免费主源: ${row.free_sources.join("、")}` : null
+        ].filter((item): item is string => item !== null);
+        const blockerDetails = [
+          row.primary_workstream ? releaseReviewWorkstreamLabel(row.primary_workstream) : null,
+          row.candidate_primary_failure_mode ?? null,
+          row.suggested_review ?? null
+        ].filter((item): item is string => item !== null);
+
+        return {
+          id: row.scenario_id,
+          scenarioLabel: row.scenario_label,
+          scenarioDetails: [row.scenario_id, ...scenarioTags],
+          blockerSummary: scenarioPackBlockerLabel(row.blocker_class),
+          blockerDetails,
+          timingSummary,
+          timingDetails,
+          coverageSummary: `${row.coverage_grade} / ${releaseReviewScenarioCoveragePitLabel(row.point_in_time_mode)}`,
+          coverageDetails,
+          takeaway: row.takeaway,
+          gapSummary:
+            row.blocking_gaps.length > 0 ? row.blocking_gaps.join("；") : "当前没有额外缺口。"
+        };
+      }) ?? [];
+
+  const latestRateShockAudit = audit.latest_rate_shock_audit;
+  const latestRateShockAuditSource = latestRateShockAudit
+    ? compactFileReference(latestRateShockAudit.source)
+    : null;
+  const rateShockSplitSummary = latestRateShockAudit?.split_counts
+    .map((row) => `${row.split_name}=${row.row_count}`)
+    .join(" / ");
+  const latestRateShockAuditMetrics: MetricItem[] = latestRateShockAudit
+    ? [
+        {
+          label: "审计时间",
+          value: formatDateTime(latestRateShockAudit.generated_at)
+        },
+        {
+          label: "样本行数（历史）",
+          value: `${latestRateShockAudit.compare_summary.overall_window.row_count}`,
+          hint: "2022 利率冲击审计窗口中的历史 dataset 行数。"
+        },
+        {
+          label: "20d 命中（历史）",
+          value: `${latestRateShockAudit.compare_summary.baseline_hit_count_20d} -> ${latestRateShockAudit.compare_summary.candidate_hit_count_20d}`,
+          hint: "历史回放越过 20d 离线线的点数，不是当前 20d 正式概率命中。"
+        },
+        {
+          label: "60d 命中（历史）",
+          value: `${latestRateShockAudit.compare_summary.baseline_hit_count_60d} -> ${latestRateShockAudit.compare_summary.candidate_hit_count_60d}`,
+          hint: "历史回放越过 60d 离线线的点数，不是当前 60d 正式概率命中。"
+        },
+        {
+          label: "20d 入线阈值（审计）",
+          value: `${formatPercent(latestRateShockAudit.thresholds.baseline_20d)} -> ${formatPercent(latestRateShockAudit.thresholds.candidate_20d)}`,
+          hint: "专项审计用的离线运行线，不是当前页面概率。"
+        },
+        {
+          label: "20d 均值变化（历史）",
+          value: formatPercent(latestRateShockAudit.compare_summary.overall_window.avg_delta_p_20d),
+          hint: rateShockSplitSummary
+            ? `历史回放 candidate - baseline；split: ${rateShockSplitSummary}`
+            : "历史回放 candidate - baseline，不是当前概率变化。"
+        }
+      ]
+    : [];
+
+  const latestRateShockAuditContextRows: DetailRowItem[] = latestRateShockAudit
+    ? [
+        {
+          id: "rate-shock-window",
+          title: "审计窗口",
+          detail: `${formatDate(latestRateShockAudit.from_date)} - ${formatDate(latestRateShockAudit.to_date)}`,
+          note: `Dataset: ${latestRateShockAudit.dataset_key}`
+        },
+        {
+          id: "rate-shock-releases",
+          title: "基线 / 候选",
+          detail: `${releaseIdLabel(latestRateShockAudit.baseline_release_id).value} vs ${releaseIdLabel(latestRateShockAudit.candidate_release_id).value}`,
+          note: "这份专项审计只针对最近一次 release review 对应的 baseline / candidate。"
+        },
+        {
+          id: "rate-shock-thresholds",
+          title: "阈值口径",
+          detail: `20d ${formatPercent(latestRateShockAudit.thresholds.baseline_20d)} -> ${formatPercent(latestRateShockAudit.thresholds.candidate_20d)} / 60d ${formatPercent(latestRateShockAudit.thresholds.baseline_60d)} -> ${formatPercent(latestRateShockAudit.thresholds.candidate_60d)}`
+        }
+      ]
+    : [];
+
+  const latestRateShockContinuityRows: DetailRowItem[] = latestRateShockAudit
+    ? (
+        [
+          ["prepare_primary", latestRateShockAudit.continuity_focus.prepare_primary],
+          ["hedge_primary", latestRateShockAudit.continuity_focus.hedge_primary],
+          ["primary_phase", latestRateShockAudit.continuity_focus.primary_phase],
+          ["late_validation", latestRateShockAudit.continuity_focus.late_validation]
+        ] as const
+      ).map(([label, row]) => ({
+        id: `rate-shock-focus-${label}`,
+        title: rateShockContinuityFocusLabel(label),
+        detail: `历史样本 ${row.row_count}；20d ${formatPercent(row.baseline_avg_p_20d)} -> ${formatPercent(row.candidate_avg_p_20d)}；60d ${formatPercent(row.baseline_avg_p_60d)} -> ${formatPercent(row.candidate_avg_p_60d)}`,
+        note: `20d 回放命中 ${row.baseline_hit_20d.hit_count} -> ${row.candidate_hit_20d.hit_count}，最长段 ${row.baseline_hit_20d.max_streak} -> ${row.candidate_hit_20d.max_streak}；20d 离线线差 ${formatPercent(row.baseline_avg_gap_to_threshold_20d)} -> ${formatPercent(row.candidate_avg_gap_to_threshold_20d)}`,
+        meta: `20d Δ ${formatPercent(row.avg_delta_p_20d)}`
+      }))
+    : [];
+
+  const latestRateShockPhaseRows =
+    latestRateShockAudit?.phase_summaries.map((row) => ({
+      id: `phase-${row.label}`,
+      label: rateShockPhaseLabel(row.label),
+      rowCount: `${row.row_count}`,
+      p20Summary: `${formatPercent(row.baseline_avg_p_20d)} -> ${formatPercent(row.candidate_avg_p_20d)} (${formatPercent(row.avg_delta_p_20d)})`,
+      p20Continuity: `命中 ${row.baseline_hit_20d.hit_count} -> ${row.candidate_hit_20d.hit_count} / 最长段 ${row.baseline_hit_20d.max_streak} -> ${row.candidate_hit_20d.max_streak}`,
+      p60Summary: `${formatPercent(row.baseline_avg_p_60d)} -> ${formatPercent(row.candidate_avg_p_60d)} (${formatPercent(row.avg_delta_p_60d)})`,
+      p60Continuity: `命中 ${row.baseline_hit_60d.hit_count} -> ${row.candidate_hit_60d.hit_count} / 最长段 ${row.baseline_hit_60d.max_streak} -> ${row.candidate_hit_60d.max_streak}`,
+      thresholdGap: `20d 阈值差 ${formatPercent(row.baseline_avg_gap_to_threshold_20d)} -> ${formatPercent(row.candidate_avg_gap_to_threshold_20d)}`
+    })) ?? [];
+
+  const latestRateShockActionRows =
+    latestRateShockAudit?.action_level_summaries.map((row) => ({
+      id: `action-${row.label}`,
+      label: rateShockActionLevelLabel(row.label),
+      rowCount: `${row.row_count}`,
+      p20Summary: `${formatPercent(row.baseline_avg_p_20d)} -> ${formatPercent(row.candidate_avg_p_20d)} (${formatPercent(row.avg_delta_p_20d)})`,
+      continuitySummary: `20d 段数 ${row.baseline_hit_20d.segment_count} -> ${row.candidate_hit_20d.segment_count} / 最长段 ${row.baseline_hit_20d.max_streak} -> ${row.candidate_hit_20d.max_streak}`,
+      nearThresholdSummary: `距 20d 阈值 5pp 内 ${row.baseline_near_threshold_20d_within_5pp_count} -> ${row.candidate_near_threshold_20d_within_5pp_count}`,
+      maxSummary: `峰值 ${formatPercent(row.baseline_max_p_20d)} -> ${formatPercent(row.candidate_max_p_20d)}`
+    })) ?? [];
+
+  const {
+    latestDatasetSummaries,
+    latestDatasetSummaryMetrics,
+    latestDatasetSummaryRows,
+    latestDatasetScenarioRows
+  } = buildDatasetSummarySection(audit);
+
+  const {
+    latestWorkstreamAudit,
+    latestWorkstreamAuditSource,
+    latestWorkstreamAuditReport,
+    latestWorkstreamAuditMetrics,
+    latestWorkstreamAuditContextRows,
+    latestWorkstreamSummaryRows,
+    latestWorkstreamScenarioRows
+  } = buildWorkstreamAuditSection(audit);
+
   return {
     auditNote: audit.note ? humanizeAuditNote(audit.note) : auditContent.noteSummary,
     runtimeMetrics,
     summaryMetrics,
+    provenanceMetrics,
+    provenanceRows,
+    provenanceNote: audit.history_provenance.note,
     methodSummary,
     overlayHeadlineMetrics,
     overlayHorizonRows,
@@ -237,9 +707,36 @@ export function useAuditViewModel({
     latestReleaseReview,
     latestReleaseReviewMetrics,
     latestReleaseReviewContextRows,
+    latestReleaseReviewCoverageSource,
+    latestReleaseReviewCoverageMetrics,
+    latestReleaseReviewCoverageRows,
     latestReleaseReviewActionRows,
     latestReleaseReviewAttributionRows,
+    latestScenarioPackAudit,
+    latestScenarioPackAuditSource,
+    latestScenarioPackAuditMetrics,
+    latestScenarioPackAuditRows,
+    latestDatasetSummaries,
+    latestDatasetSummaryMetrics,
+    latestDatasetSummaryRows,
+    latestDatasetScenarioRows,
+    latestWorkstreamAudit,
+    latestWorkstreamAuditSource,
+    latestWorkstreamAuditReport,
+    latestWorkstreamAuditMetrics,
+    latestWorkstreamAuditContextRows,
+    latestWorkstreamSummaryRows,
+    latestWorkstreamScenarioRows,
+    latestRateShockAudit,
+    latestRateShockAuditSource,
+    latestRateShockAuditMetrics,
+    latestRateShockAuditContextRows,
+    latestRateShockContinuityRows,
+    latestRateShockPhaseRows,
+    latestRateShockActionRows,
     releaseRows,
+    snapshotAuditMetrics,
+    snapshotAuditNote,
     snapshotRows
   };
 }

@@ -10,6 +10,11 @@ import {
   SurfaceHeader
 } from "../shared/panelHelpers";
 import { auditContent } from "./content";
+import { CooldownAuditSection } from "./cooldownAuditSection";
+import { FundingStressAuditSection } from "./fundingStressAuditSection";
+import { LeadtimeAuditSection } from "./leadtimeAuditSection";
+import { PrewarningGapAuditSection } from "./prewarningGapAuditSection";
+import { RuntimeContributionAuditSection } from "./runtimeContributionAuditSection";
 import { useAuditViewModel } from "./useAuditViewModel";
 
 export default function AuditView({
@@ -23,6 +28,9 @@ export default function AuditView({
     auditNote,
     runtimeMetrics,
     summaryMetrics,
+    provenanceMetrics,
+    provenanceRows,
+    provenanceNote,
     methodSummary,
     overlayHeadlineMetrics,
     overlayHorizonRows,
@@ -31,9 +39,36 @@ export default function AuditView({
     latestReleaseReview,
     latestReleaseReviewMetrics,
     latestReleaseReviewContextRows,
+    latestReleaseReviewCoverageSource,
+    latestReleaseReviewCoverageMetrics,
+    latestReleaseReviewCoverageRows,
     latestReleaseReviewActionRows,
     latestReleaseReviewAttributionRows,
+    latestScenarioPackAudit,
+    latestScenarioPackAuditSource,
+    latestScenarioPackAuditMetrics,
+    latestScenarioPackAuditRows,
+    latestDatasetSummaries,
+    latestDatasetSummaryMetrics,
+    latestDatasetSummaryRows,
+    latestDatasetScenarioRows,
+    latestWorkstreamAudit,
+    latestWorkstreamAuditSource,
+    latestWorkstreamAuditReport,
+    latestWorkstreamAuditMetrics,
+    latestWorkstreamAuditContextRows,
+    latestWorkstreamSummaryRows,
+    latestWorkstreamScenarioRows,
+    latestRateShockAudit,
+    latestRateShockAuditSource,
+    latestRateShockAuditMetrics,
+    latestRateShockAuditContextRows,
+    latestRateShockContinuityRows,
+    latestRateShockPhaseRows,
+    latestRateShockActionRows,
     releaseRows,
+    snapshotAuditMetrics,
+    snapshotAuditNote,
     snapshotRows
   } = useAuditViewModel({
     assessment,
@@ -70,6 +105,9 @@ export default function AuditView({
             <SurfaceHeader title="审计摘要" icon={Database} />
             <MetricGrid items={summaryMetrics} />
             <p className="legend-note">{auditContent.summaryNote}</p>
+            <RuleBox label="历史证据层">{provenanceNote}</RuleBox>
+            <MetricGrid items={provenanceMetrics} />
+            {provenanceRows.length > 0 ? <DetailRows items={provenanceRows} compact /> : null}
           </section>
 
           <section className="surface">
@@ -86,8 +124,57 @@ export default function AuditView({
                     <RuleBox label="评审上下文">
                       <DetailRows items={latestReleaseReviewContextRows} compact />
                     </RuleBox>
+                    {latestReleaseReviewCoverageMetrics.length > 0 ? (
+                      <>
+                        <RuleBox label="场景覆盖说明">{auditContent.releaseReviewCoverageSummary}</RuleBox>
+                        <MetricGrid
+                          items={latestReleaseReviewCoverageMetrics}
+                          className="audit-review-metrics"
+                        />
+                        <RuleBox label="覆盖来源">
+                          <span title={latestReleaseReviewCoverageSource?.hint}>
+                            {latestReleaseReviewCoverageSource?.value ?? "未登记"}
+                          </span>
+                        </RuleBox>
+                        {latestReleaseReview.scenario_coverage_catalog.warning ? (
+                          <RuleBox label="配置告警">
+                            {latestReleaseReview.scenario_coverage_catalog.warning}
+                          </RuleBox>
+                        ) : null}
+                      </>
+                    ) : null}
                   </div>
                 </div>
+
+                {latestReleaseReviewCoverageRows.length > 0 ? (
+                  <ResponsiveTable
+                    className="wide-table xwide-table"
+                    columns={[
+                      "场景",
+                      "Family / 原始角色",
+                      "目录结论 / 可用范围",
+                      "覆盖 / 免费主源",
+                      "当前状态 / 主要缺口"
+                    ]}
+                    note={auditContent.releaseReviewCoverageTableNote}
+                  >
+                    {latestReleaseReviewCoverageRows.map((row) => (
+                      <tr key={row.id}>
+                        <StackedTableCell title={row.scenarioLabel} details={row.scenarioDetails} />
+                        <StackedTableCell
+                          title={row.familySummary}
+                          details={row.trainingRoleSummary}
+                        />
+                        <StackedTableCell
+                          title={row.coverageRoleSummary}
+                          details={row.allowedSummary}
+                        />
+                        <StackedTableCell title={row.gradeSummary} details={row.sourceSummary} />
+                        <StackedTableCell title={row.statusSummary} details={row.gapSummary} />
+                      </tr>
+                    ))}
+                  </ResponsiveTable>
+                ) : null}
 
                 {latestReleaseReviewActionRows.length > 0 ? (
                   <ResponsiveTable
@@ -136,6 +223,214 @@ export default function AuditView({
               <RuleBox label="当前状态">{auditContent.releaseReviewEmpty}</RuleBox>
             )}
           </section>
+
+          <section className="surface">
+            <SurfaceHeader title="历史场景包审计" icon={ClipboardCheck} />
+            <p className="legend-note">{auditContent.scenarioPackSummary}</p>
+            {latestScenarioPackAudit ? (
+              <>
+                <MetricGrid items={latestScenarioPackAuditMetrics} className="audit-review-metrics" />
+                <RuleBox label="工件来源">
+                  <span title={latestScenarioPackAuditSource?.hint}>
+                    {latestScenarioPackAuditSource?.value ?? "未登记"}
+                  </span>
+                </RuleBox>
+                <ResponsiveTable
+                  className="wide-table xwide-table"
+                  columns={["场景", "当前判读", "结果 / 提前量", "覆盖 / 数据集", "结论"]}
+                  note={auditContent.scenarioPackTableNote}
+                >
+                  {latestScenarioPackAuditRows.map((row) => (
+                    <tr key={row.id}>
+                      <StackedTableCell title={row.scenarioLabel} details={row.scenarioDetails} />
+                      <StackedTableCell title={row.blockerSummary} details={row.blockerDetails} />
+                      <StackedTableCell title={row.timingSummary} details={row.timingDetails} />
+                      <StackedTableCell title={row.coverageSummary} details={row.coverageDetails} />
+                      <StackedTableCell title={row.takeaway} details={row.gapSummary} />
+                    </tr>
+                  ))}
+                </ResponsiveTable>
+              </>
+            ) : (
+              <RuleBox label="当前状态">{auditContent.scenarioPackEmpty}</RuleBox>
+            )}
+          </section>
+
+          <section className="surface">
+            <SurfaceHeader title="Formal Dataset 证据" icon={Database} />
+            <p className="legend-note">{auditContent.datasetSummary}</p>
+            {latestDatasetSummaries.length > 0 ? (
+              <>
+                <MetricGrid items={latestDatasetSummaryMetrics} className="audit-review-metrics" />
+                <ResponsiveTable
+                  className="wide-table xwide-table"
+                  columns={["数据集", "时间范围 / 版本", "Split / 历史行数", "历史标签 / 动作", "目录证据 / 结论", "建议"]}
+                  note={auditContent.datasetSummaryTableNote}
+                >
+                  {latestDatasetSummaryRows.map((row) => (
+                    <tr key={row.id}>
+                      <StackedTableCell title={row.datasetLabel} details={row.datasetDetails} />
+                      <StackedTableCell title={row.rangeSummary} details={row.rangeDetails} />
+                      <td>{row.splitSummary}</td>
+                      <td>{row.labelSummary}</td>
+                      <StackedTableCell
+                        title={row.coverageSummary}
+                        details={row.coverageDetails}
+                      />
+                      <td>{row.recommendation}</td>
+                    </tr>
+                  ))}
+                </ResponsiveTable>
+                {latestDatasetScenarioRows.length > 0 ? (
+                  <ResponsiveTable
+                    className="wide-table xwide-table"
+                    columns={["数据集", "场景", "时间窗 / 角色", "历史可用范围", "目录覆盖 / 免费主源", "主要缺口"]}
+                    note={auditContent.datasetScenarioTableNote}
+                  >
+                    {latestDatasetScenarioRows.map((row) => (
+                      <tr key={row.id}>
+                        <StackedTableCell title={row.datasetLabel} details={row.datasetDetails} />
+                        <StackedTableCell title={row.scenarioLabel} details={row.scenarioDetails} />
+                        <StackedTableCell title={row.windowSummary} details={row.windowDetails} />
+                        <td>{row.labelSummary}</td>
+                        <StackedTableCell
+                          title={row.coverageSummary}
+                          details={row.coverageDetails}
+                        />
+                        <td>{row.statusSummary}</td>
+                      </tr>
+                    ))}
+                  </ResponsiveTable>
+                ) : null}
+              </>
+            ) : (
+              <RuleBox label="当前状态">{auditContent.datasetSummaryEmpty}</RuleBox>
+            )}
+          </section>
+
+          <section className="surface">
+            <SurfaceHeader title="Residual Workstream 审计" icon={ClipboardCheck} />
+            <p className="legend-note">{auditContent.workstreamSummary}</p>
+            {latestWorkstreamAudit ? (
+              <>
+                <MetricGrid items={latestWorkstreamAuditMetrics} className="audit-review-metrics" />
+                <div className="audit-review-layout">
+                  <div className="audit-review-stack">
+                    <RuleBox label="工件来源">
+                      <span title={latestWorkstreamAuditSource?.hint}>
+                        {latestWorkstreamAuditSource?.value ?? "未登记"}
+                      </span>
+                    </RuleBox>
+                    <RuleBox label="关联 review">
+                      <span title={latestWorkstreamAuditReport?.hint}>
+                        {latestWorkstreamAuditReport?.value ?? "未登记"}
+                      </span>
+                    </RuleBox>
+                  </div>
+                  <div className="audit-review-stack">
+                    <RuleBox label="审计上下文">
+                      <DetailRows items={latestWorkstreamAuditContextRows} compact />
+                    </RuleBox>
+                  </div>
+                </div>
+                {latestWorkstreamSummaryRows.length > 0 ? (
+                  <RuleBox label="工作流摘要">
+                    <DetailRows items={latestWorkstreamSummaryRows} compact />
+                  </RuleBox>
+                ) : null}
+                {latestWorkstreamScenarioRows.length > 0 ? (
+                  <ResponsiveTable
+                    className="wide-table xwide-table"
+                    columns={["场景 / Workstream", "Dataset / 窗口", "Split / Regime", "标签 / 动作", "覆盖 / 特征", "结论"]}
+                    note={auditContent.workstreamTableNote}
+                  >
+                    {latestWorkstreamScenarioRows.map((row) => (
+                      <tr key={row.id}>
+                        <StackedTableCell title={row.scenarioLabel} details={row.scenarioDetails} />
+                        <StackedTableCell title={row.datasetSummary} details={row.datasetDetails} />
+                        <StackedTableCell title={row.splitSummary} details={row.regimeSummary} />
+                        <StackedTableCell title={row.labelSummary} details={row.actionSummary} />
+                        <StackedTableCell title={row.coverageSummary} details={row.coverageDetails} />
+                        <td>{row.takeaway}</td>
+                      </tr>
+                    ))}
+                  </ResponsiveTable>
+                ) : null}
+              </>
+            ) : (
+              <RuleBox label="当前状态">{auditContent.workstreamEmpty}</RuleBox>
+            )}
+          </section>
+
+          <PrewarningGapAuditSection audit={audit} />
+
+          <FundingStressAuditSection audit={audit} />
+
+          <LeadtimeAuditSection audit={audit} />
+
+          <section className="surface">
+            <SurfaceHeader title="2022 利率冲击专项审计" icon={ClipboardCheck} />
+            <p className="legend-note">{auditContent.rateShockSummary}</p>
+            {latestRateShockAudit ? (
+              <>
+                <MetricGrid items={latestRateShockAuditMetrics} className="audit-review-metrics" />
+                <RuleBox label="工件来源">
+                  <span title={latestRateShockAuditSource?.hint}>
+                    {latestRateShockAuditSource?.value ?? "未登记"}
+                  </span>
+                </RuleBox>
+                <RuleBox label="审计上下文">
+                  <DetailRows items={latestRateShockAuditContextRows} compact />
+                </RuleBox>
+                {latestRateShockContinuityRows.length > 0 ? (
+                  <RuleBox label="连续性焦点窗口">
+                    <DetailRows items={latestRateShockContinuityRows} compact />
+                  </RuleBox>
+                ) : null}
+                {latestRateShockPhaseRows.length > 0 ? (
+                  <ResponsiveTable
+                    className="wide-table xwide-table"
+                    columns={["阶段", "样本", "20d 均值 / 连续性", "60d 均值 / 连续性", "阈值距离"]}
+                    note={auditContent.rateShockPhaseTableNote}
+                  >
+                    {latestRateShockPhaseRows.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.label}</td>
+                        <td>{row.rowCount}</td>
+                        <StackedTableCell title={row.p20Summary} details={row.p20Continuity} />
+                        <StackedTableCell title={row.p60Summary} details={row.p60Continuity} />
+                        <td>{row.thresholdGap}</td>
+                      </tr>
+                    ))}
+                  </ResponsiveTable>
+                ) : null}
+                {latestRateShockActionRows.length > 0 ? (
+                  <ResponsiveTable
+                    className="wide-table xwide-table"
+                    columns={["动作层", "样本", "20d 均值", "连续性", "阈值附近", "峰值"]}
+                    note={auditContent.rateShockActionTableNote}
+                  >
+                    {latestRateShockActionRows.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.label}</td>
+                        <td>{row.rowCount}</td>
+                        <td>{row.p20Summary}</td>
+                        <td>{row.continuitySummary}</td>
+                        <td>{row.nearThresholdSummary}</td>
+                        <td>{row.maxSummary}</td>
+                      </tr>
+                    ))}
+                  </ResponsiveTable>
+                ) : null}
+              </>
+            ) : (
+              <RuleBox label="当前状态">{auditContent.rateShockEmpty}</RuleBox>
+            )}
+          </section>
+
+          <CooldownAuditSection audit={audit} />
+
+          <RuntimeContributionAuditSection audit={audit} />
 
           <section className="surface">
             <SurfaceHeader title="Overlay 运行审计" icon={Activity} />
@@ -197,7 +492,9 @@ export default function AuditView({
           </section>
 
           <section className="surface">
-            <SurfaceHeader title="历史预测快照" icon={Database} />
+            <SurfaceHeader title="运行快照 / 旧桥接视图" icon={Database} />
+            <RuleBox label="角色边界">{snapshotAuditNote}</RuleBox>
+            <MetricGrid items={snapshotAuditMetrics} className="audit-review-metrics" />
             <ResponsiveTable
               className="wide-table xwide-table"
               columns={[
@@ -219,7 +516,12 @@ export default function AuditView({
                   <StackedTableCell title={snapshot.probabilityMode} details={snapshot.releaseStatus} />
                   <StackedTableCell
                     title={snapshot.calibratedSummary}
-                    details={`原始轨迹 ${snapshot.rawSummary}`}
+                    details={[
+                      `原始轨迹 ${snapshot.rawSummary}`,
+                      snapshot.calibratedDecimalSummary,
+                      snapshot.calibratedBasisPointSummary,
+                      snapshot.rawDecimalSummary
+                    ]}
                   />
                   <StackedTableCell
                     title={snapshot.posture}

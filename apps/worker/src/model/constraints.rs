@@ -25,32 +25,32 @@ fn forward_crisis_expected_coefficient_sign(
         return Some(ExpectedCoefficientSign::Positive);
     }
 
-    if horizon_days == 20 {
-        // The curve inversion tail is not a simple monotonic risk head on 20d.
-        // Once inversion is already entrenched, forcing this tail nonnegative
-        // removes a stabilizing offset and re-opens broad normal-window noise.
-        if feature_name == "tail_neg__us_curve_10y2y_level__0" {
-            return None;
-        }
+    // Tail features inherit the sign of the underlying risk semantics across
+    // forward-crisis horizons. Leaving 60d tails unconstrained let high credit
+    // spread / broad pressure tails become strong negative suppressors, which
+    // produced cold_across_all_regimes candidates.
+    // The 20d curve inversion tail is the one exception: once inversion is
+    // entrenched, forcing that tail nonnegative re-opens broad normal-window
+    // noise, so 20d handles it through the explicit coefficient bound below.
+    if horizon_days == 20 && feature_name == "tail_neg__us_curve_10y2y_level__0" {
+        return None;
+    }
 
-        if let Some(base_feature_name) = derived_tail_base_feature_name(feature_name, "tail_pos__")
-        {
-            if matches!(
-                forward_crisis_expected_base_coefficient_sign(base_feature_name),
-                Some(ExpectedCoefficientSign::Positive)
-            ) {
-                return Some(ExpectedCoefficientSign::Positive);
-            }
+    if let Some(base_feature_name) = derived_tail_base_feature_name(feature_name, "tail_pos__") {
+        if matches!(
+            forward_crisis_expected_base_coefficient_sign(base_feature_name),
+            Some(ExpectedCoefficientSign::Positive)
+        ) {
+            return Some(ExpectedCoefficientSign::Positive);
         }
+    }
 
-        if let Some(base_feature_name) = derived_tail_base_feature_name(feature_name, "tail_neg__")
-        {
-            if matches!(
-                forward_crisis_expected_base_coefficient_sign(base_feature_name),
-                Some(ExpectedCoefficientSign::Negative)
-            ) {
-                return Some(ExpectedCoefficientSign::Positive);
-            }
+    if let Some(base_feature_name) = derived_tail_base_feature_name(feature_name, "tail_neg__") {
+        if matches!(
+            forward_crisis_expected_base_coefficient_sign(base_feature_name),
+            Some(ExpectedCoefficientSign::Negative)
+        ) {
+            return Some(ExpectedCoefficientSign::Positive);
         }
     }
 
@@ -145,6 +145,84 @@ fn forward_crisis_coefficient_bounds(
             min: Some(0.0),
             max: Some(0.06),
         }),
+        // Systemic-credit and mixed-systemic context must take over part of
+        // the 20d signal from broad trigger/external scores. Otherwise the same
+        // raw pressure score lifts true positive windows and February/July
+        // false-positive windows together, leaving threshold policy no safe
+        // room to move.
+        (20, "family_proxy__systemic_credit") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(0.04),
+                max: Some(0.18),
+            })
+        }
+        (20, "family_context__systemic_credit__structural_score")
+            if uses_family_context_features =>
+        {
+            Some(CoefficientBounds {
+                min: Some(0.04),
+                max: Some(0.24),
+            })
+        }
+        (20, "family_context__systemic_credit__trigger_score") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(0.06),
+                max: Some(0.22),
+            })
+        }
+        (20, "family_context__systemic_credit__external_dimension_score")
+            if uses_family_context_features =>
+        {
+            Some(CoefficientBounds {
+                min: Some(0.04),
+                max: Some(0.18),
+            })
+        }
+        (20, "family_proxy__mixed_systemic") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(0.04),
+                max: Some(0.18),
+            })
+        }
+        (20, "family_context__mixed_systemic__trigger_score") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(0.08),
+                max: Some(0.26),
+            })
+        }
+        // Separation / candidate-screen audits on 2026-06-10 showed that broad
+        // trigger and external-dimension scores were lifting 2023-02 / 2023-07
+        // false-positive windows almost as much as the regional-banks positive
+        // window. In family-hybrid heads, keep these strictly auxiliary instead
+        // of letting them dominate generic 20d crisis probability.
+        (20, "trigger_score") if uses_family_context_features => Some(CoefficientBounds {
+            min: Some(0.0),
+            max: Some(0.45),
+        }),
+        (20, "external_dimension_score") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(0.0),
+                max: Some(0.30),
+            })
+        }
+        // The broad-score caps must include their high-tail variants. The
+        // 2026-06-10 021404 candidate obeyed trigger_score <= 0.65 but routed
+        // the same generic pressure through tail_pos__trigger_score__50=1.20,
+        // which preserved false-positive lift while collapsing regional-bank
+        // continuity. Keep the tail auxiliary instead of letting it bypass the
+        // base broad-score cap.
+        (20, "tail_pos__trigger_score__50") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(0.0),
+                max: Some(0.18),
+            })
+        }
+        (20, "tail_pos__external_dimension_score__50") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(0.0),
+                max: Some(0.12),
+            })
+        }
         // The best current family-hybrid candidate keeps USDJPY level as a real
         // positive driver. The failed 064930 / 064040 branch only looked cleaner
         // because it pushed the base level down toward 0.22 while simultaneously
@@ -155,6 +233,33 @@ fn forward_crisis_coefficient_bounds(
         (20, "us_usdjpy_level") if uses_family_context_features => Some(CoefficientBounds {
             min: Some(0.30),
             max: Some(0.40),
+        }),
+        // High USDJPY is allowed to matter as carry-pressure context, but it must
+        // not become a large negative suppressor that hides a possible unwind
+        // setup. Keep the high-level tail nonnegative and auxiliary across base
+        // and family-context model shapes.
+        (5 | 20 | 60, "tail_pos__us_usdjpy_level__145") => Some(CoefficientBounds {
+            min: Some(0.0),
+            max: Some(match horizon_days {
+                5 => 0.12,
+                _ => 0.18,
+            }),
+        }),
+        // USDJPY 20d change is a signed carry-speed feature: a positive move can
+        // mean carry build-up, while a negative move can mean unwind. Do not let
+        // this ambiguous signed feature become a strong suppressor or driver;
+        // keep the directional semantics in the absolute-change tail and
+        // jpy_carry family proxy instead.
+        (5 | 20 | 60, "us_usdjpy_change_20d")
+        | (5 | 20 | 60, "interaction__trigger_score__us_usdjpy_change_20d") => {
+            Some(CoefficientBounds {
+                min: Some(0.0),
+                max: Some(0.0),
+            })
+        }
+        (5 | 20 | 60, "tail_abs_pos__us_usdjpy_change_20d__4") => Some(CoefficientBounds {
+            min: Some(0.0),
+            max: Some(0.22),
         }),
         (20, "interaction__external_dimension_score__us_usdjpy_level")
             if uses_family_context_features =>
@@ -171,8 +276,14 @@ fn forward_crisis_coefficient_bounds(
         (20, "interaction__us_curve_10y2y_level__us_fed_funds_level")
             if uses_family_context_features =>
         {
+            // Separation audit 2026-06-10 showed that letting this interaction
+            // collapse to zero removes a stabilizing offset in high-rate curve
+            // inversion windows: false-positive windows were lifted as much as
+            // the 2023 regional-banks positive window. Keep a small positive
+            // floor so the negative normalized interaction can still suppress
+            // generic rate-shock noise, while retaining the existing cap.
             Some(CoefficientBounds {
-                min: Some(0.0),
+                min: Some(0.18),
                 max: Some(0.46),
             })
         }
@@ -188,7 +299,9 @@ fn forward_crisis_coefficient_bound_strength(
         return 0.0;
     }
     match horizon_days {
+        5 => 0.30,
         20 => 0.40,
+        60 => 0.35,
         _ => 0.0,
     }
 }
@@ -275,7 +388,8 @@ pub(crate) fn project_forward_crisis_sign_constraints(
     horizon_days: u32,
     label_mode: ProbabilityTargetLabelMode,
 ) {
-    if forward_crisis_sign_constraint_strength(horizon_days, label_mode) <= 0.0 {
+    let sign_strength = forward_crisis_sign_constraint_strength(horizon_days, label_mode);
+    if sign_strength <= 0.0 && label_mode != ProbabilityTargetLabelMode::ForwardCrisis {
         return;
     }
     let uses_family_context_features = feature_names.iter().any(|feature_name| {
@@ -283,13 +397,15 @@ pub(crate) fn project_forward_crisis_sign_constraints(
     });
 
     for (weight, feature_name) in weights.iter_mut().zip(feature_names.iter()) {
-        if let Some(expected_sign) =
-            forward_crisis_expected_coefficient_sign(feature_name, horizon_days, label_mode)
-        {
-            match expected_sign {
-                ExpectedCoefficientSign::Positive if *weight < 0.0 => *weight = 0.0,
-                ExpectedCoefficientSign::Negative if *weight > 0.0 => *weight = 0.0,
-                _ => {}
+        if sign_strength > 0.0 {
+            if let Some(expected_sign) =
+                forward_crisis_expected_coefficient_sign(feature_name, horizon_days, label_mode)
+            {
+                match expected_sign {
+                    ExpectedCoefficientSign::Positive if *weight < 0.0 => *weight = 0.0,
+                    ExpectedCoefficientSign::Negative if *weight > 0.0 => *weight = 0.0,
+                    _ => {}
+                }
             }
         }
 

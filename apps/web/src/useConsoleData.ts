@@ -96,7 +96,7 @@ export function useConsoleData(requiredKeys: Array<keyof ConsoleReadyData>) {
   const sources = useQuery({
     queryKey: ["sources"],
     queryFn: api.sources,
-    enabled: isRequired("sources"),
+    enabled: isRequired("sources") || assessment.isSuccess,
     ...liveQueryOptions
   });
   const backtests = useQuery({

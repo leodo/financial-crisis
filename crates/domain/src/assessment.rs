@@ -2,8 +2,9 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AlertType, DataQualitySummary, ProbabilityFamilyOverlayAudit, ProbabilityOverlayContribution,
-    QualityGrade, RiskContributor, RiskLevel,
+    AlertType, DataQualitySummary, LogisticProbabilityFeatureContribution,
+    ProbabilityFamilyOverlayAudit, ProbabilityOverlayContribution, QualityGrade, RiskContributor,
+    RiskLevel,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,6 +23,23 @@ pub enum DecisionPosture {
     Prepare,
     Hedge,
     Defend,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MvpRiskStateCode {
+    Observe,
+    Prepare,
+    Hedge,
+    Defend,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MvpProbabilityInputStatus {
+    Usable,
+    #[serde(alias = "audit_only")]
+    ReferenceOnly,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,6 +100,31 @@ pub struct ActionabilityBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MvpRiskState {
+    pub code: MvpRiskStateCode,
+    pub label: String,
+    pub probability_input_status: MvpProbabilityInputStatus,
+    pub summary: String,
+    pub primary_evidence: Vec<String>,
+    pub blockers: Vec<String>,
+    pub next_actions: Vec<String>,
+}
+
+impl Default for MvpRiskState {
+    fn default() -> Self {
+        Self {
+            code: MvpRiskStateCode::Observe,
+            label: "观察为主".to_string(),
+            probability_input_status: MvpProbabilityInputStatus::Usable,
+            summary: "MVP 规则层尚未计算，不能替代正式风险判断。".to_string(),
+            primary_evidence: Vec::new(),
+            blockers: Vec::new(),
+            next_actions: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProbabilityHorizonOverlayDiagnostics {
     pub horizon_days: u32,
     pub raw_probability: f64,
@@ -92,6 +135,8 @@ pub struct ProbabilityHorizonOverlayDiagnostics {
     #[serde(default)]
     pub monotonic_lift: f64,
     pub configured_overlay_count: u32,
+    #[serde(default)]
+    pub base_contributions: Vec<LogisticProbabilityFeatureContribution>,
     #[serde(default)]
     pub contributions: Vec<ProbabilityOverlayContribution>,
     #[serde(default)]
@@ -110,6 +155,24 @@ pub struct AssessmentScores {
     pub structural_score: f64,
     pub trigger_score: f64,
     pub external_shock_score: f64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ActionEvidenceBreakdown {
+    pub score: f64,
+    pub data_quality_component: f64,
+    pub breadth_component: f64,
+    #[serde(default)]
+    pub risk_pressure_component: f64,
+    pub agreement_component: f64,
+    pub data_quality_weight: f64,
+    pub breadth_weight: f64,
+    #[serde(default)]
+    pub risk_pressure_weight: f64,
+    pub agreement_high_component: f64,
+    pub agreement_low_component: f64,
+    pub breadth_score: f64,
+    pub structural_trigger_agreement: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -234,6 +297,10 @@ pub struct RuntimeMetadata {
     pub requested_as_of_date: NaiveDate,
     pub latest_observation_at: Option<NaiveDate>,
     pub latest_observation_lag_days: Option<i64>,
+    pub latest_observation_lag_business_days: Option<i64>,
+    pub latest_key_indicator_at: Option<NaiveDate>,
+    pub latest_key_indicator_lag_days: Option<i64>,
+    pub latest_key_indicator_lag_business_days: Option<i64>,
     pub demo_mode: bool,
     pub stale_warning: Option<String>,
 }
@@ -249,9 +316,34 @@ pub struct KeyIndicatorStatus {
     pub latest_value: Option<f64>,
     pub latest_as_of_date: Option<NaiveDate>,
     pub lag_days: Option<i64>,
+    pub lag_business_days: Option<i64>,
     pub stale_threshold_days: i64,
     pub status: FreshnessStatus,
     pub note: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lineage: Option<KeyIndicatorLineage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyIndicatorLineage {
+    pub evidence_level: KeyIndicatorLineageEvidenceLevel,
+    pub note: String,
+    pub raw_payload_id: Option<String>,
+    pub run_id: Option<String>,
+    pub run_status: Option<String>,
+    pub fetched_at: Option<DateTime<Utc>>,
+    pub records_written: Option<i64>,
+    pub response_hash: Option<String>,
+    pub raw_file_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyIndicatorLineageEvidenceLevel {
+    RunRawObservation,
+    RawObservation,
+    ObservationOnly,
+    Missing,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -286,7 +378,10 @@ pub struct BacktestRollingAuditEpisode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BacktestRollingAudit {
+    pub history_start: Option<NaiveDate>,
+    pub history_end: Option<NaiveDate>,
     pub history_point_count: u32,
+    pub scope_note: String,
     pub actionable_signal_count: u32,
     pub pre_crisis_signal_count: u32,
     pub in_crisis_signal_count: u32,
@@ -304,6 +399,7 @@ pub struct BacktestPerformanceSummary {
     pub scenario_count: u32,
     pub real_scenario_count: u32,
     pub fallback_scenario_count: u32,
+    pub coverage_scope_note: String,
     pub structural_warning_rate: f64,
     pub timely_warning_rate: f64,
     pub missed_rate: f64,
@@ -339,7 +435,11 @@ pub struct AssessmentSnapshot {
     pub probability_diagnostics: ProbabilityDiagnostics,
     pub time_to_risk_bucket: TimeToRiskBucket,
     pub posture: DecisionPosture,
+    #[serde(default)]
+    pub mvp_risk_state: MvpRiskState,
     pub conviction_score: f64,
+    #[serde(default)]
+    pub action_evidence: ActionEvidenceBreakdown,
     pub scores: AssessmentScores,
     pub summary: String,
     pub posture_reason: String,
@@ -377,4 +477,10 @@ pub struct AssessmentHistoryPoint {
     pub posture_trigger_codes: Vec<String>,
     #[serde(default)]
     pub posture_blocker_codes: Vec<String>,
+    #[serde(default)]
+    pub replay_run_id: Option<String>,
+    #[serde(default)]
+    pub feature_snapshot_id: Option<String>,
+    #[serde(default)]
+    pub history_source: Option<String>,
 }

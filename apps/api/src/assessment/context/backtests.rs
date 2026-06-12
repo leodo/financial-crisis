@@ -14,6 +14,9 @@ pub(crate) fn build_backtest_summary(
             scenario_count: 0,
             real_scenario_count: 0,
             fallback_scenario_count: 0,
+            coverage_scope_note:
+                "这里的危机场景覆盖按当前场景回测历史窗口统计，不等于上面默认历史轨迹的 PIT 证据层。"
+                    .to_string(),
             structural_warning_rate: 0.0,
             timely_warning_rate: 0.0,
             missed_rate: 1.0,
@@ -80,21 +83,28 @@ pub(crate) fn build_backtest_summary(
         .iter()
         .filter_map(|scenario| scenario.history_end)
         .max();
+    let coverage_scope_note = match (history_start, history_end) {
+        (Some(start), Some(end)) => format!(
+            "这里的“本地覆盖场景 / 模板参照场景”按场景回测历史窗口 {start} 到 {end} 统计；它回答的是危机场景目录里有多少样本能直接落在这段本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。"
+        ),
+        _ => "这里的“本地覆盖场景 / 模板参照场景”按当前场景回测历史窗口统计；它回答的是危机场景目录里有多少样本能直接落在本地历史上，不等于上面默认历史轨迹是否已经进入 PIT 正式证据层。".to_string(),
+    };
+    let actionable_summary = actionable_warning_summary(timely_warning_rate);
     let summary = if fallback_scenario_count > 0 {
         format!(
-            "当前回测共列出 {} 个危机样本，其中 {} 个来自本地真实历史，{} 个仍是模板参考；结构性抬升至少提前 7 天出现的比例约为 {:.0}%，可执行预警至少提前 7 天出现的比例约为 {:.0}%。",
+            "当前危机场景目录共 {} 个样本，其中 {} 个已被当前本地历史窗口直接覆盖，{} 个仍是模板参照；结构性抬升至少提前 7 天出现的比例约为 {:.0}%，{}",
             scenario_count,
             real_scenario_count,
             fallback_scenario_count,
             structural_warning_rate * 100.0,
-            timely_warning_rate * 100.0
+            actionable_summary
         )
     } else {
         format!(
-            "当前回测覆盖 {} 个真实危机样本；结构性抬升至少提前 7 天出现的比例约为 {:.0}%，可执行预警至少提前 7 天出现的比例约为 {:.0}%。",
+            "当前回测覆盖 {} 个真实危机样本；结构性抬升至少提前 7 天出现的比例约为 {:.0}%，{}",
             scenario_count,
             structural_warning_rate * 100.0,
-            timely_warning_rate * 100.0
+            actionable_summary
         )
     };
 
@@ -102,6 +112,7 @@ pub(crate) fn build_backtest_summary(
         scenario_count,
         real_scenario_count,
         fallback_scenario_count,
+        coverage_scope_note,
         structural_warning_rate,
         timely_warning_rate,
         missed_rate,
@@ -118,7 +129,10 @@ pub(crate) fn build_backtest_summary(
 
 fn empty_rolling_audit() -> BacktestRollingAudit {
     BacktestRollingAudit {
+        history_start: None,
+        history_end: None,
         history_point_count: 0,
+        scope_note: "当前尚未生成滚动审计历史窗口。".to_string(),
         actionable_signal_count: 0,
         pre_crisis_signal_count: 0,
         in_crisis_signal_count: 0,
@@ -128,6 +142,38 @@ fn empty_rolling_audit() -> BacktestRollingAudit {
         longest_false_positive_episode_days: 0,
         actionable_precision: 0.0,
         classified_episodes: Vec::new(),
-        summary: "当前尚未生成全历史滚动审计结果。".to_string(),
+        summary: "当前尚未生成滚动审计结果。".to_string(),
+    }
+}
+
+fn actionable_warning_summary(timely_warning_rate: f64) -> String {
+    if timely_warning_rate == 0.0 {
+        "动作级预警暂未形成；这表示当前回测口径没有形成满足提前量要求的动作样本，不是采集失败。"
+            .to_string()
+    } else {
+        format!(
+            "可执行预警至少提前 7 天出现的比例约为 {:.0}%。",
+            timely_warning_rate * 100.0
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::actionable_warning_summary;
+
+    #[test]
+    fn actionable_summary_explains_zero_rate_as_no_action_sample() {
+        let summary = actionable_warning_summary(0.0);
+
+        assert!(summary.contains("动作级预警暂未形成"));
+        assert!(!summary.contains("0%"));
+    }
+
+    #[test]
+    fn actionable_summary_keeps_positive_rate_numeric() {
+        let summary = actionable_warning_summary(0.42);
+
+        assert!(summary.contains("42%"));
     }
 }

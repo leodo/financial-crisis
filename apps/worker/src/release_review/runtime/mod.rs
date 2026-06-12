@@ -3,7 +3,6 @@ mod regimes;
 mod takeaways;
 
 pub(crate) use diagnostics::build_release_runtime_review_diagnostics;
-pub(crate) use regimes::lift_vs_baseline;
 #[cfg(test)]
 pub(crate) use regimes::{
     classify_regime_separation, summarize_release_runtime_regime_probabilities,

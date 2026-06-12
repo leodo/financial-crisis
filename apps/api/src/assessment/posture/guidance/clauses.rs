@@ -9,8 +9,11 @@ use super::counters::{
     prepare_non_carry_confirmation_count, prepare_non_external_confirmation_count,
 };
 
-const PREPARE_CONTINUITY_P20D_FLOOR: f64 = 0.18;
-const PREPARE_CONTINUITY_P60D_FLOOR: f64 = 0.45;
+const PREPARE_CONTINUITY_P20D_FLOOR_RATIO: f64 = 2.0;
+const PREPARE_CONTINUITY_P20D_FLOOR_MIN: f64 = 0.12;
+const PREPARE_CONTINUITY_P20D_FLOOR_MAX: f64 = 0.18;
+const PREPARE_CONTINUITY_P60D_FLOOR_MIN: f64 = 0.22;
+const PREPARE_CONTINUITY_P60D_FLOOR_MAX: f64 = 0.45;
 const PREPARE_CONTINUITY_STRUCTURAL_FLOOR: f64 = 60.0;
 const PREPARE_CONTINUITY_ACTIONABILITY_FLOOR: f64 = 0.18;
 const PREPARE_PROBABILITY_PLATEAU_P60D_FLOOR: f64 = 0.70;
@@ -86,16 +89,33 @@ pub(super) fn prepare_continuity_bridge_signal(
     trigger_score: f64,
     external_shock_score: f64,
     breadth_score: f64,
+    thresholds: ProbabilityActionThresholds,
 ) -> bool {
     let prepare_p60d = prepare_reference_p60d.unwrap_or(probabilities.p_60d);
+    let prepare_continuity_p20d_floor = prepare_continuity_p20d_floor(thresholds);
+    let prepare_continuity_p60d_floor = prepare_continuity_p60d_floor(thresholds);
 
     actionability.is_some_and(|scores| {
         scores.prepare >= PREPARE_CONTINUITY_ACTIONABILITY_FLOOR
-            && probabilities.p_20d >= PREPARE_CONTINUITY_P20D_FLOOR
-            && prepare_p60d >= PREPARE_CONTINUITY_P60D_FLOOR
+            && probabilities.p_20d >= prepare_continuity_p20d_floor
+            && prepare_p60d >= prepare_continuity_p60d_floor
             && structural_score >= PREPARE_CONTINUITY_STRUCTURAL_FLOOR
             && (trigger_score >= 40.0 || external_shock_score >= 42.0 || breadth_score >= 36.0)
     })
+}
+
+fn prepare_continuity_p20d_floor(thresholds: ProbabilityActionThresholds) -> f64 {
+    (thresholds.hedge_p20d * PREPARE_CONTINUITY_P20D_FLOOR_RATIO).clamp(
+        PREPARE_CONTINUITY_P20D_FLOOR_MIN,
+        PREPARE_CONTINUITY_P20D_FLOOR_MAX,
+    )
+}
+
+fn prepare_continuity_p60d_floor(thresholds: ProbabilityActionThresholds) -> f64 {
+    thresholds.elevated_weeks_p60d().clamp(
+        PREPARE_CONTINUITY_P60D_FLOOR_MIN,
+        PREPARE_CONTINUITY_P60D_FLOOR_MAX,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -185,6 +205,7 @@ pub(super) fn build_posture_clause_diagnostics(
         snapshot.trigger_score,
         external_shock_score,
         breadth_score,
+        thresholds,
     );
     let severe_carry = jpy_carry.score >= 70.0 && jpy_carry.funding_pressure_score >= 55.0;
     let stressed_carry = jpy_carry.score >= 58.0 && jpy_carry.funding_pressure_score >= 48.0;

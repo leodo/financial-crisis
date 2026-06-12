@@ -8,7 +8,7 @@ function humanizeTechnicalFamily(family: string) {
     [/^formal_label_v(\d+)$/, (version) => `正式标签口径 v${version}`],
     [/^posture_v(\d+)$/, (version) => `执行节奏规则 v${version}`],
     [/^action_playbook_v(\d+)$/, (version) => `动作框架 v${version}`],
-    [/^runtime_history_v(\d+)$/, (version) => `历史审计策略 v${version}`],
+    [/^runtime_history_v(\d+)$/, (version) => `历史评估策略 v${version}`],
     [/^protected_stress_windows$/, () => "受保护窗口目录"]
   ];
 

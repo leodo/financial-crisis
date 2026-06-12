@@ -1,10 +1,15 @@
 import { useMemo } from "react";
-import { formatNumber } from "../../format";
+import {
+  formatDate,
+  formatNumber,
+  historyEvidenceTierLabel
+} from "../../format";
 import type {
   AssessmentMethodResponse,
   AssessmentHistoryPoint,
   AssessmentSnapshot,
   BacktestScenarioSummary,
+  IndicatorRisk,
   PostureGuidance
 } from "../../types";
 import {
@@ -12,21 +17,25 @@ import {
   buildLayerScoreChart,
   buildProbabilityTrendModel
 } from "./charts";
+import { buildHeroMetrics } from "./heroMetrics";
+import { buildFreeDataReliabilityRows } from "./freeDataReliability";
+import { buildNumberAuditRows } from "./numberAudit";
 import {
   buildActionPlanMetrics,
+  buildBacktestCoverageScopeText,
   buildAnalogRows,
   buildBacktestHistoryCoverageText,
   buildBacktestSummaryMetrics,
   buildBlockerClauses,
   buildDataTrustMetrics,
-  buildHeroMetrics,
   buildJpyCarryMetrics,
-  buildKeyIndicatorRows,
   buildPostureThresholdMetrics,
   buildRiskHorizonActionMetrics,
   buildRollingAuditBoundaryText,
   buildRollingAuditEpisodes,
+  buildRollingAuditHistoryText,
   buildRollingAuditMetrics,
+  buildRollingAuditScopeText,
   buildRuntimeCards,
   buildRuntimeChipLabel,
   buildRuntimeNotice,
@@ -39,6 +48,14 @@ import {
   describeRiskScoreBand,
   describeTimeBucket
 } from "./logic";
+import { buildWhyNowRiskDrivers } from "../shared/driverTiming";
+
+function decisionHistoryEvidenceCopy(note: string) {
+  return note
+    .replaceAll("formal history 审计的正式证据层", "正式历史证据层")
+    .replaceAll("formal history 审计证据", "正式历史证据")
+    .replaceAll("formal history 审计", "正式历史证据复核");
+}
 
 export type {
   DecisionAnalogRow,
@@ -55,13 +72,15 @@ export function useDecisionViewModel({
   method,
   history,
   posture,
-  backtests
+  backtests,
+  indicators
 }: {
   assessment: AssessmentSnapshot;
   method: AssessmentMethodResponse;
   history: AssessmentHistoryPoint[];
   posture: PostureGuidance;
   backtests: BacktestScenarioSummary[];
+  indicators: IndicatorRisk[];
 }) {
   const probabilityTrend = useMemo(() => buildProbabilityTrendModel(history), [history]);
   const layerScoreChart = useMemo(() => buildLayerScoreChart(assessment), [assessment]);
@@ -94,6 +113,7 @@ export function useDecisionViewModel({
     [assessment, usdJpyIndicator]
   );
   const heroMetrics = useMemo(() => buildHeroMetrics(assessment), [assessment]);
+  const numberAuditRows = useMemo(() => buildNumberAuditRows(assessment), [assessment]);
   const riskHorizonActionMetrics = useMemo(
     () => buildRiskHorizonActionMetrics(assessment),
     [assessment]
@@ -115,21 +135,63 @@ export function useDecisionViewModel({
     [currentRiskBand.label]
   );
   const dataTrustMetrics = useMemo(() => buildDataTrustMetrics(assessment), [assessment]);
+  const historyEvidenceMetrics = useMemo(
+    () => [
+      {
+        label: "历史证据等级",
+        value: historyEvidenceTierLabel(method.history_provenance.evidence_tier),
+        hint: decisionHistoryEvidenceCopy(method.history_provenance.note)
+      },
+      {
+        label: "PIT 快照支撑",
+        value: `${method.history_provenance.feature_backed_points}/${method.history_provenance.total_points}`
+      },
+      {
+        label: "沿用旧 PIT",
+        value: `${method.history_provenance.reused_feature_snapshot_points}`
+      },
+      {
+        label: "旧快照桥接",
+        value: `${method.history_provenance.snapshot_bridge_points}`
+      }
+    ],
+    [method.history_provenance]
+  );
+  const historyEvidenceNote = useMemo(() => {
+    const evidenceNote = decisionHistoryEvidenceCopy(method.history_provenance.note);
+    const latestFeatureBackedDate = method.history_provenance.latest_feature_backed_date;
+    const latestReusedSnapshotDate =
+      method.history_provenance.latest_reused_feature_snapshot_date;
+    if (latestFeatureBackedDate && latestReusedSnapshotDate) {
+      return `${evidenceNote} 最近一条当天 PIT 快照支撑点日期 ${formatDate(latestFeatureBackedDate)}，最近一条沿用旧 PIT 的点日期 ${formatDate(latestReusedSnapshotDate)}。`;
+    }
+    if (latestFeatureBackedDate) {
+      return `${evidenceNote} 最近一条当天 PIT 快照支撑点日期 ${formatDate(latestFeatureBackedDate)}。`;
+    }
+    if (latestReusedSnapshotDate) {
+      return `${evidenceNote} 最近一条沿用旧 PIT 的点日期 ${formatDate(latestReusedSnapshotDate)}。`;
+    }
+    return evidenceNote;
+  }, [method.history_provenance]);
   const postureThresholdMetrics = useMemo(
     () => buildPostureThresholdMetrics(method),
     [method]
   );
-  const keyIndicatorRows = useMemo(
-    () => buildKeyIndicatorRows(assessment.key_indicators),
-    [assessment.key_indicators]
+  const freeDataReliabilityRows = useMemo(
+    () => buildFreeDataReliabilityRows(assessment.key_indicators, method.free_data_source_catalog),
+    [assessment.key_indicators, method.free_data_source_catalog]
+  );
+  const whyNowDrivers = useMemo(
+    () => buildWhyNowRiskDrivers(assessment, indicators),
+    [assessment, indicators]
   );
   const signalLayerRows = useMemo(
     () => buildSignalLayerRows(assessment, method, posture),
     [assessment, method, posture]
   );
   const analogRows = useMemo(
-    () => buildAnalogRows(assessment.historical_analogs),
-    [assessment.historical_analogs]
+    () => buildAnalogRows(assessment),
+    [assessment]
   );
   const actionPlanMetrics = useMemo(
     () => buildActionPlanMetrics(assessment),
@@ -147,13 +209,25 @@ export function useDecisionViewModel({
     () => buildBacktestHistoryCoverageText(assessment.backtest_summary),
     [assessment.backtest_summary]
   );
+  const backtestCoverageScopeText = useMemo(
+    () => buildBacktestCoverageScopeText(assessment.backtest_summary),
+    [assessment.backtest_summary]
+  );
   const rollingAuditMetrics = useMemo(
     () => buildRollingAuditMetrics(assessment),
     [assessment]
   );
+  const rollingAuditHistoryText = useMemo(
+    () => buildRollingAuditHistoryText(assessment.backtest_summary.rolling_audit),
+    [assessment.backtest_summary.rolling_audit]
+  );
+  const rollingAuditScopeText = useMemo(
+    () => buildRollingAuditScopeText(assessment.backtest_summary.rolling_audit),
+    [assessment.backtest_summary.rolling_audit]
+  );
   const rollingAuditBoundaryText = useMemo(
-    () => buildRollingAuditBoundaryText(assessment.method),
-    [assessment.method]
+    () => buildRollingAuditBoundaryText(assessment, method),
+    [assessment, method]
   );
   const rollingAuditEpisodes = useMemo(
     () => buildRollingAuditEpisodes(assessment.backtest_summary.rolling_audit),
@@ -171,21 +245,28 @@ export function useDecisionViewModel({
     runtimeChipLabel,
     runtimeCards,
     heroMetrics,
+    numberAuditRows,
     riskHorizonActionMetrics,
     timeBucketDescription,
     analogWindowDescription,
     overallScoreText,
     scoreBandRows,
     dataTrustMetrics,
+    historyEvidenceMetrics,
+    historyEvidenceNote,
     postureThresholdMetrics,
-    keyIndicatorRows,
+    freeDataReliabilityRows,
+    whyNowDrivers,
     signalLayerRows,
     analogRows,
     actionPlanMetrics,
     jpyCarryMetrics,
     backtestSummaryMetrics,
     backtestHistoryCoverageText,
+    backtestCoverageScopeText,
     rollingAuditMetrics,
+    rollingAuditHistoryText,
+    rollingAuditScopeText,
     rollingAuditBoundaryText,
     rollingAuditEpisodes
   };

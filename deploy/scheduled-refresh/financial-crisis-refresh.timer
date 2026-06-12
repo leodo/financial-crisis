@@ -1,0 +1,14 @@
+[Unit]
+Description=Financial Crisis free-data daily refresh timer
+Documentation=file:///opt/financial-crisis/deploy/scheduled-refresh/README.md
+
+[Timer]
+# 工作日本地时间 06:30 刷新一次免费数据
+OnCalendar=Mon..Fri 06:30
+# 加随机抖动，避免和数据源整点高峰对齐
+RandomizedDelaySec=900
+# 错过触发（如机器关机）后开机补跑一次
+Persistent=true
+
+[Install]
+WantedBy=timers.target

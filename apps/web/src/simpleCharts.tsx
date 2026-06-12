@@ -1,19 +1,103 @@
+import { useState, type PointerEvent } from "react";
+
 import type {
   GroupedBarChartModel,
   HorizontalBarChartModel,
   LineChartModel
 } from "./views/decision/charts";
 
-function percentLabel(value: number) {
-  return `${Math.round(value * 100)}%`;
+function percentLabel(value: number, yMax: number) {
+  const percent = value * 100;
+  const absolutePercent = Math.abs(percent);
+  if (absolutePercent === 0) {
+    return "0%";
+  }
+  if (absolutePercent < 0.01) {
+    return `${trimTrailingZeros(percent.toFixed(4))}%`;
+  }
+  if (absolutePercent < 0.1) {
+    return `${trimTrailingZeros(percent.toFixed(3))}%`;
+  }
+  if (yMax <= 0.001) {
+    return `${trimTrailingZeros(percent.toFixed(2))}%`;
+  }
+  if (yMax <= 0.01) {
+    return `${trimTrailingZeros(percent.toFixed(2))}%`;
+  }
+  if (yMax <= 0.02) {
+    return `${trimTrailingZeros(percent.toFixed(2))}%`;
+  }
+  if (yMax <= 0.1) {
+    return `${trimTrailingZeros(percent.toFixed(1))}%`;
+  }
+  return `${Math.round(percent)}%`;
+}
+
+function trimTrailingZeros(value: string) {
+  return value.replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
 }
 
 function scoreLabel(value: number) {
   return value.toFixed(0);
 }
 
-function chartValueLabel(value: number, valueType: LineChartModel["valueType"]) {
-  return valueType === "percent" ? percentLabel(value) : scoreLabel(value);
+function chartValueLabel(
+  value: number,
+  valueType: LineChartModel["valueType"],
+  yMax: number
+) {
+  return valueType === "percent" ? percentLabel(value, yMax) : scoreLabel(value);
+}
+
+function conciseSeriesLabel(label: string) {
+  if (label.includes("5日")) {
+    return "5d";
+  }
+  if (label.includes("20日")) {
+    return "20d";
+  }
+  if (label.includes("60日")) {
+    return "60d";
+  }
+  return label.replace(/（.*?）/g, "").replace("局部放大", "").replace("窗口", "").trim();
+}
+
+function layoutHoverValueCallouts<T extends { y: number }>(
+  rows: T[],
+  minY: number,
+  maxY: number,
+  height: number,
+  gap: number
+): Array<T & { top: number }> {
+  const sortedRows = rows
+    .map((row) => ({
+      ...row,
+      top: Math.max(minY, Math.min(maxY - height, row.y - height / 2))
+    }))
+    .sort((left, right) => left.top - right.top);
+
+  for (let index = 1; index < sortedRows.length; index += 1) {
+    const previous = sortedRows[index - 1];
+    const current = sortedRows[index];
+    current.top = Math.max(current.top, previous.top + height + gap);
+  }
+
+  const overflow = sortedRows.at(-1)
+    ? sortedRows[sortedRows.length - 1].top + height - maxY
+    : 0;
+  if (overflow > 0) {
+    for (const row of sortedRows) {
+      row.top = Math.max(minY, row.top - overflow);
+    }
+  }
+
+  for (let index = sortedRows.length - 2; index >= 0; index -= 1) {
+    const next = sortedRows[index + 1];
+    const current = sortedRows[index];
+    current.top = Math.min(current.top, next.top - height - gap);
+  }
+
+  return sortedRows;
 }
 
 export function SimpleLineChart({
@@ -23,25 +107,137 @@ export function SimpleLineChart({
   model: LineChartModel;
   height?: number;
 }) {
+  const [hoverState, setHoverState] = useState<{ index: number; svgY: number } | null>(null);
   const width = 920;
   const margins = { top: 14, right: 12, bottom: 56, left: 42 };
   const plotWidth = width - margins.left - margins.right;
   const plotHeight = height - margins.top - margins.bottom;
   const pointCount = Math.max(model.categories.length, 1);
-  const yMax = model.maxValue <= 0 ? 1 : model.maxValue;
+  const yMin = model.minValue ?? 0;
+  const yMax = model.maxValue <= yMin ? yMin + 1 : model.maxValue;
+  const yRange = yMax - yMin;
   const labelStep = Math.max(1, Math.ceil(model.categories.length / 6));
 
   const x = (index: number) =>
     pointCount === 1
       ? margins.left + plotWidth / 2
       : margins.left + (index / (pointCount - 1)) * plotWidth;
-  const y = (value: number) => margins.top + plotHeight - (Math.max(0, value) / yMax) * plotHeight;
+  const y = (value: number) => {
+    const boundedValue = Math.max(yMin, Math.min(yMax, value));
+    return margins.top + plotHeight - ((boundedValue - yMin) / yRange) * plotHeight;
+  };
 
-  const ticks = Array.from({ length: 5 }, (_, index) => (yMax / 4) * index).reverse();
+  const ticks = Array.from(
+    { length: 5 },
+    (_, index) => yMin + (yRange / 4) * index
+  ).reverse();
+  const hoverIndex = hoverState?.index ?? null;
+  const hoverX = hoverIndex === null ? null : x(hoverIndex);
+  const hoverY = hoverState?.svgY ?? null;
+  const nearestSeries =
+    hoverIndex === null
+      ? null
+      : model.series.reduce<{ label: string; distance: number; y: number } | null>((nearest, series) => {
+          const seriesY = y(series.values[hoverIndex] ?? 0);
+          const distance = Math.abs(seriesY - (hoverY ?? y(0)));
+          if (!nearest || distance < nearest.distance) {
+            return { label: series.label, distance, y: seriesY };
+          }
+          return nearest;
+        }, null);
+  const nearestSeriesLabel = nearestSeries?.label ?? null;
+  const snappedHoverY = nearestSeries?.y ?? null;
+  const hoverRows =
+    hoverIndex === null
+      ? []
+      : model.series.map((series) => ({
+          label: series.label,
+          color: series.color,
+          value: series.values[hoverIndex] ?? 0,
+          valueLabel: series.pointDetails?.[hoverIndex]?.valueLabel,
+          detail: series.pointDetails?.[hoverIndex]?.detail,
+          isNearest: series.label === nearestSeriesLabel
+        }));
+  const focusedHoverRow = hoverRows.find((row) => row.isNearest) ?? hoverRows[0] ?? null;
+  const focusedHoverAxisLabel =
+    focusedHoverRow === null
+      ? null
+      : chartValueLabel(focusedHoverRow.value, model.valueType, yMax);
+  const tooltipStyle =
+    hoverX === null
+      ? undefined
+      : {
+          left: `${(hoverX / width) * 100}%`,
+          transform: hoverX > width * 0.72 ? "translateX(-100%)" : "translateX(0)"
+        };
+  const crosshairXLabelWidth = 92;
+  const crosshairXLabelX =
+    hoverX === null
+      ? 0
+      : Math.max(
+          margins.left,
+          Math.min(width - margins.right - crosshairXLabelWidth, hoverX - crosshairXLabelWidth / 2)
+        );
+  const crosshairYLabelWidth = 74;
+  const crosshairYLabelY =
+    snappedHoverY === null
+      ? 0
+      : Math.max(margins.top, Math.min(margins.top + plotHeight - 20, snappedHoverY - 10));
+  const hoverCalloutWidth = 158;
+  const hoverCalloutHeight = 22;
+  const hoverCalloutX =
+    hoverX === null
+      ? 0
+      : hoverX > width * 0.66
+        ? Math.max(margins.left, hoverX - hoverCalloutWidth - 12)
+        : Math.min(width - margins.right - hoverCalloutWidth, hoverX + 12);
+  const hoverValueCallouts =
+    hoverIndex === null || hoverX === null
+      ? []
+      : layoutHoverValueCallouts(
+          hoverRows.map((row) => ({
+            ...row,
+            shortLabel: conciseSeriesLabel(row.label),
+            valueText: row.valueLabel ?? chartValueLabel(row.value, model.valueType, yMax),
+            y: y(row.value)
+          })),
+          margins.top,
+          margins.top + plotHeight,
+          hoverCalloutHeight,
+          4
+        );
+
+  const updateHoverIndex = (event: PointerEvent<SVGSVGElement>) => {
+    if (model.categories.length === 0) {
+      setHoverState(null);
+      return;
+    }
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const svgX = ((event.clientX - bounds.left) / bounds.width) * width;
+    const svgY = ((event.clientY - bounds.top) / bounds.height) * height;
+    const clampedX = Math.max(margins.left, Math.min(width - margins.right, svgX));
+    const clampedY = Math.max(margins.top, Math.min(margins.top + plotHeight, svgY));
+    const nextIndex =
+      pointCount === 1
+        ? 0
+        : Math.round(((clampedX - margins.left) / plotWidth) * (pointCount - 1));
+    setHoverState({
+      index: Math.max(0, Math.min(model.categories.length - 1, nextIndex)),
+      svgY: clampedY
+    });
+  };
 
   return (
     <div className="simple-chart">
-      <svg className="simple-chart-svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+      <svg
+        className="simple-chart-svg"
+        onPointerLeave={() => setHoverState(null)}
+        onPointerMove={updateHoverIndex}
+        preserveAspectRatio="none"
+        style={{ height }}
+        viewBox={`0 0 ${width} ${height}`}
+      >
         {ticks.map((tick) => (
           <g key={tick}>
             <line
@@ -53,16 +249,17 @@ export function SimpleLineChart({
               strokeWidth="1"
             />
             <text x={margins.left - 8} y={y(tick) + 4} textAnchor="end" className="simple-chart-axis">
-              {chartValueLabel(tick, model.valueType)}
+              {chartValueLabel(tick, model.valueType, yMax)}
             </text>
           </g>
         ))}
 
         {model.series.map((series) => {
           const points = series.values.map((value, index) => `${x(index)},${y(value)}`).join(" ");
+          const baselineY = y(yMin);
           const areaPath = `${series.values
             .map((value, index) => `${index === 0 ? "M" : "L"} ${x(index)} ${y(value)}`)
-            .join(" ")} L ${x(series.values.length - 1)} ${margins.top + plotHeight} L ${x(0)} ${margins.top + plotHeight} Z`;
+            .join(" ")} L ${x(series.values.length - 1)} ${baselineY} L ${x(0)} ${baselineY} Z`;
 
           return (
             <g key={series.label}>
@@ -96,7 +293,145 @@ export function SimpleLineChart({
             </text>
           );
         })}
+
+        {hoverIndex !== null && hoverX !== null ? (
+          <g className="simple-chart-hover-layer">
+            {snappedHoverY !== null ? (
+              <line
+                x1={margins.left}
+                x2={width - margins.right}
+                y1={snappedHoverY}
+                y2={snappedHoverY}
+                stroke="#27323a"
+                strokeDasharray="4 4"
+                strokeOpacity="0.38"
+                strokeWidth="1"
+              />
+            ) : null}
+            <line
+              x1={hoverX}
+              x2={hoverX}
+              y1={margins.top}
+              y2={margins.top + plotHeight}
+              stroke="#27323a"
+              strokeDasharray="4 4"
+              strokeWidth="1.2"
+            />
+            {model.series.map((series) => (
+              <circle
+                cx={hoverX}
+                cy={y(series.values[hoverIndex] ?? 0)}
+                fill="#ffffff"
+                key={series.label}
+                r={series.label === nearestSeriesLabel ? "5.8" : "4.5"}
+                stroke={series.color}
+                strokeWidth="2"
+              />
+            ))}
+            {hoverValueCallouts.map((row) => (
+              <g
+                className={
+                  row.isNearest
+                    ? "simple-chart-value-callout simple-chart-value-callout-active"
+                    : "simple-chart-value-callout"
+                }
+                key={`${row.label}-callout`}
+                transform={`translate(${hoverCalloutX}, ${row.top})`}
+              >
+                <rect height={hoverCalloutHeight} rx="6" width={hoverCalloutWidth} />
+                <circle cx="10" cy={hoverCalloutHeight / 2} fill={row.color} r="3.5" />
+                <text x="18" y="15">
+                  {row.shortLabel} {row.valueText}
+                </text>
+              </g>
+            ))}
+            {focusedHoverAxisLabel !== null && snappedHoverY !== null ? (
+              <g className="simple-chart-crosshair-label">
+                <rect
+                  height="20"
+                  rx="5"
+                  width={crosshairYLabelWidth}
+                  x={margins.left}
+                  y={crosshairYLabelY}
+                />
+                <text x={margins.left + 7} y={crosshairYLabelY + 14}>
+                  {focusedHoverAxisLabel}
+                </text>
+              </g>
+            ) : null}
+            <g className="simple-chart-crosshair-label">
+              <rect
+                height="20"
+                rx="5"
+                width={crosshairXLabelWidth}
+                x={crosshairXLabelX}
+                y={margins.top + plotHeight + 8}
+              />
+              <text
+                textAnchor="middle"
+                x={crosshairXLabelX + crosshairXLabelWidth / 2}
+                y={margins.top + plotHeight + 22}
+              >
+                {model.categories[hoverIndex]}
+              </text>
+            </g>
+          </g>
+        ) : null}
+
+        <rect
+          className="simple-chart-hit-area"
+          fill="transparent"
+          height={plotHeight}
+          width={plotWidth}
+          x={margins.left}
+          y={margins.top}
+        />
       </svg>
+
+      {hoverIndex !== null ? (
+        <div className="simple-chart-tooltip" style={tooltipStyle}>
+          <div className="simple-chart-tooltip-head">
+            <strong>{model.categories[hoverIndex]}</strong>
+            {focusedHoverRow ? <span>吸附 {focusedHoverRow.label}</span> : null}
+          </div>
+          {focusedHoverRow ? (
+            <div className="simple-chart-tooltip-focus">
+              <span>
+                <i style={{ background: focusedHoverRow.color }} />
+                当前十字星
+              </span>
+              <em>
+                {focusedHoverRow.label}：
+                {focusedHoverRow.valueLabel ??
+                  chartValueLabel(focusedHoverRow.value, model.valueType, yMax)}
+              </em>
+              {focusedHoverRow.detail ? <small>{focusedHoverRow.detail}</small> : null}
+            </div>
+          ) : null}
+          {hoverRows.map((row) => (
+            <div
+              className={
+                row.isNearest
+                  ? "simple-chart-tooltip-row simple-chart-tooltip-row-active"
+                  : "simple-chart-tooltip-row"
+              }
+              key={row.label}
+            >
+              <span>
+                <i style={{ background: row.color }} />
+                {row.label}
+              </span>
+              <em>{row.valueLabel ?? chartValueLabel(row.value, model.valueType, yMax)}</em>
+              {row.detail ? <small>{row.detail}</small> : null}
+            </div>
+          ))}
+          {nearestSeriesLabel ? (
+            <small className="simple-chart-tooltip-hint">
+              竖线选日期，横线吸附到最近折线；下方同时列出该日期所有折线读数。
+            </small>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="simple-chart-legend">
         {model.series.map((series) => (
@@ -213,6 +548,7 @@ export function SimpleGroupedBarChart({
             </g>
           );
         })}
+
       </svg>
 
       <div className="simple-chart-legend">

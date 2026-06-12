@@ -160,10 +160,16 @@ impl SecEdgarConnector {
                     .and_then(|value| value.to_str().ok())
                     .unwrap_or("application/json")
                     .to_string();
-                let body = response
-                    .text()
-                    .await
-                    .map_err(|error| ConnectorError::TemporaryNetwork(format!("{error:?}")))?;
+                let body = match response.text().await {
+                    Ok(body) => body,
+                    Err(error) => {
+                        tracing::warn!(
+                            %error,
+                            "SEC response body read failed; falling back to curl"
+                        );
+                        http_client::curl_get_text(url, 45)?
+                    }
+                };
                 (content_type, body)
             }
             Err(error) => {

@@ -7,7 +7,7 @@ use fc_domain::ModelReleaseRecord;
 use super::{
     build_release_actionability_review, compare_actionability_guardrails,
     compare_operational_guardrails, compare_probability_guardrails,
-    compare_runtime_sanity_guardrails,
+    compare_release_review_count_guardrails, compare_runtime_sanity_guardrails,
 };
 mod comparison;
 mod focus;
@@ -183,16 +183,35 @@ async fn run_release_review(
     let candidate_actionability_review = build_release_actionability_review(candidate_release)?;
     let probability_regressions = compare_probability_guardrails(candidate_release)?;
     let candidate_has_actionability = candidate_actionability_review.enabled;
+    let release_review_comparison = comparison::build_release_review_comparison(
+        comparison::ReleaseReviewComparisonInput {
+            assessment: &baseline_assessment,
+            backtests: &baseline_runtime_snapshot.backtests,
+            history: &baseline_runtime_snapshot.history,
+            method: &baseline_runtime_snapshot.method,
+        },
+        comparison::ReleaseReviewComparisonInput {
+            assessment: &candidate_assessment,
+            backtests: &candidate_runtime_snapshot.backtests,
+            history: &candidate_runtime_snapshot.history,
+            method: &candidate_runtime_snapshot.method,
+        },
+        &baseline_runtime_review,
+        &candidate_runtime_review,
+    );
     let operational_regressions =
         compare_operational_guardrails(&baseline_assessment, &candidate_assessment);
     let actionability_regressions =
         compare_actionability_guardrails(&candidate_actionability_review);
     let runtime_sanity_regressions =
         compare_runtime_sanity_guardrails(&baseline_runtime_review, &candidate_runtime_review);
+    let release_review_count_regressions =
+        compare_release_review_count_guardrails(&release_review_comparison);
     let mut overall_regressions = operational_regressions.clone();
     overall_regressions.extend(probability_regressions.iter().cloned());
     overall_regressions.extend(actionability_regressions.iter().cloned());
     overall_regressions.extend(runtime_sanity_regressions.iter().cloned());
+    overall_regressions.extend(release_review_count_regressions.iter().cloned());
     let scenario_focus = build_release_review_scenario_focus_diagnostics(
         &baseline_runtime_snapshot.backtests,
         &candidate_runtime_snapshot.backtests,
@@ -201,8 +220,18 @@ async fn run_release_review(
         &baseline_runtime_snapshot.method,
         &candidate_runtime_snapshot.method,
     );
-    let historical_audit_priorities =
-        crate::summarize_release_review_historical_audit_priorities(&scenario_focus);
+    let (scenario_coverage_catalog, scenario_coverages) =
+        crate::build_release_review_scenario_coverage(
+            &build_release_review_backtest_scenario_comparisons(
+                &baseline_runtime_snapshot.backtests,
+                &candidate_runtime_snapshot.backtests,
+            ),
+            &scenario_focus,
+        );
+    let historical_audit_priorities = enrich_historical_audit_priorities_with_coverage(
+        crate::summarize_release_review_historical_audit_priorities(&scenario_focus),
+        &scenario_coverages,
+    );
     let historical_audit_attribution =
         crate::summarize_release_review_historical_audit_attribution(&historical_audit_priorities);
     let historical_audit_actions =
@@ -223,28 +252,15 @@ async fn run_release_review(
         restored_release_id: original_active.manifest.release_id.clone(),
         baseline_release: baseline_release.clone(),
         candidate_release: candidate_release.clone(),
-        comparison: comparison::build_release_review_comparison(
-            comparison::ReleaseReviewComparisonInput {
-                assessment: &baseline_assessment,
-                backtests: &baseline_runtime_snapshot.backtests,
-                history: &baseline_runtime_snapshot.history,
-                method: &baseline_runtime_snapshot.method,
-            },
-            comparison::ReleaseReviewComparisonInput {
-                assessment: &candidate_assessment,
-                backtests: &candidate_runtime_snapshot.backtests,
-                history: &candidate_runtime_snapshot.history,
-                method: &candidate_runtime_snapshot.method,
-            },
-            &baseline_runtime_review,
-            &candidate_runtime_review,
-        ),
+        comparison: release_review_comparison,
         baseline_assessment,
         candidate_assessment,
         baseline_runtime_review,
         candidate_runtime_review,
         baseline_actionability_review,
         candidate_actionability_review,
+        scenario_coverage_catalog,
+        scenario_coverages,
         scenario_focus,
         historical_audit_workstreams,
         historical_audit_priorities,
@@ -277,4 +293,28 @@ async fn run_release_review(
     summary::print_release_review_summary(&report);
 
     Ok(())
+}
+
+fn enrich_historical_audit_priorities_with_coverage(
+    priorities: Vec<crate::ReleaseReviewHistoricalAuditPriority>,
+    scenario_coverages: &[crate::ReleaseReviewScenarioCoverage],
+) -> Vec<crate::ReleaseReviewHistoricalAuditPriority> {
+    let coverage_by_id = scenario_coverages
+        .iter()
+        .map(|coverage| (coverage.scenario_id.as_str(), coverage))
+        .collect::<BTreeMap<_, _>>();
+
+    priorities
+        .into_iter()
+        .map(|mut priority| {
+            if let Some(coverage) = coverage_by_id.get(priority.scenario_id.as_str()).copied() {
+                priority.coverage_recommended_role = Some(coverage.recommended_role.clone());
+                priority.coverage_grade = Some(coverage.coverage_grade.clone());
+                priority.coverage_point_in_time_mode = Some(coverage.point_in_time_mode.clone());
+                priority.coverage_current_status = Some(coverage.current_status.clone());
+                priority.coverage_blocking_gaps = coverage.blocking_gaps.clone();
+            }
+            priority
+        })
+        .collect()
 }

@@ -24,6 +24,14 @@ export interface ProbabilityOverlayContribution {
   contribution: number;
 }
 
+export interface LogisticProbabilityFeatureContribution {
+  name: string;
+  raw_value: number;
+  normalized_value: number;
+  weight: number;
+  contribution: number;
+}
+
 export interface ProbabilityFamilyOverlayAudit {
   family_id: string;
   gate_feature: string;
@@ -51,6 +59,7 @@ export interface ProbabilityHorizonOverlayDiagnostics {
   runtime_final_probability?: number;
   monotonic_lift?: number;
   configured_overlay_count: number;
+  base_contributions?: LogisticProbabilityFeatureContribution[];
   contributions: ProbabilityOverlayContribution[];
   overlay_audits: ProbabilityFamilyOverlayAudit[];
 }
@@ -64,6 +73,19 @@ export interface AssessmentScores {
   structural_score: number;
   trigger_score: number;
   external_shock_score: number;
+}
+
+export type MvpRiskStateCode = "observe" | "prepare" | "hedge" | "defend";
+export type MvpProbabilityInputStatus = "usable" | "reference_only";
+
+export interface MvpRiskState {
+  code: MvpRiskStateCode;
+  label: string;
+  probability_input_status: MvpProbabilityInputStatus;
+  summary: string;
+  primary_evidence: string[];
+  blockers: string[];
+  next_actions: string[];
 }
 
 export interface HistoricalAnalog {
@@ -154,6 +176,10 @@ export interface RuntimeMetadata {
   requested_as_of_date: string;
   latest_observation_at: string | null;
   latest_observation_lag_days: number | null;
+  latest_observation_lag_business_days: number | null;
+  latest_key_indicator_at: string | null;
+  latest_key_indicator_lag_days: number | null;
+  latest_key_indicator_lag_business_days: number | null;
   demo_mode: boolean;
   stale_warning: string | null;
 }
@@ -168,9 +194,29 @@ export interface KeyIndicatorStatus {
   latest_value: number | null;
   latest_as_of_date: string | null;
   lag_days: number | null;
+  lag_business_days: number | null;
   stale_threshold_days: number;
   status: FreshnessStatus;
   note: string;
+  lineage?: KeyIndicatorLineage | null;
+}
+
+export type KeyIndicatorLineageEvidenceLevel =
+  | "run_raw_observation"
+  | "raw_observation"
+  | "observation_only"
+  | "missing";
+
+export interface KeyIndicatorLineage {
+  evidence_level: KeyIndicatorLineageEvidenceLevel;
+  note: string;
+  raw_payload_id: string | null;
+  run_id: string | null;
+  run_status: string | null;
+  fetched_at: string | null;
+  records_written: number | null;
+  response_hash: string | null;
+  raw_file_path: string | null;
 }
 
 export interface EventSignalSummary {
@@ -201,6 +247,21 @@ export interface UserRiskPreferences {
   note: string;
 }
 
+export interface ActionEvidenceBreakdown {
+  score: number;
+  data_quality_component: number;
+  breadth_component: number;
+  risk_pressure_component?: number;
+  agreement_component: number;
+  data_quality_weight: number;
+  breadth_weight: number;
+  risk_pressure_weight?: number;
+  agreement_high_component: number;
+  agreement_low_component: number;
+  breadth_score: number;
+  structural_trigger_agreement: boolean;
+}
+
 export interface AssessmentSnapshot {
   as_of_date: string;
   entity_id: string;
@@ -210,7 +271,9 @@ export interface AssessmentSnapshot {
   probability_diagnostics: ProbabilityDiagnostics;
   time_to_risk_bucket: TimeToRiskBucket;
   posture: DecisionPosture;
+  mvp_risk_state?: MvpRiskState;
   conviction_score: number;
+  action_evidence?: ActionEvidenceBreakdown;
   scores: AssessmentScores;
   summary: string;
   posture_reason: string;
@@ -242,6 +305,9 @@ export interface AssessmentHistoryPoint {
   external_shock_score: number;
   posture_trigger_codes: string[];
   posture_blocker_codes: string[];
+  replay_run_id?: string | null;
+  feature_snapshot_id?: string | null;
+  history_source?: string | null;
 }
 
 export interface PostureGuidance {
@@ -285,9 +351,89 @@ export interface RuntimeThresholdDiagnostics {
   history_runtime_policy_version: string;
 }
 
+export interface HistoryProvenanceSourceSummary {
+  source_id: string;
+  count: number;
+  latest_as_of_date: string | null;
+  note: string;
+}
+
+export interface HistoryProvenanceSummary {
+  evidence_tier: string;
+  dominant_source: string;
+  total_points: number;
+  feature_backed_points: number;
+  reused_feature_snapshot_points: number;
+  raw_observation_points: number;
+  snapshot_bridge_points: number;
+  runtime_only_points: number;
+  latest_feature_backed_date: string | null;
+  latest_reused_feature_snapshot_date: string | null;
+  latest_raw_observation_date: string | null;
+  latest_snapshot_bridge_date: string | null;
+  latest_replay_run_id: string | null;
+  note: string;
+  sources: HistoryProvenanceSourceSummary[];
+}
+
+export interface ScenarioDataCoverageRecord {
+  scenario_id: string;
+  scenario_label: string;
+  recommended_role: string;
+  coverage_grade: string;
+  point_in_time_mode: string;
+  usable_for_main_training: boolean;
+  usable_for_extension_training: boolean;
+  usable_for_protected_stress: boolean;
+  usable_for_historical_analog: boolean;
+  free_sources: string[];
+  current_status: string;
+  blocking_gaps: string[];
+}
+
+export interface ScenarioDataCoverageCatalog {
+  catalog_id: string;
+  scenario_catalog_id: string;
+  market_scope: string;
+  note: string;
+  source: string;
+  warning: string | null;
+  records: ScenarioDataCoverageRecord[];
+}
+
+export interface FreeDataSourceAlternative {
+  source_id: string;
+  dataset: string;
+  access_tier: string;
+  note: string;
+}
+
+export interface FreeDataSourceRecord {
+  indicator_id: string;
+  display_name: string;
+  primary_source_id: string;
+  primary_dataset: string;
+  primary_access_tier: string;
+  primary_timing_note: string;
+  alternatives: FreeDataSourceAlternative[];
+  missing_impact: string;
+}
+
+export interface FreeDataSourceCatalog {
+  catalog_id: string;
+  market_scope: string;
+  note: string;
+  source: string;
+  warning: string | null;
+  records: FreeDataSourceRecord[];
+}
+
 export interface AssessmentMethodResponse {
   method: AssessmentMethodVersions;
   note: string;
+  history_provenance: HistoryProvenanceSummary;
   protected_stress_window_catalog: ProtectedStressWindowCatalog;
+  scenario_data_coverage_catalog: ScenarioDataCoverageCatalog;
+  free_data_source_catalog: FreeDataSourceCatalog;
   runtime_thresholds: RuntimeThresholdDiagnostics;
 }

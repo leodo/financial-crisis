@@ -44,6 +44,74 @@ function Resolve-ReviewReportPath {
     $report.FullName
 }
 
+function Resolve-LeadtimeAuditOutputPath {
+    param(
+        [string]$BaselineRelease,
+        [string]$CandidateRelease,
+        [string]$Mode,
+        [string]$ExplicitPath
+    )
+
+    if ($ExplicitPath) {
+        if ([System.IO.Path]::IsPathRooted($ExplicitPath)) {
+            return $ExplicitPath
+        }
+        return (Join-Path $Root $ExplicitPath)
+    }
+
+    $outputDirectory = Join-Path $Root "artifacts/research/leadtime-audit"
+    New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
+    $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
+    Join-Path $outputDirectory "$stamp-$BaselineRelease-vs-$CandidateRelease-$Mode-leadtime-audit.json"
+}
+
+function ConvertTo-RepoRelativePath {
+    param([string]$Path)
+
+    $resolved = [System.IO.Path]::GetFullPath($Path)
+    $rootPath = [System.IO.Path]::GetFullPath($Root)
+    if ($resolved.StartsWith($rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $resolved.Substring($rootPath.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    }
+    $resolved
+}
+
+function Write-LeadtimeAuditArtifact {
+    param(
+        $Summary,
+        [string]$ReviewReportPath,
+        [string]$OutputPath
+    )
+
+    $parent = Split-Path -Parent $OutputPath
+    if ($parent) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+
+    $artifact = [ordered]@{
+        generated_at = (Get-Date).ToUniversalTime().ToString("o")
+        release_review_artifact = ConvertTo-RepoRelativePath -Path $ReviewReportPath
+        baseline_release_id = $BaselineReleaseId
+        candidate_release_id = $CandidateReleaseId
+        market_scope = $Summary.market_scope
+        history_mode = $Summary.history_mode
+        reviewed_at = $Summary.reviewed_at
+        comparison = $Summary.comparison
+        metric_rows = @($Summary.metric_rows)
+        runtime_rows = @($Summary.runtime_rows)
+        leadtime_gap_rows = @($Summary.leadtime_gap_rows)
+        focus_rows = @($Summary.focus_rows)
+        block_mix_rows = @($Summary.block_mix_rows)
+        continuity_facet_rows = @($Summary.continuity_facet_rows)
+        workstream_rows = @($Summary.workstream_rows)
+        attribution_rows = @($Summary.attribution_rows)
+        action_rows = @($Summary.action_rows)
+        takeaways = @($Summary.takeaways)
+    }
+
+    $artifact | ConvertTo-Json -Depth 40 | Set-Content -LiteralPath $OutputPath -Encoding utf8
+}
+
 function Load-LeadtimeAuditSummary {
     param([string]$ReviewReportPath)
 
@@ -395,12 +463,22 @@ $reviewReportPath = Resolve-ReviewReportPath `
 $summary = Load-LeadtimeAuditSummary -ReviewReportPath $reviewReportPath
 $takeaways = Get-LeadtimeTakeaways -Summary $summary
 $summary | Add-Member -NotePropertyName takeaways -NotePropertyValue $takeaways
+$artifactPath = Resolve-LeadtimeAuditOutputPath `
+    -BaselineRelease $BaselineReleaseId `
+    -CandidateRelease $CandidateReleaseId `
+    -Mode $HistoryMode `
+    -ExplicitPath $OutputPath
+Write-LeadtimeAuditArtifact `
+    -Summary $summary `
+    -ReviewReportPath $reviewReportPath `
+    -OutputPath $artifactPath
 
 Write-Host "Formal candidate lead-time audit"
 Write-Host "  baseline : $BaselineReleaseId"
 Write-Host "  candidate: $CandidateReleaseId"
 Write-Host "  mode     : $HistoryMode"
 Write-Host "  report   : $reviewReportPath"
+Write-Host "  artifact : $artifactPath"
 Write-Host ""
 
 Write-Host "Lead-time summary metrics"

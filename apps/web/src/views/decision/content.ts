@@ -5,6 +5,8 @@ export const decisionContent = {
       "总风险、结构脆弱性、触发压力和外部冲击分反映的是压力位置；真正用于决策的是 5d / 20d / 60d 危机先验、准备 / 对冲 / 防守动作层、风险时距和执行节奏。",
     runtimeSummary:
       "这是基于免费日频/周频数据的危机预警面板，不是逐笔行情终端。先看日期和模式，再解读数值。",
+    dataCheckHint:
+      "核验口径：当前概率卡片使用线上 active release；事件层的 0 表示当天没有规则命中；风险族 gate 的未触发表示该风险家族没有打开；版本核对页里的历史/候选快照 0 不参与当前结论。",
     generatedHint: "点击右上角刷新按钮可以立即重新载入本地库。",
     cadenceTitle: "日频预警",
     cadenceHint: "更适合判断未来几天到数周的风险窗口，不适合替代盘中报价软件。"
@@ -19,7 +21,7 @@ export const decisionContent = {
       p60d: "用于判断中期脆弱性是否已经积累。"
     },
     bandLegend:
-      "5d 看急性冲击，20d 看未来几周是否需要离场和保护，60d 看数月级脆弱性；动作层不是把这三条概率直接改名。",
+      "5d 看急性冲击，20d 看未来几周是否需要离场和保护，60d 看数月级脆弱性；卡片里的进入线是动作阈值，不是“危机已经发生线”。低位小概率会同时显示精确百分比、接口小数、概率基点、占进入线比例和触线倍数；如果是小概率但非零，会明确标注，避免被粗略看成 0。",
     priorVsAction: {
       title: "先验和动作概率不是一回事",
       body:
@@ -39,6 +41,8 @@ export const decisionContent = {
   },
   panels: {
     whyNowTopDrivers: "当前最强的上行驱动",
+    whyNowDriverTiming:
+      "这里优先展示最近一段时间真正能解释“为什么是现在”的近端驱动。像房价、GDP、经常账户这类月频/季频/年频慢变量仍会进入结构评分，但会按背景变量解释，不应被误读成今天市场刚发生的触发事件。",
     reliefBody:
       "这些缓冲因素解释了为什么当前评估还没有被推到更高执行档位，也提醒你不要只盯着单个高分指标。",
     actionPlanCapitalPreservation:
@@ -47,9 +51,9 @@ export const decisionContent = {
       "下面这组边界回答的是这套建议能做到什么、不能做到什么。它给的是系统层预算和执行顺序，不会替你下单。",
     actionPlanChecks:
       "执行前先按这份清单做人工复核，确认当前输出没有绕开动作手册、release review 和 Go/No-Go 边界。",
-    eventConfirmedTitle: "已确认信号",
+    eventConfirmedTitle: "事件信号记录",
     eventPendingTitle: "待补缺口",
-    eventConfirmedEmpty: "当前没有新增确认信号。",
+    eventConfirmedEmpty: "当前没有近期事件信号。",
     eventPendingEmpty: "当前没有额外待补缺口。",
     jpyCarryLegend:
       "这张卡不是在预测日本危机，而是在看日元融资环境是否可能放大美国风险资产的同步回撤。",

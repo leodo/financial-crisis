@@ -7,10 +7,16 @@ import {
   ShieldCheck
 } from "lucide-react";
 import {
+  eventSignalListEmptyText,
+  eventSignalListLabel,
+  formatDate,
   humanizeNarrativeCopy,
   eventStateLabel,
   formatNumber,
-  jpyStateLabel
+  formatPercent,
+  jpyStateLabel,
+  levelLabel,
+  qualityLabel
 } from "../../format";
 import { SimpleGroupedBarChart } from "../../simpleCharts";
 import type { AssessmentSnapshot, RiskSnapshot } from "../../types";
@@ -26,20 +32,87 @@ import {
   SurfaceHeader,
   type MetricItem
 } from "../shared/panelHelpers";
+import {
+  actionBoundarySourceCopy,
+  buildActionBoundaryRows,
+  currentActionBoundaryPosture
+} from "./actionBoundaries";
 import { BudgetBar } from "./components";
 import { decisionContent } from "./content";
+import { currentMvpRiskState, mvpProbabilityInputIsAuditOnly } from "./mvpRiskState";
 import type { GroupedBarChartModel } from "./charts";
 import type {
   DecisionAnalogRow,
   DecisionRollingAuditEpisodeRow
 } from "./useDecisionViewModel";
 
+function backtestSummaryCopy(assessment: AssessmentSnapshot) {
+  const summary = assessment.backtest_summary;
+  if (summary.real_scenario_count !== 0 && summary.timely_warning_rate !== 0) {
+    return summary.summary;
+  }
+
+  const localCoverage =
+    summary.real_scenario_count === 0
+      ? `当前危机场景目录共 ${summary.scenario_count} 个样本，本地 SQLite 历史窗口暂未直接覆盖这些危机场景；${summary.fallback_scenario_count} 个样本仍作为模板参照。`
+      : `当前危机场景目录共 ${summary.scenario_count} 个样本，其中 ${summary.real_scenario_count} 个已被本地历史窗口覆盖。`;
+  const structural = `结构性抬升至少提前 7 天出现的比例约为 ${formatPercent(
+    summary.structural_warning_rate
+  )}。`;
+  const action =
+    summary.timely_warning_rate === 0
+      ? "动作级预警暂未形成，页面下方会把它显示为“未形成动作预警”，不能解释成采集失败。"
+      : `动作级预警至少提前 7 天出现的比例约为 ${formatPercent(summary.timely_warning_rate)}。`;
+
+  return `${localCoverage}${structural}${action}`;
+}
+
+function displayedUpgradeCondition(
+  assessment: AssessmentSnapshot,
+  posture: { upgrade_condition: string }
+) {
+  if (!mvpProbabilityInputIsAuditOnly(assessment)) {
+    return posture.upgrade_condition;
+  }
+
+  const mvpState = currentMvpRiskState(assessment);
+  const scores = assessment.scores;
+  const eventScore = assessment.event_assessment.confirmation_score;
+  const coverage = assessment.data_trust.coverage_score;
+  const quality = assessment.data_trust.quality_grade;
+  const currentReadings = `当前对照：总风险 ${formatNumber(
+    scores.overall_score
+  )}，结构 ${formatNumber(scores.structural_score)}，触发 ${formatNumber(
+    scores.trigger_score
+  )}，外部 ${formatNumber(scores.external_shock_score)}，事件确认 ${formatNumber(
+    eventScore
+  )}，日元套息 ${jpyStateLabel(assessment.jpy_carry.state)} ${formatNumber(
+    assessment.jpy_carry.score
+  )}，关键指标覆盖 ${formatPercent(coverage)} / ${qualityLabel(quality)}。`;
+
+  if (mvpState.code === "observe") {
+    return `正式概率当前只作为参考输入，升级不按 60日 / 20日 / 5日概率阈值触发；若总风险、结构、触发、外部冲击、日元套息或事件确认进入 45 分以上，并且关键指标覆盖不低于 75% 且质量等级不低于 C，则升级为提前准备。${currentReadings}`;
+  }
+
+  if (mvpState.code === "prepare") {
+    return `正式概率当前只作为参考输入，下一档不按 20日概率阈值触发；若事件确认转为已确认且总风险达到 55 分以上，或触发压力达到 60 分并得到结构、外部冲击或日元套息同步确认，则升级为保护性对冲。${currentReadings}`;
+  }
+
+  if (mvpState.code === "hedge") {
+    return `正式概率当前只作为参考输入，下一档不按 5日概率阈值触发；若事件进入升级态，或总风险达到 75 分且触发压力/外部冲击至少一项达到 65 分，或日元套息进入平仓风险并伴随触发压力抬升，则升级为防守优先。${currentReadings}`;
+  }
+
+  return `正式概率当前只作为参考输入；除非规则层压力、事件确认和日元套息风险明显缓和，否则维持防守优先。${currentReadings}`;
+}
+
 export function DecisionWhyNowPanel({
   assessment,
-  posture
+  posture,
+  drivers
 }: {
   assessment: AssessmentSnapshot;
   posture: { reasons: string[]; upgrade_condition: string };
+  drivers: AssessmentSnapshot["top_risk_drivers"];
 }) {
   return (
     <section className="surface">
@@ -47,9 +120,14 @@ export function DecisionWhyNowPanel({
       <BulletList items={posture.reasons.map(humanizeNarrativeCopy)} />
       <div className="driver-preview">
         <strong>{decisionContent.panels.whyNowTopDrivers}</strong>
-        <DriverList rows={assessment.top_risk_drivers.slice(0, 3)} />
+        <DriverList rows={drivers} />
       </div>
-      <RuleBox label="升级条件">{humanizeNarrativeCopy(posture.upgrade_condition)}</RuleBox>
+      <RuleBox label="近端优先说明">
+        {decisionContent.panels.whyNowDriverTiming}
+      </RuleBox>
+      <RuleBox label="升级条件">
+        {humanizeNarrativeCopy(displayedUpgradeCondition(assessment, posture))}
+      </RuleBox>
     </section>
   );
 }
@@ -67,7 +145,7 @@ export function DecisionReliefPanel({
     <section className="surface">
       <SurfaceHeader title="为什么还没更糟" icon={ShieldCheck} />
       <p className="body-copy">{decisionContent.panels.reliefBody}</p>
-      <DriverList rows={assessment.top_relief_drivers.slice(0, 3)} />
+      <DriverList rows={assessment.top_relief_drivers.slice(0, 3)} reverse />
       <RuleBox label="降级条件">{humanizeNarrativeCopy(posture.downgrade_condition)}</RuleBox>
       <RuleBox label="旧版评分层辅助解释">{humanizeNarrativeCopy(overview.level_reason)}</RuleBox>
     </section>
@@ -81,21 +159,36 @@ export function DecisionAnalogPanel({
   analogChart: GroupedBarChartModel;
   analogRows: DecisionAnalogRow[];
 }) {
+  const closestAnalog = analogRows[0];
   return (
     <section className="surface">
       <SurfaceHeader title="历史类比" icon={GitCompareArrows} />
-      <SimpleGroupedBarChart model={analogChart} height={300} />
+      {closestAnalog ? (
+        <div className="analog-callout">
+          <span>当前最接近 <strong>{closestAnalog.title}</strong> 的压力结构（相似度 <strong>{closestAnalog.similarity}</strong>）。{closestAnalog.detail}</span>
+        </div>
+      ) : null}
+      <SimpleGroupedBarChart model={analogChart} height={320} />
       <div className="legend-note">
-        蓝柱表示当前总风险强度，橙柱表示对应历史场景的压力峰值。先看当前距离历史峰值还有多远，再看下面每个样本给过多长提前量。
+        蓝柱表示当前总风险强度，橙柱表示每个历史场景爆发前的压力峰值。柱体越接近，说明当前结构与该历史场景越相似。
       </div>
-      <DetailRows
-        items={analogRows.map((analog) => ({
-          id: analog.id,
-          title: analog.title,
-          detail: analog.detail,
-          meta: analog.score
-        }))}
-      />
+      <ResponsiveTable
+        columns={["历史场景", "相似度", "预警节奏", "差距"]}
+        className="wide-table"
+        note="相似度（0-100）：相似度是 0-100 的结构参照分，不是危机发生概率；预警节奏是历史上从信号到爆发的时间窗口，不代表当前还剩多少天。"
+      >
+        {analogRows.map((analog) => (
+          <tr key={analog.id}>
+            <td>
+              <strong>{analog.title}</strong>
+              <span>{analog.detail}</span>
+            </td>
+            <td className="table-nowrap">{analog.similarity}</td>
+            <td className="table-nowrap">{analog.historicalLead}</td>
+            <td className="table-nowrap">{analog.gap}</td>
+          </tr>
+        ))}
+      </ResponsiveTable>
     </section>
   );
 }
@@ -107,13 +200,52 @@ export function DecisionActionPlanPanel({
   assessment: AssessmentSnapshot;
   actionPlanMetrics: MetricItem[];
 }) {
+  const actionBoundaryRows = buildActionBoundaryRows(assessment);
+  const currentActionBoundary = currentActionBoundaryPosture(assessment);
+  const budgetIsReference =
+    mvpProbabilityInputIsAuditOnly(assessment) || !assessment.method.actionability_enabled;
+
   return (
     <section className="surface">
       <SurfaceHeader title="组合动作建议" icon={ChartColumnIncreasing} />
       <p className="body-copy">{humanizeNarrativeCopy(assessment.position_guidance.action_summary)}</p>
       <MetricGrid items={actionPlanMetrics} />
+      <RuleBox label="四档动作边界">{actionBoundarySourceCopy(assessment)}</RuleBox>
+      <ResponsiveTable
+        columns={["档位", "风险资产上限", "现金目标", "对冲覆盖", "期权保护", "杠杆上限", "执行窗口"]}
+        className="wide-table action-boundary-table"
+        note={
+          budgetIsReference
+            ? "这张表当前是系统级预算参考边界，不是自动交易指令；当前档位和预算数字都不应被直接照抄执行。"
+            : "这张表是系统级风险预算边界，不是自动交易指令；当前档位的实际预算会叠加你的风险偏好。"
+        }
+      >
+        {actionBoundaryRows.map((row) => (
+          <tr
+            className={row.id === currentActionBoundary ? "action-boundary-row active" : "action-boundary-row"}
+            key={row.id}
+          >
+            <td>
+              <div className="action-boundary-stage">
+                <strong>{row.label}</strong>
+                {row.id === currentActionBoundary ? <span>当前</span> : null}
+              </div>
+              <small>{row.summary}</small>
+              {row.currentBudget ? (
+                <em>{budgetIsReference ? `当前预算参考：${row.currentBudget}` : `当前预算：${row.currentBudget}`}</em>
+              ) : null}
+            </td>
+            <td className="table-nowrap">{row.riskAssetRange}</td>
+            <td className="table-nowrap">{row.cashRange}</td>
+            <td className="table-nowrap">{row.hedgeRange}</td>
+            <td className="table-nowrap">{row.optionRange}</td>
+            <td className="table-nowrap">{row.leverageCap}</td>
+            <td className="table-nowrap">{row.executionWindow}</td>
+          </tr>
+        ))}
+      </ResponsiveTable>
       <RuleBox label="执行节奏">{humanizeNarrativeCopy(assessment.position_guidance.execution_urgency)}</RuleBox>
-      <RuleBox label="可信度门槛">{humanizeNarrativeCopy(assessment.position_guidance.confidence_gate)}</RuleBox>
+      <RuleBox label="执行确认门槛">{humanizeNarrativeCopy(assessment.position_guidance.confidence_gate)}</RuleBox>
       {assessment.position_guidance.capital_preservation_overlay_enabled ? (
         <RuleBox label="资本保全叠加已打开">
           {decisionContent.panels.actionPlanCapitalPreservation}
@@ -121,32 +253,63 @@ export function DecisionActionPlanPanel({
       ) : null}
       <div className="surface-grid">
         <BudgetBar
-          label="风险资产上限"
+          label={budgetIsReference ? "风险资产上限（参考）" : "风险资产上限"}
           value={assessment.position_guidance.target_equity_exposure_pct}
+          valueLabel={
+            budgetIsReference
+              ? `${formatNumber(assessment.position_guidance.target_equity_exposure_pct, "%")} 参考`
+              : undefined
+          }
           note="风险窗口打开时，系统建议先压低总暴露。"
           tone="risk"
         />
         <BudgetBar
-          label="现金目标"
+          label={budgetIsReference ? "现金目标（参考）" : "现金目标"}
           value={assessment.position_guidance.target_cash_pct}
+          valueLabel={
+            budgetIsReference
+              ? `${formatNumber(assessment.position_guidance.target_cash_pct, "%")} 参考`
+              : undefined
+          }
           note="用于应对流动性冲击和执行保护动作。"
           tone="cash"
         />
         <BudgetBar
-          label="对冲覆盖"
+          label={budgetIsReference ? "对冲覆盖（参考）" : "对冲覆盖"}
           value={assessment.position_guidance.hedge_ratio_pct}
-          note="核心仓位应有多少保护覆盖。"
+          valueLabel={
+            assessment.position_guidance.hedge_ratio_pct === 0
+              ? "暂不对冲"
+              : budgetIsReference
+                ? `${formatNumber(assessment.position_guidance.hedge_ratio_pct, "%")} 参考`
+                : undefined
+          }
+          note={
+            assessment.position_guidance.hedge_ratio_pct === 0
+              ? "当前未进入对冲或防守节奏，系统暂不建议增加保护覆盖。"
+              : "核心仓位应有多少保护覆盖。"
+          }
           tone="hedge"
         />
         <BudgetBar
-          label="杠杆上限"
+          label={budgetIsReference ? "杠杆上限（参考）" : "杠杆上限"}
           value={assessment.position_guidance.leverage_cap_pct}
+          valueLabel={
+            budgetIsReference
+              ? `${formatNumber(assessment.position_guidance.leverage_cap_pct, "%")} 参考`
+              : undefined
+          }
           note="风险窗口内不宜维持高杠杆。"
           tone="leverage"
         />
         <BudgetBar
-          label="期权保护"
+          label={budgetIsReference ? "期权保护（参考）" : "期权保护"}
           value={assessment.position_guidance.option_overlay_pct}
+          valueLabel={
+            budgetIsReference
+              ? `${formatNumber(assessment.position_guidance.option_overlay_pct, "%")} 参考`
+              : undefined
+          }
           note="可用来做尾部保护，而不是替代全部风控。"
           tone="option"
         />
@@ -169,7 +332,9 @@ export function DecisionActionPlanPanel({
         <span>{decisionContent.panels.actionPlanGovernance}</span>
         <span>
           {assessment.position_guidance.governance.system_budget_only
-            ? "当前输出是系统预算建议，不是个性化投资建议。"
+            ? budgetIsReference
+              ? "当前输出是系统预算参考，不是个性化投资建议，也不应直接照抄执行。"
+              : "当前输出是系统预算建议，不是个性化投资建议。"
             : "当前输出可直接执行。"}
         </span>
         <span>
@@ -197,11 +362,25 @@ export function DecisionActionPlanPanel({
   );
 }
 
+function eventSignalDisplayItems(assessment: AssessmentSnapshot): string[] {
+  if (assessment.event_assessment.recent_events.length > 0) {
+    return assessment.event_assessment.recent_events.map(
+      (event) =>
+        `${formatDate(event.triggered_as_of_date)} · ${levelLabel(event.level)} · ${humanizeNarrativeCopy(
+          event.trigger_reason
+        )}`
+    );
+  }
+  return assessment.event_assessment.confirmed_signals.map(humanizeNarrativeCopy);
+}
+
 export function DecisionEventPanel({
   assessment
 }: {
   assessment: AssessmentSnapshot;
 }) {
+  const eventSignalLabel = eventSignalListLabel(assessment.event_assessment.state);
+  const eventSignals = eventSignalDisplayItems(assessment);
   return (
     <section className="surface">
       <SurfaceHeader title="事件层确认" icon={Activity} />
@@ -211,11 +390,11 @@ export function DecisionEventPanel({
         summary={humanizeNarrativeCopy(assessment.event_assessment.summary)}
       />
       <div className="surface-grid">
-        <RuleBox label={decisionContent.panels.eventConfirmedTitle}>
+        <RuleBox label={eventSignalLabel}>
           <BulletList
-            items={assessment.event_assessment.confirmed_signals.map(humanizeNarrativeCopy)}
+            items={eventSignals}
             compact
-            emptyText={decisionContent.panels.eventConfirmedEmpty}
+            emptyText={eventSignalListEmptyText(assessment.event_assessment.state)}
             emptyVariant="inline"
           />
         </RuleBox>
@@ -259,21 +438,24 @@ export function DecisionJpyCarryPanel({
 export function DecisionBacktestSummaryPanel({
   assessment,
   backtestSummaryMetrics,
-  historyCoverageText
+  historyCoverageText,
+  coverageScopeText
 }: {
   assessment: AssessmentSnapshot;
   backtestSummaryMetrics: MetricItem[];
   historyCoverageText: string;
+  coverageScopeText: string;
 }) {
   return (
     <section className="surface">
       <SurfaceHeader title="历史表现与当前约束" icon={Database} />
       <RuleBox label="历史表现摘要">
-        {humanizeNarrativeCopy(assessment.backtest_summary.summary)}
+        {humanizeNarrativeCopy(backtestSummaryCopy(assessment))}
       </RuleBox>
       <MetricGrid items={backtestSummaryMetrics} />
+      <RuleBox label="口径区分">{humanizeNarrativeCopy(coverageScopeText)}</RuleBox>
       <div className="surface-grid">
-        <RuleBox label="历史覆盖">{historyCoverageText}</RuleBox>
+        <RuleBox label="场景回测历史窗口">{historyCoverageText}</RuleBox>
         <RuleBox label="当前组合约束">
           {`风险档位 ${assessment.user_preferences.profile === "neutral" ? "中性" : assessment.user_preferences.profile === "conservative" ? "保守" : "进取"}，现金底线 ${assessment.user_preferences.cash_floor_pct.toFixed(0)}%，风险资产上限 ${assessment.user_preferences.max_equity_cap_pct.toFixed(0)}%，杠杆上限 ${assessment.user_preferences.max_leverage_pct.toFixed(0)}%，期权保护偏好 ${assessment.user_preferences.option_overlay_preference_pct.toFixed(0)}%。`}
         </RuleBox>
@@ -285,21 +467,35 @@ export function DecisionBacktestSummaryPanel({
 export function DecisionRollingAuditPanel({
   assessment,
   rollingAuditMetrics,
+  rollingAuditHistoryText,
+  rollingAuditScopeText,
   rollingAuditBoundaryText,
   rollingAuditEpisodes
 }: {
   assessment: AssessmentSnapshot;
   rollingAuditMetrics: MetricItem[];
+  rollingAuditHistoryText: string;
+  rollingAuditScopeText: string;
   rollingAuditBoundaryText: string;
   rollingAuditEpisodes: DecisionRollingAuditEpisodeRow[];
 }) {
+  const rollingAudit = assessment.backtest_summary.rolling_audit;
+  const rollingAuditSummary =
+    rollingAudit.actionable_signal_count === 0
+      ? `全历史滚动复核覆盖 ${rollingAudit.history_start} 到 ${rollingAudit.history_end}；当前运行口径没有发出准备/对冲/防守动作信号，因此不能把“动作信号精度”解释为 0% 命中率，只能说明本窗口没有可评估的动作信号。`
+      : rollingAudit.summary;
+
   return (
     <section className="surface">
-      <SurfaceHeader title="滚动审计与误报边界" icon={Database} />
-      <RuleBox label="历史滚动审计结论">
-        {humanizeNarrativeCopy(assessment.backtest_summary.rolling_audit.summary)}
+      <SurfaceHeader title="滚动复核与误报边界" icon={Database} />
+      <RuleBox label="历史滚动复核结论">
+        {humanizeNarrativeCopy(rollingAuditSummary)}
       </RuleBox>
       <MetricGrid items={rollingAuditMetrics} />
+      <div className="surface-grid">
+        <RuleBox label="滚动复核历史窗口">{rollingAuditHistoryText}</RuleBox>
+        <RuleBox label="口径区分">{humanizeNarrativeCopy(rollingAuditScopeText)}</RuleBox>
+      </div>
       <RuleBox label="统计口径">{decisionContent.panels.rollingAuditDefinition}</RuleBox>
       <RuleBox label="这组结果怎么用">{rollingAuditBoundaryText}</RuleBox>
       {rollingAuditEpisodes.length > 0 ? (

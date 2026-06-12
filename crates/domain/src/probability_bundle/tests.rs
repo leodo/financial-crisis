@@ -32,6 +32,10 @@ fn family_conditional_transform_appends_family_features() {
     assert!(expanded.len() > base.len() + INTERACTION_TAIL_DERIVED_FEATURES.len());
     assert!(expanded.contains(&"interaction__overall_score__us_vix_level".to_string()));
     assert!(expanded.contains(&"family_proxy__systemic_credit".to_string()));
+    assert!(expanded.contains(&"family_context__systemic_credit__trigger_score".to_string()));
+    assert!(
+        expanded.contains(&"family_context__systemic_credit__external_dimension_score".to_string())
+    );
     assert!(expanded.contains(&"family_context__jpy_carry__external_dimension_score".to_string()));
 }
 
@@ -111,11 +115,23 @@ fn derived_feature_resolver_handles_family_conditional_features() {
         &features,
     )
     .unwrap();
+    let systemic_trigger_context = resolve_probability_feature_value(
+        "family_context__systemic_credit__trigger_score",
+        &features,
+    )
+    .unwrap();
+    let systemic_external_context = resolve_probability_feature_value(
+        "family_context__systemic_credit__external_dimension_score",
+        &features,
+    )
+    .unwrap();
 
     assert!(systemic > 0.70 && systemic <= 1.0);
     assert!(mixed > 0.70 && mixed <= 1.0);
     assert!(carry > 0.35 && carry <= 1.0);
     assert!((carry_context - carry * 65.0).abs() < 1e-9);
+    assert!((systemic_trigger_context - systemic * 70.0).abs() < 1e-9);
+    assert!((systemic_external_context - systemic * 65.0).abs() < 1e-9);
 }
 
 #[test]
@@ -129,6 +145,41 @@ fn jpy_carry_proxy_requires_change_or_external_confirmation() {
     let carry = resolve_probability_feature_value("family_proxy__jpy_carry", &features).unwrap();
 
     assert!(carry < 0.20);
+}
+
+#[test]
+fn jpy_carry_proxy_keeps_high_funding_unwind_pressure() {
+    let mut features = BTreeMap::new();
+    features.insert(FEATURE_EXTERNAL_DIMENSION_SCORE.to_string(), 0.94);
+    features.insert(FEATURE_STRUCTURAL_SCORE.to_string(), 0.46);
+    features.insert(FEATURE_TRIGGER_SCORE.to_string(), 0.34);
+    features.insert(FEATURE_US_BAA_10Y_SPREAD_LEVEL.to_string(), 1.86);
+    features.insert(FEATURE_US_FED_FUNDS_LEVEL.to_string(), 6.84);
+    features.insert(FEATURE_US_USDJPY_LEVEL.to_string(), 141.83);
+    features.insert(FEATURE_US_USDJPY_CHANGE_20D.to_string(), -10.27);
+
+    let carry = resolve_probability_feature_value("family_proxy__jpy_carry", &features).unwrap();
+
+    assert!(carry >= 0.38);
+}
+
+#[test]
+fn jpy_carry_proxy_suppresses_ordinary_fx_spike_without_systemic_confirmation() {
+    let mut features = BTreeMap::new();
+    features.insert(FEATURE_EXTERNAL_DIMENSION_SCORE.to_string(), 0.94);
+    features.insert(FEATURE_STRUCTURAL_SCORE.to_string(), 0.68);
+    features.insert(FEATURE_TRIGGER_SCORE.to_string(), 0.43);
+    features.insert(FEATURE_US_VIX_LEVEL.to_string(), 38.57);
+    features.insert(FEATURE_US_BAA_10Y_SPREAD_LEVEL.to_string(), 1.85);
+    features.insert(FEATURE_US_STLFSI_LEVEL.to_string(), -0.34);
+    features.insert(FEATURE_US_NFCI_LEVEL.to_string(), -0.36);
+    features.insert(FEATURE_US_FED_FUNDS_LEVEL.to_string(), 5.33);
+    features.insert(FEATURE_US_USDJPY_LEVEL.to_string(), 143.95);
+    features.insert(FEATURE_US_USDJPY_CHANGE_20D.to_string(), -16.82);
+
+    let carry = resolve_probability_feature_value("family_proxy__jpy_carry", &features).unwrap();
+
+    assert!(carry < 0.38);
 }
 
 #[test]

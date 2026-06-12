@@ -1,6 +1,9 @@
 use std::fmt::Write;
 
-use crate::{ReleaseReviewEnvelope, ReleaseReviewScenarioFocusDiagnostic};
+use crate::{
+    release_review::{ReleaseReviewHistoricalAuditPriority, ReleaseReviewScenarioCoverage},
+    ReleaseReviewEnvelope, ReleaseReviewScenarioFocusDiagnostic,
+};
 
 pub(super) fn render_release_focus_scenarios_markdown(
     markdown: &mut String,
@@ -13,13 +16,52 @@ pub(super) fn render_release_focus_scenarios_markdown(
     let _ = writeln!(markdown, "## Focus Scenarios");
     let _ = writeln!(markdown);
     for scenario in &report.scenario_focus {
-        render_release_focus_scenario_markdown(markdown, scenario);
+        render_release_focus_scenario_markdown(
+            markdown,
+            scenario,
+            historical_audit_priority_for_scenario(report, scenario.scenario_id.as_str()),
+            scenario_coverage_for_scenario(report, scenario.scenario_id.as_str()),
+        );
+    }
+}
+
+fn historical_audit_priority_for_scenario<'a>(
+    report: &'a ReleaseReviewEnvelope,
+    scenario_id: &str,
+) -> Option<&'a ReleaseReviewHistoricalAuditPriority> {
+    report
+        .historical_audit_priorities
+        .iter()
+        .find(|row| row.scenario_id == scenario_id)
+}
+
+fn scenario_coverage_for_scenario<'a>(
+    report: &'a ReleaseReviewEnvelope,
+    scenario_id: &str,
+) -> Option<&'a ReleaseReviewScenarioCoverage> {
+    report
+        .scenario_coverages
+        .iter()
+        .find(|row| row.scenario_id == scenario_id)
+}
+
+fn historical_audit_workstream_label(workstream: &str) -> &str {
+    match workstream {
+        "strict_review_vs_runtime_mapping" => "strict gate vs runtime floor",
+        "posture_continuity" => "posture continuity",
+        "score_confirmation" => "score confirmation",
+        "transitional_bridge" => "transitional bridge",
+        "prewarning_signal_gap" => "pre-warning signal gap",
+        "weak_signal_continuity" => "weak signal continuity",
+        _ => "residual release-review audit",
     }
 }
 
 fn render_release_focus_scenario_markdown(
     markdown: &mut String,
     scenario: &ReleaseReviewScenarioFocusDiagnostic,
+    historical_priority: Option<&ReleaseReviewHistoricalAuditPriority>,
+    scenario_coverage: Option<&ReleaseReviewScenarioCoverage>,
 ) {
     let _ = writeln!(markdown, "### {} ({})", scenario.name, scenario.outcome);
     let _ = writeln!(markdown);
@@ -114,6 +156,41 @@ fn render_release_focus_scenario_markdown(
             .as_deref()
             .unwrap_or("—")
     );
+    if let Some(priority) = historical_priority {
+        let _ = writeln!(
+            markdown,
+            "- Historical audit refinement: workstream={} | protected={} | role={} | suggested review={}",
+            historical_audit_workstream_label(&priority.primary_workstream),
+            if priority.protected_window { "yes" } else { "no" },
+            priority.training_role,
+            priority.suggested_review
+        );
+    }
+    if let Some(coverage) = scenario_coverage {
+        let _ = writeln!(
+            markdown,
+            "- Coverage context: role={} | grade={} | PIT={} | allowed={} | status={}",
+            coverage.recommended_role,
+            coverage.coverage_grade,
+            coverage.point_in_time_mode,
+            format_allowed_roles(coverage),
+            coverage.current_status
+        );
+        if !coverage.blocking_gaps.is_empty() {
+            let _ = writeln!(
+                markdown,
+                "- Coverage gaps: {}",
+                coverage.blocking_gaps.join("; ")
+            );
+        }
+        if !coverage.free_sources.is_empty() {
+            let _ = writeln!(
+                markdown,
+                "- Free sources: {}",
+                coverage.free_sources.join(", ")
+            );
+        }
+    }
     let _ = writeln!(
         markdown,
         "- Dominant runtime block: baseline={} ({}) | candidate={} ({})",
@@ -151,6 +228,27 @@ fn render_release_focus_scenario_markdown(
             );
         }
     }
+
+    fn format_allowed_roles(coverage: &ReleaseReviewScenarioCoverage) -> String {
+        let mut roles = Vec::new();
+        if coverage.usable_for_main_training {
+            roles.push("main");
+        }
+        if coverage.usable_for_extension_training {
+            roles.push("ext");
+        }
+        if coverage.usable_for_protected_stress {
+            roles.push("protected");
+        }
+        if coverage.usable_for_historical_analog {
+            roles.push("analog");
+        }
+        if roles.is_empty() {
+            "—".to_string()
+        } else {
+            roles.join(", ")
+        }
+    }
     if !scenario.runtime_continuity_facet_counts.is_empty() {
         let _ = writeln!(markdown, "- Runtime continuity facets:");
         for block in &scenario.runtime_continuity_facet_counts {
@@ -176,21 +274,25 @@ fn render_release_focus_scenario_markdown(
 
     let _ = writeln!(
         markdown,
-        "| Date | Base p_20d | Cand p_20d | Base p_60d | Cand p_60d | Base posture | Cand posture | Base bucket | Cand bucket | Base strict L3 | Cand strict L3 | Base runtime floor | Cand runtime floor | Base 5d hits | Cand 5d hits | Base sustained | Cand sustained | Base triggers | Cand triggers | Base block cat | Cand block cat | Base runtime block | Cand runtime block | Base diag | Cand diag |"
+        "| Date | Base p_20d | Cand p_20d | Base p_60d | Cand p_60d | Base overall | Cand overall | Base external | Cand external | Base posture | Cand posture | Base bucket | Cand bucket | Base strict L3 | Cand strict L3 | Base runtime floor | Cand runtime floor | Base 5d hits | Cand 5d hits | Base sustained | Cand sustained | Base triggers | Cand triggers | Base block cat | Cand block cat | Base runtime block | Cand runtime block | Base diag | Cand diag |"
     );
     let _ = writeln!(
         markdown,
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
     );
     for point in &scenario.interesting_points {
         let _ = writeln!(
             markdown,
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
             point.as_of_date,
             crate::format_optional_pct(point.baseline_p20d),
             crate::format_optional_pct(point.candidate_p20d),
             crate::format_optional_pct(point.baseline_p60d),
             crate::format_optional_pct(point.candidate_p60d),
+            crate::format_optional_score(point.baseline_overall_score),
+            crate::format_optional_score(point.candidate_overall_score),
+            crate::format_optional_score(point.baseline_external_shock_score),
+            crate::format_optional_score(point.candidate_external_shock_score),
             point.baseline_posture.as_deref().unwrap_or("—"),
             point.candidate_posture.as_deref().unwrap_or("—"),
             point.baseline_time_bucket.as_deref().unwrap_or("—"),

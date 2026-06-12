@@ -1,4 +1,4 @@
-use fc_domain::{IndicatorRisk, RiskContributor, RiskLevel};
+use fc_domain::{IndicatorRisk, RiskContributor, RiskDirection, RiskLevel};
 
 pub(crate) fn build_level_reason(level: RiskLevel, contributors: &[RiskContributor]) -> String {
     let headline = format!("{} {}", level.code(), level.label());
@@ -23,11 +23,12 @@ pub(crate) fn explain_indicator(risk: &IndicatorRisk) -> String {
         risk.percentile,
     ) {
         (Some(value), Some(unit), Some(percentile)) => format!(
-            "{} 按{}评分，当前信号 {}，历史分位 {:.1}，风险分 {:.1}。",
+            "{} 按{}评分，当前信号 {}，历史分位 {:.1}（{}），风险分 {:.1}。",
             risk.indicator.display_name,
             risk.score_basis,
             format_signal_value(value, unit),
             percentile,
+            percentile_tail_note(risk.indicator.risk_direction, percentile),
             risk.score
         ),
         (Some(value), Some(unit), None) => format!(
@@ -41,6 +42,18 @@ pub(crate) fn explain_indicator(risk: &IndicatorRisk) -> String {
             "{} 当前风险分为 {:.1}，评分口径为 {}。",
             risk.indicator.display_name, risk.score, risk.score_basis
         ),
+    }
+}
+
+fn percentile_tail_note(direction: RiskDirection, percentile: f64) -> &'static str {
+    match direction {
+        RiskDirection::HigherIsRiskier => "高于历史常态更危险",
+        RiskDirection::LowerIsRiskier => "低于历史常态更危险",
+        RiskDirection::RisingFastIsRiskier => "快速上行更危险",
+        RiskDirection::FallingFastIsRiskier => "快速下行更危险",
+        RiskDirection::TwoSided if percentile >= 50.0 => "高尾异常",
+        RiskDirection::TwoSided => "低尾异常",
+        RiskDirection::ManualRule => "人工规则",
     }
 }
 

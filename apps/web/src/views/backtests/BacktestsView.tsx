@@ -9,12 +9,12 @@ import type {
 import {
   GuideList,
   MetricGrid,
-  MetricPairsGrid,
   PillTableCell,
   ResponsiveTable,
   RuleBox,
   SurfaceHeader
 } from "../shared/panelHelpers";
+import { backtestReviewCopy } from "../shared/backtestCopy";
 import { backtestsContent } from "./content";
 import { useBacktestsViewModel } from "./useBacktestsViewModel";
 
@@ -33,7 +33,11 @@ export default function BacktestsView({
     summaryMetrics,
     rollingMetrics,
     historyRange,
+    coverageScopeText,
+    rollingAuditHistoryRange,
+    rollingAuditScopeText,
     currentPosture,
+    auditOnly,
     scenarioRows,
     episodeRows
   } = useBacktestsViewModel({
@@ -47,12 +51,7 @@ export default function BacktestsView({
       <section className="band-grid">
         <section className="surface">
           <SurfaceHeader title="怎么看这页" icon={BadgeInfo} />
-          <MetricGrid
-            items={headlineMetrics.map(([label, value]) => ({
-              label,
-              value
-            }))}
-          />
+          <MetricGrid items={headlineMetrics} />
         </section>
 
         <section className="surface">
@@ -65,17 +64,20 @@ export default function BacktestsView({
         <section className="surface">
           <SurfaceHeader title="回测摘要" icon={History} />
           <p className="body-copy">{humanizeNarrativeCopy(assessment.backtest_summary.summary)}</p>
-          <MetricPairsGrid pairs={summaryMetrics} />
-          <RuleBox label="历史覆盖">{historyRange}</RuleBox>
+          <MetricGrid items={summaryMetrics} />
+          <RuleBox label="口径区分">{humanizeNarrativeCopy(coverageScopeText)}</RuleBox>
+          <RuleBox label="场景回测历史窗口">{historyRange}</RuleBox>
         </section>
 
         <section className="surface">
-          <SurfaceHeader title="滚动审计" icon={ShieldCheck} />
+          <SurfaceHeader title="滚动历史复核" icon={ShieldCheck} />
           <p className="body-copy">
-            {humanizeNarrativeCopy(assessment.backtest_summary.rolling_audit.summary)}
+            {humanizeNarrativeCopy(backtestReviewCopy(assessment.backtest_summary.rolling_audit.summary))}
           </p>
-          <MetricPairsGrid pairs={rollingMetrics} />
-          <RuleBox label="审计口径">{backtestsContent.auditDefinition}</RuleBox>
+          <MetricGrid items={rollingMetrics} />
+          <RuleBox label="滚动复核历史窗口">{rollingAuditHistoryRange}</RuleBox>
+          <RuleBox label="口径区分">{humanizeNarrativeCopy(rollingAuditScopeText)}</RuleBox>
+          <RuleBox label="复核口径">{backtestsContent.auditDefinition}</RuleBox>
           <RuleBox label="区间展示规则">{backtestsContent.episodeDisplayRule}</RuleBox>
         </section>
 
@@ -87,7 +89,12 @@ export default function BacktestsView({
       </section>
 
       <section className="surface">
-        <SurfaceHeader title="历史轨迹" icon={History} />
+        <SurfaceHeader title={auditOnly ? "当前运行历史轨迹（参考）" : "当前运行历史轨迹"} icon={History} />
+        {auditOnly ? (
+          <RuleBox label="怎么看这张图">
+            当前正式概率处于参考态，这条轨迹只保留给模型复核和历史对照使用，不直接参与当前执行节奏判断。
+          </RuleBox>
+        ) : null}
         <SimpleLineChart model={chart} height={280} />
       </section>
 

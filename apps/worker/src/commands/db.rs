@@ -1,5 +1,27 @@
 use anyhow::{bail, Result};
-use chrono::Utc;
+use chrono::{Datelike, Duration, NaiveDate, Utc, Weekday};
+
+fn business_lag_days(latest_date: NaiveDate, as_of_date: NaiveDate) -> i64 {
+    if as_of_date <= latest_date {
+        return 0;
+    }
+
+    let mut count = 0_i64;
+    let mut cursor = latest_date
+        .checked_add_signed(Duration::days(1))
+        .unwrap_or(latest_date);
+    while cursor < as_of_date {
+        if !matches!(cursor.weekday(), Weekday::Sat | Weekday::Sun) {
+            count += 1;
+        }
+        let Some(next) = cursor.checked_add_signed(Duration::days(1)) else {
+            break;
+        };
+        cursor = next;
+    }
+
+    count
+}
 
 pub(crate) async fn handle_db_command(action: &str) -> Result<()> {
     match action {
@@ -94,15 +116,16 @@ pub(crate) async fn db_check() -> Result<()> {
         match latest {
             Some(observation) => {
                 let lag_days = (as_of_date - observation.as_of_date).num_days();
-                let status = if lag_days > stale_days * 3 {
+                let lag_business_days = business_lag_days(observation.as_of_date, as_of_date);
+                let status = if lag_business_days > stale_days * 3 {
                     "STALE"
-                } else if lag_days > stale_days {
+                } else if lag_business_days > stale_days {
                     "DELAYED"
                 } else {
                     "FRESH"
                 };
                 println!(
-                    "[{}] {} => {} {} @ {} (source={} dataset={} lag={}d)",
+                    "[{}] {} => {} {} @ {} (source={} dataset={} calendar_lag={}d business_lag={}d)",
                     status,
                     display_name,
                     observation.value,
@@ -110,7 +133,8 @@ pub(crate) async fn db_check() -> Result<()> {
                     observation.as_of_date,
                     observation.source_id,
                     observation.dataset_id,
-                    lag_days
+                    lag_days,
+                    lag_business_days
                 );
                 if status != "FRESH" {
                     println!("  quick refresh: just refresh-latest");

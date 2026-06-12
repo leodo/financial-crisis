@@ -4,7 +4,12 @@ use super::*;
 fn parses_pipeline_train_defaults_to_formal_dataset() {
     let options = PipelineTrainOptions::parse(&[]).unwrap();
     assert_eq!(options.dataset_source, PipelineDatasetSource::Formal);
+    assert_eq!(
+        options.release_manifest_mode,
+        PipelineReleaseManifestMode::ReviewCandidate
+    );
     assert_eq!(options.model_shape, ProbabilityModelShape::LinearV1);
+    assert!(!options.dry_run);
     assert_eq!(options.dataset_id, "formal_v1_main_1990_daily");
     assert_eq!(options.dataset_version, None);
     assert_eq!(options.dataset_key, None);
@@ -21,6 +26,19 @@ fn parses_pipeline_train_defaults_to_formal_dataset() {
 }
 
 #[test]
+fn parses_pipeline_train_dry_run_flag() {
+    let args = vec![
+        "--dry-run".to_string(),
+        "--model-shape".to_string(),
+        "family_hybrid_v1".to_string(),
+    ];
+    let options = PipelineTrainOptions::parse(&args).unwrap();
+
+    assert!(options.dry_run);
+    assert_eq!(options.model_shape, ProbabilityModelShape::FamilyHybridV1);
+}
+
+#[test]
 fn parses_pipeline_train_snapshot_override() {
     let args = vec![
         "--dataset-source".to_string(),
@@ -32,6 +50,10 @@ fn parses_pipeline_train_snapshot_override() {
     ];
     let options = PipelineTrainOptions::parse(&args).unwrap();
     assert_eq!(options.dataset_source, PipelineDatasetSource::Snapshot);
+    assert_eq!(
+        options.release_manifest_mode,
+        PipelineReleaseManifestMode::ReviewCandidate
+    );
     assert_eq!(options.model_shape, ProbabilityModelShape::LinearV1);
     assert_eq!(options.release_prefix, "custom_prefix");
     assert_eq!(

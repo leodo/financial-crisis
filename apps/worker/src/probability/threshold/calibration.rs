@@ -68,15 +68,32 @@ pub(super) fn probability_row_is_calibration_eligible(
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ProbabilityCalibrationStrategyInput<'a, 'row> {
+    pub(crate) calibration_raw_probabilities: &'a [f64],
+    pub(crate) calibration_labels: &'a [f64],
+    pub(crate) calibration_rows: &'a [&'row crate::ProbabilityTrainingRow],
+    pub(crate) horizon_days: u32,
+    pub(crate) label_mode: crate::ProbabilityTargetLabelMode,
+    pub(crate) evaluation_raw_probabilities: &'a [f64],
+    pub(crate) evaluation_rows: &'a [&'row crate::ProbabilityTrainingRow],
+    pub(crate) calibration_candidate: PlattCalibrationArtifact,
+}
+
 pub(crate) fn select_probability_calibration_strategy(
-    calibration_raw_probabilities: &[f64],
-    calibration_labels: &[f64],
-    calibration_rows: &[&crate::ProbabilityTrainingRow],
-    horizon_days: u32,
-    label_mode: crate::ProbabilityTargetLabelMode,
-    evaluation_raw_probabilities: &[f64],
-    calibration_candidate: PlattCalibrationArtifact,
+    input: ProbabilityCalibrationStrategyInput<'_, '_>,
 ) -> (Option<PlattCalibrationArtifact>, Vec<f64>) {
+    let ProbabilityCalibrationStrategyInput {
+        calibration_raw_probabilities,
+        calibration_labels,
+        calibration_rows,
+        horizon_days,
+        label_mode,
+        evaluation_raw_probabilities,
+        evaluation_rows,
+        calibration_candidate,
+    } = input;
+
     let raw_summary =
         crate::evaluate_probabilities(calibration_raw_probabilities, calibration_labels);
     let raw_regime_separation = super::super::evaluate_regime_separation_summary_refs(
@@ -106,23 +123,83 @@ pub(crate) fn select_probability_calibration_strategy(
         &calibrated_summary,
         calibrated_regime_separation.as_ref(),
     );
+    let evaluation_probabilities = evaluation_raw_probabilities
+        .iter()
+        .map(|raw_probability| {
+            apply_platt_probability_calibration(*raw_probability, &calibration_candidate)
+        })
+        .collect::<Vec<_>>();
 
     let raw_ranking_reversed =
         probability_raw_ranking_is_reversed(calibration_raw_probabilities, calibration_labels);
+    let evaluation_safety_ok = probability_calibration_preserves_evaluation_regime_support(
+        evaluation_raw_probabilities,
+        &evaluation_probabilities,
+        evaluation_rows,
+        horizon_days,
+        label_mode,
+    );
     let keep_calibration = calibrated_score > raw_score
         && (calibration_candidate.alpha > 0.0
-            || (calibration_candidate.alpha < 0.0 && raw_ranking_reversed));
+            || (calibration_candidate.alpha < 0.0 && raw_ranking_reversed))
+        && evaluation_safety_ok;
     if keep_calibration {
-        let evaluation_probabilities = evaluation_raw_probabilities
-            .iter()
-            .map(|raw_probability| {
-                apply_platt_probability_calibration(*raw_probability, &calibration_candidate)
-            })
-            .collect::<Vec<_>>();
         (Some(calibration_candidate), evaluation_probabilities)
     } else {
         (None, evaluation_raw_probabilities.to_vec())
     }
+}
+
+fn probability_calibration_preserves_evaluation_regime_support(
+    raw_probabilities: &[f64],
+    calibrated_probabilities: &[f64],
+    evaluation_rows: &[&crate::ProbabilityTrainingRow],
+    horizon_days: u32,
+    label_mode: crate::ProbabilityTargetLabelMode,
+) -> bool {
+    if label_mode != crate::ProbabilityTargetLabelMode::ForwardCrisis
+        || !matches!(horizon_days, 20 | 60)
+    {
+        return true;
+    }
+
+    let raw_regime = super::super::evaluate_regime_separation_summary_refs(
+        raw_probabilities,
+        evaluation_rows,
+        horizon_days,
+        label_mode,
+    );
+    let calibrated_regime = super::super::evaluate_regime_separation_summary_refs(
+        calibrated_probabilities,
+        evaluation_rows,
+        horizon_days,
+        label_mode,
+    );
+    let (Some(raw_regime), Some(calibrated_regime)) = (raw_regime, calibrated_regime) else {
+        return true;
+    };
+
+    if raw_regime.positive_window_avg_probability > raw_regime.normal_avg_probability
+        && calibrated_regime.positive_window_avg_probability
+            <= calibrated_regime.normal_avg_probability
+    {
+        return false;
+    }
+
+    if raw_regime
+        .positive_window_gap_vs_normal
+        .unwrap_or_default()
+        .is_sign_positive()
+        && calibrated_regime
+            .positive_window_gap_vs_normal
+            .unwrap_or_default()
+            .is_sign_negative()
+    {
+        return false;
+    }
+
+    !(raw_regime.diagnosis == "usable_early_warning_separation"
+        && calibrated_regime.diagnosis == "cold_across_all_regimes")
 }
 
 fn probability_calibration_selection_score(

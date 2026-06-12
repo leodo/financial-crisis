@@ -1,5 +1,6 @@
 use fc_domain::{ActionabilityBlock, DataTrust, JpyCarrySnapshot, ProbabilityBlock, RiskSnapshot};
 
+use super::super::common::round_probability;
 use super::super::{clamp_probability, round3, scaled_pressure};
 
 pub(super) fn build_probabilities(
@@ -56,9 +57,9 @@ pub(super) fn build_probabilities(
     let p_60d = clamp_probability(p_60d_raw.max((p_20d + 0.05).min(0.93)));
 
     ProbabilityBlock {
-        p_5d: round3(p_5d),
-        p_20d: round3(p_20d),
-        p_60d: round3(p_60d),
+        p_5d: round_probability(p_5d),
+        p_20d: round_probability(p_20d),
+        p_60d: round_probability(p_60d),
     }
 }
 

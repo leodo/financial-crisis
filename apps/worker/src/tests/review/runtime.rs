@@ -90,10 +90,54 @@ fn release_review_structured_signal_counts_accept_relaxed_strict_p20d_mapping() 
 }
 
 #[test]
+fn release_review_actionable_diagnostic_uses_runtime_derived_strict_p20d_gate() {
+    let as_of_date = NaiveDate::from_ymd_opt(2023, 2, 20).unwrap();
+    let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
+    let backtests = vec![synthetic_backtest_summary_with_window(
+        "scenario_runtime_derived_p20d",
+        "Runtime Derived P20D",
+        crisis_start,
+        NaiveDate::from_ymd_opt(2023, 3, 20).unwrap(),
+        None,
+        None,
+        None,
+        None,
+        0,
+    )];
+    let point = runtime_history_point_with_state(
+        as_of_date,
+        57.0,
+        0.02,
+        0.13,
+        0.11,
+        DecisionPosture::Prepare,
+        TimeToRiskBucket::Months,
+        45.0,
+        &["prepare_p60d_structural"],
+    );
+    let method = formal_main_audit_method_wire();
+    let history = vec![point];
+
+    let rows = build_release_review_scenario_focus_diagnostics(
+        &backtests, &backtests, &history, &history, &method, &method,
+    );
+
+    assert_eq!(rows.len(), 1);
+    let diagnostic = rows[0]
+        .baseline_first_runtime_floor_hit_without_l3_reason
+        .as_deref()
+        .expect("runtime floor hit should be blocked by strict review gate");
+    assert!(diagnostic.contains("p60d 11.0% < 25.0%"));
+    assert!(!diagnostic.contains("p20d 13.0% < 18.0%"));
+    assert!(!diagnostic.contains("p20d 13.0% < 12.0%"));
+}
+
+#[test]
 fn release_review_runtime_separation_comparison_highlights_60d_floor_gap() {
     let baseline = ReleaseRuntimeReviewDiagnostics {
         release_id: "baseline".to_string(),
         history_point_count: 120,
+        latest_probability_snapshot: None,
         posture_distribution: Vec::new(),
         time_bucket_distribution: Vec::new(),
         posture_trigger_distribution: Vec::new(),
@@ -141,6 +185,7 @@ fn release_review_runtime_separation_comparison_highlights_60d_floor_gap() {
     let candidate = ReleaseRuntimeReviewDiagnostics {
         release_id: "candidate".to_string(),
         history_point_count: 120,
+        latest_probability_snapshot: None,
         posture_distribution: Vec::new(),
         time_bucket_distribution: Vec::new(),
         posture_trigger_distribution: Vec::new(),
@@ -332,6 +377,55 @@ fn release_review_structured_signal_counts_accept_relaxed_probability_plateau_cl
 }
 
 #[test]
+fn release_review_structured_signal_counts_accept_weeks_trigger_dominant_clause() {
+    let plateau_date = NaiveDate::from_ymd_opt(2000, 1, 28).unwrap();
+    let crisis_start = NaiveDate::from_ymd_opt(2000, 3, 15).unwrap();
+    let crisis_end = NaiveDate::from_ymd_opt(2000, 3, 25).unwrap();
+    let backtests = vec![synthetic_backtest_summary_with_window(
+        "scenario_weeks_trigger_dominant",
+        "Weeks Trigger Dominant",
+        crisis_start,
+        crisis_end,
+        Some(plateau_date),
+        Some(plateau_date),
+        Some(47),
+        Some(47),
+        0,
+    )];
+    let history = vec![runtime_history_point_with_state(
+        plateau_date,
+        53.1,
+        0.01,
+        0.564,
+        0.315,
+        DecisionPosture::Normal,
+        TimeToRiskBucket::Weeks,
+        36.1,
+        &[],
+    )];
+    let mut method = formal_main_audit_method_wire();
+    method.runtime_thresholds = Some(RuntimeThresholdDiagnosticsWire {
+        prepare_p60d: 0.568,
+        hedge_p20d: 0.282,
+        defend_p5d: 0.05,
+        severe_now_p20d: 0.564,
+        elevated_weeks_p60d: 0.909,
+        external_prepare_p20d: 0.197,
+        carry_prepare_p60d: 0.454,
+        downgrade_prepare_p60d: 0.426,
+        downgrade_hedge_p20d: 0.212,
+        downgrade_defend_p5d: 0.034,
+        history_runtime_policy_version: "runtime_history_test".to_string(),
+    });
+
+    let (strict_actionable_point_count, runtime_floor_hit_count) =
+        release_review_structured_signal_counts(&backtests, &history, &method);
+
+    assert_eq!(strict_actionable_point_count, 1);
+    assert_eq!(runtime_floor_hit_count, 1);
+}
+
+#[test]
 fn release_review_structured_signal_counts_accept_history_hysteresis_months_clause() {
     let plateau_date = NaiveDate::from_ymd_opt(1990, 7, 17).unwrap();
     let crisis_start = NaiveDate::from_ymd_opt(1990, 9, 10).unwrap();
@@ -357,6 +451,79 @@ fn release_review_structured_signal_counts_accept_history_hysteresis_months_clau
         TimeToRiskBucket::Months,
         37.0,
         &["prepare_history_hysteresis"],
+    )];
+    let method = formal_main_audit_method_wire();
+
+    let (strict_actionable_point_count, runtime_floor_hit_count) =
+        release_review_structured_signal_counts(&backtests, &history, &method);
+
+    assert_eq!(strict_actionable_point_count, 1);
+    assert_eq!(runtime_floor_hit_count, 1);
+}
+
+#[test]
+fn release_review_structured_signal_counts_accept_history_hysteresis_months_structural_carry_clause(
+) {
+    let plateau_date = NaiveDate::from_ymd_opt(1990, 7, 27).unwrap();
+    let crisis_start = NaiveDate::from_ymd_opt(1990, 9, 10).unwrap();
+    let crisis_end = NaiveDate::from_ymd_opt(1990, 9, 20).unwrap();
+    let backtests = vec![synthetic_backtest_summary_with_window(
+        "scenario_history_hysteresis_months_structural_carry",
+        "History Hysteresis Months Structural Carry",
+        crisis_start,
+        crisis_end,
+        Some(plateau_date),
+        Some(plateau_date),
+        Some(45),
+        Some(45),
+        0,
+    )];
+    let history = vec![runtime_history_point_with_state(
+        plateau_date,
+        44.6,
+        0.02,
+        0.322,
+        0.85,
+        DecisionPosture::Prepare,
+        TimeToRiskBucket::Months,
+        30.2,
+        &["prepare_history_hysteresis"],
+    )];
+    let method = formal_main_audit_method_wire();
+
+    let (strict_actionable_point_count, runtime_floor_hit_count) =
+        release_review_structured_signal_counts(&backtests, &history, &method);
+
+    assert_eq!(strict_actionable_point_count, 1);
+    assert_eq!(runtime_floor_hit_count, 1);
+}
+
+#[test]
+fn release_review_structured_signal_counts_accept_prepare_weeks_plateau_hysteresis_clause() {
+    let plateau_date = NaiveDate::from_ymd_opt(2022, 12, 8).unwrap();
+    let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 8).unwrap();
+    let crisis_end = NaiveDate::from_ymd_opt(2023, 3, 18).unwrap();
+    let backtests = vec![synthetic_backtest_summary_with_window(
+        "scenario_prepare_weeks_plateau_hysteresis",
+        "Prepare Weeks Plateau Hysteresis",
+        crisis_start,
+        crisis_end,
+        Some(plateau_date),
+        Some(plateau_date),
+        Some(92),
+        Some(92),
+        0,
+    )];
+    let history = vec![runtime_history_point_with_state(
+        plateau_date,
+        51.8,
+        0.02,
+        0.456,
+        0.93,
+        DecisionPosture::Prepare,
+        TimeToRiskBucket::Weeks,
+        33.4,
+        &["prepare_probability_plateau", "prepare_history_hysteresis"],
     )];
     let method = formal_main_audit_method_wire();
 

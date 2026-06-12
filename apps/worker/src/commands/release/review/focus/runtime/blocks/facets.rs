@@ -1,8 +1,9 @@
 use fc_domain::{AssessmentHistoryPoint, DecisionPosture, TimeToRiskBucket};
 
 use super::super::signals::{
-    release_review_has_strong_prepare_trigger_code, release_review_strict_prepare_p20d_threshold,
-    release_review_strict_prepare_p60d_threshold,
+    release_review_has_prepare_weeks_score_confirmation_gap,
+    release_review_has_strong_prepare_trigger_code, release_review_runtime_floor_hits,
+    release_review_strict_prepare_p20d_threshold, release_review_strict_prepare_p60d_threshold,
 };
 use super::gating::release_review_runtime_actionable_block_category;
 
@@ -32,6 +33,11 @@ fn release_review_runtime_gate_gap_facet(
     point: &AssessmentHistoryPoint,
     thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> &'static str {
+    let defend_only_runtime_floor_hit = release_review_runtime_floor_hits(point, thresholds)
+        .is_some_and(|hits| hits.defend && !hits.hedge && !hits.prepare);
+    if defend_only_runtime_floor_hit {
+        return "none";
+    }
     let strict_prepare_p20d_threshold = release_review_strict_prepare_p20d_threshold(thresholds);
     let strict_prepare_p60d_threshold = release_review_strict_prepare_p60d_threshold(thresholds);
     match (
@@ -87,6 +93,7 @@ fn release_review_trigger_family(point: &AssessmentHistoryPoint) -> &'static str
 fn release_review_runtime_confirmation_facet(
     point: &AssessmentHistoryPoint,
     use_transitional_bridge: bool,
+    thresholds: Option<&crate::RuntimeThresholdDiagnosticsWire>,
 ) -> &'static str {
     if matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
         && point.overall_score < 62.0
@@ -101,6 +108,10 @@ fn release_review_runtime_confirmation_facet(
         && !release_review_has_strong_prepare_trigger_code(point)
     {
         return "prepare_score_low";
+    }
+
+    if release_review_has_prepare_weeks_score_confirmation_gap(point, thresholds) {
+        return "prepare_weeks_score_low";
     }
 
     if use_transitional_bridge
@@ -141,7 +152,7 @@ pub(super) fn release_review_runtime_continuity_facets(
         ),
         format!(
             "confirmation:{}",
-            release_review_runtime_confirmation_facet(point, use_transitional_bridge)
+            release_review_runtime_confirmation_facet(point, use_transitional_bridge, thresholds)
         ),
     ]
 }

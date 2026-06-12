@@ -3,8 +3,9 @@ use std::collections::BTreeMap;
 use fc_domain::AssessmentHistoryPoint;
 
 use crate::{
-    forward_crisis_training_regime, probability_training_regime_name,
-    regime_positive_window_gap_floor, round6, safe_divide, safe_ratio, CrisisScenario,
+    classify_probability_regime_separation, early_warning_regime_name,
+    forward_crisis_training_regime, gap_retention_ratio, lift_vs_baseline,
+    probability_training_regime_name, round6, safe_divide, safe_ratio, CrisisScenario,
     RuntimeThresholdDiagnosticsWire,
 };
 
@@ -251,61 +252,36 @@ pub(crate) fn classify_regime_separation(
     max_non_normal_calibrated_lift: f64,
     max_non_normal_threshold_hit_rate: f64,
 ) -> &'static str {
-    if max_non_normal_calibrated_lift < 1.15
-        && early_warning_raw_lift < 1.15
-        && positive_window_calibrated_lift < 1.15
-    {
-        return "cold_across_all_regimes";
-    }
     if early_warning_raw_lift >= 1.5
         && early_warning_calibrated_lift < 1.15
         && early_warning_gap_retention.unwrap_or_default() < 0.35
     {
         return "calibration_crushed_early_warning";
     }
-    if positive_window_calibrated_lift < 1.15 && in_crisis_calibrated_lift >= 1.5 {
-        return "late_only_no_early_warning";
+
+    let shared_diagnosis = classify_probability_regime_separation(
+        horizon_days,
+        early_warning_calibrated_lift,
+        positive_window_calibrated_lift,
+        early_warning_raw_lift,
+        in_crisis_calibrated_lift,
+        post_crisis_cooldown_calibrated_lift,
+        positive_window_gap_vs_normal,
+        post_crisis_cooldown_gap_vs_normal,
+        max_non_normal_calibrated_lift,
+    );
+
+    if matches!(
+        shared_diagnosis,
+        "cold_across_all_regimes" | "late_only_no_early_warning" | "cooldown_bleed"
+    ) {
+        return shared_diagnosis;
     }
-    if positive_window_calibrated_lift >= 1.15
-        && post_crisis_cooldown_calibrated_lift >= positive_window_calibrated_lift
-        && post_crisis_cooldown_gap_vs_normal + 0.002 >= positive_window_gap_vs_normal
-    {
-        return "cooldown_bleed";
-    }
+
     if max_non_normal_calibrated_lift >= 1.5 && max_non_normal_threshold_hit_rate <= 0.01 {
         return "separated_but_below_runtime_floor";
     }
-    if positive_window_calibrated_lift >= 1.5
-        && positive_window_gap_vs_normal >= regime_positive_window_gap_floor(horizon_days)
-    {
-        return "usable_early_warning_separation";
-    }
-    if max_non_normal_calibrated_lift >= 1.15 || early_warning_calibrated_lift >= 1.15 {
-        return "weak_regime_separation";
-    }
-    "mixed_or_unclear"
-}
-
-pub(crate) fn lift_vs_baseline(value: f64, baseline: f64) -> Option<f64> {
-    if baseline.abs() <= f64::EPSILON {
-        return None;
-    }
-    Some(round6(value / baseline))
-}
-
-fn early_warning_regime_name(horizon_days: u32) -> &'static str {
-    match horizon_days {
-        5 => "positive_window",
-        20 | 60 => "pre_warning_buffer",
-        _ => "positive_window",
-    }
-}
-
-fn gap_retention_ratio(raw_gap: f64, calibrated_gap: f64) -> Option<f64> {
-    if raw_gap.abs() <= f64::EPSILON {
-        return None;
-    }
-    Some(round6(calibrated_gap / raw_gap))
+    shared_diagnosis
 }
 
 fn runtime_probability_threshold_for_horizon(

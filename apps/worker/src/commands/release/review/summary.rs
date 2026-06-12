@@ -46,6 +46,11 @@ pub(super) fn build_release_review_recommendation(
                 "候选版通过当前概率头、运行时与动作层护栏，并且没有继续继承 baseline 在 {} 上的历史短板，可进入下一轮人工复核。formal main 仍需继续补这条长期结构修复线。",
                 baseline_fix_workstreams.join(", ")
             )
+        } else if !baseline_fix_workstreams.is_empty() {
+            format!(
+                "候选版通过当前概率头与运行时护栏，但 baseline 仍在 {} 上保留长期结构短板。当前可以进入下一轮人工复核，但 formal main 后续应优先按这些 workstream 继续做样本、特征和标签治理。",
+                baseline_fix_workstreams.join(", ")
+            )
         } else if candidate_has_actionability {
             "候选版通过当前概率头、运行时与动作层护栏，可进入下一轮人工复核。仍需结合标签质量、样本覆盖和前端解释能力决定是否晋升。".to_string()
         } else {
@@ -92,6 +97,8 @@ fn release_review_action_workstream_labels(
             "posture_continuity" => "posture continuity",
             "score_confirmation" => "score confirmation",
             "transitional_bridge" => "transitional bridge",
+            "prewarning_signal_gap" => "pre-warning signal gap",
+            "weak_signal_continuity" => "weak signal continuity",
             _ => "residual release-review audit",
         }
         .to_string();
@@ -233,6 +240,26 @@ pub(super) fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope
             );
         }
     }
+    if !report.scenario_coverages.is_empty() {
+        println!(
+            "Scenario coverage: catalog={} backtests={}/{} focus={}/{} eligible[main={} ext={} protected={} analog={}]",
+            report.scenario_coverage_catalog.catalog_id,
+            report.scenario_coverage_catalog.covered_backtest_scenario_count,
+            report.scenario_coverage_catalog.backtest_scenario_count,
+            report.scenario_coverage_catalog.covered_focus_scenario_count,
+            report.scenario_coverage_catalog.focus_scenario_count,
+            report.scenario_coverage_catalog.main_training_eligible_count,
+            report
+                .scenario_coverage_catalog
+                .extension_training_eligible_count,
+            report
+                .scenario_coverage_catalog
+                .protected_stress_eligible_count,
+            report
+                .scenario_coverage_catalog
+                .historical_analog_eligible_count
+        );
+    }
     if !report.historical_audit_attribution.is_empty() {
         println!("Historical audit attribution:");
         for row in &report.historical_audit_attribution {
@@ -312,4 +339,28 @@ pub(super) fn print_release_review_summary(report: &crate::ReleaseReviewEnvelope
         }
     }
     println!("  recommendation        {}", report.recommendation);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_release_review_recommendation;
+
+    #[test]
+    fn recommendation_mentions_baseline_fix_workstreams_without_actionability() {
+        let recommendation = build_release_review_recommendation(
+            &[],
+            false,
+            &[crate::ReleaseReviewHistoricalAuditActionSummary {
+                workstream: "prewarning_signal_gap".to_string(),
+                attribution: "baseline_shared_weakness".to_string(),
+                action_type: "baseline_research_fix".to_string(),
+                scenario_count: 4,
+                protected_count: 2,
+                recommendation: "baseline research fix".to_string(),
+            }],
+        );
+
+        assert!(recommendation.contains("pre-warning signal gap"));
+        assert!(recommendation.contains("样本、特征和标签治理"));
+    }
 }

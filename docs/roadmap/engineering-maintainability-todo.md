@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-05
+最后更新：2026-06-09
 
 本文档只管理“工程结构、模块边界、共用代码收敛、生成工件治理、维护性约束”，不替代概率模型主线 TODO。
 
@@ -145,6 +145,12 @@
 - 已新增 `apps/api/src/assessment/market_context.rs`，把 data trust、JPY carry、conviction、risk breadth 和相关观测窗口 helper 从 `assessment.rs` 中拆出，assessment 主文件已基本收缩为 runtime threshold 与总装配层。
 - `apps/api/src/assessment/runtime_policy.rs` 本轮继续收走 runtime threshold、serving model policy、history runtime policy version 与 diagnostics；`apps/api/src/assessment/common.rs` 收走 rounding/format/pressure 这类共享 helper；随后又把 assessment 测试块整体外移到 `apps/api/src/assessment/tests.rs`，`assessment.rs` 已从约 `1174` 行收缩到约 `241` 行；本轮又继续拆成 `assessment/tests/mod.rs` + `actionability.rs` + `time_bucket.rs` + `posture.rs` + `position.rs`，原约 `740` 行的聚合测试文件已收口为主题测试模块；随后 `assessment/tests/posture.rs` 又继续细分成 `assessment/tests/posture/{mod,prepare,hedge}.rs`，把 prepare 与 hedge 场景断言重新收回独立边界。
 - `apps/api/src/handlers.rs` 本轮也继续把 research audit 相关的 release-review wire type、文件扫描与 SQLite audit 装配外移到 `apps/api/src/handlers/research_audit.rs`；主文件已收口到约 `181` 行，只保留 query type、日期解析、常规只读 handler 与 reload 入口，避免 research audit 的文件 IO 和 SQLite 装配继续堆在通用 handler 入口里。
+- `2026-06-09` 为把 `latest_rate_shock_audit` 接入 `/api/research/audit` 与前端“发布审计”页，这一轮仍然直接触碰了 `apps/api/src/handlers/research_audit.rs` 这个热点文件；原因是该功能只是给现有 research audit surface 补齐另一类同口径工件，而不是新增一条独立业务链路。后续如果再增加新的 audit artifact family，应优先把 artifact wire type / loader 继续拆成子模块，而不是继续往 `research_audit.rs` 聚合层堆功能。
+- `2026-06-09` 本轮又继续把 `latest_workstream_audit` 接到同一条 surface，但这次没有继续把 residual dataset evidence 硬塞进聚合层：已新增 `apps/api/src/handlers/research_audit/workstream_audit.rs`，把 wire type、JSON 解码和 artifact 选择策略抽到独立子模块。这里的选择逻辑刻意不硬绑“最新 review pair”，而是优先返回“与当前 active/review 上下文相关、且 residual 覆盖更完整”的 artifact，避免 API 只暴露局部 evidence。
+- `2026-06-09` 本轮继续把 `latest_dataset_summaries` 接到同一条 surface，但没有继续把 formal dataset 证据解析硬塞进聚合层：已新增 `apps/api/src/handlers/research_audit/dataset_summary.rs`，把 wire type、JSON 解码和 “优先更完整 row_count，再按 generated_at 兜底” 的 artifact 选择策略收回独立子模块。这样后续再补新的 dataset evidence family 时，不需要继续把 research audit 聚合层改成长条件分支。
+- `2026-06-09` 本轮把 cooldown / false-positive 治理审计接入同一条 surface 时仍然需要触碰 `apps/api/src/handlers/research_audit.rs`，但只保留模块注册、响应字段和加载调用；实际 wire type、JSON 解码、artifact 匹配逻辑已落到 `apps/api/src/handlers/research_audit/cooldown_audit.rs`，前端展示也落到独立的 `apps/web/src/views/audit/cooldownAuditSection.tsx`。后续如果再新增 audit artifact family，应沿用“聚合层只接线、解析与展示都拆子模块”的约束。
+- `2026-06-09` 本轮把 `prewarning gap` 专项审计接入 `/api/research/audit` 时仍然触碰了两个热点壳层：`apps/api/src/handlers/research_audit.rs` 与 `apps/web/src/types/research.ts`。这次直接编辑的理由是它们分别是 API response 聚合字段与前端 wire type 的唯一入口；实际 JSON 解析已拆到 `apps/api/src/handlers/research_audit/prewarning_gap_audit.rs`，前端展示已拆到 `apps/web/src/views/audit/prewarningGapAuditSection.tsx`，没有继续把业务逻辑塞回热点文件。后续若 research wire type 继续膨胀，应优先把 audit 类型按 artifact family 拆成 `types/research/*` 再汇出。
+- `2026-06-09` 本轮把 `lead-time 转化链审计` 接入 `/api/research/audit` 和“发布审计”页时仍然触碰了 `research_audit.rs` / `types/research.ts` 两个聚合热点；原因同上，只做 response 字段、模块注册和 wire type 出口接线。实际 JSON 解析已拆到 `apps/api/src/handlers/research_audit/leadtime_audit.rs`，前端类型已拆到 `apps/web/src/types/researchLeadtime.ts`，展示已拆到 `apps/web/src/views/audit/leadtimeAuditSection.tsx`。后续再增加 audit family 必须继续沿用这个模式。
 - `assessment.rs` 当前剩余逻辑已基本回到 assessment 总装配层；`apps/web/src/format.ts` 本轮也已继续拆成 `format.ts` + `format/{labels,narrative,technical,posture,value}.ts`，主文件已从约 `741` 行收缩到约 `5` 行；标签映射、人话解释、technical id 压缩、posture clause 说明和数值/时间格式化已各自落回独立边界。`apps/api/src/demo_seed.rs` 本轮也已继续拆成 `demo_seed.rs` + `demo_seed/{indicators,observations,sources,alerts}.rs`，父文件已回到纯导出壳层。`apps/api/src/history_replay.rs` 本轮也已继续拆成 `history_replay.rs` + `history_replay/cache.rs` + `history_replay/transform.rs`，历史重放缓存持久化、水位校验、cache key/method version 与 history point / prediction snapshot 转换已各自落回独立边界。`apps/api/src/backtest.rs` 本轮也已继续拆成 `backtest.rs` + `backtest/{actionability,scenarios,rolling_audit,timeline}.rs`，动作级历史判定、场景目录/回退模板、滚动审计 episode 分类与 timeline 构造已各自落回独立边界。`apps/api/src/assessment/probability.rs` 本轮也已继续拆成 `assessment/probability.rs` + `assessment/probability/{heuristic,features,actionability,trace}.rs`，启发式概率、formal/runtime 特征映射、动作置信度融合与 bundle trace / overlay diagnostics 已各自落回独立边界。下一步优先热点转向 worker 测试聚合热点。
 - `assessment.rs` 当前剩余逻辑已基本回到 assessment 总装配层；`apps/web/src/format.ts` 本轮也已继续拆成 `format.ts` + `format/{labels,narrative,technical,posture,value}.ts`，主文件已从约 `741` 行收缩到约 `5` 行；`apps/web/src/types.ts` 本轮也已继续拆成 `types.ts` + `types/{common,risk,backtest,assessment,research}.ts`，主文件已回到纯 re-export 壳层；`apps/web/src/styles.css` 本轮也已继续拆成 `styles.css` + `styles/{base,surfaces,analysis,responsive}.css`，主文件已回到纯样式入口壳层；标签映射、人话解释、technical id 压缩、posture clause 说明、数值/时间格式化、前端风险/assessment/research 类型，以及全局布局/分析视图样式现已各自落回独立边界。`apps/api/src/demo_seed.rs` 本轮也已继续拆成 `demo_seed.rs` + `demo_seed/{indicators,observations,sources,alerts}.rs`，父文件已回到纯导出壳层。`apps/api/src/history_replay.rs` 本轮也已继续拆成 `history_replay.rs` + `history_replay/cache.rs` + `history_replay/transform.rs`，历史重放缓存持久化、水位校验、cache key/method version 与 history point / prediction snapshot 转换已各自落回独立边界。`apps/api/src/backtest.rs` 本轮也已继续拆成 `backtest.rs` + `backtest/{actionability,scenarios,rolling_audit,timeline}.rs`，动作级历史判定、场景目录/回退模板、滚动审计 episode 分类与 timeline 构造已各自落回独立边界。`apps/api/src/assessment/probability.rs` 本轮也已继续拆成 `assessment/probability.rs` + `assessment/probability/{heuristic,features,actionability,trace}.rs`，启发式概率、formal/runtime 特征映射、动作置信度融合与 bundle trace / overlay diagnostics 已各自落回独立边界。下一步优先热点转向少量剩余 worker 运行时代码热点。
 - 已把原本约 `1344` 行的 `apps/worker/src/tests/training.rs` 拆成 `apps/worker/src/tests/training/mod.rs` + `visibility.rs`、`scenario_regimes.rs`、`sign_constraints.rs`、`family_constraints.rs` 与 `weighting/mod.rs`；其中 `weighting/mod.rs` 本轮又继续细分为 `negative_weights.rs`、`pairwise.rs`、`target_labels.rs`、`positive_weights.rs` 四个主题测试模块，降低训练测试随主线演进继续堆成长文件的风险。
@@ -166,6 +172,7 @@
 - `apps/api` 与 `apps/worker` 已改用 `observation_history_for_indicator*` / `observation_value_difference_*`，避免训练侧与运行侧各写一套窗口切片和尾部差值。
 - PIT 可见性过滤暂时保留在 worker 的 `observations_for_indicator` 包装函数内，因为它绑定 source publication timing、cutoff timezone 和 `PointInTimeMode`，不应在未完成边界设计前强行下沉到 domain。
 - `crates/domain` 已补观测窗口排序、过滤、lookback 差值单测；`probability_bundle` 已覆盖共享 Platt 校准和派生特征 resolver。
+- 已把 formal feature snapshot 的最终记录组装进一步收口到 `crates/domain::build_formal_feature_snapshot_record`；worker `feature build` 与 API `exact PIT rebuild` 现已共用同一套 score normalization、`external_dimension_score`、coverage / visibility / `feature_count` 逻辑，避免 runtime 与训练侧对“同一 PIT snapshot record”继续各拼一遍。
 - 共享边界已补到 [工程治理方案](../architecture/engineering-governance-plan.md)：纯概率打分、Platt 应用、观测窗口和纯 transform 进 `crates/domain`；训练拟合、阈值选择、release review 留 `apps/worker`；active release / 用户偏好 / response 装配留 `apps/api`；Web 只做展示翻译。
 - 已新增 `crates/domain/src/formal_feature.rs`，把正式观测特征的 `feature id -> source indicator -> transform/lookback` 注册表收敛到 domain；API runtime 与 worker PIT feature snapshot 已共用该注册表。
 - 后续新增免费数据指标或调整 lookback，应先改 `FORMAL_OBSERVATION_FEATURE_SPECS`，再由 API/worker 自动沿用同一口径。
@@ -214,6 +221,9 @@
 - 已新增 `apps/web/src/views/decision/content.ts`，把长段解释文本、风险提示和空态文案从页面 TSX 中外提。
 - 已新增 `apps/web/src/views/method/useMethodViewModel.ts` 与 `apps/web/src/views/method/content.ts`，开始把 method 页的解释文本、版本清单、阈值展示和限制说明从页面 TSX 中抽离。
 - 已新增 `apps/web/src/views/audit/useAuditViewModel.ts` 与 `apps/web/src/views/audit/content.ts`，开始把 audit 页的运行态摘要、release/snapshot 行模型和说明文案从页面 TSX 中抽离。
+- `2026-06-09` 审计页现已继续接入 `latest_rate_shock_audit`，可以直接展示 `2022 联储加息与久期冲击` 的 phase/action-level continuity 证据；这次仍暂时落在现有 `useAuditViewModel.ts` 聚合层，原因是它和 release review / scenario pack 一样都属于同一页的 audit 数据装配。下一次如果审计页再新增新的 artifact family，应优先把 rate-shock / scenario-pack / release-review 的 section assembler 继续拆成独立子模块。
+- `2026-06-09` 审计页本轮又继续接入 `latest_dataset_summaries`；这次没有把 main / ext_stress / ext_acute 三套 dataset 的行模型继续堆回 `useAuditViewModel.ts`，而是新增 `apps/web/src/views/audit/datasetSummarySection.ts`，把 dataset metrics、dataset overview rows 和 scenario evidence rows 的装配收回独立 section assembler。当前 audit 页新增 artifact family 时，已经开始沿用“view model 聚合层 + 独立 section assembler”的边界，而不是把所有表格映射重新塞回单文件。
+- `2026-06-09` 审计页本轮又继续接入 `latest_workstream_audit`，把 residual workstream 的 dataset evidence 正式展示到“发布审计”页；为避免 `useAuditViewModel.ts` 继续吸收所有 section 拼装，前端已新增 `apps/web/src/views/audit/workstreamSection.ts`，专门负责 `Residual Workstream 审计` 的指标、场景摘要、workstream 汇总和解释文案装配。
 - 已新增 `apps/web/src/views/backtests/useBacktestsViewModel.ts` 与 `apps/web/src/views/backtests/content.ts`，把回测页的轨迹图、摘要指标、审计指标、场景行和 episode 行模型从页面 TSX 中抽离。
 - 已新增 `apps/web/src/views/sources/useSourcesViewModel.ts` 与 `apps/web/src/views/sources/content.ts`，把可信度指标、告警列表、数据源行模型和免费源策略说明从页面 TSX 中抽离。
 - 已新增 `apps/web/src/views/drivers/useDriversViewModel.ts` 与 `apps/web/src/views/drivers/content.ts`，把维度卡片和结论摘要的派生展示数据从页面 TSX 中抽离。
@@ -277,15 +287,24 @@
 
 ## 5. 约束机制
 
-- [ ] 新增或显著扩展功能时，如果目标文件已经是当前仓库前几位的大文件，优先先拆模块，再加功能。
+- [x] 新增或显著扩展功能时，如果目标文件已经是当前仓库前几位的大文件，优先先拆模块，再加功能。
+  - 2026-06-09：已新增 `scripts/hotspot-status.ps1`，并接到 `just verify` / `just hotspot-status`；当前如果直接改到仓库前几位的大源码文件，会在本地门禁里显式失败，除非先拆模块，或用 `ALLOW_HOTSPOT_TOUCH=1` 带着说明有意识地放行。
+  - 2026-06-10：本轮触及 `scripts/formal-candidate-funding-stress-audit.ps1` 只为修正 funding-stress 诊断文案：dry-run 已证明 topology repair 已存在，脚本不能继续暗示“尚未补训练拓扑”。这次未新增结构逻辑；后续如果继续扩展该审计脚本，应先拆分再加功能。
+  - 2026-06-10：本轮触及 `scripts/formal-candidate-semantics-audit.ps1` 只为把 USDJPY high-level tail 训练护栏纳入候选语义审计，避免 active release 中 `tail_pos__us_usdjpy_level__145` 把高 USDJPY 误当成 20d 强压分信号。该脚本仍属于治理热点，后续若继续增加成组语义规则，应先拆出 guardrail registry / renderer，而不是继续堆单文件。
+  - 2026-06-10：本轮触及 `apps/web/src/views/decision/buildersCore.ts` 是为把 P0 MVP 风险状态接到已有 hero metrics / signal layer 唯一拼装入口，避免 formal `audit_only` 概率继续被解释成可用时距；触及 `apps/api/src/history_builder/tests.rs` 只是给 `AssessmentSnapshot` 测试 fixture 补新增字段默认值。两处都没有新增新的大块业务分支；后续若继续扩展 MVP 文案或 signal layer，应优先把 `mvpRiskState` 展示 helper 拆到独立模块，而不是继续扩大 `buildersCore.ts`。
+  - 2026-06-10：本轮继续触及 `apps/web/src/views/decision/buildersCore.ts` 只为收紧已接入的 MVP 审计态文案和信号层摘要；同时已新增 `apps/web/src/views/decision/mvpRiskState.ts`，把 MVP fallback、标点清洗和证据/限制/下一步拼装从热点文件与 `sections.tsx` 中抽离。后续若继续扩展 MVP 风险状态展示，应优先扩展该 helper 或再拆子模块，不能把文案格式化逻辑重新塞回 `buildersCore.ts`。
+  - 2026-06-10：本轮再次触及 `apps/web/src/views/decision/buildersCore.ts` 是为把首屏“数据/服务状态”替换为用户可理解的“结论可靠性”；实际可靠性公式、audit-only 封顶和解释文案已放入新模块 `apps/web/src/views/decision/decisionReliability.ts`，`buildersCore.ts` 只保留接线。后续如果继续扩展可靠性评分，应优先把公式下沉到 API contract 或继续扩展该 helper，不要把计算重新塞回热点文件。
 - [x] 生成工件进入 Git 前，必须说明它属于：
   - 正式 release 工件；
   - 基线对照证据；
   - 还是临时研究副产物。
-- [ ] 任何影响训练口径和运行口径的修改，都要检查共享函数是否已统一。
+- [x] 任何影响训练口径和运行口径的修改，都要检查共享函数是否已统一。
+  - 2026-06-09：已先收掉一组高风险重复实现：`probability bundle evaluation` 与 `release review runtime regime audit` 现在共用同一套 `classify_probability_regime_separation / lift_vs_baseline / early_warning_regime_name / gap_retention_ratio` helper，避免后续继续分别修改训练侧和复盘侧的 regime diagnosis。
+  - 2026-06-09：`apps/api/src/backtest/actionability.rs` 与 `apps/worker/src/commands/release/review/focus/runtime/signals.rs` 里重复维护的 `strict prepare gate / runtime floor / plateau-hysteresis` 口径，现已统一下沉到 `crates/domain/src/actionability_gate.rs`；API 滚动审计与 worker release-review 已改用同一套 shared gate 函数，不再各自维护一份高风险阈值逻辑。
 - [x] 任何新的仓位建议或动作规则，都不能绕开现有 `playbook`、`Go/No-Go` 和 “非自动交易指令”边界。
 - [x] 本地提交前统一运行 `just verify`，不要继续靠人工记忆零散执行 `fmt/test/lint/web-build`。
 - [x] CI 自动执行与本地一致的核心检查，不再只靠本地手工自觉。
+- [x] MVP 决策面板新增运行时防回归入口 `just mvp-regression`；它依赖本地 `just dev`，所以不进入默认 CI，但任何触碰首屏核心数字、数据模式、关键指标新鲜度或 `mvp_risk_state` 的改动都必须显式运行。
 
 ## 6. 完成定义
 

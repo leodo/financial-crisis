@@ -1,18 +1,23 @@
+pub(super) use super::market_context::build_action_evidence_breakdown;
 pub(super) use super::probability::{
     actionability_confidence_from_probability, fuse_actionability_confidence,
 };
 pub(super) use super::{
-    build_position_guidance, build_posture_guidance, build_time_to_risk_bucket,
+    build_position_guidance, build_posture_guidance, build_summary,
+    build_synthetic_driver_explanation, build_time_to_risk_bucket, build_top_risk_drivers,
     ProbabilityActionThresholds,
 };
 pub(super) use chrono::{NaiveDate, Utc};
 pub(super) use fc_domain::{
     ActionabilityBlock, DataQualitySummary, DataTrust, DecisionPosture, EventAssessment,
-    EventConfirmationState, JpyCarrySnapshot, JpyCarryState, PostureGuidance, ProbabilityBlock,
-    QualityGrade, RiskLevel, RiskSnapshot, TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
+    EventConfirmationState, Frequency, Indicator, IndicatorRisk, JpyCarrySnapshot, JpyCarryState,
+    MvpProbabilityInputStatus, MvpRiskState, MvpRiskStateCode, Observation, PostureGuidance,
+    ProbabilityBlock, QualityGrade, RiskContributor, RiskDimension, RiskDirection, RiskLevel,
+    RiskSnapshot, TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
 };
 
 mod actionability;
+mod evidence;
 mod position;
 mod posture;
 mod time_bucket;
