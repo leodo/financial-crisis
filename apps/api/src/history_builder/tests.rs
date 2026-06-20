@@ -4,12 +4,12 @@ use chrono::{NaiveDate, Utc};
 use fc_domain::{
     ActionEvidenceBreakdown, AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot,
     BacktestPerformanceSummary, BacktestRollingAudit, DataMode, DataQualitySummary, DataTrust,
-    DecisionPosture, EventAssessment, EventConfirmationState, FeatureSnapshotRecord,
-    HistoricalAssessmentPointRecord, HistoricalReplayRunRecord, JpyCarrySnapshot, JpyCarryState,
-    ModelReleaseManifest, ModelReleaseRecord, MvpRiskState, PositionGuidance,
-    PositionGuidanceGovernance, PostureGuidance, PredictionSnapshotRecord, ProbabilityBlock,
-    ProbabilityBundle, ProbabilityDiagnostics, QualityGrade, RuntimeMetadata, UserRiskPreferences,
-    UserRiskProfile,
+    DecisionPosture, DecisionReliability, EventAssessment, EventConfirmationState,
+    FeatureSnapshotRecord, HistoricalAssessmentPointRecord, HistoricalReplayRunRecord,
+    JpyCarrySnapshot, JpyCarryState, ModelReleaseManifest, ModelReleaseRecord, MvpRiskState,
+    PositionGuidance, PositionGuidanceGovernance, PostureGuidance, PredictionSnapshotRecord,
+    ProbabilityBlock, ProbabilityBundle, ProbabilityDiagnostics, QualityGrade, RuntimeMetadata,
+    UserRiskPreferences, UserRiskProfile,
 };
 use fc_storage::SqliteStore;
 
@@ -122,6 +122,8 @@ fn history_test_position_guidance() -> PositionGuidance {
         action_summary: "test".to_string(),
         actions: Vec::new(),
         forbidden_actions: Vec::new(),
+        inapplicable_scenarios: Vec::new(),
+        manual_confirmation_items: Vec::new(),
         reentry_conditions: Vec::new(),
         guardrails: Vec::new(),
         capital_preservation_overlay_enabled: false,
@@ -214,6 +216,7 @@ fn history_test_assessment(
         time_to_risk_bucket,
         posture,
         mvp_risk_state: MvpRiskState::default(),
+        decision_reliability: DecisionReliability::default(),
         conviction_score: 0.6,
         action_evidence: ActionEvidenceBreakdown {
             score: 0.6,

@@ -19,6 +19,7 @@ pub(in super::super) fn build_position_guidance(
     data_trust: &DataTrust,
     jpy_carry: &JpyCarrySnapshot,
     event_assessment: &EventAssessment,
+    mvp_risk_state: &MvpRiskState,
     active_release: Option<&ModelReleaseRecord>,
     user_preferences: &UserRiskPreferences,
     thresholds: ProbabilityActionThresholds,
@@ -105,6 +106,48 @@ pub(in super::super) fn build_position_guidance(
             forbidden_actions
                 .push("不要在短期风险窗口已打开时新增复杂、流动性差的保护结构。".to_string());
         }
+    }
+
+    let mut inapplicable_scenarios = vec![
+        "如果你的组合不是以美国风险资产、美元流动性或美股/信用敞口为主要风险来源，不应直接套用这套预算。"
+            .to_string(),
+        "如果账户存在强制持仓、锁定期、税务限制、保证金规则或对冲工具不可用，应先做账户级约束重算。"
+            .to_string(),
+        "如果当前数据模式不是生产 SQLite/Postgres、关键指标陈旧，或页面出现 stale warning，只能把本建议当成排查信号。"
+            .to_string(),
+    ];
+    if matches!(
+        mvp_risk_state.probability_input_status,
+        MvpProbabilityInputStatus::ReferenceOnly
+    ) {
+        inapplicable_scenarios.push(
+            "正式概率仍处于 reference_only 时，不适合用 5d / 20d / 60d 数值直接决定减仓、对冲或再入场时点。"
+                .to_string(),
+        );
+    }
+    if matches!(posture.posture, DecisionPosture::Normal) {
+        inapplicable_scenarios.push(
+            "观察档不适合被解读成加杠杆或追高信号；它只表示当前未触发系统性防守动作。".to_string(),
+        );
+    }
+
+    let mut manual_confirmation_items = vec![
+        "确认 API data_mode、关键指标日期、runtime stale warning 和生产源健康状态。".to_string(),
+        "确认该动作仍符合你的投资授权、流动性需求、税务影响、保证金要求和账户限制。".to_string(),
+        "确认待执行工具的 bid/ask、成交深度、对手方风险和极端行情下可退出性。".to_string(),
+        "确认本次动作只是系统预算边界调整，不是自动交易，也不是一键清仓指令。".to_string(),
+    ];
+    if hedge_ratio_pct > 0.0 || option_overlay_pct > 0.0 {
+        manual_confirmation_items.push(
+            "若使用对冲或期权保护，先确认期限、行权价、delta/vega 暴露、保证金占用和最大损失。"
+                .to_string(),
+        );
+    }
+    if target_equity_exposure_pct < user_preferences.max_equity_cap_pct {
+        manual_confirmation_items.push(
+            "如需降低风险资产，先确认哪些持仓流动性最好、税务影响最低、与核心策略相关性最低。"
+                .to_string(),
+        );
     }
 
     let mut reentry_conditions = match posture.posture {
@@ -211,6 +254,8 @@ pub(in super::super) fn build_position_guidance(
         action_summary,
         actions,
         forbidden_actions,
+        inapplicable_scenarios,
+        manual_confirmation_items,
         reentry_conditions,
         guardrails,
         capital_preservation_overlay_enabled,

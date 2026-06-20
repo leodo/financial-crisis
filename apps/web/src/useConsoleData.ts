@@ -11,6 +11,7 @@ const liveQueryOptions = {
 
 export interface ConsoleReadyData {
   assessment: Awaited<ReturnType<typeof api.assessmentCurrent>>;
+  riskThresholds: Awaited<ReturnType<typeof api.riskAlertThresholds>>;
   assessmentHistory: Awaited<ReturnType<typeof api.assessmentHistory>>;
   posture: Awaited<ReturnType<typeof api.assessmentPosture>>;
   method: Awaited<ReturnType<typeof api.assessmentMethod>>;
@@ -25,6 +26,7 @@ export interface ConsoleReadyData {
 
 export interface ConsoleDataSnapshot {
   assessment?: ConsoleReadyData["assessment"];
+  riskThresholds?: ConsoleReadyData["riskThresholds"];
   assessmentHistory?: ConsoleReadyData["assessmentHistory"];
   posture?: ConsoleReadyData["posture"];
   method?: ConsoleReadyData["method"];
@@ -49,6 +51,11 @@ export function useConsoleData(requiredKeys: Array<keyof ConsoleReadyData>) {
   const systemHealth = useQuery({
     queryKey: ["system-health"],
     queryFn: api.systemHealth,
+    ...liveQueryOptions
+  });
+  const riskThresholds = useQuery({
+    queryKey: ["risk-alert-thresholds"],
+    queryFn: api.riskAlertThresholds,
     ...liveQueryOptions
   });
   const assessmentHistory = useQuery({
@@ -120,6 +127,7 @@ export function useConsoleData(requiredKeys: Array<keyof ConsoleReadyData>) {
 
   const data: ConsoleDataSnapshot = {
     assessment: assessment.data,
+    riskThresholds: riskThresholds.data,
     assessmentHistory: assessmentHistory.data,
     posture: posture.data,
     method: method.data,
@@ -135,6 +143,7 @@ export function useConsoleData(requiredKeys: Array<keyof ConsoleReadyData>) {
   const queries = {
     assessment,
     systemHealth,
+    riskThresholds,
     assessmentHistory,
     posture,
     method,

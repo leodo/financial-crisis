@@ -74,6 +74,51 @@ function formatProbabilityDelta(value: number | null) {
   return `${sign}${formatProbabilityPercentExact(Math.abs(value))}`;
 }
 
+function formatScoreLevel(value: number) {
+  return `${formatNumber(value)} 分`;
+}
+
+function changeDirectionLabel(value: number | null) {
+  if (value === null || Math.abs(value) < 0.5) {
+    return "基本持平";
+  }
+  return value > 0 ? "升温" : "降温";
+}
+
+function changeDecisionTone(value: number | null) {
+  if (value === null) {
+    return "历史不足";
+  }
+  if (value >= 3) {
+    return "明显升温";
+  }
+  if (value <= -3) {
+    return "明显降温";
+  }
+  return "边际变化";
+}
+
+function changeMetricValueClassName(value: number | null, flatTolerance = 0.05) {
+  if (value === null || Math.abs(value) <= flatTolerance) {
+    return "metric-value-flat";
+  }
+  return value > 0 ? "metric-value-up" : "metric-value-down";
+}
+
+function buildChangeWatchList(assessment: AssessmentSnapshot) {
+  const watchItems = [
+    `触发压力 ${formatScoreLevel(assessment.scores.trigger_score)}，接近或突破 45 分时进入准备复核。`,
+    `外部冲击 ${formatScoreLevel(assessment.scores.external_shock_score)}，重点看 USDJPY、日元套息和 VIX 是否共振。`,
+    `事件确认 ${formatScoreLevel(assessment.event_assessment.confirmation_score)}，需要从近期观察信号升级为确认信号后才提高动作级别。`
+  ];
+
+  if (assessment.mvp_risk_state?.probability_input_status === "reference_only") {
+    watchItems.push("正式概率仍为参考态，不用 5d / 20d / 60d 的低数值判断风险已经远离。");
+  }
+
+  return watchItems;
+}
+
 function buildCurrentHistoryPoint(assessment: AssessmentSnapshot): AssessmentHistoryPoint {
   return {
     as_of_date: assessment.as_of_date,
@@ -120,12 +165,22 @@ function buildRecentChangeSummary(assessment: AssessmentSnapshot, history: Asses
   const p20dDelta = weeklyReference ? latest.p_20d - weeklyReference.p_20d : null;
   const topRiskDriver = assessment.top_risk_drivers[0];
   const topReliefDriver = assessment.top_relief_drivers[0];
+  const dailyDirection = changeDirectionLabel(dailyScoreDelta);
+  const weeklyDirection = changeDirectionLabel(weeklyScoreDelta);
+  const externalDirection = changeDirectionLabel(externalDelta);
+  const weeklyTone = changeDecisionTone(weeklyScoreDelta);
+  const actionMeaning =
+    assessment.mvp_risk_state?.probability_input_status === "reference_only"
+      ? "当前动作仍按 MVP 规则层执行：观察为主，不自动交易；只有规则层、事件确认和关键数据同时升温，才进入准备复核。"
+      : "当前可结合正式概率、规则层和事件确认判断动作节奏；任何升级仍需经过人工确认清单。";
+  const nextWatchItems = buildChangeWatchList(assessment);
 
   return {
     metrics: [
       {
         label: "今日总风险变化",
         value: formatSignedNumber(dailyScoreDelta, 1, " 分"),
+        valueClassName: changeMetricValueClassName(dailyScoreDelta),
         hint: previous
           ? `相对 ${formatDate(previous.as_of_date)}；当前总风险 ${formatNumber(latest.overall_score)} 分。`
           : "历史点不足，暂不能计算今日变化。"
@@ -133,6 +188,7 @@ function buildRecentChangeSummary(assessment: AssessmentSnapshot, history: Asses
       {
         label: "近一周总风险变化",
         value: formatSignedNumber(weeklyScoreDelta, 1, " 分"),
+        valueClassName: changeMetricValueClassName(weeklyScoreDelta),
         hint: weeklyReference
           ? `相对 ${formatDate(weeklyReference.as_of_date)}；用于判断本周风险是升温还是降温。`
           : "历史点不足，暂不能计算近一周变化。"
@@ -140,6 +196,7 @@ function buildRecentChangeSummary(assessment: AssessmentSnapshot, history: Asses
       {
         label: "外部冲击变化",
         value: formatSignedNumber(externalDelta, 1, " 分"),
+        valueClassName: changeMetricValueClassName(externalDelta),
         hint: weeklyReference
           ? `相对 ${formatDate(weeklyReference.as_of_date)}；外部冲击包括 USDJPY、日元套息和跨市场压力。`
           : "历史点不足，暂不能计算外部冲击变化。"
@@ -147,6 +204,7 @@ function buildRecentChangeSummary(assessment: AssessmentSnapshot, history: Asses
       {
         label: "20日参考概率变化",
         value: formatProbabilityDelta(p20dDelta),
+        valueClassName: changeMetricValueClassName(p20dDelta, 0.0005),
         hint: weeklyReference
           ? `相对 ${formatDate(weeklyReference.as_of_date)}；当前正式概率仍只作参考，不参与 MVP 主结论。`
           : "历史点不足，暂不能计算概率变化。"
@@ -161,7 +219,25 @@ function buildRecentChangeSummary(assessment: AssessmentSnapshot, history: Asses
       topRiskDriver ? `（${topRiskDriver.explanation}）` : ""
     }。当前主要缓冲解释：${topReliefDriver?.display_name ?? "暂无"}${
       topReliefDriver ? `（${topReliefDriver.explanation}）` : ""
-    }。`
+    }。`,
+    interpretation: {
+      tone: weeklyTone,
+      summary: previous
+        ? `今日${dailyDirection} ${formatSignedNumber(dailyScoreDelta, 1, " 分")}；近一周${weeklyDirection} ${formatSignedNumber(
+            weeklyScoreDelta,
+            1,
+            " 分"
+          )}，外部冲击${externalDirection} ${formatSignedNumber(externalDelta, 1, " 分")}。`
+        : "历史截面不足，暂时只展示当前风险状态，不能判断今日或本周趋势。",
+      actionMeaning,
+      riskDriver: topRiskDriver
+        ? `${topRiskDriver.display_name}：${topRiskDriver.explanation}`
+        : "暂无明确上行驱动。",
+      reliefDriver: topReliefDriver
+        ? `${topReliefDriver.display_name}：${topReliefDriver.explanation}`
+        : "暂无明确缓冲驱动。",
+      nextWatchItems
+    }
   };
 }
 

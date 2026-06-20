@@ -18,9 +18,11 @@ import type {
 } from "../../types";
 import {
   compactTechnicalId,
+  formatPercentPrecise,
   formatProbabilityBasisPoints,
   formatProbabilityDecimal,
-  formatProbabilityPercentExact
+  formatProbabilityPercentExact,
+  timeBucketLabel
 } from "../../format";
 import {
   ClauseList,
@@ -35,6 +37,7 @@ import {
   RuleBox,
   SurfaceHeader
 } from "../shared/panelHelpers";
+import type { MetricItem } from "../shared/panelHelpers";
 import {
   DecisionActionPlanPanel,
   DecisionAnalogPanel,
@@ -50,12 +53,17 @@ import {
   DecisionPrelude,
   DecisionRiskHorizon
 } from "./sections";
-import { mvpProbabilityInputIsAuditOnly } from "./mvpRiskState";
+import {
+  currentMvpRiskState,
+  mvpProbabilityInputIsAuditOnly,
+  mvpRiskStateDisplayLabel
+} from "./mvpRiskState";
 import {
   probabilityDiagnosticAnomalyHorizons,
   probabilityModelFinalHorizonValues,
   probabilityModelTwentyDayIsCold
 } from "./probabilityDiagnostics";
+import type { DecisionNumberAuditRow } from "./numberAudit";
 import {
   hasRuntimeProbabilityOverride,
   probabilityModelFinalSnapshotValue,
@@ -125,6 +133,12 @@ export default function DecisionView({
 
   return (
     <section className="workspace">
+      <DecisionOperatorBrief
+        assessment={assessment}
+        recentChangeMetrics={recentChangeSummary.metrics}
+        overallScoreText={overallScoreText}
+      />
+
       <DecisionHeroSummary
         assessment={assessment}
         posture={posture}
@@ -139,17 +153,9 @@ export default function DecisionView({
 
       <section className="dashboard-columns">
         <div className="dashboard-column">
-          <section className="surface">
+          <section className="surface number-audit-surface">
             <SurfaceHeader title="当前数字说明" icon={ClipboardCheck} />
-            <DetailRows
-              items={numberAuditRows.map((item) => ({
-                id: item.id,
-                title: item.title,
-                detail: item.detail,
-                meta: item.meta,
-                note: item.note
-              }))}
-            />
+            <NumberAuditRows rows={numberAuditRows} />
           </section>
 
           <section className="surface">
@@ -160,6 +166,51 @@ export default function DecisionView({
           <section className="surface">
             <SurfaceHeader title="今日与本周变化" icon={History} />
             <MetricGrid items={recentChangeSummary.metrics} />
+            <div className="change-insight-grid" aria-label="趋势变化行动解读">
+              <article className="change-insight-card change-insight-card-primary">
+                <span>趋势判断</span>
+                <strong>{recentChangeSummary.interpretation.tone}</strong>
+                <p>
+                  <HighlightedAuditText
+                    className="inline-number-value"
+                    text={recentChangeSummary.interpretation.summary}
+                  />
+                </p>
+              </article>
+              <article className="change-insight-card">
+                <span>动作含义</span>
+                <p>
+                  <HighlightedAuditText
+                    className="inline-number-value"
+                    text={recentChangeSummary.interpretation.actionMeaning}
+                  />
+                </p>
+              </article>
+              <article className="change-insight-card">
+                <span>升温 / 缓冲来源</span>
+                <p>
+                  <HighlightedAuditText
+                    className="inline-number-value"
+                    text={recentChangeSummary.interpretation.riskDriver}
+                  />
+                </p>
+                <p>
+                  <HighlightedAuditText
+                    className="inline-number-value"
+                    text={recentChangeSummary.interpretation.reliefDriver}
+                  />
+                </p>
+              </article>
+              <article className="change-insight-card">
+                <span>接下来盯什么</span>
+                <BulletList
+                  compact
+                  items={recentChangeSummary.interpretation.nextWatchItems.map((item) => (
+                    <HighlightedAuditText className="inline-number-value" text={item} />
+                  ))}
+                />
+              </article>
+            </div>
             <RuleBox label="变化口径">{recentChangeSummary.note}</RuleBox>
             <RuleBox label="当前主要解释">{recentChangeSummary.driverNote}</RuleBox>
           </section>
@@ -237,8 +288,8 @@ export default function DecisionView({
                 />
                 <RuleBox label="为什么这里不展开细轨迹">
                   正式概率当前只作为参考输入。为了避免把极小概率的坐标压缩、局部放大或相对变化误读成可执行时距，
-                  当前不展示这组三期限的细轨迹图；如需排查模型链路，请优先看上方“当前数字说明”和“离风险还有多远”
-                  里的模型诊断。
+                  当前不展示这组三期限的细轨迹图；如需排查模型链路，请优先看上方“当前数字说明”和每张概率卡底部
+                  默认收起的技术细节。
                 </RuleBox>
               </>
             ) : (
@@ -341,6 +392,218 @@ export default function DecisionView({
       </section>
     </section>
   );
+}
+
+function DecisionOperatorBrief({
+  assessment,
+  recentChangeMetrics,
+  overallScoreText
+}: {
+  assessment: AssessmentSnapshot;
+  recentChangeMetrics: MetricItem[];
+  overallScoreText: string;
+}) {
+  const probabilityReferenceOnly = mvpProbabilityInputIsAuditOnly(assessment);
+  const mvpState = currentMvpRiskState(assessment);
+  const todayChange = recentChangeMetrics.find((item) => item.label.includes("今日总风险"));
+  const weekChange = recentChangeMetrics.find((item) => item.label.includes("近一周总风险"));
+  const externalChange = recentChangeMetrics.find((item) => item.label.includes("外部冲击"));
+  const actionCopy = probabilityReferenceOnly
+    ? "观察，不自动交易"
+    : assessment.position_guidance.governance.auto_execution_allowed
+      ? "可执行前复核"
+      : "人工复核后执行";
+
+  return (
+    <section className="surface operator-brief-surface" aria-label="当前操作摘要">
+      <SurfaceHeader title="当前操作摘要" icon={ShieldCheck} />
+      <div className="operator-brief-grid">
+        <article className="operator-brief-card operator-brief-card-primary">
+          <span>主判断</span>
+          <strong>
+            {probabilityReferenceOnly
+              ? mvpRiskStateDisplayLabel(mvpState.label)
+              : timeBucketLabel(assessment.time_to_risk_bucket)}
+          </strong>
+          <small>
+            <HighlightedAuditText
+              className="inline-number-value"
+              text={`总风险 ${overallScoreText} 分；正式概率当前${
+                probabilityReferenceOnly ? "仅作参考" : "可参与判断"
+              }。`}
+            />
+          </small>
+        </article>
+        <article className="operator-brief-card">
+          <span>今日 / 本周</span>
+          <strong>
+            <HighlightedChangeValue value={todayChange?.value ?? "—"} />
+            <span className="operator-change-separator">/</span>
+            <HighlightedChangeValue value={weekChange?.value ?? "—"} />
+          </strong>
+          <small>
+            <HighlightedAuditText
+              className="inline-number-value"
+              text={`${externalChange ? `外部冲击 ${externalChange.value}；` : ""}用来判断风险是升温还是降温。`}
+            />
+          </small>
+        </article>
+        <article className="operator-brief-card">
+          <span>离动作窗口</span>
+          <strong>
+            {probabilityReferenceOnly ? "未进入动作窗口" : timeBucketLabel(assessment.time_to_risk_bucket)}
+          </strong>
+          <small>
+            {probabilityReferenceOnly
+              ? "不按低概率判断风险很远，主看规则层、事件和关键数据是否共振。"
+              : "按正式概率、事件确认和数据新鲜度综合判断。"}
+          </small>
+        </article>
+        <article className="operator-brief-card operator-brief-card-action">
+          <span>现在做什么</span>
+          <strong>{actionCopy}</strong>
+          <small>
+            <HighlightedAuditText
+              className="inline-number-value"
+              text={`风险资产 ${formatPercentPrecise(
+                assessment.position_guidance.target_equity_exposure_pct / 100
+              )} / 现金 ${formatPercentPrecise(
+                assessment.position_guidance.target_cash_pct / 100
+              )} / 对冲 ${formatPercentPrecise(
+                assessment.position_guidance.hedge_ratio_pct / 100
+              )} / 期权 ${formatPercentPrecise(
+                assessment.position_guidance.option_overlay_pct / 100
+              )}`}
+            />
+          </small>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function HighlightedChangeValue({ value }: { value: string }) {
+  return <span className={`operator-change-value ${changeValueToneClassName(value)}`}>{value}</span>;
+}
+
+function NumberAuditRows({ rows }: { rows: DecisionNumberAuditRow[] }) {
+  return (
+    <div className="number-audit-list">
+      {rows.map((item) => (
+        <article
+          className={`number-audit-card ${numberAuditToneClass(item.id)}`}
+          data-audit-detail={item.detail}
+          data-audit-meta={item.meta}
+          data-audit-note={item.note}
+          data-audit-title={item.title}
+          key={item.id}
+        >
+          <div className="number-audit-card-main">
+            <strong>
+              <HighlightedAuditText text={item.title} />
+            </strong>
+            <div className="number-audit-detail">
+              {splitAuditDetail(item.detail).map((segment, index) => (
+                <span className={auditSegmentClassName(segment)} key={`${item.id}-${index}`}>
+                  <HighlightedAuditText text={segment} />
+                </span>
+              ))}
+            </div>
+            <details className="number-audit-note">
+              <summary>口径与限制</summary>
+              <span className="number-audit-note-copy">
+                <HighlightedAuditText text={item.note} />
+              </span>
+            </details>
+          </div>
+          <span className="number-audit-meta">
+            <HighlightedAuditText text={item.meta} />
+          </span>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function HighlightedAuditText({
+  text,
+  className = "number-audit-value"
+}: {
+  text: string;
+  className?: string;
+}) {
+  return (
+    <>
+      {text.split(NUMBER_TOKEN_PATTERN).map((part, index) => {
+        if (part.length === 0) {
+          return null;
+        }
+        if (NUMBER_TOKEN_EXACT_PATTERN.test(part)) {
+          return (
+            <span className={`${className} ${changeValueToneClassName(part)}`} key={`${part}-${index}`}>
+              {part}
+            </span>
+          );
+        }
+        return part;
+      })}
+    </>
+  );
+}
+
+function changeValueToneClassName(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("+")) {
+    return "numeric-value-up";
+  }
+  if (trimmed.startsWith("-")) {
+    return "numeric-value-down";
+  }
+  return "numeric-value-flat";
+}
+
+const NUMBER_TOKEN_PATTERN =
+  /(\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}(?::\d{2})?)?|[+-]?\d+(?:\.\d+)?\s?-\s?[+-]?\d+(?:\.\d+)?|[+-]?\d{1,3}(?:,\d{3})*(?:\.\d+)?\s?(?:%|bp|bps|d|分|条|天)?)/g;
+
+const NUMBER_TOKEN_EXACT_PATTERN =
+  /^(\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}(?::\d{2})?)?|[+-]?\d+(?:\.\d+)?\s?-\s?[+-]?\d+(?:\.\d+)?|[+-]?\d{1,3}(?:,\d{3})*(?:\.\d+)?\s?(?:%|bp|bps|d|分|条|天)?)$/;
+
+function splitAuditDetail(detail: string): string[] {
+  const segments = detail
+    .split(/\s+\/\s+|[；，]| · /)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  return segments.length > 0 ? segments : [detail];
+}
+
+function auditSegmentClassName(segment: string): string {
+  const hasHighlightedValue = segment
+    .split(NUMBER_TOKEN_PATTERN)
+    .some((part) => NUMBER_TOKEN_EXACT_PATTERN.test(part));
+  return hasHighlightedValue
+    ? "number-audit-segment"
+    : "number-audit-segment number-audit-segment-copy";
+}
+
+function numberAuditToneClass(rowId: string): string {
+  switch (rowId) {
+    case "mvp-state":
+      return "number-audit-tone-primary";
+    case "risk-score-snapshot":
+    case "event-confirmation":
+    case "jpy-carry":
+      return "number-audit-tone-risk";
+    case "decision-reliability":
+    case "probability-snapshot":
+      return "number-audit-tone-reference";
+    case "usdjpy":
+    case "freshness":
+      return "number-audit-tone-data";
+    case "position-guidance":
+      return "number-audit-tone-action";
+    default:
+      return "number-audit-tone-neutral";
+  }
 }
 
 function buildProbabilityTrajectoryAuditNote(assessment: AssessmentSnapshot): string | null {

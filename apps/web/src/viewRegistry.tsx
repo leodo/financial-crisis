@@ -135,6 +135,7 @@ const viewRegistry: Record<View, (data: ConsoleReadyData) => ReactElement> = {
       assessment={data.assessment}
       posture={data.posture}
       method={data.method}
+      riskThresholds={data.riskThresholds}
     />
   )
 };

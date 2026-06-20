@@ -421,3 +421,7 @@ pub async fn system_reload(
         "runtime_purpose": runtime_purpose.as_label(),
     })))
 }
+
+pub async fn system_risk_thresholds() -> Json<serde_json::Value> {
+    Json(json!(crate::config::RiskAlertThresholds::from_env()))
+}

@@ -1,0 +1,21 @@
+[Unit]
+Description=Financial Crisis free-data daily refresh
+Documentation=https://github.com/your-org/financial-crisis
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=fc-service
+Group=fc-service
+WorkingDirectory=/opt/financial-crisis
+EnvironmentFile=/opt/financial-crisis/deploy/fc-api.env
+ExecStart=/opt/financial-crisis/current/bin/fc-worker refresh latest-free --mvp-key-only --fast-lookback-days 14 --fred-chunk-days 15 --max-retries 2 --retry-backoff-secs 10 --api-reload-url http://127.0.0.1:18080/api/system/reload
+ExecStartPost=/opt/financial-crisis/deploy/operational-check.sh --mode refresh
+StandardOutput=append:/opt/financial-crisis/logs/refresh.log
+StandardError=append:/opt/financial-crisis/logs/refresh.log
+TimeoutStartSec=1200
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

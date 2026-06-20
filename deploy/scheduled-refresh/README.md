@@ -10,10 +10,13 @@
 - 失败自动重试：默认每个阶段最多重试 `2` 次（共 3 次尝试），线性退避；
   可用 `--max-retries` / `--retry-backoff-secs` 调整；
 - run 级证据落库：成功/失败都会写入 `ingest_runs`，可用 `just refresh-status` 核对。
+- 自动后置验收：systemd service 的 `ExecStartPost` 会运行
+  `/opt/financial-crisis/deploy/operational-check.sh --mode refresh`，
+  生成部署验收、每日健康和业务阈值 Markdown 报告。
 
-> 注意：本轮只完成“定时 + 自动重试 + 状态可见”的最小闭环。
-> 失败告警推送（邮件 / Webhook / IM）仍是后续工作，当前只把失败记录到
-> `ingest_runs` 和刷新日志中。
+> 注意：本轮只完成“定时 + 自动重试 + 自动后置验收 + 状态可见”的最小闭环。
+> Webhook / IM 告警已预留并接入后置验收，但默认不启用；当前未配置 webhook
+> 时会把失败记录到 `ingest_runs`、刷新日志和后置验收报告中。
 
 ## Linux：systemd timer（推荐）
 
@@ -50,8 +53,21 @@ Register-ScheduledTask -TaskName "financial-crisis-refresh" -Action $action -Tri
 
 ## 校验
 
-刷新后用以下命令核对免费数据是否真的成功落库：
+systemd service 已经在刷新成功后自动运行后置验收；如需手动补查：
 
 ```bash
 fc-worker refresh status   # 或 just refresh-status
+sudo /opt/financial-crisis/deploy/operational-check.sh --mode refresh
 ```
+
+`operational-check.sh` 内部复用 `deploy-check --fail-on-issues` 和
+`daily-health-report --fail-on-issues`，提供稳定退出码；生产源降级或
+runtime stale warning 出现时会让任务返回非 0。如已配置
+`FC_ALERT_WEBHOOK_URL`、`FC_ALERT_SLACK_WEBHOOK_URL`、`FC_ALERT_FEISHU_WEBHOOK_URL`
+或 `FC_ALERT_DINGTALK_WEBHOOK_URL`，异常会主动推送；默认只提醒，不自动交易。
+
+业务层阈值提醒由 `risk-threshold-alert.mjs` 生成，默认看总风险分、触发压力分、
+MVP/动作档位、生产源降级和 runtime stale warning。阈值可用
+`FC_RISK_ALERT_OVERALL_SCORE`、`FC_RISK_ALERT_TRIGGER_SCORE`、
+`FC_RISK_ALERT_MIN_POSTURE`、`FC_RISK_ALERT_MAX_SOURCE_ISSUES` 配置；它只发提醒，
+不改变仓位、不触发自动交易。

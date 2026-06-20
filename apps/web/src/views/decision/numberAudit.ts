@@ -155,7 +155,9 @@ export function buildNumberAuditRows(assessment: AssessmentSnapshot): DecisionNu
       )} / 事件 ${formatPercent(assessment.event_assessment.confirmation_score / 100)}`,
       meta: "可靠性，不是概率",
       note: `${auditTrailCopy(
-        "frontend decisionReliability / API data_trust + method + event_assessment",
+        assessment.decision_reliability
+          ? "API decision_reliability / data_trust + method + event_assessment"
+          : "frontend fallback decisionReliability / API data_trust + method + event_assessment",
         "0-100% 组件分",
         assessment.as_of_date,
         auditOnly ? "reference_only 封顶" : "按组件合成"

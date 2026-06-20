@@ -128,6 +128,162 @@
   min-width: 0;
 }
 
+.change-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.change-insight-card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dfe8ed;
+  border-radius: 10px;
+  background: #fbfdfe;
+}
+
+.change-insight-card span {
+  color: #61707a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.change-insight-card strong {
+  color: #1f4f61;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.change-insight-card p {
+  margin: 0;
+  color: #46545e;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.inline-number-value {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 1px;
+  padding: 1px 5px;
+  border: 1px solid #cfe0e8;
+  border-radius: 6px;
+  background: #eef7fb;
+  color: #1f5f78;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.inline-number-value.numeric-value-up {
+  border-color: #edc9aa;
+  background: #fff3e8;
+  color: #9a4d12;
+}
+
+.inline-number-value.numeric-value-down {
+  border-color: #b9ddd2;
+  background: #eaf7f2;
+  color: #14705e;
+}
+
+.change-insight-card-primary {
+  border-color: #bed8e6;
+  background: linear-gradient(135deg, #eef8fc, #ffffff);
+}
+
+.operator-brief-surface {
+  border-color: #cfdee6;
+  background:
+    linear-gradient(135deg, rgba(244, 249, 252, 0.96), rgba(255, 255, 255, 0.98)),
+    #ffffff;
+}
+
+.operator-brief-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.operator-brief-card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dce7ed;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgba(36, 54, 66, 0.04);
+}
+
+.operator-brief-card span {
+  color: #62707b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.operator-brief-card strong {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: #1f2d36;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.operator-brief-card small {
+  color: #53616b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.operator-brief-card-primary {
+  border-color: #bdd4eb;
+  background: #f4f9ff;
+}
+
+.operator-brief-card-primary strong {
+  color: #245ea8;
+}
+
+.operator-brief-card-action {
+  border-color: #e6ceb8;
+  background: #fff8f1;
+}
+
+.operator-brief-card-action strong {
+  color: #8a4c15;
+}
+
+.operator-change-value {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #f2f6f8;
+  color: #42515a;
+  font-variant-numeric: tabular-nums;
+}
+
+.operator-change-value.numeric-value-up {
+  background: #fff1e6;
+  color: #9a4d12;
+}
+
+.operator-change-value.numeric-value-down {
+  background: #e9f7f1;
+  color: #14705e;
+}
+
+.operator-change-separator {
+  color: #7a8790;
+  font-weight: 800;
+}
+
 .signal-layer-list {
   display: grid;
   gap: 12px;
@@ -191,6 +347,18 @@
   line-height: 1.15;
 }
 
+.metric strong.metric-value-up {
+  color: #9a4d12;
+}
+
+.metric strong.metric-value-down {
+  color: #14705e;
+}
+
+.metric strong.metric-value-flat {
+  color: #42515a;
+}
+
 .metric strong.metric-value-token {
   font-size: 18px;
   overflow-wrap: anywhere;
@@ -203,6 +371,172 @@
   font-size: 11px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.number-audit-surface {
+  border-color: #d3e0e7;
+  background:
+    linear-gradient(180deg, rgba(248, 251, 253, 0.88), rgba(255, 255, 255, 0.96)),
+    #ffffff;
+}
+
+.number-audit-list {
+  display: grid;
+  gap: 10px;
+}
+
+.number-audit-card {
+  --number-audit-accent: #4c5b66;
+  --number-audit-soft: #f2f6f8;
+  --number-audit-value: #1f4f61;
+  --number-audit-border: #dbe6eb;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--number-audit-border);
+  border-left: 4px solid var(--number-audit-accent);
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgba(36, 54, 66, 0.03);
+}
+
+.number-audit-card-main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.number-audit-card strong {
+  color: #1f2d36;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.number-audit-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.number-audit-segment {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid #e0e8ed;
+  border-radius: 999px;
+  background: var(--number-audit-soft);
+  color: #43515c;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.number-audit-segment-copy {
+  width: 100%;
+  border-radius: 8px;
+  background: #f8fbfd;
+  color: #53616b;
+}
+
+.number-audit-value {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 1px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--number-audit-value);
+  box-shadow: inset 0 0 0 1px var(--number-audit-border);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.number-audit-meta {
+  align-self: start;
+  justify-self: end;
+  max-width: 132px;
+  padding: 5px 9px;
+  border: 1px solid var(--number-audit-border);
+  border-radius: 999px;
+  background: var(--number-audit-soft);
+  color: var(--number-audit-accent);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
+}
+
+.number-audit-note {
+  color: #62707b;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.number-audit-note summary {
+  width: fit-content;
+  color: var(--number-audit-accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.number-audit-note summary::marker {
+  color: var(--number-audit-accent);
+}
+
+.number-audit-note-copy {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.number-audit-note .number-audit-value {
+  display: inline;
+}
+
+.number-audit-tone-primary {
+  --number-audit-accent: #245ea8;
+  --number-audit-soft: #eef6ff;
+  --number-audit-value: #1f5f9c;
+  --number-audit-border: #cfe0f3;
+}
+
+.number-audit-tone-risk {
+  --number-audit-accent: #a9600c;
+  --number-audit-soft: #fff7e8;
+  --number-audit-value: #9a4f07;
+  --number-audit-border: #edd9b8;
+}
+
+.number-audit-tone-reference {
+  --number-audit-accent: #6b5b20;
+  --number-audit-soft: #f9f3d8;
+  --number-audit-value: #82680d;
+  --number-audit-border: #e5d99a;
+}
+
+.number-audit-tone-data {
+  --number-audit-accent: #1f766e;
+  --number-audit-soft: #eaf7f5;
+  --number-audit-value: #13655f;
+  --number-audit-border: #bdded9;
+}
+
+.number-audit-tone-action {
+  --number-audit-accent: #8a4c15;
+  --number-audit-soft: #fff1e6;
+  --number-audit-value: #9a4d12;
+  --number-audit-border: #edc9aa;
+}
+
+.number-audit-tone-neutral {
+  --number-audit-accent: #4c5b66;
+  --number-audit-soft: #f2f6f8;
+  --number-audit-value: #26343d;
+  --number-audit-border: #dbe6eb;
 }
 
 .surface-head {
@@ -490,13 +824,49 @@
 }
 
 .probability-diagnostics {
-  display: grid;
-  gap: 8px;
   border-top: 1px solid #e6edf1;
   padding-top: 8px;
 }
 
-.probability-diagnostics > span,
+.probability-diagnostics summary {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #dce7ee;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f8fbfd 0%, #eef5f8 100%);
+  cursor: pointer;
+  list-style: none;
+  padding: 8px 10px;
+}
+
+.probability-diagnostics summary::-webkit-details-marker {
+  display: none;
+}
+
+.probability-diagnostics summary::after {
+  color: #50616c;
+  content: "展开";
+  font-size: 11px;
+  font-weight: 800;
+  justify-self: start;
+}
+
+.probability-diagnostics[open] summary::after {
+  content: "收起";
+}
+
+.probability-diagnostics[open] summary {
+  margin-bottom: 8px;
+}
+
+.probability-diagnostics-summary-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.probability-diagnostics-summary-line span,
 .probability-chain span,
 .probability-gates > span {
   color: #62707b;
@@ -505,13 +875,42 @@
   text-transform: uppercase;
 }
 
+.probability-diagnostics-summary-line em {
+  border: 1px solid #d5e1e8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #52636f;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.probability-diagnostics summary strong {
+  color: #26343d;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.probability-diagnostics summary small {
+  color: #62707b;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.probability-diagnostics-body {
+  display: grid;
+  gap: 8px;
+}
+
 .probability-chain {
   display: grid;
   gap: 3px;
 }
 
-.probability-chain strong,
-.probability-diagnostics > strong {
+.probability-chain strong {
   color: #26343d;
   font-size: 12px;
   line-height: 1.4;

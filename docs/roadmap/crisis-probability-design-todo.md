@@ -69,7 +69,8 @@ MVP 当前判定：
 
 #### P1：免费数据可靠性
 
-- [ ] 固化日频刷新任务、失败重试和抓取日志。
+- [x] 固化日频刷新任务、失败重试、抓取日志和刷新后健康摘要。
+  - 2026-06-13：在既有 systemd/cron/Windows 计划任务和 `refresh status` 基础上，新增 `scripts/daily-health-report.mjs` 与 `just daily-health-report` / `just daily-health-report-save`，刷新后可直接导出 as-of、关键数据日期、MVP 主判断、生产源降级和预算参考；主动告警推送仍作为后续独立增强。
 - [x] 在面板展示每个关键源的最新日期、免费可用性、官方/替代来源和是否影响当前结论。
   - 2026-06-10：决策页“关键免费数据源是否可信”已覆盖 MVP 关键指标：USDJPY、日元隔夜拆借利率、EFFR、VIX；每行展示免费/官方属性、source/dataset、最新日期、替代路径、lineage 和对结论的影响。
 - [x] 关键指标缺失或陈旧时，只允许降级结论可信度，不允许静默复用旧值形成高置信结论。
@@ -119,7 +120,7 @@ MVP 当前判定：
 
 #### Iteration 3：免费数据可靠性
 
-- [ ] 固化日频刷新、失败重试、抓取日志和最后成功时间。
+- [x] 固化日频刷新、失败重试、抓取日志、最后成功时间和每日健康摘要。
 - [ ] 对 USDJPY、日元隔夜拆借、EFFR、VIX 这类关键近端指标，缺失/陈旧时必须让主结论降级。
 - [ ] 区分官方免费源、免费替代源、演示/原型源，页面上不得混用。
 
@@ -1201,6 +1202,9 @@ MVP 当前判定：
      - 2026-06-11：rendered DOM 检查已加入 JPY carry 20d 波动口径防回归：要求页面显示 `20d 日收益波动` 和百分比格式，防止 `0.001` 这类小数口径直接暴露给用户。
      - 2026-06-11：API 单测和 `just mvp-regression` 已加入 MVP 主证据防回归，禁止 `日元套息 Quiet/Building/Stress/Unwind` 这类 Rust enum 名称进入用户可见主结论。
      - 2026-06-11：`just mvp-regression` 已加入版本核对页专项审计防回归，要求 registry / replay / dataset / runtime contribution 数字明确标成审计或历史证据，并禁止 `触线完成度`、裸 `Action precision` 等容易被读成当前正式结论的标签回归。
+     - 2026-06-13：决策页概率卡的 `raw / calibrated / model final / runtime`、Base 头贡献和风险族 gate 已默认收进“技术细节”，首屏只保留参考概率、动作线、异常解释和“不能作为主结论”的限制；`just mvp-regression` 已加入静态防回归，禁止这些模型链路细项重新直接展开成主决策内容。
+     - 2026-06-13：首屏“当前操作摘要”“当前数字说明”“今日与本周变化”已统一做数字强调：核心数字使用加粗彩色胶囊和 tabular number，近一周/外部冲击变化按升温/降温着色；`just mvp-regression` 已加入静态防回归，浏览器实测出现 `inline-number-value`、`number-audit-value`、`metric-value-down/flat` 且页面无渲染错误。
+     - 2026-06-13：窄屏首屏信息密度继续收敛：`当前操作摘要` 已前移到长 hero 解释之前，640px 以下导航改为横向紧凑条，运营状态/操作摘要/hero 指标改为双列紧凑布局；`just mvp-regression` 已加入静态防回归，浏览器实测宽屏和窄屏均保持 `operatorBeforeHero=true` 且无渲染错误。
 2. P1 最小可用决策面板：
    - [x] 把主结论固定为四档：观察 / 准备 / 对冲 / 防守，并在每档给出仓位动作边界；
      - 2026-06-10：组合动作建议面板新增四档动作边界表，覆盖风险资产上限、现金目标、对冲覆盖、期权保护、杠杆上限和执行窗口；`reference_only` 时当前档按 MVP 规则层高亮，正式概率只保留为参考值；
@@ -1209,9 +1213,9 @@ MVP 当前判定：
    - [~] 对“结论把握度”重新定义为数据覆盖、模型状态、事件确认和历史相似度的组合，不再长期固定在一个难解释的数值。
      - 页面已改为“结论可靠性”，按数据覆盖 35%、模型状态 25%、事件确认 20%、历史相似度 10%、关键数据新鲜度 10% 汇总；
      - `reference_only` 时可靠性分数会封顶并明确提示“不能解释成模型结论已经很有把握”；
-     - 后续仍可把该公式下沉到 API contract，避免前端长期独占解释口径。
+     - 2026-06-13：该公式已下沉到 API `decision_reliability` 字段，并在 `assessment-api-contract` 中记录 `score / raw_score / components / cap_reason / explanation`；前端优先读取 API 字段，旧数据才走 fallback，避免页面长期独占解释口径。
 3. P1 免费数据可靠性：
-   - [~] 固化日频刷新任务、失败重试和抓取日志；
+   - [x] 固化日频刷新任务、失败重试和抓取日志；
      - 2026-06-10：已新增 `SqliteStore::load_ingestion_source_health_summaries`，按 source 汇总 `ingest_runs` 的最后成功抓取时间、最后成功数据期、总运行数、成功数、失败数和最后错误；
      - 2026-06-10：API SQLite runtime 的 `/api/sources` 已改用真实 `ingest_runs` 摘要，不再用当前时间伪装 `last_success_at`；有连续失败时会标为 `partial_failure` 并显示失败计数；
      - 2026-06-10：worker 新增 `cargo run -p fc-worker -- refresh status`，justfile 新增 `just refresh-status`，用于刷新后立刻核对免费数据是否真的成功落库；
@@ -1222,7 +1226,12 @@ MVP 当前判定：
      - 2026-06-11：SEC EDGAR connector 已把 response body 读取超时也接到 curl fallback；随后 `backfill sec-edgar --start 2026-06-09 --end 2026-06-11` 成功写入 16 个 payload、12 条事件观测和 success run，避免偶发 body timeout 让整批日频事件源长期显示失败。
      - 2026-06-11：当前 `/api/sources` 与浏览器实测显示 SEC EDGAR / World Bank 都恢复 `healthy`，数据可信度页摘要为 `源健康降级0`，首页顶栏不再显示 `生产源健康降级`；`just mvp-regression` 已改为按实时 `/api/sources` 动态验证降级数量，而不是硬编码 `2`。
      - 2026-06-11：来源页继续拆清 `最新观测`、`观测滞后`、`抓取水位`、`最近成功刷新` 四个口径；SEC 这类事件源允许最新观测日与抓取水位不同，不再让用户误以为两个数字冲突。GDELT / yfinance 这类未进入正式刷新链路的原型源改显示 `未进入正式刷新监控`，来源页也不再用 `近实时` 暗示日频/原型源有生产级盘中刷新证据。
-     - 2026-06-12：日频刷新已固化系统级定时任务与失败自动重试：`refresh latest-free` 新增 `--max-retries`（默认 2）/`--retry-backoff-secs`（默认 5）阶段级线性退避重试，单源瞬时网络抖动会先重试再落入 `ingest_runs` 失败证据；新增 `deploy/scheduled-refresh/`（systemd service+timer、cron、计划任务示例）。告警推送仍留作后续。
+     - 2026-06-12：日频刷新已固化系统级定时任务与失败自动重试：`refresh latest-free` 新增 `--max-retries`（默认 2）/`--retry-backoff-secs`（默认 5）阶段级线性退避重试，单源瞬时网络抖动会先重试再落入 `ingest_runs` 失败证据；新增 `deploy/scheduled-refresh/`（systemd service+timer、cron、计划任务示例）。
+     - 2026-06-13：新增每日健康摘要脚本 `scripts/daily-health-report.mjs`，并接入 `just daily-health-report` / `just daily-health-report-save` 和部署验证文档；刷新后可留存 Markdown 报告，集中核对主判断、关键日期、源降级和预算参考。
+     - 2026-06-13：新增共享后置验收脚本 `deploy/operational-check.sh`；`deploy/update.sh`、`deploy/bootstrap.sh`、`deploy/rollback.sh` 与 `fc-refresh.service` 已接入自动验收，部署/回滚后运行 `deploy-check --fail-on-issues`，刷新后同时生成 `deploy-check` 与 `daily-health-report` 留档。
+     - 2026-06-13：新增主动告警脚本 `scripts/operational-alert.mjs`；配置 `FC_ALERT_WEBHOOK_URL`、`FC_ALERT_SLACK_WEBHOOK_URL`、`FC_ALERT_FEISHU_WEBHOOK_URL` 或 `FC_ALERT_DINGTALK_WEBHOOK_URL` 后，后置验收失败会主动推送异常摘要和报告摘录。默认不配置即不发送外部消息，只保留日志/报告；默认只提醒，不自动交易。
+     - 2026-06-13：前端顶部新增“运营状态”总览，汇总主结论、数据新鲜度、生产源健康和业务风险阈值；正常状态显示 `OK / 未触发`，异常状态优先提示风险卡，避免用户必须翻到来源页或日报脚本才发现数据/源/阈值问题。
+     - 2026-06-13：业务提醒阈值已通过 `GET /api/system/risk-thresholds` 暴露，顶部“运营状态”和 `risk-threshold-alert` 共用 API 运行配置；脚本仍允许 `FC_RISK_ALERT_*` 本地覆盖，避免部署后页面阈值和实际提醒策略分叉。
    - [x] 对 FRED/BOJ/Treasury/SEC/GDELT/公开市场数据分别显示最新日期、免费可得性和替代源；
      - 已完成 sources 页状态标签补齐，支持 `partial_failure / failed / disabled` 的中文解释；
      - 2026-06-12：已把替代源路径整理成机器可读 catalog `config/free_data_source_catalog.us.json`（crates/domain `free_data_source` 加载，env `FC_FREE_DATA_SOURCE_CATALOG_PATH` 可覆盖），并经 `/api/assessment/method` 暴露为 `free_data_source_catalog`；前端 `keyIndicatorFallbackCopy` 改为读取该目录，不再把替代源硬编码在文案里。
@@ -1235,8 +1244,15 @@ MVP 当前判定：
 5. P2 产品化告警与操作闭环：
    - [x] 增加“今日变化原因”和“本周风险变化”；
      - 2026-06-12：决策页已新增“今日与本周变化”面板，基于 `/api/assessment/history` 的历史截面展示今日总风险变化、近一周总风险变化、外部冲击变化和 20d 参考概率变化；页面明确说明这是历史截面对比，不是逐指标因果归因，当前正式概率仍只作参考。
-   - [ ] 增加可配置提醒阈值，但默认只提醒、不自动交易；
-   - [ ] 输出组合动作清单时必须附带“不适用场景”和人工确认项。
+     - 2026-06-13：该面板已从“只列变化数字”升级为趋势行动解读：新增趋势判断、动作含义、升温/缓冲来源和下一步观察清单；在 `reference_only` 下继续明确不按低正式概率判断风险远离。`just mvp-regression` 已加入静态防回归，要求变化面板保留行动解读和归因限制。
+   - [x] 增加可配置提醒阈值，但默认只提醒、不自动交易；
+     - 2026-06-13：部署/回滚/刷新后的运维异常提醒已接入 webhook/IM。
+     - 2026-06-13：新增 `scripts/risk-threshold-alert.mjs`，可通过 `FC_RISK_ALERT_OVERALL_SCORE`、`FC_RISK_ALERT_TRIGGER_SCORE`、`FC_RISK_ALERT_MIN_POSTURE`、`FC_RISK_ALERT_MAX_SOURCE_ISSUES` 配置业务层提醒阈值；刷新后自动生成 `risk-threshold-refresh-*.md`，默认只提醒、不自动交易。
+     - 2026-06-13：页面顶部“运营状态”已复用同一组默认业务阈值（总风险 55、触发压力 60、生产源问题 0）做可视化余量提示，仍只提醒、不自动交易。
+     - 2026-06-13：阈值默认值现在由 API 统一输出，告警脚本报告会写入 `Threshold source`，便于核对当前提醒到底来自 API env 还是本地覆盖。
+     - 2026-06-13：方法说明页已新增“业务提醒阈值”区块，展示总风险提醒线、触发压力提醒线、最低动作档位、生产源异常容忍、阈值来源和 `reference_only` 提醒策略；页面明确写明这组阈值只提醒、不自动交易，且与顶部运营状态、风险阈值脚本共用 API 运行配置。
+   - [x] 输出组合动作清单时必须附带“不适用场景”和人工确认项。
+     - 2026-06-13：`position_guidance` 新增 `inapplicable_scenarios` 与 `manual_confirmation_items`；决策页“组合动作建议”已新增“不适用场景”和“人工确认清单”，每日健康摘要也会显示两组清单数量。
 
 ### 6.5 2026-06-01 Episode-native 第一阶段代码已落地
 

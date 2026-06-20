@@ -1,0 +1,31 @@
+[Unit]
+Description=Financial Crisis Assessment API
+Documentation=https://github.com/your-org/financial-crisis
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fc-service
+Group=fc-service
+WorkingDirectory=/opt/financial-crisis
+EnvironmentFile=/opt/financial-crisis/deploy/fc-api.env
+ExecStart=/opt/financial-crisis/current/bin/fc-api
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/opt/financial-crisis/logs/api.log
+StandardError=append:/opt/financial-crisis/logs/api.log
+
+# 安全限制
+CapabilityBoundingSet=
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/financial-crisis/data /opt/financial-crisis/logs /opt/financial-crisis/current/config
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target
