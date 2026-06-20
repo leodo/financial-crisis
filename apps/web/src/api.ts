@@ -10,6 +10,7 @@ import type {
   IndicatorRisk,
   PostureGuidance,
   ResearchAuditResponse,
+  RiskAlertThresholds,
   RiskSnapshot,
   ServiceHealthResponse
 } from "./types";
@@ -74,6 +75,7 @@ async function sendJson<T>(path: string, method: string): Promise<T> {
 
 export const api = {
   systemHealth: () => getJson<ServiceHealthResponse>("/health"),
+  riskAlertThresholds: () => getJson<RiskAlertThresholds>("/api/system/risk-thresholds"),
   overview: () => getJson<RiskSnapshot>("/api/overview"),
   dimensions: () => getJson<DimensionScore[]>("/api/dimensions"),
   indicators: () => getJson<IndicatorRisk[]>("/api/indicators"),

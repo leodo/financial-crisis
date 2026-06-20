@@ -164,6 +164,8 @@ export interface PositionGuidance {
   action_summary: string;
   actions: string[];
   forbidden_actions: string[];
+  inapplicable_scenarios: string[];
+  manual_confirmation_items: string[];
   reentry_conditions: string[];
   guardrails: string[];
   capital_preservation_overlay_enabled: boolean;
@@ -262,6 +264,19 @@ export interface ActionEvidenceBreakdown {
   structural_trigger_agreement: boolean;
 }
 
+export interface DecisionReliability {
+  score: number;
+  raw_score: number;
+  data_coverage_component: number;
+  model_component: number;
+  event_component: number;
+  historical_analog_component: number;
+  freshness_component: number;
+  label: string;
+  cap_reason: string | null;
+  explanation: string;
+}
+
 export interface AssessmentSnapshot {
   as_of_date: string;
   entity_id: string;
@@ -272,6 +287,7 @@ export interface AssessmentSnapshot {
   time_to_risk_bucket: TimeToRiskBucket;
   posture: DecisionPosture;
   mvp_risk_state?: MvpRiskState;
+  decision_reliability?: DecisionReliability;
   conviction_score: number;
   action_evidence?: ActionEvidenceBreakdown;
   scores: AssessmentScores;

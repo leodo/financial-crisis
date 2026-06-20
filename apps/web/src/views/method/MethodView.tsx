@@ -3,7 +3,8 @@ import { formatDate } from "../../format";
 import type {
   AssessmentMethodResponse,
   AssessmentSnapshot,
-  PostureGuidance
+  PostureGuidance,
+  RiskAlertThresholds
 } from "../../types";
 import {
   BulletList,
@@ -24,11 +25,13 @@ import { useMethodViewModel } from "./useMethodViewModel";
 export default function MethodView({
   assessment,
   posture,
-  method
+  method,
+  riskThresholds
 }: {
   assessment: AssessmentSnapshot;
   posture: PostureGuidance;
   method: AssessmentMethodResponse;
+  riskThresholds: RiskAlertThresholds;
 }) {
   const {
     headlineMetrics,
@@ -51,13 +54,16 @@ export default function MethodView({
     historyProvenanceReplayRunId,
     limitations,
     historyPolicyVersion,
+    riskAlertMetrics,
+    riskAlertPolicyRows,
     protectedCatalogId,
     protectedCatalogSource,
     protectedCatalogNote
   } = useMethodViewModel({
     assessment,
     posture,
-    method
+    method,
+    riskThresholds
   });
 
   return (
@@ -111,6 +117,15 @@ export default function MethodView({
             </div>
           </RuleBox>
         </section>
+      </section>
+
+      <section className="surface">
+        <SurfaceHeader title="业务提醒阈值" icon={ShieldCheck} />
+        <RuleBox label="用途边界">
+          这组阈值只用于页面顶部“运营状态”和刷新后的提醒报告排序；它不会触发自动交易，也不会绕过人工确认清单。
+        </RuleBox>
+        <MetricGrid items={riskAlertMetrics} />
+        <DetailRows items={riskAlertPolicyRows} compact />
       </section>
 
       <section className="surface">

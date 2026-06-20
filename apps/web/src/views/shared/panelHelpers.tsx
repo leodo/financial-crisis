@@ -89,7 +89,7 @@ export function BulletList({
   compact = false,
   emptyVariant = "row"
 }: {
-  items: string[];
+  items: ReactNode[];
   emptyText?: string;
   compact?: boolean;
   emptyVariant?: "row" | "inline";
@@ -111,7 +111,7 @@ export function BulletList({
   return (
     <div className={compact ? "list-stack compact" : "list-stack"}>
       {items.map((item, index) => (
-        <div className="bullet-row" key={`${item}-${index}`}>
+        <div className="bullet-row" key={`bullet-${index}`}>
           <span className="bullet-dot" />
           <span>{item}</span>
         </div>

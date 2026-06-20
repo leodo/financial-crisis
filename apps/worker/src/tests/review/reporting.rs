@@ -4,10 +4,10 @@ use chrono::{NaiveDate, Utc};
 use fc_domain::{
     ActionEvidenceBreakdown, AssessmentMethodVersions, AssessmentScores, AssessmentSnapshot,
     BacktestPerformanceSummary, BacktestRollingAudit, DataMode, DataQualitySummary, DataTrust,
-    DecisionPosture, EventAssessment, EventConfirmationState, JpyCarrySnapshot, JpyCarryState,
-    ModelReleaseManifest, ModelReleaseRecord, MvpRiskState, PositionGuidance,
-    PositionGuidanceGovernance, ProbabilityBlock, ProbabilityDiagnostics, QualityGrade,
-    RuntimeMetadata, TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
+    DecisionPosture, DecisionReliability, EventAssessment, EventConfirmationState,
+    JpyCarrySnapshot, JpyCarryState, ModelReleaseManifest, ModelReleaseRecord, MvpRiskState,
+    PositionGuidance, PositionGuidanceGovernance, ProbabilityBlock, ProbabilityDiagnostics,
+    QualityGrade, RuntimeMetadata, TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
 };
 
 fn test_release_record(
@@ -75,6 +75,7 @@ fn test_assessment_snapshot(
         time_to_risk_bucket,
         posture,
         mvp_risk_state: MvpRiskState::default(),
+        decision_reliability: DecisionReliability::default(),
         conviction_score: 0.52,
         action_evidence: ActionEvidenceBreakdown::default(),
         scores: AssessmentScores {
@@ -131,6 +132,8 @@ fn test_assessment_snapshot(
             action_summary: "maintain core exposure".to_string(),
             actions: vec!["keep monitoring".to_string()],
             forbidden_actions: vec!["do not auto trade".to_string()],
+            inapplicable_scenarios: vec!["not for automatic execution".to_string()],
+            manual_confirmation_items: vec!["confirm manually".to_string()],
             reentry_conditions: vec!["wait for review".to_string()],
             guardrails: vec!["manual confirmation".to_string()],
             capital_preservation_overlay_enabled: false,

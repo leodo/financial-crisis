@@ -59,8 +59,23 @@
 }
 
 @media (max-width: 480px) {
+  .decision-answer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .decision-answer {
+    border-left: 1px solid #dce6ec;
+    border-top: 1px solid #dce6ec;
     padding: 8px 10px;
+  }
+
+  .decision-answer:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .decision-answer:first-child,
+  .decision-answer:nth-child(2) {
+    border-top: 0;
   }
 
   .decision-answer strong {

@@ -45,6 +45,17 @@ async fn health_endpoint_works() {
 }
 
 #[tokio::test]
+async fn system_risk_thresholds_endpoint_exposes_config() {
+    let json = get_json("/api/system/risk-thresholds").await;
+    assert!(json["overall_score"].is_number());
+    assert!(json["trigger_score"].is_number());
+    assert!(json["min_posture"].is_string());
+    assert!(json["max_production_source_issues"].is_number());
+    assert!(json["alert_on_reference_only"].is_boolean());
+    assert_eq!(json["source"].as_str(), Some("api_env"));
+}
+
+#[tokio::test]
 async fn assessment_current_includes_jpy_carry_funding_fields() {
     let json = get_json("/api/assessment/current").await;
     assert!(json["jpy_carry"]["jp_call_rate"].is_number());
@@ -62,6 +73,19 @@ async fn assessment_current_includes_jpy_carry_funding_fields() {
     assert!(json["mvp_risk_state"]["primary_evidence"].is_array());
     assert!(json["mvp_risk_state"]["blockers"].is_array());
     assert!(json["mvp_risk_state"]["next_actions"].is_array());
+    assert!(json["decision_reliability"]["score"].is_number());
+    assert!(json["decision_reliability"]["raw_score"].is_number());
+    assert!(json["decision_reliability"]["data_coverage_component"].is_number());
+    assert!(json["decision_reliability"]["model_component"].is_number());
+    assert!(json["decision_reliability"]["event_component"].is_number());
+    assert!(json["decision_reliability"]["historical_analog_component"].is_number());
+    assert!(json["decision_reliability"]["freshness_component"].is_number());
+    assert!(json["decision_reliability"]["label"].is_string());
+    assert!(
+        json["decision_reliability"]["cap_reason"].is_null()
+            || json["decision_reliability"]["cap_reason"].is_string()
+    );
+    assert!(json["decision_reliability"]["explanation"].is_string());
     let analogs = json["historical_analogs"]
         .as_array()
         .expect("historical_analogs should be an array");
@@ -92,6 +116,8 @@ async fn assessment_current_includes_jpy_carry_funding_fields() {
     assert!(json["position_guidance"]["action_summary"].is_string());
     assert!(json["position_guidance"]["actions"].is_array());
     assert!(json["position_guidance"]["forbidden_actions"].is_array());
+    assert!(json["position_guidance"]["inapplicable_scenarios"].is_array());
+    assert!(json["position_guidance"]["manual_confirmation_items"].is_array());
     assert!(json["position_guidance"]["reentry_conditions"].is_array());
     assert!(json["position_guidance"]["guardrails"].is_array());
     assert!(json["position_guidance"]["capital_preservation_overlay_enabled"].is_boolean());

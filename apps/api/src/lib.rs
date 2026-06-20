@@ -104,6 +104,10 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/api/system/reload",
             axum::routing::post(handlers::system_reload),
         )
+        .route(
+            "/api/system/risk-thresholds",
+            axum::routing::get(handlers::system_risk_thresholds),
+        )
         .layer(middleware::from_fn(disable_cache))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())

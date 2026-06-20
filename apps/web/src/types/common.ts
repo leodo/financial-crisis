@@ -23,6 +23,15 @@ export interface ServiceHealthResponse {
   status: string;
 }
 
+export interface RiskAlertThresholds {
+  overall_score: number;
+  trigger_score: number;
+  min_posture: string;
+  max_production_source_issues: number;
+  alert_on_reference_only: boolean;
+  source: string;
+}
+
 export interface RiskContributor {
   indicator_id: string;
   display_name: string;

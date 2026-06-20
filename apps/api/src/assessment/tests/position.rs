@@ -46,6 +46,15 @@ fn position_guidance_governance_enforces_manual_review_and_release_boundaries() 
             pending_gaps: Vec::new(),
             recent_events: Vec::new(),
         },
+        &MvpRiskState {
+            code: MvpRiskStateCode::Hedge,
+            label: "对冲准备".to_string(),
+            probability_input_status: MvpProbabilityInputStatus::ReferenceOnly,
+            summary: "test".to_string(),
+            primary_evidence: Vec::new(),
+            blockers: Vec::new(),
+            next_actions: Vec::new(),
+        },
         None,
         &neutral_preferences(),
         ProbabilityActionThresholds {
@@ -75,6 +84,18 @@ fn position_guidance_governance_enforces_manual_review_and_release_boundaries() 
         .required_operator_checks
         .iter()
         .any(|row| row.contains("人工复核")));
+    assert!(guidance
+        .inapplicable_scenarios
+        .iter()
+        .any(|row| row.contains("reference_only")));
+    assert!(guidance
+        .manual_confirmation_items
+        .iter()
+        .any(|row| row.contains("不是自动交易")));
+    assert!(guidance
+        .manual_confirmation_items
+        .iter()
+        .any(|row| row.contains("对冲") || row.contains("期权")));
 }
 
 #[test]

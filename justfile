@@ -44,6 +44,35 @@ hotspot-status:
 audit-report:
     cargo run -p fc-worker -- audit export-current
 
+# 从正在运行的本地 API 生成一份每日健康摘要。
+# 适合定时刷新后核对 as-of、关键数据日期、MVP 主判断、生产源降级和预算参考。
+daily-health-report:
+    node ./scripts/daily-health-report.mjs
+
+# 生成每日健康摘要并写入 reports/daily-health，便于部署或无人值守刷新后留档。
+daily-health-report-save:
+    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; node ./scripts/daily-health-report.mjs --output "reports/daily-health/$timestamp.md"
+
+# 一键部署验收：检查 API/Web、assessment、sources、数据模式、关键日期和生产源降级。
+deploy-check:
+    node ./scripts/deploy-check.mjs --fail-on-issues
+
+# 保存部署验收报告，适合部署完成或定时刷新后留档。
+deploy-check-save:
+    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; node ./scripts/deploy-check.mjs --fail-on-issues --output "reports/deploy-check/$timestamp.md"
+
+# 预览运维告警 payload，不发送外部 webhook/IM。
+operational-alert-dry-run:
+    node ./scripts/operational-alert.mjs --mode manual --status attention --message "manual dry-run" --dry-run
+
+# 检查业务层风险阈值并输出提醒报告；默认只提醒，不自动交易。
+risk-threshold-alert:
+    node ./scripts/risk-threshold-alert.mjs
+
+# 预览业务层风险阈值提醒 payload，不发送外部 webhook/IM。
+risk-threshold-alert-dry-run:
+    $env:FC_ALERT_ON_SUCCESS='1'; $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; node ./scripts/risk-threshold-alert.mjs --dry-run --output "reports/risk-threshold/$timestamp.md"; Remove-Item Env:\FC_ALERT_ON_SUCCESS -ErrorAction SilentlyContinue
+
 # 查看本地 SQLite 中已经登记的 model release 列表。
 # 适合检查当前有哪些候选版、激活版和历史版。
 release-list:

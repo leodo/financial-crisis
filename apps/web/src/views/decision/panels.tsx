@@ -322,6 +322,22 @@ export function DecisionActionPlanPanel({
           <BulletList items={assessment.position_guidance.forbidden_actions.map(humanizeNarrativeCopy)} compact />
         </RuleBox>
       </div>
+      <div className="surface-grid">
+        <RuleBox label="不适用场景">
+          <span>{decisionContent.panels.actionPlanInapplicable}</span>
+          <BulletList
+            items={assessment.position_guidance.inapplicable_scenarios.map(humanizeNarrativeCopy)}
+            compact
+          />
+        </RuleBox>
+        <RuleBox label="人工确认清单">
+          <span>{decisionContent.panels.actionPlanManualConfirmation}</span>
+          <BulletList
+            items={assessment.position_guidance.manual_confirmation_items.map(humanizeNarrativeCopy)}
+            compact
+          />
+        </RuleBox>
+      </div>
       <RuleBox label="什么情况下再恢复仓位">
         <BulletList items={assessment.position_guidance.reentry_conditions.map(humanizeNarrativeCopy)} compact />
       </RuleBox>

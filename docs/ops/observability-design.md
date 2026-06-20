@@ -151,6 +151,15 @@ scheduled job
 - worker 无心跳。
 - 磁盘空间不足。
 
+### 6.5 MVP 当前实现
+
+- `deploy/operational-check.sh` 在部署、回滚、定时刷新后运行后置验收。
+- `scripts/deploy-check.mjs --fail-on-issues` 覆盖 API health、assessment、source health、数据模式、关键日期和生产源降级。
+- `scripts/daily-health-report.mjs --fail-on-issues` 覆盖每日主判断、关键数据日期、生产源降级、runtime stale warning 和预算参考。
+- `scripts/operational-alert.mjs` 在后置验收失败时发送 webhook/IM 告警；默认未配置 webhook 时只记录日志和 Markdown 报告。
+- `GET /api/system/risk-thresholds` 暴露当前业务提醒阈值；页面顶部“运营状态”和 `scripts/risk-threshold-alert.mjs` 使用该接口作为默认策略，`FC_RISK_ALERT_*` 仅作为部署/临时覆盖。
+- 支持 `FC_ALERT_WEBHOOK_URL`、`FC_ALERT_SLACK_WEBHOOK_URL`、`FC_ALERT_FEISHU_WEBHOOK_URL`、`FC_ALERT_DINGTALK_WEBHOOK_URL`。默认只提醒，不自动交易。
+
 ## 7. 运维面板
 
 Grafana 内部面板建议：
@@ -187,4 +196,3 @@ MVP 阶段建议：
 - 方法版本。
 
 这样用户可以判断预警是否由真实风险驱动，还是由数据异常驱动。
-

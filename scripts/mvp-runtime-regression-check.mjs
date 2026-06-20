@@ -568,6 +568,10 @@ function clamp01(value) {
 }
 
 function modelReliabilityComponent(snapshot) {
+  const apiValue = numberOrNull(snapshot.decision_reliability?.model_component);
+  if (apiValue !== null) {
+    return apiValue;
+  }
   if (snapshot.runtime?.demo_mode) {
     return 0.1;
   }
@@ -601,6 +605,10 @@ function modelReliabilityLabel(snapshot) {
 }
 
 function freshnessReliabilityComponent(snapshot) {
+  const apiValue = numberOrNull(snapshot.decision_reliability?.freshness_component);
+  if (apiValue !== null) {
+    return apiValue;
+  }
   if (snapshot.runtime?.stale_warning) {
     return 0.35;
   }
@@ -646,6 +654,10 @@ function historicalAnalogComponent(snapshot) {
 }
 
 function decisionReliabilityScore(snapshot) {
+  const apiScore = numberOrNull(snapshot.decision_reliability?.score);
+  if (apiScore !== null) {
+    return apiScore;
+  }
   const rawScore =
     clamp01(numberOrNull(snapshot.data_trust?.coverage_score) ?? 0) * 0.35 +
     modelReliabilityComponent(snapshot) * 0.25 +
@@ -669,6 +681,9 @@ function decisionReliabilityScore(snapshot) {
 }
 
 function decisionReliabilityLabel(snapshot) {
+  if (typeof snapshot.decision_reliability?.label === "string") {
+    return snapshot.decision_reliability.label;
+  }
   const score = decisionReliabilityScore(snapshot);
   if (snapshot.runtime?.demo_mode) {
     return `演示 ${formatPercent(score)}`;
@@ -717,6 +732,26 @@ function validateReliabilityNumberAuditContract(snapshot) {
 
   assert(numberOrNull(snapshot.data_trust?.coverage_score) !== null, "data trust coverage score is missing");
   assert(numberOrNull(snapshot.conviction_score) !== null, "conviction score is missing");
+  assert(
+    numberOrNull(snapshot.decision_reliability?.score) !== null,
+    "decision_reliability.score is missing"
+  );
+  assert(
+    typeof snapshot.decision_reliability?.label === "string",
+    "decision_reliability.label is missing"
+  );
+  for (const key of [
+    "data_coverage_component",
+    "model_component",
+    "event_component",
+    "historical_analog_component",
+    "freshness_component"
+  ]) {
+    assert(
+      numberOrNull(snapshot.decision_reliability?.[key]) !== null,
+      `decision_reliability.${key} is missing`
+    );
+  }
 
   return [
     `结论可信度 · ${decisionReliabilityLabel(snapshot)}`,
@@ -843,6 +878,22 @@ function validatePositionGuidance(snapshot) {
     Array.isArray(guidance.forbidden_actions) && guidance.forbidden_actions.length > 0,
     "position guidance forbidden_actions are missing"
   );
+  assert(
+    Array.isArray(guidance.inapplicable_scenarios) && guidance.inapplicable_scenarios.length > 0,
+    "position guidance inapplicable_scenarios are missing"
+  );
+  assert(
+    Array.isArray(guidance.manual_confirmation_items) && guidance.manual_confirmation_items.length > 0,
+    "position guidance manual_confirmation_items are missing"
+  );
+  assert(
+    guidance.inapplicable_scenarios.some((row) => String(row).includes("不适合") || String(row).includes("不应")),
+    "position guidance should explain when the action budget is not applicable"
+  );
+  assert(
+    guidance.manual_confirmation_items.some((row) => String(row).includes("不是自动交易")),
+    "position guidance manual confirmation items should explicitly reject automatic trading"
+  );
   assert(governance.system_budget_only === true, "position guidance should be marked as system budget only");
   assert(governance.auto_execution_allowed === false, "MVP must not allow automatic execution");
   assert(governance.manual_confirmation_required === true, "MVP should require manual confirmation");
@@ -894,6 +945,96 @@ async function validateUserFacingUiCopy() {
     decisionView.includes("mvpProbabilityInputIsAuditOnly"),
     "probability trajectory should use the shared MVP audit-only predicate"
   );
+  assert(
+    decisionView.includes("默认收起的技术细节"),
+    "probability reference-only view should direct model-chain troubleshooting into collapsed technical details"
+  );
+  const appShell = await readFile(new URL("../apps/web/src/App.tsx", import.meta.url), "utf8");
+  const webApi = await readFile(new URL("../apps/web/src/api.ts", import.meta.url), "utf8");
+  const webDataHook = await readFile(new URL("../apps/web/src/useConsoleData.ts", import.meta.url), "utf8");
+  const baseStyles = await readFile(new URL("../apps/web/src/styles/base.css", import.meta.url), "utf8");
+  const surfaceStyles = await readFile(new URL("../apps/web/src/styles/surfaces.css", import.meta.url), "utf8");
+  const responsiveStyles = await readFile(
+    new URL("../apps/web/src/styles/responsive.css", import.meta.url),
+    "utf8"
+  );
+  const decisionSummaryStyles = await readFile(
+    new URL("../apps/web/src/styles/decision-summary.css", import.meta.url),
+    "utf8"
+  );
+  assert(
+    appShell.includes("OperationalStatusStrip") &&
+      appShell.includes("顶部运营状态总览") &&
+      appShell.includes("数据新鲜度") &&
+      appShell.includes("生产源健康") &&
+      appShell.includes("风险阈值") &&
+      appShell.includes("DEFAULT_RISK_ALERT_THRESHOLDS") &&
+      appShell.includes("riskThresholds") &&
+      appShell.includes('"API 运行配置"') &&
+      appShell.includes('"前端默认值"') &&
+      appShell.includes("来源 ${thresholdSourceLabel}") &&
+      webApi.includes("/api/system/risk-thresholds") &&
+      webDataHook.includes("riskAlertThresholds") &&
+      baseStyles.includes(".operational-status-strip") &&
+      baseStyles.includes(".operational-status-card-risk"),
+    "top-level app shell should expose API-backed operational status, data freshness, production source health, and risk threshold state before detailed panels"
+  );
+  const decisionViewModel = await readFile(
+    new URL("../apps/web/src/views/decision/useDecisionViewModel.ts", import.meta.url),
+    "utf8"
+  );
+  assert(
+    decisionView.includes("趋势变化行动解读") &&
+      decisionView.includes("趋势判断") &&
+      decisionView.includes("动作含义") &&
+      decisionView.includes("接下来盯什么") &&
+      decisionViewModel.includes("buildChangeWatchList") &&
+      decisionViewModel.includes("正式概率仍为参考态") &&
+      decisionViewModel.includes("不是逐指标因果归因"),
+    "recent change panel should explain trend, action meaning, watch items, and attribution limits instead of showing only raw deltas"
+  );
+  assert(
+    decisionView.includes("inline-number-value") &&
+      decisionView.includes("HighlightedChangeValue") &&
+      decisionView.includes("operator-change-value") &&
+      decisionViewModel.includes("changeMetricValueClassName") &&
+      decisionViewModel.includes("metric-value-up") &&
+      decisionViewModel.includes("metric-value-down") &&
+      surfaceStyles.includes(".number-audit-value") &&
+      surfaceStyles.includes("font-variant-numeric: tabular-nums") &&
+      surfaceStyles.includes(".inline-number-value") &&
+      surfaceStyles.includes(".metric strong.metric-value-up") &&
+      surfaceStyles.includes(".metric strong.metric-value-down"),
+    "decision page should visually emphasize important numbers in audit cards, operator brief, and recent-change interpretation"
+  );
+  const operatorBriefIndex = decisionView.indexOf("<DecisionOperatorBrief");
+  const heroSummaryIndex = decisionView.indexOf("<DecisionHeroSummary");
+  assert(
+    operatorBriefIndex >= 0 &&
+      heroSummaryIndex >= 0 &&
+      operatorBriefIndex < heroSummaryIndex &&
+      responsiveStyles.includes("@media (max-width: 640px)") &&
+      responsiveStyles.includes("overflow-x: auto") &&
+      responsiveStyles.includes(".operational-status-grid,") &&
+      responsiveStyles.includes(".operator-brief-grid,") &&
+      responsiveStyles.includes(".hero-metrics") &&
+      decisionSummaryStyles.includes("grid-template-columns: repeat(2, minmax(0, 1fr))") &&
+      decisionSummaryStyles.includes(".decision-answer:nth-child(odd)"),
+    "mobile decision page should put the operator brief before the long hero explanation and keep key summaries dense on narrow screens"
+  );
+
+  const decisionComponents = await readFile(
+    new URL("../apps/web/src/views/decision/components.tsx", import.meta.url),
+    "utf8"
+  );
+  assert(
+    decisionComponents.includes('<details className="probability-diagnostics">') &&
+      decisionComponents.includes("技术细节") &&
+      decisionComponents.includes("默认收起") &&
+      decisionComponents.includes("不参与当前 MVP 主结论") &&
+      !decisionComponents.includes('<div className="probability-diagnostics">'),
+    "probability diagnostics should be collapsed by default and clearly separated from the MVP decision conclusion"
+  );
 
   const mvpRiskState = await readFile(
     new URL("../apps/web/src/views/decision/mvpRiskState.ts", import.meta.url),
@@ -910,7 +1051,7 @@ async function validateUserFacingUiCopy() {
   );
   assert(
     decisionReliability.includes("参考上限") && decisionReliability.includes("Math.min(score, 0.45)"),
-    "decision reliability should be visibly capped when formal probabilities are reference-only"
+    "decision reliability fallback should still be visibly capped when formal probabilities are reference-only"
   );
 
   const decisionSections = await readFile(
@@ -972,8 +1113,12 @@ async function validateUserFacingUiCopy() {
   assert(
     actionPlanPanel.includes("当前预算参考") &&
       actionPlanPanel.includes("风险资产上限（参考）") &&
-      actionPlanPanel.includes("系统预算参考"),
-    "action plan panel should visibly mark current budgets and bars as reference-only"
+      actionPlanPanel.includes("系统预算参考") &&
+      actionPlanPanel.includes("不适用场景") &&
+      actionPlanPanel.includes("人工确认清单") &&
+      actionPlanPanel.includes("manual_confirmation_items") &&
+      actionPlanPanel.includes("inapplicable_scenarios"),
+    "action plan panel should visibly mark budgets as reference-only and show applicability/manual confirmation checks"
   );
   assert(
     actionPlanPanel.includes("相似度（0-100）") &&
@@ -1114,12 +1259,13 @@ async function validateUserFacingUiCopy() {
   );
   assert(
     numberAudit.includes("结论可信度") &&
-      numberAudit.includes("frontend decisionReliability / API data_trust + method + event_assessment") &&
+      numberAudit.includes("API decision_reliability / data_trust + method + event_assessment") &&
+      numberAudit.includes("frontend fallback decisionReliability / API data_trust + method + event_assessment") &&
       numberAudit.includes("可靠性，不是概率") &&
       numberAudit.includes("动作升级证据") &&
       numberAudit.includes("API action_evidence / scoring engine") &&
       numberAudit.includes("actionEvidenceHint"),
-    "number audit checklist should explain reliability and action evidence as non-probability support scores"
+    "number audit checklist should explain API reliability and action evidence as non-probability support scores"
   );
 
   const dataSourceReliability = await readFile(
@@ -1226,6 +1372,16 @@ async function validateUserFacingUiCopy() {
       methodContent.includes("不是当前 5d / 20d / 60d 概率，也不是风险还差多少"),
     "method page should separate service status, PIT evidence counts, and threshold percentages from current conclusion confidence"
   );
+  assert(
+    methodView.includes("业务提醒阈值") &&
+      methodView.includes("只用于页面顶部“运营状态”和刷新后的提醒报告排序") &&
+      methodViewModel.includes("riskAlertMetrics") &&
+      methodViewModel.includes("riskAlertPolicyRows") &&
+      methodViewModel.includes("riskAlertPostureLabel") &&
+      methodViewModel.includes("只提醒，不自动交易") &&
+      methodViewModel.includes("API 运行环境"),
+    "method page should expose API-backed business alert thresholds and keep them reminder-only"
+  );
 
   const auditViewModel = await readFile(
     new URL("../apps/web/src/views/audit/useAuditViewModel.ts", import.meta.url),
@@ -1321,6 +1477,139 @@ async function validateUserFacingUiCopy() {
     ),
     "refresh-latest-full should remain the broader full refresh path rather than the MVP key-only path"
   );
+  assert(
+    justfile.includes("daily-health-report:") &&
+      justfile.includes("node ./scripts/daily-health-report.mjs"),
+    "justfile should expose a daily health report command for post-refresh operator checks"
+  );
+  const dailyHealthReport = await readFile(
+    new URL("../scripts/daily-health-report.mjs", import.meta.url),
+    "utf8"
+  );
+  assert(
+    dailyHealthReport.includes("/api/assessment/current") &&
+      dailyHealthReport.includes("/api/sources") &&
+      dailyHealthReport.includes("Production source issues") &&
+      dailyHealthReport.includes("--fail-on-issues"),
+    "daily health report should combine assessment/source-health evidence and support failure exit codes"
+  );
+  assert(
+    justfile.includes("deploy-check:") &&
+      justfile.includes("node ./scripts/deploy-check.mjs --fail-on-issues"),
+    "justfile should expose a deploy-check command for operational deployment verification"
+  );
+  const deployCheck = await readFile(
+    new URL("../scripts/deploy-check.mjs", import.meta.url),
+    "utf8"
+  );
+  assert(
+    deployCheck.includes("/health") &&
+      deployCheck.includes("/api/assessment/current") &&
+      deployCheck.includes("/api/sources") &&
+      deployCheck.includes("Production source health"),
+    "deploy check should verify API health, assessment, source health, and production source degradation"
+  );
+
+  const operationalCheck = await readFile(
+    new URL("../deploy/operational-check.sh", import.meta.url),
+    "utf8"
+  );
+  const apiRouter = await readFile(new URL("../apps/api/src/lib.rs", import.meta.url), "utf8");
+  const apiConfig = await readFile(new URL("../apps/api/src/config.rs", import.meta.url), "utf8");
+  const operationalAlert = await readFile(
+    new URL("../scripts/operational-alert.mjs", import.meta.url),
+    "utf8"
+  );
+  const riskThresholdAlert = await readFile(
+    new URL("../scripts/risk-threshold-alert.mjs", import.meta.url),
+    "utf8"
+  );
+  const deployEnv = await readFile(new URL("../deploy/fc-api.env", import.meta.url), "utf8");
+  assert(
+    operationalCheck.includes("scripts/deploy-check.mjs") &&
+      operationalCheck.includes("scripts/daily-health-report.mjs") &&
+      operationalCheck.includes("scripts/risk-threshold-alert.mjs") &&
+      operationalCheck.includes("scripts/operational-alert.mjs") &&
+      operationalCheck.includes("send_operational_alert") &&
+      operationalCheck.includes("--fail-on-issues") &&
+      operationalCheck.includes("wait_for_api"),
+    "shared operational check should wait for API readiness, run deploy/daily health checks, and send failure alerts"
+  );
+  assert(
+    operationalAlert.includes("FC_ALERT_WEBHOOK_URL") &&
+      operationalAlert.includes("FC_ALERT_SLACK_WEBHOOK_URL") &&
+      operationalAlert.includes("FC_ALERT_FEISHU_WEBHOOK_URL") &&
+      operationalAlert.includes("FC_ALERT_DINGTALK_WEBHOOK_URL") &&
+      operationalAlert.includes("FC_ALERT_DRY_RUN") &&
+      operationalAlert.includes("FC_ALERT_WEBHOOK_BEARER_TOKEN"),
+    "operational alert script should support generic webhook and common IM webhook destinations with safe dry-run support"
+  );
+  assert(
+    apiRouter.includes("/api/system/risk-thresholds") &&
+      apiConfig.includes("RiskAlertThresholds") &&
+      apiConfig.includes("FC_RISK_ALERT_OVERALL_SCORE") &&
+      apiConfig.includes("FC_RISK_ALERT_TRIGGER_SCORE"),
+    "API should expose the active risk alert threshold configuration so UI and scripts can share the same runtime policy"
+  );
+  assert(
+    riskThresholdAlert.includes("/api/assessment/current") &&
+      riskThresholdAlert.includes("/api/sources") &&
+      riskThresholdAlert.includes("/api/system/risk-thresholds") &&
+      riskThresholdAlert.includes("FC_RISK_ALERT_OVERALL_SCORE") &&
+      riskThresholdAlert.includes("FC_RISK_ALERT_TRIGGER_SCORE") &&
+      riskThresholdAlert.includes("FC_RISK_ALERT_MIN_POSTURE") &&
+      riskThresholdAlert.includes("Threshold source") &&
+      riskThresholdAlert.includes("This is a reminder only, not an automatic trading instruction."),
+    "risk threshold alert should evaluate assessment/source evidence with API-backed configurable thresholds and non-trading guidance"
+  );
+  assert(
+    deployEnv.includes("FC_ALERT_WEBHOOK_URL") &&
+      deployEnv.includes("FC_ALERT_SLACK_WEBHOOK_URL") &&
+      deployEnv.includes("FC_ALERT_FEISHU_WEBHOOK_URL") &&
+      deployEnv.includes("FC_ALERT_DINGTALK_WEBHOOK_URL") &&
+      deployEnv.includes("FC_ALERT_ON_SUCCESS=0") &&
+      deployEnv.includes("FC_RISK_ALERT_OVERALL_SCORE") &&
+      deployEnv.includes("FC_RISK_ALERT_MIN_POSTURE"),
+    "deployment env example should document optional webhook/IM alert configuration and business risk thresholds"
+  );
+  assert(
+    justfile.includes("operational-alert-dry-run:") &&
+      justfile.includes("node ./scripts/operational-alert.mjs") &&
+      justfile.includes("--dry-run") &&
+      justfile.includes("risk-threshold-alert:") &&
+      justfile.includes("risk-threshold-alert-dry-run:") &&
+      justfile.includes("node ./scripts/risk-threshold-alert.mjs"),
+    "justfile should expose operational and risk-threshold alert dry-run commands so webhook payloads can be previewed safely"
+  );
+  const deployUpdate = await readFile(new URL("../deploy/update.sh", import.meta.url), "utf8");
+  const deployBootstrap = await readFile(
+    new URL("../deploy/bootstrap.sh", import.meta.url),
+    "utf8"
+  );
+  const deployRollback = await readFile(new URL("../deploy/rollback.sh", import.meta.url), "utf8");
+  const refreshService = await readFile(
+    new URL("../deploy/fc-refresh.service", import.meta.url),
+    "utf8"
+  );
+  const scheduledRefreshService = await readFile(
+    new URL("../deploy/scheduled-refresh/financial-crisis-refresh.service", import.meta.url),
+    "utf8"
+  );
+  assert(
+    deployUpdate.includes("operational-check.sh") &&
+      deployUpdate.includes("--mode deploy") &&
+      deployBootstrap.includes("operational-check.sh") &&
+      deployBootstrap.includes("--mode bootstrap") &&
+      deployRollback.includes("operational-check.sh") &&
+      deployRollback.includes("--mode rollback") &&
+      operationalCheck.includes('RUN_RISK_THRESHOLD="${FC_RUN_RISK_THRESHOLD_AFTER_REFRESH:-1}"') &&
+      operationalCheck.includes("risk-threshold-${MODE}") &&
+      refreshService.includes("ExecStartPost=/opt/financial-crisis/deploy/operational-check.sh --mode refresh") &&
+      scheduledRefreshService.includes(
+        "ExecStartPost=/opt/financial-crisis/deploy/operational-check.sh --mode refresh"
+      ),
+    "deploy, bootstrap, rollback, and refresh service should run operational checks automatically instead of leaving validation manual"
+  );
 }
 
 async function validateRenderedUiIfAvailable(
@@ -1365,7 +1654,7 @@ async function validateRenderedUiIfAvailable(
     "不是逐指标因果归因",
     "评估口径日期",
     "浏览器本地时间",
-    "frontend decisionReliability / API data_trust + method + event_assessment",
+    "API decision_reliability / data_trust + method + event_assessment",
     "可靠性，不是概率",
     "API action_evidence / scoring engine",
     "不是模型结论置信概率",

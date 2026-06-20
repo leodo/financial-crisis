@@ -1,4 +1,9 @@
 @media (max-width: 1280px) {
+  .operational-status-grid,
+  .operator-brief-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .runtime-card-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -124,6 +129,9 @@
 
 @media (max-width: 760px) {
   .dashboard-columns,
+  .change-insight-grid,
+  .operational-status-grid,
+  .operator-brief-grid,
   .surface-grid,
   .runtime-card-grid,
   .risk-horizon-summary,
@@ -146,8 +154,33 @@
 }
 
 @media (max-width: 640px) {
+  .sidebar {
+    gap: 8px;
+    padding: 10px 12px 8px;
+  }
+
+  .brand {
+    gap: 8px;
+  }
+
+  .brand strong {
+    font-size: 14px;
+  }
+
+  .brand span {
+    display: none;
+  }
+
+  .nav {
+    display: flex;
+    gap: 6px;
+    margin: 0 -2px;
+    overflow-x: auto;
+    padding: 0 2px 2px;
+  }
+
   .main {
-    padding: 14px;
+    padding: 12px;
   }
 
   .surface,
@@ -155,21 +188,115 @@
   .callout,
   .runtime-surface,
   .notice {
-    padding: 14px;
+    padding: 12px;
+  }
+
+  .topbar {
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .topbar p {
+    display: none;
   }
 
   .nav-item {
-    min-height: 60px;
-    padding: 8px 6px;
+    flex: 0 0 auto;
+    flex-direction: row;
+    gap: 6px;
+    min-height: 38px;
+    padding: 7px 9px;
   }
 
   .nav-item span {
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.25;
+    white-space: nowrap;
+  }
+
+  .nav-item svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .meta-strip {
+    gap: 5px;
   }
 
   .meta-strip span {
-    font-size: 11px;
+    font-size: 10.5px;
+    padding: 4px 7px;
+  }
+
+  .operational-status-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .operational-status-strip {
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 10px;
+  }
+
+  .operational-status-grid,
+  .operator-brief-grid,
+  .hero-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .operational-status-card,
+  .operator-brief-card {
+    gap: 4px;
+    padding: 8px;
+  }
+
+  .operational-status-card strong,
+  .operator-brief-card strong {
+    font-size: 15px;
+  }
+
+  .operational-status-card small,
+  .operator-brief-card small {
+    font-size: 10.5px;
+    line-height: 1.35;
+  }
+
+  .hero-surface {
+    gap: 8px;
+  }
+
+  .hero-surface p {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .hero-value {
+    font-size: 30px;
+  }
+
+  .hero-subtitle {
+    font-size: 15px;
+  }
+
+  .number-audit-card {
+    grid-template-columns: 1fr;
+  }
+
+  .number-audit-meta {
+    justify-self: start;
+    max-width: none;
+  }
+
+  .number-audit-detail {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .number-audit-segment {
+    justify-content: flex-start;
+    border-radius: 8px;
   }
 
   .topbar h1 {

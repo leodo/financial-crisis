@@ -11,6 +11,7 @@ mod market_context;
 mod mvp_state;
 mod posture;
 mod probability;
+mod reliability;
 mod runtime_policy;
 
 use common::{
@@ -33,6 +34,7 @@ use posture::{
 };
 pub(crate) use probability::ProbabilityComputationTrace;
 use probability::{build_probabilities, build_probability_trace};
+use reliability::build_decision_reliability;
 pub use runtime_policy::runtime_threshold_diagnostics;
 pub(crate) use runtime_policy::{
     history_runtime_policy_version, probability_action_thresholds, ProbabilityActionThresholds,
@@ -195,6 +197,7 @@ pub fn build_assessment_snapshot(
         &data_trust,
         &jpy_carry,
         &event_assessment,
+        &mvp_risk_state,
         active_release,
         user_preferences,
         action_thresholds,
@@ -236,6 +239,14 @@ pub fn build_assessment_snapshot(
             .map(|release| release.manifest.point_in_time_mode.clone())
             .unwrap_or_else(|| "best_effort".to_string()),
     };
+    let decision_reliability = build_decision_reliability(
+        &data_trust,
+        &method,
+        &runtime,
+        &event_assessment,
+        &historical_analogs,
+        &mvp_risk_state,
+    );
     let summary = build_summary(
         snapshot,
         &probabilities,
@@ -255,6 +266,7 @@ pub fn build_assessment_snapshot(
             time_to_risk_bucket,
             posture: posture_guidance.posture,
             mvp_risk_state,
+            decision_reliability,
             conviction_score,
             action_evidence,
             scores,

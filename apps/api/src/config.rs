@@ -1,5 +1,7 @@
 use std::{env, net::SocketAddr};
 
+use serde::Serialize;
+
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub bind_addr: SocketAddr,
@@ -34,4 +36,55 @@ impl AppConfig {
             max_history_points,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RiskAlertThresholds {
+    pub overall_score: f64,
+    pub trigger_score: f64,
+    pub min_posture: String,
+    pub max_production_source_issues: usize,
+    pub alert_on_reference_only: bool,
+    pub source: &'static str,
+}
+
+impl RiskAlertThresholds {
+    pub fn from_env() -> Self {
+        Self {
+            overall_score: number_env("FC_RISK_ALERT_OVERALL_SCORE", 55.0),
+            trigger_score: number_env("FC_RISK_ALERT_TRIGGER_SCORE", 60.0),
+            min_posture: env::var("FC_RISK_ALERT_MIN_POSTURE")
+                .unwrap_or_else(|_| "prepare".to_string()),
+            max_production_source_issues: usize_env("FC_RISK_ALERT_MAX_SOURCE_ISSUES", 0),
+            alert_on_reference_only: bool_env("FC_RISK_ALERT_ON_REFERENCE_ONLY", false),
+            source: "api_env",
+        }
+    }
+}
+
+fn number_env(name: &str, fallback: f64) -> f64 {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|value| value.is_finite())
+        .unwrap_or(fallback)
+}
+
+fn usize_env(name: &str, fallback: usize) -> usize {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(fallback)
+}
+
+fn bool_env(name: &str, fallback: bool) -> bool {
+    env::var(name)
+        .ok()
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(fallback)
 }

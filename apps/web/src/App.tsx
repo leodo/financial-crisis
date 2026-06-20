@@ -10,6 +10,7 @@ import {
 import {
   formatDateTimeWithLocal,
   dataModeLabel,
+  formatNumber,
   qualityLabel,
   timeBucketLabel
 } from "./format";
@@ -38,11 +39,12 @@ const VIEW_DATA_KEYS: Record<View, Array<keyof ConsoleReadyData>> = {
   audit: ["assessment", "audit"],
   indicators: ["indicators"],
   sources: ["assessment", "sources"],
-  method: ["assessment", "posture", "method"]
+  method: ["assessment", "posture", "method", "riskThresholds"]
 };
 
 const DATASET_LABELS: Record<keyof ConsoleReadyData, string> = {
   assessment: "当前评估快照",
+  riskThresholds: "业务提醒阈值",
   assessmentHistory: "概率轨迹",
   posture: "执行节奏建议",
   method: "方法与版本说明",
@@ -115,6 +117,142 @@ function productionSourceIssueLabels(sources: ConsoleDataSnapshot["sources"]): s
   );
 }
 
+const DEFAULT_RISK_ALERT_THRESHOLDS = {
+  overall_score: 55,
+  trigger_score: 60,
+  min_posture: "prepare",
+  max_production_source_issues: 0,
+  alert_on_reference_only: false,
+  source: "frontend_fallback"
+};
+
+interface OperationalStatusItem {
+  id: string;
+  label: string;
+  value: string;
+  detail: string;
+  tone: "ok" | "watch" | "risk";
+}
+
+function buildOperationalStatusItems({
+  assessment,
+  sourceIssueLabels,
+  probabilityAuditOnly,
+  riskThresholds
+}: {
+  assessment: ConsoleDataSnapshot["assessment"];
+  sourceIssueLabels: string[];
+  probabilityAuditOnly: boolean;
+  riskThresholds: ConsoleDataSnapshot["riskThresholds"];
+}): OperationalStatusItem[] {
+  if (!assessment) {
+    return [];
+  }
+
+  const thresholds = riskThresholds ?? DEFAULT_RISK_ALERT_THRESHOLDS;
+  const thresholdSourceLabel = riskThresholds ? "API 运行配置" : "前端默认值";
+  const latestKeyDate =
+    assessment.runtime.latest_key_indicator_at ?? assessment.runtime.latest_observation_at ?? "—";
+  const businessLag =
+    assessment.runtime.latest_key_indicator_lag_business_days ??
+    assessment.runtime.latest_observation_lag_business_days ??
+    null;
+  const overallGap = thresholds.overall_score - assessment.scores.overall_score;
+  const triggerGap = thresholds.trigger_score - assessment.scores.trigger_score;
+  const riskThresholdTone =
+    overallGap <= 0 || triggerGap <= 0 ? "risk" : overallGap <= 5 || triggerGap <= 5 ? "watch" : "ok";
+  const sourceHealthTone =
+    sourceIssueLabels.length > thresholds.max_production_source_issues
+      ? "risk"
+      : sourceIssueLabels.length > 0
+        ? "watch"
+        : "ok";
+
+  return [
+    {
+      id: "mvp-state",
+      label: "主结论",
+      value: probabilityAuditOnly
+        ? mvpRiskStateDisplayLabel(currentMvpRiskState(assessment).label)
+        : timeBucketLabel(assessment.time_to_risk_bucket),
+      detail: probabilityAuditOnly
+        ? "正式概率参考态，主看规则层、事件确认和关键数据。"
+        : "正式概率可参与，但仍需人工确认。",
+      tone: probabilityAuditOnly ? "watch" : "ok"
+    },
+    {
+      id: "freshness",
+      label: "数据新鲜度",
+      value: assessment.runtime.stale_warning ? "需复核" : "OK",
+      detail: assessment.runtime.stale_warning
+        ? `${assessment.runtime.stale_warning} 最新关键数据 ${latestKeyDate}。`
+        : `最新关键数据 ${latestKeyDate}，工作日滞后 ${businessLag ?? "—"} 天。`,
+      tone: assessment.runtime.stale_warning ? "risk" : "ok"
+    },
+    {
+      id: "source-health",
+      label: "生产源健康",
+      value:
+        sourceIssueLabels.length > 0
+          ? `${sourceIssueLabels.length} / ${thresholds.max_production_source_issues}`
+          : "OK",
+      detail:
+        sourceIssueLabels.length > 0
+          ? sourceIssueLabels.slice(0, 3).join("、")
+          : `无生产源降级；阈值 ${thresholds.max_production_source_issues}。来源页可查看替代路径。`,
+      tone: sourceHealthTone
+    },
+    {
+      id: "risk-threshold",
+      label: "风险阈值",
+      value: riskThresholdTone === "risk" ? "触发" : riskThresholdTone === "watch" ? "接近" : "未触发",
+      detail: `总风险 ${formatNumber(assessment.scores.overall_score)} / ${formatNumber(
+        thresholds.overall_score
+      )}，触发 ${formatNumber(
+        assessment.scores.trigger_score
+      )} / ${formatNumber(thresholds.trigger_score)}；来源 ${thresholdSourceLabel}。`,
+      tone: riskThresholdTone
+    }
+  ];
+}
+
+function OperationalStatusStrip({ items }: { items: OperationalStatusItem[] }) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  const hasRisk = items.some((item) => item.tone === "risk");
+  const hasWatch = items.some((item) => item.tone === "watch");
+  const summary = hasRisk
+    ? "需要先处理"
+    : hasWatch
+      ? "参考态运行"
+      : "运行正常";
+
+  return (
+    <section
+      className={`operational-status-strip ${
+        hasRisk ? "operational-status-risk" : hasWatch ? "operational-status-watch" : "operational-status-ok"
+      }`}
+      aria-label="顶部运营状态总览"
+    >
+      <div className="operational-status-head">
+        <span>运营状态</span>
+        <strong>{summary}</strong>
+      </div>
+      <div className="operational-status-grid">
+        {items.map((item) => (
+          <article className={`operational-status-card operational-status-card-${item.tone}`} key={item.id}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+            <small>{item.detail}</small>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const [view, setView] = useState<View>(() => initialViewFromLocation());
   const requiredKeys = VIEW_DATA_KEYS[view];
@@ -134,6 +272,7 @@ export default function App() {
   > = {
     assessment: queries.assessment,
     assessmentHistory: queries.assessmentHistory,
+    riskThresholds: queries.riskThresholds,
     posture: queries.posture,
     method: queries.method,
     audit: queries.audit,
@@ -146,6 +285,7 @@ export default function App() {
   };
   const queryErrors: Partial<Record<keyof ConsoleReadyData, unknown>> = {
     assessment: queries.assessment.error,
+    riskThresholds: queries.riskThresholds.error,
     assessmentHistory: queries.assessmentHistory.error,
     posture: queries.posture.error,
     method: queries.method.error,
@@ -231,6 +371,16 @@ export default function App() {
       `关键数据 ${assessment.data.runtime.latest_key_indicator_at ?? assessment.data.runtime.latest_observation_at ?? "—"}`
     ].filter((item): item is string => item !== null);
   }, [assessment.data, riskWindowSummaryLabel, sourceIssueSummary]);
+  const operationalStatusItems = useMemo(
+    () =>
+      buildOperationalStatusItems({
+        assessment: assessment.data,
+        sourceIssueLabels,
+        probabilityAuditOnly,
+        riskThresholds: data.riskThresholds
+      }),
+    [assessment.data, data.riskThresholds, probabilityAuditOnly, sourceIssueLabels]
+  );
   const handleViewChange = (nextView: View) => {
     setView(nextView);
     if (typeof window === "undefined") {
@@ -319,6 +469,8 @@ export default function App() {
             ) : null}
           </div>
         </header>
+
+        {assessment.data ? <OperationalStatusStrip items={operationalStatusItems} /> : null}
 
         {isAssessmentUnavailable && (
           <RecoveryPanel

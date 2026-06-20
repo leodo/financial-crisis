@@ -228,6 +228,96 @@ td span,
   background: #fff8f7;
 }
 
+.operational-status-strip {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+  border: 1px solid #d9e4ea;
+  border-radius: 12px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.operational-status-ok {
+  border-color: #cfe2d8;
+  background: linear-gradient(135deg, #f2faf5, #ffffff);
+}
+
+.operational-status-watch {
+  border-color: #e4d8a8;
+  background: linear-gradient(135deg, #fffaf0, #ffffff);
+}
+
+.operational-status-risk {
+  border-color: #e5b8ad;
+  background: linear-gradient(135deg, #fff5f2, #ffffff);
+}
+
+.operational-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.operational-status-head span {
+  color: #62707b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.operational-status-head strong {
+  color: #1f2d36;
+  font-size: 15px;
+}
+
+.operational-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.operational-status-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid #dfe8ed;
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.operational-status-card span {
+  color: #62707b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.operational-status-card strong {
+  color: #1f2d36;
+  font-size: 17px;
+  line-height: 1.15;
+}
+
+.operational-status-card small {
+  color: #52616b;
+  font-size: 11.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.operational-status-card-ok strong {
+  color: #1e6b47;
+}
+
+.operational-status-card-watch strong {
+  color: #8b6411;
+}
+
+.operational-status-card-risk strong {
+  color: #9a3d2c;
+}
+
 .loading-state-panel {
   background: #ffffff;
   border: 1px solid #dde4e9;

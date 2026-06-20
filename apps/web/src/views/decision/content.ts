@@ -49,6 +49,10 @@ export const decisionContent = {
       "当前已满足防守档、当下风险窗口、高可信度和事件确认，不必默认清仓，但应把去杠杆、现金和核心保护放在收益追逐之前。",
     actionPlanGovernance:
       "下面这组边界回答的是这套建议能做到什么、不能做到什么。它给的是系统层预算和执行顺序，不会替你下单。",
+    actionPlanInapplicable:
+      "这些场景下不能直接套用系统预算，需要先做账户级、工具级或数据级复核。",
+    actionPlanManualConfirmation:
+      "这些确认项用于把系统提醒转成人工操作前的检查清单，避免把页面读数误当成自动指令。",
     actionPlanChecks:
       "执行前先按这份清单做人工复核，确认当前输出没有绕开动作手册、release review 和 Go/No-Go 边界。",
     eventConfirmedTitle: "事件信号记录",

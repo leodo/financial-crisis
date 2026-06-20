@@ -176,6 +176,37 @@ pub struct ActionEvidenceBreakdown {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecisionReliability {
+    pub score: f64,
+    pub raw_score: f64,
+    pub data_coverage_component: f64,
+    pub model_component: f64,
+    pub event_component: f64,
+    pub historical_analog_component: f64,
+    pub freshness_component: f64,
+    pub label: String,
+    pub cap_reason: Option<String>,
+    pub explanation: String,
+}
+
+impl Default for DecisionReliability {
+    fn default() -> Self {
+        Self {
+            score: 0.0,
+            raw_score: 0.0,
+            data_coverage_component: 0.0,
+            model_component: 0.0,
+            event_component: 0.0,
+            historical_analog_component: 0.0,
+            freshness_component: 0.0,
+            label: "未计算".to_string(),
+            cap_reason: None,
+            explanation: "API 未返回结论可靠性，调用方需要降级解释。".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoricalAnalog {
     pub scenario_id: String,
     pub name: String,
@@ -283,6 +314,10 @@ pub struct PositionGuidance {
     pub action_summary: String,
     pub actions: Vec<String>,
     pub forbidden_actions: Vec<String>,
+    #[serde(default)]
+    pub inapplicable_scenarios: Vec<String>,
+    #[serde(default)]
+    pub manual_confirmation_items: Vec<String>,
     pub reentry_conditions: Vec<String>,
     pub guardrails: Vec<String>,
     pub capital_preservation_overlay_enabled: bool,
@@ -437,6 +472,8 @@ pub struct AssessmentSnapshot {
     pub posture: DecisionPosture,
     #[serde(default)]
     pub mvp_risk_state: MvpRiskState,
+    #[serde(default)]
+    pub decision_reliability: DecisionReliability,
     pub conviction_score: f64,
     #[serde(default)]
     pub action_evidence: ActionEvidenceBreakdown,

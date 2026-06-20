@@ -245,11 +245,16 @@ function ProbabilityDiagnosticsBlock({
 }) {
   if (!diagnostic) {
     return (
-      <div className="probability-diagnostics">
-        <span>模型诊断</span>
-        <strong>未返回</strong>
-        <small>当前接口没有提供这个期限的 raw/calibrated/final 诊断。</small>
-      </div>
+      <details className="probability-diagnostics">
+        <summary>
+          <span className="probability-diagnostics-summary-line">
+            <span>技术细节</span>
+            <em>未返回</em>
+          </span>
+          <strong>当前接口没有提供这个期限的 raw/calibrated/final 诊断。</strong>
+          <small>默认收起；这块只用于模型排查，不参与当前主结论。</small>
+        </summary>
+      </details>
     );
   }
 
@@ -258,46 +263,60 @@ function ProbabilityDiagnosticsBlock({
   const baseRows = buildBaseContributionRows(diagnostic);
 
   return (
-    <div className="probability-diagnostics">
-      <div className="probability-chain">
-        <span>模型链路</span>
+    <details className="probability-diagnostics">
+      <summary>
+        <span className="probability-diagnostics-summary-line">
+          <span>技术细节</span>
+          <em>默认收起</em>
+        </span>
         <strong>
-          raw {formatProbabilityPercentExact(diagnostic.raw_probability)} · calibrated{" "}
-          {formatProbabilityPercentExact(diagnostic.calibrated_probability)} · model final{" "}
+          raw {formatProbabilityPercentExact(diagnostic.raw_probability)} · model{" "}
           {formatProbabilityPercentExact(diagnostic.final_probability)} · runtime{" "}
           {formatProbabilityPercentExact(runtimeFinal)}
         </strong>
+        <small>用于解释 active release 为什么偏冷或偏热；不参与当前 MVP 主结论。</small>
+      </summary>
+      <div className="probability-diagnostics-body">
+        <div className="probability-chain">
+          <span>接口链路</span>
+          <strong>
+            raw {formatProbabilityPercentExact(diagnostic.raw_probability)} · calibrated{" "}
+            {formatProbabilityPercentExact(diagnostic.calibrated_probability)} · model final{" "}
+            {formatProbabilityPercentExact(diagnostic.final_probability)} · runtime{" "}
+            {formatProbabilityPercentExact(runtimeFinal)}
+          </strong>
+        </div>
+        {baseRows.length > 0 ? (
+          <div className="probability-base-contributions">
+            <span>Base 头贡献</span>
+            {baseRows.map((row) => (
+              <div className="probability-base-row" key={row.id}>
+                <strong>{row.label}</strong>
+                <small>{row.rawName}</small>
+                <em className={row.className}>{row.contribution}</em>
+                <b>原始值 {row.rawValue}</b>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {gateRows.length > 0 ? (
+          <div className="probability-gates">
+            <span>风险族 gate</span>
+            {gateRows.map((row) => (
+              <div className="probability-gate-row" key={row.familyId}>
+                <strong>{row.label}</strong>
+                <small>
+                  {row.value} / 入场 {row.threshold}
+                </small>
+                <em className={row.className}>{row.status}</em>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <small>该期限没有配置 overlay gate，直接使用正式概率头输出。</small>
+        )}
       </div>
-      {baseRows.length > 0 ? (
-        <div className="probability-base-contributions">
-          <span>Base 头贡献</span>
-          {baseRows.map((row) => (
-            <div className="probability-base-row" key={row.id}>
-              <strong>{row.label}</strong>
-              <small>{row.rawName}</small>
-              <em className={row.className}>{row.contribution}</em>
-              <b>原始值 {row.rawValue}</b>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {gateRows.length > 0 ? (
-        <div className="probability-gates">
-          <span>风险族 gate</span>
-          {gateRows.map((row) => (
-            <div className="probability-gate-row" key={row.familyId}>
-              <strong>{row.label}</strong>
-              <small>
-                {row.value} / 入场 {row.threshold}
-              </small>
-              <em className={row.className}>{row.status}</em>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <small>该期限没有配置 overlay gate，直接使用正式概率头输出。</small>
-      )}
-    </div>
+    </details>
   );
 }
 
@@ -363,8 +382,8 @@ export function ProbabilityTile({
   const distanceDetail =
     thresholdShare === null
       ? null
-      : distanceJudgmentDisabled
-        ? "当前先按参考值解读；下方接口值和模型链路只用于复核 active release 为什么偏冷。"
+        : distanceJudgmentDisabled
+          ? "当前先按参考值解读；折叠技术细节只用于复核 active release 为什么偏冷。"
         : forceAuditOnly
           ? "当前不按阈值占比、差值或放大倍数解释这条概率；动作升级仍以规则层、事件确认和数据新鲜度为主。"
           : `当前读数约为动作线的 ${thresholdShareValue}；这是阈值相对位置，不是剩余天数，也不是自动交易信号。`;

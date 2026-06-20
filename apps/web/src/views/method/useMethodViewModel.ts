@@ -20,7 +20,8 @@ import {
 import type {
   AssessmentMethodResponse,
   AssessmentSnapshot,
-  PostureGuidance
+  PostureGuidance,
+  RiskAlertThresholds
 } from "../../types";
 import type { DetailRowItem, MetricItem, VersionRowItem } from "../shared/panelHelpers";
 import { buildProbabilityOverlayViewModel } from "../shared/probabilityOverlay";
@@ -47,14 +48,32 @@ function methodUserFacingCopy(text: string) {
     .replaceAll("审计", "复核");
 }
 
+function riskAlertPostureLabel(value: string) {
+  switch (value) {
+    case "observe":
+    case "normal":
+      return "观察";
+    case "prepare":
+      return "提前准备";
+    case "hedge":
+      return "保护性对冲";
+    case "defend":
+      return "防守优先";
+    default:
+      return value;
+  }
+}
+
 export function useMethodViewModel({
   assessment,
   posture,
-  method
+  method,
+  riskThresholds
 }: {
   assessment: AssessmentSnapshot;
   posture: PostureGuidance;
   method: AssessmentMethodResponse;
+  riskThresholds: RiskAlertThresholds;
 }) {
   const formatMethodActionProbability = (value: number) =>
     value === 0 && !assessment.method.actionability_enabled
@@ -215,6 +234,54 @@ export function useMethodViewModel({
     [runtimeThresholdLabel("carry bridge"), formatPercent(method.runtime_thresholds.carry_prepare_p60d)]
   ] as Array<[string, string]>;
 
+  const riskAlertMetrics: MetricItem[] = [
+    {
+      label: "总风险提醒线",
+      value: `${riskThresholds.overall_score.toFixed(1)} 分`,
+      hint: `当前总风险 ${assessment.scores.overall_score.toFixed(1)} 分。达到或超过该线只触发提醒，不自动交易。`
+    },
+    {
+      label: "触发压力提醒线",
+      value: `${riskThresholds.trigger_score.toFixed(1)} 分`,
+      hint: `当前触发压力 ${assessment.scores.trigger_score.toFixed(1)} 分。用于提醒近端压力是否需要人工复核。`
+    },
+    {
+      label: "最低动作档位",
+      value: riskAlertPostureLabel(riskThresholds.min_posture),
+      hint: "当 MVP/动作档位达到该等级时生成业务层提醒。"
+    },
+    {
+      label: "生产源异常容忍",
+      value: `${riskThresholds.max_production_source_issues}`,
+      hint: "超过该数量时提醒操作员先检查来源页和刷新报告。"
+    }
+  ];
+  const riskAlertPolicyRows: DetailRowItem[] = [
+    {
+      id: "risk-alert-source",
+      title: "阈值来源",
+      detail:
+        riskThresholds.source === "api_env"
+          ? "API 运行环境"
+          : riskThresholds.source,
+      note: "页面顶部运营状态、风险阈值脚本和刷新后报告应优先使用同一套 API 运行配置。"
+    },
+    {
+      id: "risk-alert-reference-only",
+      title: "reference_only 提醒",
+      detail: riskThresholds.alert_on_reference_only ? "开启" : "关闭",
+      note: riskThresholds.alert_on_reference_only
+        ? "正式概率处于参考态也会触发业务提醒。"
+        : "当前 reference_only 只作为状态提示，不单独触发业务阈值提醒。"
+    },
+    {
+      id: "risk-alert-governance",
+      title: "执行边界",
+      detail: "只提醒，不自动交易",
+      note: "任何仓位动作仍需检查数据新鲜度、源健康、流动性、税务/账户约束和人工确认清单。"
+    }
+  ];
+
   const triggerClauses = posture.trigger_codes.map((code) => describePostureClause(code));
   const blockerClauses = posture.blocker_codes.map((code) => describePostureClause(code));
   const { overlayHeadlineMetrics, overlayHorizonRows, overlayAuditRows } =
@@ -318,6 +385,8 @@ export function useMethodViewModel({
     versionRows,
     priorActionRows,
     runtimeMetrics,
+    riskAlertMetrics,
+    riskAlertPolicyRows,
     triggerClauses,
     blockerClauses,
     overlayHeadlineMetrics,

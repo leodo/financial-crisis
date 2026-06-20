@@ -276,12 +276,14 @@ confidence_gate
 
 ## 14. API 与 UI 补充需求
 
-`/api/assessment` 在现有 `position_guidance` 之外，后续应增加：
+`/api/assessment` 当前 `position_guidance` 已包含：
 
 ```text
 action_playbook_version
 execution_urgency
 forbidden_actions
+inapplicable_scenarios
+manual_confirmation_items
 reentry_conditions
 confidence_gate
 capital_preservation_overlay_enabled
@@ -297,6 +299,8 @@ governance.required_operator_checks[]
 
 - 当前 posture 对应的动作区间，而不是单个绝对数字
 - 系统为何没有建议“清仓”
+- 哪些场景不适合直接套用系统预算
+- 执行前必须人工确认哪些事项
 - 从当前 posture 升级或降级需要什么条件
 - 再入场不是一次完成，而是分批恢复
 - 这套输出只是系统预算建议，不是自动交易指令

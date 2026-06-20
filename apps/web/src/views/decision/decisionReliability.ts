@@ -51,7 +51,7 @@ function freshnessReliabilityComponent(assessment: AssessmentSnapshot): number {
 }
 
 export function decisionModelReliabilityLabel(assessment: AssessmentSnapshot): string {
-  const score = modelReliabilityComponent(assessment);
+  const score = assessment.decision_reliability?.model_component ?? modelReliabilityComponent(assessment);
   const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   if (assessment.runtime.demo_mode) {
     return `演示 ${formatPercent(score)}`;
@@ -72,17 +72,18 @@ export function decisionModelReliabilityHint(assessment: AssessmentSnapshot): st
   const probabilityMode = describeProbabilityMode(assessment.method);
   const releaseHealth = describeReleaseHealth(assessment.method.release_status);
   const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
+  const score = assessment.decision_reliability?.model_component ?? modelReliabilityComponent(assessment);
   return [
     `模型层当前是 ${probabilityMode.label}，服务状态 ${releaseHealth}。`,
     auditOnly
       ? "正式概率当前作为参考输入，不能把低概率解释成风险已经远离。"
       : "正式概率可以作为主输入之一，但仍需要事件确认、数据新鲜度和历史类比共同支持。",
-    `模型可信度组件当前为 ${formatPercent(modelReliabilityComponent(assessment))}，它只说明模型读数可用程度，不是危机概率。`
+    `模型可信度组件当前为 ${formatPercent(score)}，它只说明模型读数可用程度，不是危机概率。`
   ].join(" ");
 }
 
 export function decisionFreshnessReliabilityLabel(assessment: AssessmentSnapshot): string {
-  const score = freshnessReliabilityComponent(assessment);
+  const score = assessment.decision_reliability?.freshness_component ?? freshnessReliabilityComponent(assessment);
   if (assessment.runtime.stale_warning) {
     return `滞后 ${formatPercent(score)}`;
   }
@@ -108,12 +109,13 @@ export function decisionFreshnessReliabilityHint(assessment: AssessmentSnapshot)
     businessLag === null || businessLag === undefined
       ? "当前没有可用工作日滞后信息。"
       : `关键数据工作日滞后约 ${businessLag} 天。`;
+  const score = assessment.decision_reliability?.freshness_component ?? freshnessReliabilityComponent(assessment);
   return [
     `最新关键数据日期 ${latestDataDate}，${lagCopy}`,
     assessment.runtime.stale_warning
       ? `滞后告警：${assessment.runtime.stale_warning}`
       : "关键数据新鲜度未触发滞后告警。",
-    `数据新鲜度组件当前为 ${formatPercent(freshnessReliabilityComponent(assessment))}，它和模型可信度分开计算。`
+    `数据新鲜度组件当前为 ${formatPercent(score)}，它和模型可信度分开计算。`
   ].join(" ");
 }
 
@@ -141,6 +143,9 @@ function rawReliabilityScore(assessment: AssessmentSnapshot): number {
 }
 
 export function decisionReliabilityScore(assessment: AssessmentSnapshot): number {
+  if (assessment.decision_reliability) {
+    return assessment.decision_reliability.score;
+  }
   const auditOnly = mvpProbabilityInputIsAuditOnly(assessment);
   const score = rawReliabilityScore(assessment);
   if (assessment.runtime.demo_mode) {
@@ -159,6 +164,9 @@ export function decisionReliabilityScore(assessment: AssessmentSnapshot): number
 }
 
 export function decisionReliabilityLabel(assessment: AssessmentSnapshot): string {
+  if (assessment.decision_reliability) {
+    return assessment.decision_reliability.label;
+  }
   const score = decisionReliabilityScore(assessment);
   if (assessment.runtime.demo_mode) {
     return `演示 ${formatPercent(score)}`;
@@ -182,6 +190,22 @@ export function decisionReliabilityLabel(assessment: AssessmentSnapshot): string
 }
 
 export function decisionReliabilityHint(assessment: AssessmentSnapshot): string {
+  if (assessment.decision_reliability) {
+    return [
+      assessment.decision_reliability.explanation,
+      `当前组件：关键指标覆盖 ${formatPercent(
+        assessment.decision_reliability.data_coverage_component
+      )}，模型状态 ${formatPercent(
+        assessment.decision_reliability.model_component
+      )}，事件确认 ${formatPercent(
+        assessment.decision_reliability.event_component
+      )}，最高历史相似度 ${formatPercent(
+        assessment.decision_reliability.historical_analog_component
+      )}，关键数据新鲜度 ${formatPercent(
+        assessment.decision_reliability.freshness_component
+      )}。`
+    ].join(" ");
+  }
   const probabilityMode = describeProbabilityMode(assessment.method);
   const releaseHealth = describeReleaseHealth(assessment.method.release_status);
   const mvpState = currentMvpRiskState(assessment);

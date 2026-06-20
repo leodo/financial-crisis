@@ -59,6 +59,23 @@ entity_id
 
 立即重新加载当前数据源，适合刚完成 SQLite backfill 后刷新 API 内存态。
 
+### 3.8 `GET /api/system/risk-thresholds`
+
+返回当前运行环境的业务提醒阈值。页面顶部“运营状态”和 `scripts/risk-threshold-alert.mjs` 应优先读取该接口，再允许 `FC_RISK_ALERT_*` 做本地覆盖，避免 UI 与实际告警策略分叉。
+
+```json
+{
+  "overall_score": 55.0,
+  "trigger_score": 60.0,
+  "min_posture": "prepare",
+  "max_production_source_issues": 0,
+  "alert_on_reference_only": false,
+  "source": "api_env"
+}
+```
+
+这些阈值只用于提醒和人工复核排序，不是自动交易授权。
+
 ## 4. `current` 响应结构
 
 ```json
@@ -78,6 +95,18 @@ entity_id
   },
   "time_to_risk_bucket": "now",
   "posture": "defend",
+  "decision_reliability": {
+    "score": 0.45,
+    "raw_score": 0.71,
+    "data_coverage_component": 1.0,
+    "model_component": 0.35,
+    "event_component": 0.664,
+    "historical_analog_component": 0.73,
+    "freshness_component": 1.0,
+    "label": "参考上限 45%",
+    "cap_reason": "reference_only_cap_45",
+    "explanation": "结论可靠性不是危机发生概率，也不是动作升级证据。它按关键指标覆盖 35%、模型状态 25%、事件确认 20%、历史相似度 10%、关键数据新鲜度 10% 汇总。正式概率当前只作参考输入，可靠性分数封顶 45%。"
+  },
   "conviction_score": 0.87,
   "action_evidence": {
     "score": 0.87,
@@ -139,6 +168,8 @@ entity_id
     "action_summary": "进入资本保全区间，优先流动性、现金和保护覆盖。",
     "actions": [],
     "forbidden_actions": [],
+    "inapplicable_scenarios": [],
+    "manual_confirmation_items": [],
     "reentry_conditions": [],
     "guardrails": [],
     "capital_preservation_overlay_enabled": true,
@@ -255,7 +286,10 @@ entity_id
 
 - `conviction_score` 仍保留给旧调用方，但它是 `action_evidence.score` 的兼容别名。
 - `action_evidence.score` 表示“动作升级证据”，用于判断是否足以从观察推进到准备、对冲或防守。
-- 它不是“结论把握度”，也不是危机发生概率。结论可靠性应结合 `data_trust`、`method.probability_mode`、`method.release_status`、`runtime.latest_key_indicator_at` 和 `runtime.stale_warning` 解释。
+- 它不是“结论把握度”，也不是危机发生概率。结论可靠性统一由 `decision_reliability` 输出，前端不应长期独占这套解释口径。
+- `decision_reliability.score` 是封顶后的展示/排序分数，`raw_score` 是封顶前合成分数；组件权重为关键指标覆盖 35%、模型状态 25%、事件确认 20%、历史相似度 10%、关键数据新鲜度 10%。
+- `decision_reliability.cap_reason` 为空表示未封顶；常见封顶包括 `demo_mode_cap_40`、`release_degraded_cap_50`、`reference_only_cap_45`、`runtime_stale_cap_65`。
+- `decision_reliability` 不是危机概率，也不是动作升级证据；它回答的是“当前这条结论是否适合被认真解读”，动作升级仍看 `action_evidence`、`position_guidance` 和人工确认清单。
 - 当数据覆盖高、风险广度低、整体/结构/触发压力低、结构/触发未共振时，该值应保持低位，含义是“数据可用但还不足以升级仓位动作”。
 - 数据覆盖只提供小额可信底座；风险广度、风险压力和结构/触发共振才会显著推高动作升级证据。
 
@@ -442,6 +476,8 @@ option_overlay_pct
 action_summary
 actions[]
 forbidden_actions[]
+inapplicable_scenarios[]
+manual_confirmation_items[]
 reentry_conditions[]
 guardrails[]
 capital_preservation_overlay_enabled
