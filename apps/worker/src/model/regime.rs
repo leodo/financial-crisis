@@ -103,14 +103,14 @@ pub(crate) fn forward_crisis_regime_pairwise_targets(
             (
                 ProbabilityTrainingRegime::PreWarningBuffer,
                 ProbabilityTrainingRegime::PostCrisisCooldown,
-                if uses_interaction_tail { 1.15 } else { 0.90 },
-                if uses_interaction_tail { 1.60 } else { 1.30 },
+                if uses_interaction_tail { 1.45 } else { 1.10 },
+                if uses_interaction_tail { 2.10 } else { 1.60 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
                 ProbabilityTrainingRegime::PostCrisisCooldown,
-                if uses_interaction_tail { 1.20 } else { 0.95 },
-                if uses_interaction_tail { 1.30 } else { 1.00 },
+                if uses_interaction_tail { 1.50 } else { 1.15 },
+                if uses_interaction_tail { 1.80 } else { 1.35 },
             ),
         ],
         _ => Vec::new(),
