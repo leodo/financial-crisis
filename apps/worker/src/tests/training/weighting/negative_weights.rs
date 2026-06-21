@@ -100,6 +100,14 @@ fn forward_crisis_negative_weights_and_calibration_scope_follow_regime() {
         ),
         1.45
     );
+    assert_eq!(
+        negative_sample_weight(
+            &cooldown_negative,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis,
+        ),
+        2.20
+    );
     let mut protected_negative = normal_negative.clone();
     protected_negative.primary_scenario_id = Some("scenario_protected".to_string());
     protected_negative.scenario_family = Some("mixed_systemic_stress".to_string());
@@ -136,7 +144,7 @@ fn forward_crisis_negative_weights_and_calibration_scope_follow_regime() {
             60,
             ProbabilityTargetLabelMode::ForwardCrisis,
         ),
-        1.70
+        2.15
     );
     assert_eq!(
         negative_sample_weight(

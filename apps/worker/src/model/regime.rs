@@ -85,14 +85,14 @@ pub(crate) fn forward_crisis_regime_pairwise_targets(
             (
                 ProbabilityTrainingRegime::PreWarningBuffer,
                 ProbabilityTrainingRegime::Normal,
-                if uses_interaction_tail { 1.25 } else { 1.05 },
-                if uses_interaction_tail { 1.55 } else { 1.30 },
+                if uses_interaction_tail { 1.35 } else { 1.10 },
+                if uses_interaction_tail { 1.70 } else { 1.35 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
                 ProbabilityTrainingRegime::Normal,
-                if uses_interaction_tail { 0.85 } else { 0.65 },
-                if uses_interaction_tail { 1.20 } else { 0.95 },
+                if uses_interaction_tail { 0.95 } else { 0.70 },
+                if uses_interaction_tail { 1.35 } else { 1.00 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
@@ -103,14 +103,14 @@ pub(crate) fn forward_crisis_regime_pairwise_targets(
             (
                 ProbabilityTrainingRegime::PreWarningBuffer,
                 ProbabilityTrainingRegime::PostCrisisCooldown,
-                if uses_interaction_tail { 1.45 } else { 1.10 },
-                if uses_interaction_tail { 2.10 } else { 1.60 },
+                if uses_interaction_tail { 1.80 } else { 1.35 },
+                if uses_interaction_tail { 2.75 } else { 1.95 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
                 ProbabilityTrainingRegime::PostCrisisCooldown,
-                if uses_interaction_tail { 1.50 } else { 1.15 },
-                if uses_interaction_tail { 1.80 } else { 1.35 },
+                if uses_interaction_tail { 1.90 } else { 1.40 },
+                if uses_interaction_tail { 2.50 } else { 1.80 },
             ),
         ],
         _ => Vec::new(),
@@ -165,9 +165,9 @@ fn regime_pairwise_strength(horizon_days: u32, uses_interaction_tail: bool) -> f
     match (horizon_days, uses_interaction_tail) {
         (5, true) => 0.70,
         (20, true) => 1.00,
-        (60, true) => 1.35,
+        (60, true) => 1.75,
         (20, false) => 0.80,
-        (60, false) => 1.15,
+        (60, false) => 1.35,
         _ => 0.0,
     }
 }
