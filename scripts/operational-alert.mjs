@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 
 const args = process.argv.slice(2);
 const options = parseArgs(args);
@@ -130,6 +130,29 @@ function bodyFor(destination, payload) {
   }
 }
 
+function alertLogPath(payload) {
+  if (process.env.FC_ALERT_FILE_SINK === "0") {
+    return null;
+  }
+  if (process.env.FC_ALERT_LOG_PATH) {
+    return resolve(process.env.FC_ALERT_LOG_PATH);
+  }
+  if (payload.reports.length > 0) {
+    return resolve(dirname(payload.reports[0].path), "operational-alerts.jsonl");
+  }
+  return resolve(process.env.FC_DEPLOY_ROOT ?? "/opt/financial-crisis", "logs", "operational-alerts.jsonl");
+}
+
+async function recordLocalAlert(payload) {
+  const path = alertLogPath(payload);
+  if (!path) {
+    return null;
+  }
+  await mkdir(dirname(path), { recursive: true });
+  await appendFile(path, `${JSON.stringify(payload)}\n`, "utf8");
+  return path;
+}
+
 async function postJson(destination, payload) {
   const timeoutMs = Number.parseInt(process.env.FC_ALERT_TIMEOUT_MS ?? "10000", 10);
   const controller = new AbortController();
@@ -183,8 +206,13 @@ try {
     process.exit(0);
   }
 
+  const localAlertPath = await recordLocalAlert(payload);
+  if (localAlertPath) {
+    console.log(`Operational alert recorded at ${localAlertPath}.`);
+  }
+
   if (destinations.length === 0) {
-    console.log("Operational alert skipped: no alert destination configured.");
+    console.log("Operational alert webhook skipped: no external destination configured.");
     process.exit(0);
   }
 

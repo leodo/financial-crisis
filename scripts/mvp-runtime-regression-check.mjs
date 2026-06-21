@@ -1558,8 +1558,12 @@ async function validateUserFacingUiCopy() {
       operationalAlert.includes("FC_ALERT_FEISHU_WEBHOOK_URL") &&
       operationalAlert.includes("FC_ALERT_DINGTALK_WEBHOOK_URL") &&
       operationalAlert.includes("FC_ALERT_DRY_RUN") &&
-      operationalAlert.includes("FC_ALERT_WEBHOOK_BEARER_TOKEN"),
-    "operational alert script should support generic webhook and common IM webhook destinations with safe dry-run support"
+      operationalAlert.includes("FC_ALERT_WEBHOOK_BEARER_TOKEN") &&
+      operationalAlert.includes("FC_ALERT_LOG_PATH") &&
+      operationalAlert.includes("FC_ALERT_FILE_SINK") &&
+      operationalAlert.includes("operational-alerts.jsonl") &&
+      operationalAlert.includes("appendFile"),
+    "operational alert script should support webhook/IM destinations plus auditable local JSONL alert recording with safe dry-run support"
   );
   assert(
     apiRouter.includes("/api/system/risk-thresholds") &&
@@ -1585,9 +1589,11 @@ async function validateUserFacingUiCopy() {
       deployEnv.includes("FC_ALERT_FEISHU_WEBHOOK_URL") &&
       deployEnv.includes("FC_ALERT_DINGTALK_WEBHOOK_URL") &&
       deployEnv.includes("FC_ALERT_ON_SUCCESS=0") &&
+      deployEnv.includes("FC_ALERT_LOG_PATH") &&
+      deployEnv.includes("FC_ALERT_FILE_SINK") &&
       deployEnv.includes("FC_RISK_ALERT_OVERALL_SCORE") &&
       deployEnv.includes("FC_RISK_ALERT_MIN_POSTURE"),
-    "deployment env example should document optional webhook/IM alert configuration and business risk thresholds"
+    "deployment env example should document optional webhook/IM alert configuration, local alert sink configuration, and business risk thresholds"
   );
   assert(
     justfile.includes("operational-alert-dry-run:") &&

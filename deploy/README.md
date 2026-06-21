@@ -173,8 +173,16 @@ tail -30 /opt/financial-crisis/logs/update.log
 
 ## 主动告警
 
-默认不发送外部告警，只写入日志和 Markdown 报告。需要主动推送时，在
-`/opt/financial-crisis/deploy/fc-api.env` 中配置至少一个 webhook：
+默认不发送外部告警，但非 dry-run 的结构化告警会写入
+`/opt/financial-crisis/logs/operational-alerts.jsonl`，同时保留现有日志和
+Markdown 报告。可直接查看最近记录：
+
+```bash
+tail -20 /opt/financial-crisis/logs/operational-alerts.jsonl
+```
+
+需要主动推送时，在 `/opt/financial-crisis/deploy/fc-api.env` 中配置至少一个
+webhook：
 
 ```bash
 # 通用 JSON webhook
@@ -185,6 +193,10 @@ FC_ALERT_WEBHOOK_URL=https://example.com/financial-crisis-alert
 # FC_ALERT_SLACK_WEBHOOK_URL=...
 # FC_ALERT_FEISHU_WEBHOOK_URL=...
 # FC_ALERT_DINGTALK_WEBHOOK_URL=...
+
+# 可选：改写本地结构化告警路径；设为 0 可关闭本地 JSONL 落盘
+# FC_ALERT_LOG_PATH=/opt/financial-crisis/logs/operational-alerts.jsonl
+# FC_ALERT_FILE_SINK=1
 ```
 
 部署、回滚、刷新后的 `operational-check.sh` 会在 `deploy-check` 或
