@@ -154,6 +154,43 @@ fn threshold_has_over_tight_repair_candidate(
     false
 }
 
+fn conservative_forward_crisis_threshold(
+    probabilities: &[f64],
+    labels: &[f64],
+    rows: &[&crate::ProbabilityTrainingRow],
+    horizon_days: u32,
+    base_threshold: f64,
+    relaxed_prediction_ceiling: u32,
+) -> f64 {
+    let mut best_threshold = None::<f64>;
+    for threshold in probability_threshold_candidates(probabilities) {
+        if threshold < base_threshold {
+            continue;
+        }
+
+        let hits =
+            probability_threshold_regime_hit_summary(probabilities, rows, horizon_days, threshold);
+        if !threshold_has_usable_forward_crisis_support(hits, horizon_days) {
+            continue;
+        }
+
+        let (true_positive_count, predicted_positive_count) =
+            probability_threshold_prediction_counts(probabilities, labels, threshold);
+        if true_positive_count == 0
+            || predicted_positive_count == 0
+            || predicted_positive_count > relaxed_prediction_ceiling
+        {
+            continue;
+        }
+
+        if best_threshold.is_none_or(|best| threshold < best) {
+            best_threshold = Some(threshold);
+        }
+    }
+
+    best_threshold.unwrap_or(0.99)
+}
+
 pub(crate) fn adjust_probability_decision_threshold_for_regime_support(
     base_threshold: f64,
     probabilities: &[f64],
@@ -229,13 +266,23 @@ pub(crate) fn adjust_probability_decision_threshold_for_regime_support(
                 base_threshold,
                 relaxed_prediction_ceiling,
             ));
+    let conservative_threshold = || {
+        conservative_forward_crisis_threshold(
+            probabilities,
+            labels,
+            rows,
+            horizon_days,
+            base_threshold,
+            relaxed_prediction_ceiling,
+        )
+    };
     if regime_summary
         .early_warning_lift_vs_normal
         .unwrap_or_default()
         < 1.5
         && !over_tight_base_threshold
     {
-        return base_threshold;
+        return crate::round3(conservative_threshold()).clamp(base_threshold, 0.99);
     }
 
     let beta_sq = probability_threshold_beta_sq(horizon_days);
@@ -290,12 +337,21 @@ pub(crate) fn adjust_probability_decision_threshold_for_regime_support(
         }
     }
 
-    let repaired_threshold =
-        if early_warning_probability_cap > 0.0 && early_warning_probability_cap < base_threshold {
-            best_threshold.min(early_warning_probability_cap)
-        } else {
-            best_threshold
-        };
+    let repaired_threshold = if best_score.is_some()
+        && early_warning_probability_cap > 0.0
+        && early_warning_probability_cap < base_threshold
+    {
+        best_threshold.min(early_warning_probability_cap)
+    } else if best_score.is_some() {
+        best_threshold
+    } else {
+        conservative_threshold()
+    };
 
-    crate::round3(repaired_threshold).clamp(0.005, base_threshold)
+    let lower_bound = if best_score.is_some() {
+        0.005
+    } else {
+        base_threshold
+    };
+    crate::round3(repaired_threshold).clamp(lower_bound, 0.99)
 }

@@ -143,5 +143,64 @@ fn regime_support_adjustment_rejects_60d_threshold_that_ties_cooldown_hits() {
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
 
-    assert_eq!(adjusted_threshold, base_threshold);
+    assert_eq!(adjusted_threshold, 0.99);
+}
+
+#[test]
+fn regime_support_adjustment_raises_60d_threshold_to_suppress_cooldown_bleed() {
+    let rows = vec![
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PositiveWindow, 1),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PositiveWindow, 1),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PositiveWindow, 1),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PositiveWindow, 1),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+    ];
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    let probabilities = vec![0.92, 0.91, 0.30, 0.28, 0.94, 0.93, 0.20, 0.18, 0.89, 0.88];
+    let labels = rows
+        .iter()
+        .map(|row| row.label_60d as f64)
+        .collect::<Vec<_>>();
+    let base_threshold = 0.50;
+    let adjusted_threshold = adjust_probability_decision_threshold_for_regime_support(
+        base_threshold,
+        &probabilities,
+        &labels,
+        &row_refs,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    let regime_hit_count = |threshold: f64, regime: ProbabilityTrainingRegime| {
+        probabilities
+            .iter()
+            .zip(row_refs.iter())
+            .filter(|(probability, row)| **probability >= threshold && row.regime_60d == regime)
+            .count()
+    };
+
+    assert_eq!(adjusted_threshold, 0.90);
+    assert!(
+        regime_hit_count(
+            adjusted_threshold,
+            ProbabilityTrainingRegime::PreWarningBuffer
+        ) > 0
+    );
+    assert!(
+        regime_hit_count(
+            adjusted_threshold,
+            ProbabilityTrainingRegime::PositiveWindow
+        ) > 0
+    );
+    assert_eq!(
+        regime_hit_count(
+            adjusted_threshold,
+            ProbabilityTrainingRegime::PostCrisisCooldown
+        ),
+        0
+    );
 }
