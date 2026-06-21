@@ -286,8 +286,24 @@ function validateKeyIndicators(snapshot) {
       `${label} should use dataset ${expectedDatasetId}, got ${indicator.dataset_id ?? "<missing>"}`
     );
     assert(
-      indicator.status === "fresh" || indicator.status === "stale",
-      `${label} status should be fresh/stale, got ${indicator.status ?? "<missing>"}`
+      ["fresh", "delayed", "stale"].includes(indicator.status),
+      `${label} status should be fresh/delayed/stale, got ${indicator.status ?? "<missing>"}`
+    );
+  }
+
+  const degradedKeyIndicators = requiredIndicators
+    .map(([indicatorId]) => keyIndicatorById(snapshot, indicatorId))
+    .filter((indicator) => ["delayed", "stale"].includes(indicator?.status));
+  if (degradedKeyIndicators.length > 0) {
+    assert(
+      stringValue(snapshot.runtime?.stale_warning),
+      "delayed/stale key indicators should produce a runtime stale_warning"
+    );
+    assert(
+      (snapshot.mvp_risk_state?.blockers ?? []).some((blocker) =>
+        stringValue(blocker).includes("数据延迟")
+      ),
+      "delayed/stale key indicators should downgrade the MVP conclusion with a readable blocker"
     );
   }
 
@@ -1633,6 +1649,7 @@ async function validateRenderedUiIfAvailable(
       source?.production_allowed === true &&
       ["delayed", "partial_failure", "failed"].includes(source?.health?.status)
   );
+  const dataTrustGrade = stringValue(snapshot.data_trust?.quality_grade).toUpperCase() || "—";
   const requiredPhrases = [
     "观察为主（概率参考）",
     "当前数字说明",
@@ -1659,7 +1676,7 @@ async function validateRenderedUiIfAvailable(
     "API action_evidence / scoring engine",
     "不是模型结论置信概率",
     ...runtimeNumberAuditPhrases,
-    "关键数据覆盖 A",
+    `关键数据覆盖 ${dataTrustGrade}`,
     "当前正式概率只作为参考输入",
     "正式小概率直接当成低风险证明",
     "未进入动作窗口",
@@ -1739,7 +1756,15 @@ async function validateRenderedUiIfAvailable(
     {
       id: "sources",
       title: "数据可信度与免费源状态",
-      required: ["数据覆盖与源健康摘要", "使用建议", "源状态"],
+      required: [
+        "数据覆盖与源健康摘要",
+        "免费数据源策略",
+        "使用建议",
+        "源状态",
+        "可进入正式评估",
+        "仅研究参考",
+        "原型辅助信号"
+      ],
       allowAuditWord: false
     },
     {

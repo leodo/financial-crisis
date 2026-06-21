@@ -358,7 +358,7 @@ mod tests {
             us_short_rate: Some(3.6),
             us_jp_short_rate_diff: Some(2.9),
             change_5d: Some(0.7),
-            change_20d: Some(3.14),
+            change_20d: Some(3.15),
             realized_vol_20d: Some(0.001),
             funding_pressure_score: 34.7,
             vix_coupling_score: 46.5,

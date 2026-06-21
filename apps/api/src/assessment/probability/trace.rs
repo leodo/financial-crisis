@@ -293,6 +293,33 @@ fn has_usdjpy_high_tail_anomaly(horizon: &ProbabilityHorizonOverlayDiagnostics) 
     })
 }
 
+fn top_base_contributions(
+    horizon: &fc_domain::ProbabilityHorizonBundle,
+    features: &BTreeMap<String, f64>,
+) -> Vec<LogisticProbabilityFeatureContribution> {
+    let mut contributions =
+        fc_domain::score_logistic_probability_model_with_diagnostics(&horizon.raw_model, features)
+            .feature_contributions;
+    contributions
+        .sort_by(|left, right| right.contribution.abs().total_cmp(&left.contribution.abs()));
+    contributions.truncate(8);
+    contributions
+}
+
+fn score_bundle_horizon(
+    bundle: &ProbabilityBundle,
+    horizon_days: u32,
+    features: &BTreeMap<String, f64>,
+) -> Option<ProbabilityHorizonScore> {
+    let horizon = bundle
+        .horizons
+        .iter()
+        .find(|horizon| horizon.horizon_days == horizon_days)?;
+    Some(fc_domain::score_probability_horizon_bundle(
+        horizon, features,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,31 +388,4 @@ mod tests {
         assert!(diagnostics.horizon_overlays[1].monotonic_lift > 0.0);
         assert!(diagnostics.horizon_overlays[2].monotonic_lift > 0.0);
     }
-}
-
-fn top_base_contributions(
-    horizon: &fc_domain::ProbabilityHorizonBundle,
-    features: &BTreeMap<String, f64>,
-) -> Vec<LogisticProbabilityFeatureContribution> {
-    let mut contributions =
-        fc_domain::score_logistic_probability_model_with_diagnostics(&horizon.raw_model, features)
-            .feature_contributions;
-    contributions
-        .sort_by(|left, right| right.contribution.abs().total_cmp(&left.contribution.abs()));
-    contributions.truncate(8);
-    contributions
-}
-
-fn score_bundle_horizon(
-    bundle: &ProbabilityBundle,
-    horizon_days: u32,
-    features: &BTreeMap<String, f64>,
-) -> Option<ProbabilityHorizonScore> {
-    let horizon = bundle
-        .horizons
-        .iter()
-        .find(|horizon| horizon.horizon_days == horizon_days)?;
-    Some(fc_domain::score_probability_horizon_bundle(
-        horizon, features,
-    ))
 }
