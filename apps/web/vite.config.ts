@@ -6,9 +6,18 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          react: ["react", "react-dom", "@tanstack/react-query"],
-          icons: ["lucide-react"]
+        manualChunks(id) {
+          if (
+            id.includes("node_modules/react") ||
+            id.includes("node_modules/react-dom") ||
+            id.includes("node_modules/@tanstack/react-query")
+          ) {
+            return "react";
+          }
+          if (id.includes("node_modules/lucide-react")) {
+            return "icons";
+          }
+          return undefined;
         }
       }
     }

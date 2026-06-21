@@ -33,7 +33,7 @@ fi
 
 # 1) 系统依赖
 echo "[1/8] 检查系统依赖..."
-for cmd in cargo node npm systemctl; do
+for cmd in cargo node npm sqlite3 systemctl; do
   if ! which "$cmd" >/dev/null 2>&1; then
     echo "  - $cmd: 未安装"
     if [ "$cmd" = "cargo" ]; then
@@ -44,6 +44,9 @@ for cmd in cargo node npm systemctl; do
     fi
     if [ "$cmd" = "systemctl" ]; then
       echo "    -> 此系统没有 systemd，请改用 cron 模式"
+    fi
+    if [ "$cmd" = "sqlite3" ]; then
+      echo "    -> 安装 SQLite CLI: apt install -y sqlite3"
     fi
   else
     echo "  - $cmd: $($cmd --version 2>/dev/null | head -1)"
@@ -102,7 +105,9 @@ cp "$REPO_DIR/deploy/fc-refresh.service" "$ROOT/deploy/"
 cp "$REPO_DIR/deploy/fc-refresh.timer" "$ROOT/deploy/"
 cp "$REPO_DIR/deploy/operational-check.sh" "$ROOT/deploy/"
 cp "$REPO_DIR/deploy/smoke-check.sh" "$ROOT/deploy/"
-chmod +x "$ROOT/deploy/operational-check.sh" "$ROOT/deploy/smoke-check.sh"
+cp "$REPO_DIR/deploy/sqlite-backup.sh" "$ROOT/deploy/"
+cp "$REPO_DIR/deploy/sqlite-restore.sh" "$ROOT/deploy/"
+chmod +x "$ROOT/deploy/operational-check.sh" "$ROOT/deploy/smoke-check.sh" "$ROOT/deploy/sqlite-backup.sh" "$ROOT/deploy/sqlite-restore.sh"
 repair_runtime_permissions
 
 # 软链接到 systemd 目录

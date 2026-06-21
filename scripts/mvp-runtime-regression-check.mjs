@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 const apiBaseUrl = process.env.FC_API_BASE_URL ?? "http://127.0.0.1:18080";
 const webBaseUrl = process.env.FC_WEB_BASE_URL ?? "http://127.0.0.1:5173";
 const allowDemoMode = process.env.FC_ALLOW_DEMO === "1";
+const skipRuntime = process.env.FC_SKIP_RUNTIME === "1";
 const tailSuppressorFeature = "tail_pos__us_usdjpy_level__145";
 const execFileAsync = promisify(execFile);
 
@@ -1604,6 +1605,8 @@ async function validateUserFacingUiCopy() {
   );
   const deployRollback = await readFile(new URL("../deploy/rollback.sh", import.meta.url), "utf8");
   const smokeCheck = await readFile(new URL("../deploy/smoke-check.sh", import.meta.url), "utf8");
+  const sqliteBackup = await readFile(new URL("../deploy/sqlite-backup.sh", import.meta.url), "utf8");
+  const sqliteRestore = await readFile(new URL("../deploy/sqlite-restore.sh", import.meta.url), "utf8");
   const refreshService = await readFile(
     new URL("../deploy/fc-refresh.service", import.meta.url),
     "utf8"
@@ -1632,6 +1635,16 @@ async function validateUserFacingUiCopy() {
       smokeCheck.includes("assessment?.runtime") &&
       smokeCheck.includes("assessment?.key_indicators") &&
       smokeCheck.includes("Array.isArray(sources) ? sources") &&
+      deployUpdate.includes("sqlite-backup.sh") &&
+      deployUpdate.includes("sqlite-restore.sh") &&
+      deployBootstrap.includes("sqlite-backup.sh") &&
+      deployBootstrap.includes("sqlite-restore.sh") &&
+      sqliteBackup.includes("VACUUM INTO") &&
+      sqliteBackup.includes("PRAGMA integrity_check") &&
+      sqliteRestore.includes("PRAGMA integrity_check") &&
+      sqliteRestore.includes("systemctl stop fc-api") &&
+      sqliteRestore.includes("$DB_PATH-wal") &&
+      sqliteRestore.includes("smoke-check.sh") &&
       operationalCheck.includes('RUN_RISK_THRESHOLD="${FC_RUN_RISK_THRESHOLD_AFTER_REFRESH:-1}"') &&
       operationalCheck.includes("risk-threshold-${MODE}") &&
       refreshService.includes("ExecStartPost=/opt/financial-crisis/deploy/operational-check.sh --mode refresh") &&
@@ -1811,6 +1824,19 @@ async function validateRenderedUiIfAvailable(
   }
 
   return "checked";
+}
+
+if (skipRuntime) {
+  await validateUserFacingUiCopy();
+  if (failures.length > 0) {
+    console.error("MVP static regression check failed:");
+    for (const failure of failures) {
+      console.error(`- ${failure}`);
+    }
+    process.exit(1);
+  }
+  console.log("MVP static regression check passed. | runtime=skipped");
+  process.exit(0);
 }
 
 const snapshot = await fetchJson("/api/assessment/current");

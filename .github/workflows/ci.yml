@@ -8,15 +8,15 @@ on:
   pull_request:
 
 jobs:
-  rust:
-    name: Rust Checks
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -24,36 +24,36 @@ jobs:
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Run tests
-        run: cargo test --workspace
-
-      - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-  web:
-    name: Web Build
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: apps/web
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
+          cache: npm
           cache-dependency-path: apps/web/package-lock.json
 
-      - name: Install dependencies
+      - name: Install web dependencies
         run: npm ci
+        working-directory: apps/web
 
-      - name: Build web app
+      - name: Audit web dependencies
+        run: npm audit --audit-level=low
+        working-directory: apps/web
+
+      - name: Build web
         run: npm run build
+        working-directory: apps/web
+
+      - name: Check deployment shell scripts
+        run: bash -n deploy/*.sh
+
+      - name: Rust format
+        run: cargo fmt --all -- --check
+
+      - name: Rust clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: MVP static regression
+        run: FC_SKIP_RUNTIME=1 FC_SKIP_RENDERED_UI=1 node scripts/mvp-runtime-regression-check.mjs

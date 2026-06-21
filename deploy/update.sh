@@ -51,7 +51,9 @@ sync_deploy_files() {
   cp "$REPO_DIR/deploy/fc-refresh.timer" "$ROOT/deploy/"
   cp "$REPO_DIR/deploy/operational-check.sh" "$ROOT/deploy/"
   cp "$REPO_DIR/deploy/smoke-check.sh" "$ROOT/deploy/"
-  chmod +x "$ROOT/deploy/operational-check.sh" "$ROOT/deploy/smoke-check.sh"
+  cp "$REPO_DIR/deploy/sqlite-backup.sh" "$ROOT/deploy/"
+  cp "$REPO_DIR/deploy/sqlite-restore.sh" "$ROOT/deploy/"
+  chmod +x "$ROOT/deploy/operational-check.sh" "$ROOT/deploy/smoke-check.sh" "$ROOT/deploy/sqlite-backup.sh" "$ROOT/deploy/sqlite-restore.sh"
 
   if [ "$(id -u)" -eq 0 ] && command -v systemctl >/dev/null 2>&1; then
     ln -sf "$ROOT/deploy/fc-api.service" /etc/systemd/system/fc-api.service

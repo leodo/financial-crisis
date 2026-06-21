@@ -26,7 +26,9 @@
 │   ├── fc-api.service -> /etc/systemd/system/fc-api.service
 │   ├── fc-refresh.timer
 │   ├── operational-check.sh               # 部署/回滚/刷新后置验收
-│   └── smoke-check.sh                     # 当前 release/API/systemd 快速冒烟检查
+│   ├── smoke-check.sh                     # 当前 release/API/systemd 快速冒烟检查
+│   ├── sqlite-backup.sh                   # SQLite 一致性备份
+│   └── sqlite-restore.sh                  # SQLite 校验恢复
 ├── update.sh                              # 一键更新
 └── rollback.sh                            # 一键回滚
 ```
@@ -38,8 +40,8 @@
 git clone <repo-url> /opt/financial-crisis-src
 
 # 2. 检查系统依赖
-#    需要: cargo (Rust), node/npm, systemd
-which cargo node npm systemctl
+#    需要: cargo (Rust), node/npm, sqlite3, systemd
+which cargo node npm sqlite3 systemctl
 
 # 3. 运行引导脚本（会自动完成全部初始化）
 sudo bash /opt/financial-crisis-src/deploy/bootstrap.sh
@@ -119,6 +121,24 @@ systemctl start fc-refresh.service      # 手动触发一次刷新
 `/opt/financial-crisis/deploy/operational-check.sh --mode refresh`，
 并在 `/opt/financial-crisis/logs/` 写入 `deploy-check-refresh-*.md`
 、`daily-health-refresh-*.md` 和 `risk-threshold-refresh-*.md`。
+
+## SQLite 备份与恢复
+
+生产 MVP 当前使用 `/opt/financial-crisis/data/fc-local.sqlite` 作为持久数据。
+部署不会覆盖该文件，但刷新、回填和人工修复前建议先做一致性备份：
+
+```bash
+# 创建备份并保留最近 14 份，成功时输出备份路径
+sudo /opt/financial-crisis/deploy/sqlite-backup.sh --keep 14
+
+# 查看备份
+ls -lh /opt/financial-crisis/backups/sqlite/
+
+# 从备份恢复。脚本会先校验备份、停止 API、保留 pre-restore 副本、恢复权限、重启 API 并运行 smoke check。
+sudo /opt/financial-crisis/deploy/sqlite-restore.sh \
+  --backup /opt/financial-crisis/backups/sqlite/fc-local-YYYYMMDD-HHMMSS.sqlite \
+  --yes
+```
 
 ## 验证部署
 
