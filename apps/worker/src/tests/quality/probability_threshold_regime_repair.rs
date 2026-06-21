@@ -39,6 +39,20 @@ fn threshold_regime_row(
     }
 }
 
+fn threshold_regime_row_5d(
+    regime_5d: ProbabilityTrainingRegime,
+    label_5d: u8,
+) -> ProbabilityTrainingRow {
+    ProbabilityTrainingRow {
+        regime_5d,
+        label_5d,
+        primary_scenario_supports_20d: false,
+        primary_scenario_supports_60d: false,
+        days_to_primary_crisis_start: Some(3),
+        ..threshold_regime_row(ProbabilityTrainingRegime::Normal, 0)
+    }
+}
+
 fn threshold_regime_row_60d(
     regime_60d: ProbabilityTrainingRegime,
     label_60d: u8,
@@ -50,6 +64,34 @@ fn threshold_regime_row_60d(
         days_to_primary_crisis_start: Some(45),
         ..threshold_regime_row(ProbabilityTrainingRegime::Normal, 0)
     }
+}
+
+#[test]
+fn regime_support_adjustment_rejects_weak_5d_threshold_with_normal_bleed() {
+    let rows = vec![
+        threshold_regime_row_5d(ProbabilityTrainingRegime::PositiveWindow, 1),
+        threshold_regime_row_5d(ProbabilityTrainingRegime::PositiveWindow, 1),
+        threshold_regime_row_5d(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row_5d(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row_5d(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+        threshold_regime_row_5d(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+    ];
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    let probabilities = vec![0.06, 0.07, 0.18, 0.17, 0.16, 0.15];
+    let labels = rows
+        .iter()
+        .map(|row| row.label_5d as f64)
+        .collect::<Vec<_>>();
+    let adjusted_threshold = adjust_probability_decision_threshold_for_regime_support(
+        0.05,
+        &probabilities,
+        &labels,
+        &row_refs,
+        5,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert_eq!(adjusted_threshold, 0.99);
 }
 
 #[test]

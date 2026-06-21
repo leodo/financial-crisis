@@ -26,6 +26,7 @@ fn regime_floor_min_hit_rate(horizon_days: u32) -> f64 {
     match horizon_days {
         60 => 0.05,
         20 => 0.03,
+        5 => 0.10,
         _ => 0.0,
     }
 }
@@ -34,6 +35,7 @@ fn regime_floor_min_gap_vs_normal(horizon_days: u32) -> f64 {
     match horizon_days {
         60 => 0.02,
         20 => 0.01,
+        5 => 0.02,
         _ => 0.0,
     }
 }
@@ -48,6 +50,7 @@ fn regime_floor_over_tight_base_threshold(horizon_days: u32) -> f64 {
 
 fn regime_positive_window_min_hit_rate(horizon_days: u32) -> f64 {
     match horizon_days {
+        5 => 0.10,
         20 => 0.25,
         60 => 0.10,
         _ => regime_floor_min_hit_rate(horizon_days),
@@ -87,7 +90,7 @@ fn threshold_has_usable_positive_window_support(
     hits: ProbabilityThresholdRegimeHitSummary,
     horizon_days: u32,
 ) -> bool {
-    if !matches!(horizon_days, 20 | 60) || hits.positive_window_row_count == 0 {
+    if !matches!(horizon_days, 5 | 20 | 60) || hits.positive_window_row_count == 0 {
         return true;
     }
 
@@ -200,7 +203,7 @@ pub(crate) fn adjust_probability_decision_threshold_for_regime_support(
     label_mode: crate::ProbabilityTargetLabelMode,
 ) -> f64 {
     if label_mode != crate::ProbabilityTargetLabelMode::ForwardCrisis
-        || !matches!(horizon_days, 20 | 60)
+        || !matches!(horizon_days, 5 | 20 | 60)
         || probabilities.is_empty()
         || rows.is_empty()
         || probabilities.len() != rows.len()
