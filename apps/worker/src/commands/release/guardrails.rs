@@ -3,20 +3,20 @@ use fc_domain::{AssessmentSnapshot, ModelReleaseRecord};
 pub(crate) fn build_release_actionability_review(
     release: &ModelReleaseRecord,
 ) -> anyhow::Result<crate::ReleaseActionabilityReview> {
+    if release.manifest.probability_mode == "heuristic_mvp" {
+        return Ok(disabled_actionability_review(
+            release,
+            "This heuristic MVP release has no independent actionability head; release review only applies runtime guardrails.",
+        ));
+    }
+
     let bundle =
         crate::read_probability_bundle(std::path::Path::new(&release.manifest.bundle_uri))?;
     let Some(actionability) = bundle.actionability.as_ref() else {
-        return Ok(crate::ReleaseActionabilityReview {
-            release_id: release.manifest.release_id.clone(),
-            enabled: false,
-            model_version: None,
-            calibration_version: None,
-            fusion_policy_version: None,
-            levels: Vec::new(),
-            guard_regressions: Vec::new(),
-            guard_passed: true,
-            note: "This release has no independent actionability head; release review only applies runtime guardrails.".to_string(),
-        });
+        return Ok(disabled_actionability_review(
+            release,
+            "This release has no independent actionability head; release review only applies runtime guardrails.",
+        ));
     };
 
     let levels = actionability
@@ -72,6 +72,23 @@ pub(crate) fn build_release_actionability_review(
     review.guard_regressions = compare_actionability_guardrails(&review);
     review.guard_passed = review.guard_regressions.is_empty();
     Ok(review)
+}
+
+fn disabled_actionability_review(
+    release: &ModelReleaseRecord,
+    note: impl Into<String>,
+) -> crate::ReleaseActionabilityReview {
+    crate::ReleaseActionabilityReview {
+        release_id: release.manifest.release_id.clone(),
+        enabled: false,
+        model_version: None,
+        calibration_version: None,
+        fusion_policy_version: None,
+        levels: Vec::new(),
+        guard_regressions: Vec::new(),
+        guard_passed: true,
+        note: note.into(),
+    }
 }
 
 pub(crate) fn compare_actionability_guardrails(
@@ -589,6 +606,39 @@ mod tests {
         }
     }
 
+    fn heuristic_release_with_missing_bundle() -> ModelReleaseRecord {
+        ModelReleaseRecord {
+            manifest: fc_domain::ModelReleaseManifest {
+                release_id: "heuristic-baseline".to_string(),
+                market_scope: "financial_system".to_string(),
+                status: "active".to_string(),
+                probability_mode: "heuristic_mvp".to_string(),
+                serving_status: "degraded".to_string(),
+                bundle_uri: "does/not/exist.json".to_string(),
+                feature_set_version: "feature_v1".to_string(),
+                label_version: "label_v1".to_string(),
+                prob_model_version: "prob_v1".to_string(),
+                calibration_version: "calib_v1".to_string(),
+                posture_policy_version: "posture_v1".to_string(),
+                action_playbook_version: "playbook_v1".to_string(),
+                point_in_time_mode: "best_effort".to_string(),
+                training_range_start: None,
+                training_range_end: None,
+                calibration_range_start: None,
+                calibration_range_end: None,
+                evaluation_range_start: None,
+                evaluation_range_end: None,
+                brier_score: None,
+                log_loss: None,
+                ece: None,
+                note: "test heuristic baseline".to_string(),
+            },
+            created_at: chrono::Utc::now(),
+            activated_at: None,
+            retired_at: None,
+        }
+    }
+
     fn runtime_separation_summary(
         horizon_days: u32,
         positive_window_avg_probability: f64,
@@ -653,6 +703,17 @@ mod tests {
         positive_window_avg_probability: f64,
     ) -> crate::ReleaseRuntimeReviewDiagnostics {
         runtime_review_with_positive_window(release_id, 20, positive_window_avg_probability)
+    }
+
+    #[test]
+    fn actionability_review_skips_heuristic_bundle_read() {
+        let review = build_release_actionability_review(&heuristic_release_with_missing_bundle())
+            .expect("heuristic releases should not require a formal probability bundle");
+
+        assert!(!review.enabled);
+        assert!(review.guard_passed);
+        assert!(review.levels.is_empty());
+        assert!(review.note.contains("heuristic MVP"));
     }
 
     #[test]
