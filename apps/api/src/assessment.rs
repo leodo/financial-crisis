@@ -518,7 +518,7 @@ fn build_synthetic_driver_explanation(risk: &IndicatorRisk) -> String {
         .percentile
         .map(|value| {
             let normalized = if value > 1.0 { value } else { value * 100.0 };
-            format!("，历史分位 {:.1}%", normalized)
+            format!("，历史分位 {normalized:.1}%")
         })
         .unwrap_or_default();
     format!(

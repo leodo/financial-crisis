@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{NaiveDate, Utc};
+use chrono::{Datelike, Duration, NaiveDate, Utc, Weekday};
 use fc_domain::{DataSource, Observation, SourceHealth, SourcePriority, SourceStatus};
 use fc_storage::IngestionSourceHealthSummary;
 
@@ -224,18 +224,20 @@ fn live_source(
     match latest {
         Some(observation) => {
             let lag_days = (as_of_date - observation.as_of_date).num_days();
-            let status = if lag_days > stale_days * 3 {
+            let lag_business_days = business_lag_days(observation.as_of_date, as_of_date);
+            let status = if lag_business_days > stale_days * 3 {
                 SourceStatus::PartialFailure
-            } else if lag_days > stale_days {
+            } else if lag_business_days > stale_days {
                 SourceStatus::Delayed
             } else {
                 SourceStatus::Healthy
             };
             let status = source_status_with_ingestion_health(status, ingestion_health);
             let message = format!(
-                "latest observation {} (lag {}d, dataset={}){}",
+                "latest observation {} (lag {}d / business lag {}d, dataset={}){}",
                 observation.as_of_date,
                 lag_days,
+                lag_business_days,
                 observation.dataset_id,
                 ingestion_health_note(ingestion_health)
             );
@@ -288,6 +290,28 @@ fn live_source(
                 }),
         ),
     }
+}
+
+fn business_lag_days(latest_date: NaiveDate, requested_as_of_date: NaiveDate) -> i64 {
+    if requested_as_of_date <= latest_date {
+        return 0;
+    }
+
+    let mut count = 0_i64;
+    let mut cursor = latest_date
+        .checked_add_signed(Duration::days(1))
+        .unwrap_or(latest_date);
+    while cursor < requested_as_of_date {
+        if !matches!(cursor.weekday(), Weekday::Sat | Weekday::Sun) {
+            count += 1;
+        }
+        let Some(next) = cursor.checked_add_signed(Duration::days(1)) else {
+            break;
+        };
+        cursor = next;
+    }
+
+    count
 }
 
 fn source_status_with_ingestion_health(
@@ -400,5 +424,57 @@ fn runtime_source(
             quality_score,
             message,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use fc_domain::Frequency;
+
+    use super::*;
+
+    fn observation(source_id: &str, as_of_date: NaiveDate) -> Observation {
+        Observation {
+            indicator_id: "test_indicator".to_string(),
+            entity_id: "test_entity".to_string(),
+            as_of_date,
+            period_start: Some(as_of_date),
+            period_end: Some(as_of_date),
+            frequency: Frequency::Daily,
+            value: 1.0,
+            unit: "unit".to_string(),
+            source_id: source_id.to_string(),
+            dataset_id: "test_dataset".to_string(),
+            revision_time: None,
+            publication_time: None,
+            quality_score: 95.0,
+            quality_flags: vec![],
+        }
+    }
+
+    #[test]
+    fn live_source_uses_business_day_lag_for_freshness_status() {
+        let as_of_date = NaiveDate::from_ymd_opt(2026, 6, 21).unwrap();
+        let observations = vec![observation(
+            "boj",
+            NaiveDate::from_ymd_opt(2026, 6, 17).unwrap(),
+        )];
+
+        let source = live_source(
+            &observations,
+            as_of_date,
+            "boj",
+            "Bank of Japan",
+            "fx_rates_timeseries",
+            SourcePriority::P1,
+            3,
+            84.0,
+            true,
+            "test",
+            None,
+        );
+
+        assert_eq!(source.health.status, SourceStatus::Healthy);
+        assert!(source.health.message.contains("lag 4d / business lag 2d"));
     }
 }
