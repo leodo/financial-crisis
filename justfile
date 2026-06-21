@@ -171,9 +171,10 @@ formal-dataset-list:
     cargo run -p fc-worker -- research dataset list-main --market-scope financial_system
 
 # 一键导出当前 main / ext_stress / ext_acute 三套 formal dataset summary。
-# 它会自动挑选每个 dataset_id 当前最新的一版 key，并把 JSON/Markdown 写到 ignored 的 artifacts/research/dataset-summary-check。
+# 它会自动挑选每个 dataset_id 当前样本更完整、版本更新的一版 key，并把 JSON/Markdown 写到 API 能读取的 artifacts/research/dataset-summary-check。
+# 这是跨平台入口；生产 Linux 用 `/opt/financial-crisis/deploy/formal-dataset-summary-pack.sh`，确保工件写到 API 可读的部署根目录。
 formal-dataset-summary-pack:
-    ./scripts/formal-dataset-summary-pack.ps1
+    node ./scripts/formal-dataset-summary-pack.mjs
 
 # 导出某个危机场景的 formal dataset 样本切片，便于逐日看 split / label / features。
 # 用法：`just formal-dataset-slice us_regional_banks_2023 2022-12-01 2023-03-15`

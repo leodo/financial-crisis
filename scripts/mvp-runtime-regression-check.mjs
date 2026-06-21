@@ -1608,6 +1608,14 @@ async function validateUserFacingUiCopy() {
     new URL("../scripts/formal-go-no-go-report.mjs", import.meta.url),
     "utf8"
   );
+  const formalDatasetSummaryPack = await readFile(
+    new URL("../scripts/formal-dataset-summary-pack.mjs", import.meta.url),
+    "utf8"
+  );
+  const deployFormalDatasetSummaryPack = await readFile(
+    new URL("../deploy/formal-dataset-summary-pack.sh", import.meta.url),
+    "utf8"
+  );
   assert(
     justfile.includes("formal-go-no-go:") &&
       justfile.includes("formal-go-no-go-save:") &&
@@ -1625,6 +1633,19 @@ async function validateUserFacingUiCopy() {
       formalGoNoGoReport.includes("prediction_snapshot_audit") &&
       formalGoNoGoReport.includes("NO-GO"),
     "formal Go/No-Go report should combine assessment, research audit, sources, release review, and snapshot evidence before active_default approval"
+  );
+  assert(
+    justfile.includes("formal-dataset-summary-pack:") &&
+      justfile.includes("node ./scripts/formal-dataset-summary-pack.mjs") &&
+      formalDatasetSummaryPack.includes("DEFAULT_DATASET_IDS") &&
+      formalDatasetSummaryPack.includes("artifacts/research/dataset-summary-check") &&
+      formalDatasetSummaryPack.includes("FC_WORKER_BIN") &&
+      formalDatasetSummaryPack.includes("summarize-main") &&
+      formalDatasetSummaryPack.includes("dataset.rowCount > current.rowCount") &&
+      deployFormalDatasetSummaryPack.includes('cd "$ROOT"') &&
+      deployFormalDatasetSummaryPack.includes('--worker-bin "$CURRENT_DIR/bin/fc-worker"') &&
+      deployFormalDatasetSummaryPack.includes("artifacts/research/dataset-summary-check"),
+    "formal dataset summary pack should be cross-platform, production-runnable from the deploy root, and choose complete dataset evidence for Go/No-Go review"
   );
   const deployUpdate = await readFile(new URL("../deploy/update.sh", import.meta.url), "utf8");
   const deployBootstrap = await readFile(
@@ -1661,6 +1682,8 @@ async function validateUserFacingUiCopy() {
       deployUpdate.includes("systemctl daemon-reload") &&
       deployUpdate.includes("--expected-commit") &&
       deployUpdate.includes("cp -r config/.") &&
+      deployUpdate.includes("formal-dataset-summary-pack.sh") &&
+      deployBootstrap.includes("formal-dataset-summary-pack.sh") &&
       smokeCheck.includes("--skip-systemd") &&
       smokeCheck.includes("assessment?.runtime") &&
       smokeCheck.includes("assessment?.key_indicators") &&
