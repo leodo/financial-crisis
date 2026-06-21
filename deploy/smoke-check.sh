@@ -70,6 +70,8 @@ note() {
 
 [[ -d "$CURRENT_DIR" ]] || fail "current release is missing: $CURRENT_DIR"
 [[ -f "$CURRENT_DIR/COMMIT" ]] || fail "current release COMMIT file is missing"
+[[ -f "$CURRENT_DIR/config/model-releases/us-heuristic-bootstrap.json" ]] || fail "release config manifest is missing: $CURRENT_DIR/config/model-releases/us-heuristic-bootstrap.json"
+[[ ! -d "$CURRENT_DIR/config/config" ]] || fail "release config is nested at $CURRENT_DIR/config/config; update.sh should copy config contents into release/config"
 EXPECTED_COMMIT="${EXPECTED_COMMIT//$'\r'/}"
 EXPECTED_COMMIT="${EXPECTED_COMMIT//$'\n'/}"
 ACTUAL_COMMIT="$(tr -d '\r\n' < "$CURRENT_DIR/COMMIT" 2>/dev/null || true)"

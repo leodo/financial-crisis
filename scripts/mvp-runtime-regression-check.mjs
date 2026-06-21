@@ -1660,10 +1660,13 @@ async function validateUserFacingUiCopy() {
       deployUpdate.includes("fc-refresh.service") &&
       deployUpdate.includes("systemctl daemon-reload") &&
       deployUpdate.includes("--expected-commit") &&
+      deployUpdate.includes("cp -r config/.") &&
       smokeCheck.includes("--skip-systemd") &&
       smokeCheck.includes("assessment?.runtime") &&
       smokeCheck.includes("assessment?.key_indicators") &&
       smokeCheck.includes("Array.isArray(sources) ? sources") &&
+      smokeCheck.includes("config/model-releases/us-heuristic-bootstrap.json") &&
+      smokeCheck.includes("config/config") &&
       deployUpdate.includes("sqlite-backup.sh") &&
       deployUpdate.includes("sqlite-restore.sh") &&
       deployUpdate.includes("sqlite-drill.sh") &&

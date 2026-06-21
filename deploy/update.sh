@@ -121,8 +121,8 @@ strip "$RELEASE_DIR/bin/fc-api" "$RELEASE_DIR/bin/fc-worker"
 # 复制前端构建产物
 cp -r apps/web/dist "$RELEASE_DIR/web/dist"
 
-# 复制运行时配置
-cp -r config/ "$RELEASE_DIR/config/"
+# 复制运行时配置。注意复制目录内容，避免生成 release/config/config 嵌套路径。
+cp -r config/. "$RELEASE_DIR/config/"
 cp -r scripts/*.ps1 "$RELEASE_DIR/scripts/" 2>/dev/null || true
 cp -r scripts/*.mjs "$RELEASE_DIR/scripts/" 2>/dev/null || true
 cp justfile "$RELEASE_DIR/" 2>/dev/null || true
