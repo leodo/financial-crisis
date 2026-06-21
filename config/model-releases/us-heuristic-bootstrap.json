@@ -1,7 +1,7 @@
 {
   "release_id": "us_heuristic_bootstrap_20260531",
   "market_scope": "financial_system",
-  "status": "candidate",
+  "status": "approved",
   "probability_mode": "heuristic_mvp",
   "serving_status": "degraded",
   "bundle_uri": "config/model-releases/us-heuristic-bootstrap.json",
@@ -21,5 +21,5 @@
   "brier_score": null,
   "log_loss": null,
   "ece": null,
-  "note": "Bootstrap release for the current heuristic MVP. This is a transitional release used to move method metadata out of hardcoded API constants and into the local release registry."
+  "note": "Bootstrap release for the current heuristic MVP. This is an approved degraded serving record used to move method metadata out of hardcoded API constants and into the local release registry. It does not promote heuristic probabilities to active_default formal-model status."
 }

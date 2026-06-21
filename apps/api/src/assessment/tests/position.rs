@@ -25,6 +25,39 @@ fn summary_test_snapshot() -> RiskSnapshot {
     }
 }
 
+fn degraded_heuristic_release() -> ModelReleaseRecord {
+    ModelReleaseRecord {
+        manifest: ModelReleaseManifest {
+            release_id: "us_heuristic_bootstrap_20260531".to_string(),
+            market_scope: "financial_system".to_string(),
+            status: "active".to_string(),
+            probability_mode: "heuristic_mvp".to_string(),
+            serving_status: "degraded".to_string(),
+            bundle_uri: "config/model-releases/us-heuristic-bootstrap.json".to_string(),
+            feature_set_version: "feature_v2_20260531".to_string(),
+            label_version: "label_v1_20260530".to_string(),
+            prob_model_version: "prob_v1_20260531".to_string(),
+            calibration_version: "calib_v1_20260531".to_string(),
+            posture_policy_version: "posture_v1_20260530".to_string(),
+            action_playbook_version: "action_playbook_v1_20260531".to_string(),
+            point_in_time_mode: "best_effort".to_string(),
+            training_range_start: None,
+            training_range_end: None,
+            calibration_range_start: None,
+            calibration_range_end: None,
+            evaluation_range_start: None,
+            evaluation_range_end: None,
+            brier_score: None,
+            log_loss: None,
+            ece: None,
+            note: "test degraded heuristic release".to_string(),
+        },
+        created_at: Utc::now(),
+        activated_at: Some(Utc::now()),
+        retired_at: None,
+    }
+}
+
 #[test]
 fn position_guidance_governance_enforces_manual_review_and_release_boundaries() {
     let guidance = build_position_guidance(
@@ -96,6 +129,50 @@ fn position_guidance_governance_enforces_manual_review_and_release_boundaries() 
         .manual_confirmation_items
         .iter()
         .any(|row| row.contains("对冲") || row.contains("期权")));
+}
+
+#[test]
+fn position_guidance_governance_keeps_degraded_active_release_warning() {
+    let active_release = degraded_heuristic_release();
+    let guidance = build_position_guidance(
+        &posture_guidance_for(DecisionPosture::Normal),
+        &ProbabilityBlock {
+            p_5d: 0.0,
+            p_20d: 0.03,
+            p_60d: 0.08,
+        },
+        TimeToRiskBucket::Normal,
+        &test_data_trust(QualityGrade::A),
+        &quiet_jpy_carry(12.0),
+        &quiet_event_assessment(0.0),
+        &MvpRiskState {
+            code: MvpRiskStateCode::Observe,
+            label: "观察为主".to_string(),
+            probability_input_status: MvpProbabilityInputStatus::Usable,
+            summary: "test".to_string(),
+            primary_evidence: Vec::new(),
+            blockers: Vec::new(),
+            next_actions: Vec::new(),
+        },
+        Some(&active_release),
+        &neutral_preferences(),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.12,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.05,
+        },
+    );
+
+    assert!(guidance
+        .governance
+        .required_operator_checks
+        .iter()
+        .any(|row| row.contains("heuristic/degraded")));
+    assert!(guidance
+        .governance
+        .required_operator_checks
+        .iter()
+        .any(|row| row.contains("不代表正式概率 Go/No-Go 已放行")));
 }
 
 #[test]

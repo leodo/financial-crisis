@@ -306,6 +306,11 @@ fn build_position_guidance_governance(
             "当前没有绑定 active release，说明动作框架仍处于默认/降级路径，更需要人工复核。"
                 .to_string(),
         );
+    } else if active_release_is_degraded_path(active_release) {
+        required_operator_checks.push(
+            "当前 active release 仍是 heuristic/degraded 路径；它只提供 MVP 元数据追踪，不代表正式概率 Go/No-Go 已放行。"
+                .to_string(),
+        );
     }
 
     PositionGuidanceGovernance {
@@ -316,6 +321,14 @@ fn build_position_guidance_governance(
         policy_change_requires_go_no_go: true,
         required_operator_checks,
     }
+}
+
+fn active_release_is_degraded_path(active_release: Option<&ModelReleaseRecord>) -> bool {
+    active_release.is_some_and(|release| {
+        release.manifest.probability_mode == "heuristic_mvp"
+            || release.manifest.serving_status != "healthy"
+            || release.manifest.status != "active"
+    })
 }
 
 fn user_profile_label(profile: UserRiskProfile) -> &'static str {

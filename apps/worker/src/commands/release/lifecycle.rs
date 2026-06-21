@@ -575,6 +575,11 @@ mod tests {
     }
 
     #[test]
+    fn approved_degraded_release_is_activation_eligible_for_bootstrap_metadata() {
+        ensure_release_activation_eligible(&release("approved", "degraded")).unwrap();
+    }
+
+    #[test]
     fn candidate_shadow_release_requires_review_only_publish() {
         let error =
             ensure_release_publish_eligible(&manifest("candidate", "shadow"), false).unwrap_err();
@@ -592,6 +597,11 @@ mod tests {
     #[test]
     fn approved_healthy_release_can_publish_formally() {
         ensure_release_publish_eligible(&manifest("approved", "healthy"), false).unwrap();
+    }
+
+    #[test]
+    fn approved_degraded_release_can_publish_for_bootstrap_metadata() {
+        ensure_release_publish_eligible(&manifest("approved", "degraded"), false).unwrap();
     }
 
     #[test]

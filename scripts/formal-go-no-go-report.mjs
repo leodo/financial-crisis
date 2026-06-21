@@ -43,10 +43,8 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function activeLikeReleaseStatus(value) {
-  return ["active", "active_default", "active_experimental", "approved"].includes(
-    String(value ?? "").toLowerCase()
-  );
+function healthyServingStatus(value) {
+  return String(value ?? "").toLowerCase() === "healthy";
 }
 
 function productionSourceIssues(sources) {
@@ -165,10 +163,10 @@ function evaluateGoNoGo(state) {
 
   addCheck(
     checks,
-    activeLikeReleaseStatus(servingStatus) ? "pass" : "fail",
+    healthyServingStatus(servingStatus) ? "pass" : "fail",
     "Release serving status",
     servingStatus,
-    "Do not promote a release unless the registry marks it active or approved for serving."
+    "Do not promote a release unless the runtime serving status is healthy."
   );
 
   addCheck(

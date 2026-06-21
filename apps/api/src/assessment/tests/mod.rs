@@ -11,9 +11,10 @@ pub(super) use chrono::{NaiveDate, Utc};
 pub(super) use fc_domain::{
     ActionabilityBlock, DataQualitySummary, DataTrust, DecisionPosture, EventAssessment,
     EventConfirmationState, Frequency, Indicator, IndicatorRisk, JpyCarrySnapshot, JpyCarryState,
-    MvpProbabilityInputStatus, MvpRiskState, MvpRiskStateCode, Observation, PostureGuidance,
-    ProbabilityBlock, QualityGrade, RiskContributor, RiskDimension, RiskDirection, RiskLevel,
-    RiskSnapshot, TimeToRiskBucket, UserRiskPreferences, UserRiskProfile,
+    ModelReleaseManifest, ModelReleaseRecord, MvpProbabilityInputStatus, MvpRiskState,
+    MvpRiskStateCode, Observation, PostureGuidance, ProbabilityBlock, QualityGrade,
+    RiskContributor, RiskDimension, RiskDirection, RiskLevel, RiskSnapshot, TimeToRiskBucket,
+    UserRiskPreferences, UserRiskProfile,
 };
 
 mod actionability;
