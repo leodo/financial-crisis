@@ -1,7 +1,8 @@
 use chrono::{NaiveDate, TimeZone, Utc};
 use fc_domain::{
-    load_protected_stress_window_catalog, DecisionPosture, ModelReleaseManifest,
-    ModelReleaseRecord, PredictionSnapshotRecord, ProbabilityBundle, TimeToRiskBucket,
+    load_protected_stress_window_catalog, DecisionPosture, HorizonEvaluationSummary,
+    LogisticProbabilityModel, ModelReleaseManifest, ModelReleaseRecord, PredictionSnapshotRecord,
+    ProbabilityBundle, ProbabilityHorizonBundle, TimeToRiskBucket,
 };
 
 use super::{
@@ -132,6 +133,27 @@ fn formal_serving_model_context() -> ServingModelContext {
         }),
         runtime_probability_mode: "formal_bundle_v1".to_string(),
         runtime_release_status: "healthy".to_string(),
+    }
+}
+
+fn probability_horizon_with_threshold(
+    horizon_days: u32,
+    decision_threshold: f64,
+) -> ProbabilityHorizonBundle {
+    ProbabilityHorizonBundle {
+        horizon_days,
+        decision_threshold: Some(decision_threshold),
+        threshold_diagnostics: None,
+        raw_model: LogisticProbabilityModel {
+            intercept: 0.0,
+            feature_transform: "identity_v1".to_string(),
+            feature_stats: Vec::new(),
+            coefficients: Vec::new(),
+        },
+        calibration: None,
+        evaluation: HorizonEvaluationSummary::default(),
+        family_overlays: Vec::new(),
+        family_overlay_audits: Vec::new(),
     }
 }
 
@@ -686,6 +708,22 @@ fn formal_main_method_version_carries_runtime_policy_cache_key() {
 
     assert!(method_version.contains("runtime_policy="));
     assert!(method_version.contains("class=formal_main"));
+}
+
+#[test]
+fn formal_main_runtime_thresholds_preserve_fail_closed_bundle_cutoffs() {
+    let mut serving_model = formal_serving_model_context();
+    serving_model.probability_bundle.as_mut().unwrap().horizons = vec![
+        probability_horizon_with_threshold(5, 0.99),
+        probability_horizon_with_threshold(20, 0.99),
+        probability_horizon_with_threshold(60, 0.99),
+    ];
+
+    let thresholds = runtime_threshold_diagnostics(Some(&serving_model));
+
+    assert_eq!(thresholds.defend_p5d, 0.99);
+    assert_eq!(thresholds.hedge_p20d, 0.99);
+    assert_eq!(thresholds.prepare_p60d, 0.99);
 }
 
 #[test]

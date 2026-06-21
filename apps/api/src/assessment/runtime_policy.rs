@@ -202,6 +202,6 @@ fn bundle_horizon_threshold(bundle: &ProbabilityBundle, horizon_days: u32, fallb
         .iter()
         .find(|horizon| horizon.horizon_days == horizon_days)
         .and_then(|horizon| horizon.decision_threshold)
-        .map(|threshold| threshold.clamp(0.001, 0.90))
+        .map(|threshold| threshold.clamp(0.001, 0.99))
         .unwrap_or(fallback)
 }
