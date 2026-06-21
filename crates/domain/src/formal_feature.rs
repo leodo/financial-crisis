@@ -4,9 +4,11 @@ use crate::observation_window::{
     observation_history_for_indicator, observation_value_difference_from_tail,
 };
 use crate::probability_bundle::{
-    FEATURE_US_BAA_10Y_SPREAD_LEVEL, FEATURE_US_CURVE_10Y2Y_LEVEL, FEATURE_US_FED_FUNDS_LEVEL,
-    FEATURE_US_HOUSING_STARTS_LEVEL, FEATURE_US_NFCI_LEVEL, FEATURE_US_STLFSI_LEVEL,
-    FEATURE_US_UNEMPLOYMENT_LEVEL, FEATURE_US_USDJPY_CHANGE_20D, FEATURE_US_USDJPY_LEVEL,
+    FEATURE_US_BAA_10Y_SPREAD_CHANGE_20D, FEATURE_US_BAA_10Y_SPREAD_LEVEL,
+    FEATURE_US_CURVE_10Y2Y_CHANGE_20D, FEATURE_US_CURVE_10Y2Y_LEVEL, FEATURE_US_FED_FUNDS_LEVEL,
+    FEATURE_US_HOUSING_STARTS_LEVEL, FEATURE_US_NFCI_CHANGE_20D, FEATURE_US_NFCI_LEVEL,
+    FEATURE_US_STLFSI_CHANGE_20D, FEATURE_US_STLFSI_LEVEL, FEATURE_US_UNEMPLOYMENT_LEVEL,
+    FEATURE_US_USDJPY_CHANGE_20D, FEATURE_US_USDJPY_LEVEL, FEATURE_US_VIX_CHANGE_20D,
     FEATURE_US_VIX_CHANGE_5D, FEATURE_US_VIX_LEVEL,
 };
 use crate::Observation;
@@ -36,14 +38,29 @@ pub const FORMAL_OBSERVATION_FEATURE_SPECS: &[FormalObservationFeatureSpec] = &[
         transform: FormalObservationFeatureTransform::DifferenceFromTail { lookback: 5 },
     },
     FormalObservationFeatureSpec {
+        feature_name: FEATURE_US_VIX_CHANGE_20D,
+        indicator_id: "us_market_vix_close",
+        transform: FormalObservationFeatureTransform::DifferenceFromTail { lookback: 20 },
+    },
+    FormalObservationFeatureSpec {
         feature_name: FEATURE_US_CURVE_10Y2Y_LEVEL,
         indicator_id: "us_rates_yield_curve_10y2y",
         transform: FormalObservationFeatureTransform::Latest,
     },
     FormalObservationFeatureSpec {
+        feature_name: FEATURE_US_CURVE_10Y2Y_CHANGE_20D,
+        indicator_id: "us_rates_yield_curve_10y2y",
+        transform: FormalObservationFeatureTransform::DifferenceFromTail { lookback: 20 },
+    },
+    FormalObservationFeatureSpec {
         feature_name: FEATURE_US_BAA_10Y_SPREAD_LEVEL,
         indicator_id: "us_credit_baa_10y_spread",
         transform: FormalObservationFeatureTransform::Latest,
+    },
+    FormalObservationFeatureSpec {
+        feature_name: FEATURE_US_BAA_10Y_SPREAD_CHANGE_20D,
+        indicator_id: "us_credit_baa_10y_spread",
+        transform: FormalObservationFeatureTransform::DifferenceFromTail { lookback: 20 },
     },
     FormalObservationFeatureSpec {
         feature_name: FEATURE_US_FED_FUNDS_LEVEL,
@@ -56,9 +73,19 @@ pub const FORMAL_OBSERVATION_FEATURE_SPECS: &[FormalObservationFeatureSpec] = &[
         transform: FormalObservationFeatureTransform::Latest,
     },
     FormalObservationFeatureSpec {
+        feature_name: FEATURE_US_NFCI_CHANGE_20D,
+        indicator_id: "us_liquidity_national_financial_conditions",
+        transform: FormalObservationFeatureTransform::DifferenceFromTail { lookback: 20 },
+    },
+    FormalObservationFeatureSpec {
         feature_name: FEATURE_US_STLFSI_LEVEL,
         indicator_id: "us_liquidity_financial_stress_stl",
         transform: FormalObservationFeatureTransform::Latest,
+    },
+    FormalObservationFeatureSpec {
+        feature_name: FEATURE_US_STLFSI_CHANGE_20D,
+        indicator_id: "us_liquidity_financial_stress_stl",
+        transform: FormalObservationFeatureTransform::DifferenceFromTail { lookback: 20 },
     },
     FormalObservationFeatureSpec {
         feature_name: FEATURE_US_UNEMPLOYMENT_LEVEL,
@@ -113,8 +140,10 @@ mod tests {
 
     use super::{
         formal_observation_feature_value, formal_observation_feature_value_from_history,
-        FormalObservationFeatureSpec, FormalObservationFeatureTransform, FEATURE_US_VIX_CHANGE_5D,
-        FEATURE_US_VIX_LEVEL, FORMAL_OBSERVATION_FEATURE_SPECS,
+        FormalObservationFeatureSpec, FormalObservationFeatureTransform,
+        FEATURE_US_BAA_10Y_SPREAD_CHANGE_20D, FEATURE_US_CURVE_10Y2Y_CHANGE_20D,
+        FEATURE_US_NFCI_CHANGE_20D, FEATURE_US_STLFSI_CHANGE_20D, FEATURE_US_VIX_CHANGE_20D,
+        FEATURE_US_VIX_CHANGE_5D, FEATURE_US_VIX_LEVEL, FORMAL_OBSERVATION_FEATURE_SPECS,
     };
 
     fn observation(indicator_id: &str, day: u32, value: f64) -> Observation {
@@ -149,6 +178,19 @@ mod tests {
                 && spec.transform
                     == FormalObservationFeatureTransform::DifferenceFromTail { lookback: 5 }
         }));
+        for feature_name in [
+            FEATURE_US_VIX_CHANGE_20D,
+            FEATURE_US_CURVE_10Y2Y_CHANGE_20D,
+            FEATURE_US_BAA_10Y_SPREAD_CHANGE_20D,
+            FEATURE_US_NFCI_CHANGE_20D,
+            FEATURE_US_STLFSI_CHANGE_20D,
+        ] {
+            assert!(FORMAL_OBSERVATION_FEATURE_SPECS.iter().any(|spec| {
+                spec.feature_name == feature_name
+                    && spec.transform
+                        == FormalObservationFeatureTransform::DifferenceFromTail { lookback: 20 }
+            }));
+        }
     }
 
     #[test]

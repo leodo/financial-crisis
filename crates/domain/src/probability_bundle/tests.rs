@@ -19,6 +19,19 @@ fn interaction_tail_transform_appends_derived_features() {
 }
 
 #[test]
+fn formal_probability_features_include_systemic_trend_inputs() {
+    for feature_name in [
+        FEATURE_US_VIX_CHANGE_20D,
+        FEATURE_US_CURVE_10Y2Y_CHANGE_20D,
+        FEATURE_US_BAA_10Y_SPREAD_CHANGE_20D,
+        FEATURE_US_NFCI_CHANGE_20D,
+        FEATURE_US_STLFSI_CHANGE_20D,
+    ] {
+        assert!(FORMAL_PROBABILITY_BUNDLE_FEATURES.contains(&feature_name));
+    }
+}
+
+#[test]
 fn family_conditional_transform_appends_family_features() {
     let base = FORMAL_PROBABILITY_BUNDLE_FEATURES
         .iter()

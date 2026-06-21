@@ -16,11 +16,16 @@ pub const FEATURE_TRIGGER_SCORE: &str = "trigger_score";
 pub const FEATURE_EXTERNAL_DIMENSION_SCORE: &str = "external_dimension_score";
 pub const FEATURE_US_VIX_LEVEL: &str = "us_vix_level";
 pub const FEATURE_US_VIX_CHANGE_5D: &str = "us_vix_change_5d";
+pub const FEATURE_US_VIX_CHANGE_20D: &str = "us_vix_change_20d";
 pub const FEATURE_US_CURVE_10Y2Y_LEVEL: &str = "us_curve_10y2y_level";
+pub const FEATURE_US_CURVE_10Y2Y_CHANGE_20D: &str = "us_curve_10y2y_change_20d";
 pub const FEATURE_US_BAA_10Y_SPREAD_LEVEL: &str = "us_baa_10y_spread_level";
+pub const FEATURE_US_BAA_10Y_SPREAD_CHANGE_20D: &str = "us_baa_10y_spread_change_20d";
 pub const FEATURE_US_FED_FUNDS_LEVEL: &str = "us_fed_funds_level";
 pub const FEATURE_US_NFCI_LEVEL: &str = "us_nfci_level";
+pub const FEATURE_US_NFCI_CHANGE_20D: &str = "us_nfci_change_20d";
 pub const FEATURE_US_STLFSI_LEVEL: &str = "us_stlfsi_level";
+pub const FEATURE_US_STLFSI_CHANGE_20D: &str = "us_stlfsi_change_20d";
 pub const FEATURE_US_UNEMPLOYMENT_LEVEL: &str = "us_unemployment_level";
 pub const FEATURE_US_HOUSING_STARTS_LEVEL: &str = "us_housing_starts_level";
 pub const FEATURE_US_USDJPY_LEVEL: &str = "us_usdjpy_level";
@@ -56,11 +61,16 @@ pub const FORMAL_PROBABILITY_BUNDLE_FEATURES: &[&str] = &[
     FEATURE_COVERAGE_SCORE,
     FEATURE_US_VIX_LEVEL,
     FEATURE_US_VIX_CHANGE_5D,
+    FEATURE_US_VIX_CHANGE_20D,
     FEATURE_US_CURVE_10Y2Y_LEVEL,
+    FEATURE_US_CURVE_10Y2Y_CHANGE_20D,
     FEATURE_US_BAA_10Y_SPREAD_LEVEL,
+    FEATURE_US_BAA_10Y_SPREAD_CHANGE_20D,
     FEATURE_US_FED_FUNDS_LEVEL,
     FEATURE_US_NFCI_LEVEL,
+    FEATURE_US_NFCI_CHANGE_20D,
     FEATURE_US_STLFSI_LEVEL,
+    FEATURE_US_STLFSI_CHANGE_20D,
     FEATURE_US_UNEMPLOYMENT_LEVEL,
     FEATURE_US_HOUSING_STARTS_LEVEL,
     FEATURE_US_USDJPY_LEVEL,
