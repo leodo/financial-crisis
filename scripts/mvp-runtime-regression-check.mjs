@@ -1603,6 +1603,7 @@ async function validateUserFacingUiCopy() {
     "utf8"
   );
   const deployRollback = await readFile(new URL("../deploy/rollback.sh", import.meta.url), "utf8");
+  const smokeCheck = await readFile(new URL("../deploy/smoke-check.sh", import.meta.url), "utf8");
   const refreshService = await readFile(
     new URL("../deploy/fc-refresh.service", import.meta.url),
     "utf8"
@@ -1626,6 +1627,11 @@ async function validateUserFacingUiCopy() {
       deployRollback.includes("chown -R fc-service:fc-service") &&
       deployUpdate.includes("fc-refresh.service") &&
       deployUpdate.includes("systemctl daemon-reload") &&
+      deployUpdate.includes("--expected-commit") &&
+      smokeCheck.includes("--skip-systemd") &&
+      smokeCheck.includes("assessment?.runtime") &&
+      smokeCheck.includes("assessment?.key_indicators") &&
+      smokeCheck.includes("Array.isArray(sources) ? sources") &&
       operationalCheck.includes('RUN_RISK_THRESHOLD="${FC_RUN_RISK_THRESHOLD_AFTER_REFRESH:-1}"') &&
       operationalCheck.includes("risk-threshold-${MODE}") &&
       refreshService.includes("ExecStartPost=/opt/financial-crisis/deploy/operational-check.sh --mode refresh") &&

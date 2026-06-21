@@ -10,10 +10,11 @@ EXPECTED_COMMIT=""
 ALLOW_STALE=0
 MAX_SOURCE_ISSUES="${FC_SMOKE_MAX_SOURCE_ISSUES:-0}"
 CHECK_TIMER=1
+SKIP_SYSTEMD=0
 
 usage() {
   cat <<'EOF'
-Usage: smoke-check.sh [--expected-commit HASH] [--public-url URL] [--allow-stale] [--max-source-issues N] [--skip-timer]
+Usage: smoke-check.sh [--expected-commit HASH] [--public-url URL] [--allow-stale] [--max-source-issues N] [--skip-timer] [--skip-systemd]
 
 Checks the current release symlink, fc-api, fc-refresh.timer, /health, /api/assessment/current,
 /api/sources, key-indicator freshness, and optionally a public web URL.
@@ -42,6 +43,10 @@ while [[ $# -gt 0 ]]; do
       CHECK_TIMER=0
       shift
       ;;
+    --skip-systemd)
+      SKIP_SYSTEMD=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -65,13 +70,17 @@ note() {
 
 [[ -d "$CURRENT_DIR" ]] || fail "current release is missing: $CURRENT_DIR"
 [[ -f "$CURRENT_DIR/COMMIT" ]] || fail "current release COMMIT file is missing"
-ACTUAL_COMMIT="$(cat "$CURRENT_DIR/COMMIT" 2>/dev/null || true)"
+EXPECTED_COMMIT="${EXPECTED_COMMIT//$'\r'/}"
+EXPECTED_COMMIT="${EXPECTED_COMMIT//$'\n'/}"
+ACTUAL_COMMIT="$(tr -d '\r\n' < "$CURRENT_DIR/COMMIT" 2>/dev/null || true)"
 if [[ -n "$EXPECTED_COMMIT" && "${ACTUAL_COMMIT:0:${#EXPECTED_COMMIT}}" != "$EXPECTED_COMMIT" ]]; then
   fail "current commit mismatch: expected $EXPECTED_COMMIT, got $ACTUAL_COMMIT"
 fi
 note "current release commit: $ACTUAL_COMMIT"
 
-if command -v systemctl >/dev/null 2>&1; then
+if [[ "$SKIP_SYSTEMD" == "1" ]]; then
+  note "skipped systemd service/timer checks"
+elif command -v systemctl >/dev/null 2>&1; then
   systemctl is-active --quiet fc-api || fail "fc-api is not active"
   if [[ "$CHECK_TIMER" == "1" ]]; then
     systemctl is-active --quiet fc-refresh.timer || fail "fc-refresh.timer is not active"
@@ -111,18 +120,29 @@ if (!health.ok) {
   fail(`/health returned HTTP ${health.status}`);
 }
 
-const assessment = await getJson("/api/assessment/current");
-if (assessment.data_mode !== "sqlite") {
-  fail(`assessment data_mode should be sqlite, got ${assessment.data_mode ?? "missing"}`);
+const assessmentResponse = await getJson("/api/assessment/current");
+const assessment = assessmentResponse?.assessment ?? assessmentResponse?.data ?? assessmentResponse;
+const runtime = assessment?.runtime ?? assessmentResponse?.runtime ?? {};
+const dataMode = assessment?.data_mode ?? runtime?.data_mode;
+const latestKeyIndicatorAt = assessment?.latest_key_indicator_at ?? runtime?.latest_key_indicator_at;
+const staleWarning = assessment?.stale_warning ?? runtime?.stale_warning;
+
+if (dataMode !== "sqlite") {
+  fail(`assessment data_mode should be sqlite, got ${dataMode ?? "missing"}`);
 }
-if (!assessment.latest_key_indicator_at) {
+if (!latestKeyIndicatorAt) {
   fail("assessment latest_key_indicator_at is missing");
 }
-if (!allowStale && assessment.stale_warning) {
-  fail(`assessment has stale_warning: ${assessment.stale_warning}`);
+if (!allowStale && staleWarning) {
+  fail(`assessment has stale_warning: ${staleWarning}`);
 }
 
-const keyIndicators = assessment.data_freshness?.key_indicators ?? [];
+const keyIndicators =
+  assessment?.data_freshness?.key_indicators ??
+  assessment?.key_indicators ??
+  assessmentResponse?.data_freshness?.key_indicators ??
+  assessmentResponse?.key_indicators ??
+  [];
 const staleIndicators = keyIndicators.filter((indicator) => indicator?.status && indicator.status !== "fresh");
 if (!allowStale && staleIndicators.length > 0) {
   fail(
@@ -133,7 +153,7 @@ if (!allowStale && staleIndicators.length > 0) {
 }
 
 const sources = await getJson("/api/sources");
-const sourceItems = Array.isArray(sources?.sources) ? sources.sources : [];
+const sourceItems = Array.isArray(sources) ? sources : Array.isArray(sources?.sources) ? sources.sources : [];
 const sourceIssues = sourceItems.filter(
   (source) =>
     source?.production_allowed === true &&
@@ -162,8 +182,8 @@ console.log(
   JSON.stringify(
     {
       status: "ok",
-      data_mode: assessment.data_mode,
-      latest_key_indicator_at: assessment.latest_key_indicator_at,
+      data_mode: dataMode,
+      latest_key_indicator_at: latestKeyIndicatorAt,
       source_issues: sourceIssues.length,
       key_indicators: keyIndicators.length,
       public_url_checked: Boolean(publicUrl),
