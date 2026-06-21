@@ -223,7 +223,7 @@ fn is_hedge_episode_row(row: &ProbabilityTrainingRow) -> bool {
     row.hedge_episode_label > 0 || matches!(row.primary_action_level.as_deref(), Some("hedge"))
 }
 
-pub(super) fn logistic_sample_weight(
+pub(crate) fn logistic_sample_weight(
     row: &ProbabilityTrainingRow,
     horizon_days: u32,
     positive_class_weight: f64,
@@ -238,9 +238,50 @@ pub(super) fn logistic_sample_weight(
             _ => positive_sample_action_weight(row, horizon_days),
         };
         (positive_class_weight * positive_weight).clamp(1.0, 36.0)
+    } else if label_mode == ProbabilityTargetLabelMode::ForwardCrisis {
+        forward_crisis_soft_positive_sample_weight(row, horizon_days, positive_class_weight)
+            .unwrap_or_else(|| negative_sample_weight(row, horizon_days, label_mode))
     } else {
         negative_sample_weight(row, horizon_days, label_mode)
     }
+}
+
+fn forward_crisis_soft_positive_sample_weight(
+    row: &ProbabilityTrainingRow,
+    horizon_days: u32,
+    positive_class_weight: f64,
+) -> Option<f64> {
+    if row.regime_for_horizon(horizon_days) == ProbabilityTrainingRegime::PostCrisisCooldown {
+        return None;
+    }
+
+    let target_label = probability_training_target_label(
+        row,
+        horizon_days,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    let target_floor = match horizon_days {
+        20 => 0.18,
+        60 => 0.24,
+        _ => 0.25,
+    };
+    if target_label < target_floor {
+        return None;
+    }
+
+    let objective_weight = forward_crisis_episode_native_objective(row, horizon_days)
+        .map(|objective| objective.objective_weight)
+        .unwrap_or_else(|| {
+            forward_crisis_regime_sample_weight(horizon_days, row.regime_for_horizon(horizon_days))
+        });
+    let positive_shape_weight = positive_sample_action_weight(row, horizon_days);
+    let class_weight = positive_class_weight.sqrt().clamp(1.0, 4.5);
+    let target_multiplier = (1.0 + target_label).clamp(1.0, 1.75);
+
+    Some(
+        (class_weight * objective_weight * positive_shape_weight * target_multiplier)
+            .clamp(1.0, 10.0),
+    )
 }
 
 pub(crate) fn forward_crisis_regime_sample_weight(

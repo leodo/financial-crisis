@@ -64,8 +64,8 @@ pub(crate) use model::{
     apply_forward_crisis_coefficient_bound_gradient, apply_forward_crisis_sign_gradient,
     apply_regime_pairwise_gradient, build_feature_stat, forward_crisis_positive_sample_weight,
     forward_crisis_regime_pairwise_targets, forward_crisis_regime_sample_weight,
-    negative_sample_weight, positive_sample_action_weight, probability_training_target_label,
-    project_forward_crisis_sign_constraints,
+    logistic_sample_weight, negative_sample_weight, positive_sample_action_weight,
+    probability_training_target_label, project_forward_crisis_sign_constraints,
 };
 pub(crate) use model::{
     evaluate_probabilities, fit_logistic_model, fit_platt_calibration,

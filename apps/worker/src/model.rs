@@ -19,15 +19,17 @@ pub(crate) use constraints::{
 pub(crate) use regime::{
     apply_regime_pairwise_gradient, forward_crisis_regime_pairwise_targets, RegimePairwiseTarget,
 };
-#[cfg(test)]
-pub(crate) use weighting::forward_crisis_regime_sample_weight;
+use weighting::horizon_positive_class_weight;
+#[cfg(not(test))]
+use weighting::logistic_sample_weight;
 pub(crate) use weighting::{
     forward_crisis_has_episode_native_objective,
     forward_crisis_is_protected_no_positive_main_episode_row,
     forward_crisis_positive_sample_weight, negative_sample_weight, positive_sample_action_weight,
     probability_training_target_label,
 };
-use weighting::{horizon_positive_class_weight, logistic_sample_weight};
+#[cfg(test)]
+pub(crate) use weighting::{forward_crisis_regime_sample_weight, logistic_sample_weight};
 
 pub(crate) fn fit_logistic_model(
     rows: &[ProbabilityTrainingRow],

@@ -324,3 +324,214 @@ fn forward_crisis_20d_protected_no_positive_main_hedge_buffer_uses_conservative_
         0.90
     );
 }
+
+#[test]
+fn forward_crisis_soft_positive_targets_receive_training_weight_without_lifting_cooldown() {
+    let build_row = |regime: ProbabilityTrainingRegime,
+                     action_episode_phase: &str,
+                     scenario_training_role: Option<&str>,
+                     protected_action_window: bool,
+                     label_20d: u8,
+                     hedge_episode_label: u8,
+                     days_to_primary_crisis_start: Option<i64>| {
+        ProbabilityTrainingRow {
+            as_of_date: NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+            market_scope: "financial_system".to_string(),
+            release_id: None,
+            probability_mode: Some("formal_bundle_v1".to_string()),
+            freshness_status: Some("a".to_string()),
+            time_to_risk_bucket: Some("weeks".to_string()),
+            split_name: Some("train".to_string()),
+            features: BTreeMap::new(),
+            primary_scenario_id: Some("scenario".to_string()),
+            scenario_family: Some("rate_shock_or_policy_dislocation".to_string()),
+            scenario_training_role: scenario_training_role.map(str::to_string),
+            days_to_primary_crisis_start,
+            primary_scenario_supports_5d: false,
+            primary_scenario_supports_20d: true,
+            primary_scenario_supports_60d: true,
+            label_5d: 0,
+            label_20d,
+            label_60d: 0,
+            regime_5d: ProbabilityTrainingRegime::Normal,
+            regime_20d: regime,
+            regime_60d: ProbabilityTrainingRegime::Normal,
+            action_label_5d: 0,
+            action_label_20d: hedge_episode_label,
+            action_label_60d: 0,
+            prepare_episode_label: 0,
+            hedge_episode_label,
+            defend_episode_label: 0,
+            primary_action_level: (hedge_episode_label > 0).then_some("hedge".to_string()),
+            action_episode_id: (hedge_episode_label > 0).then_some("scenario:hedge".to_string()),
+            action_episode_phase: action_episode_phase.to_string(),
+            protected_action_window,
+        }
+    };
+
+    let hedge_buffer = build_row(
+        ProbabilityTrainingRegime::PreWarningBuffer,
+        "primary",
+        Some("no_positive_main"),
+        true,
+        0,
+        1,
+        Some(40),
+    );
+    let normal = build_row(
+        ProbabilityTrainingRegime::Normal,
+        "outside",
+        None,
+        false,
+        0,
+        0,
+        None,
+    );
+    let cooldown = build_row(
+        ProbabilityTrainingRegime::PostCrisisCooldown,
+        "cooldown",
+        None,
+        true,
+        0,
+        0,
+        Some(3),
+    );
+
+    let positive_class_weight = 9.0;
+    let hedge_weight = logistic_sample_weight(
+        &hedge_buffer,
+        20,
+        positive_class_weight,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert!(
+        hedge_weight
+            > negative_sample_weight(&hedge_buffer, 20, ProbabilityTargetLabelMode::ForwardCrisis),
+        "soft hedge prewarning rows should no longer train like plain negatives"
+    );
+    assert!(
+        hedge_weight
+            > logistic_sample_weight(
+                &normal,
+                20,
+                positive_class_weight,
+                ProbabilityTargetLabelMode::ForwardCrisis
+            ),
+        "soft hedge prewarning rows should carry more weight than normal negatives"
+    );
+    assert_eq!(
+        logistic_sample_weight(
+            &cooldown,
+            20,
+            positive_class_weight,
+            ProbabilityTargetLabelMode::ForwardCrisis
+        ),
+        negative_sample_weight(&cooldown, 20, ProbabilityTargetLabelMode::ForwardCrisis)
+    );
+}
+
+#[test]
+fn forward_crisis_60d_prepare_soft_positive_gets_weight_but_cooldown_stays_negative() {
+    let build_row = |prepare_episode_label: u8,
+                     action_episode_phase: &str,
+                     regime_60d: ProbabilityTrainingRegime,
+                     scenario_training_role: Option<&str>,
+                     protected_action_window: bool,
+                     days_to_primary_crisis_start: Option<i64>| {
+        ProbabilityTrainingRow {
+            as_of_date: NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+            market_scope: "financial_system".to_string(),
+            release_id: None,
+            probability_mode: Some("formal_bundle_v1".to_string()),
+            freshness_status: Some("a".to_string()),
+            time_to_risk_bucket: Some("months".to_string()),
+            split_name: Some("train".to_string()),
+            features: BTreeMap::new(),
+            primary_scenario_id: Some("scenario".to_string()),
+            scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+            scenario_training_role: scenario_training_role.map(str::to_string),
+            days_to_primary_crisis_start,
+            primary_scenario_supports_5d: false,
+            primary_scenario_supports_20d: true,
+            primary_scenario_supports_60d: true,
+            label_5d: 0,
+            label_20d: 0,
+            label_60d: 0,
+            regime_5d: ProbabilityTrainingRegime::Normal,
+            regime_20d: ProbabilityTrainingRegime::Normal,
+            regime_60d,
+            action_label_5d: 0,
+            action_label_20d: 0,
+            action_label_60d: prepare_episode_label,
+            prepare_episode_label,
+            hedge_episode_label: 0,
+            defend_episode_label: 0,
+            primary_action_level: (prepare_episode_label > 0).then_some("prepare".to_string()),
+            action_episode_id: (prepare_episode_label > 0)
+                .then_some("scenario:prepare".to_string()),
+            action_episode_phase: action_episode_phase.to_string(),
+            protected_action_window,
+        }
+    };
+
+    let mandatory_prepare = build_row(
+        1,
+        "primary",
+        ProbabilityTrainingRegime::PreWarningBuffer,
+        Some("mandatory"),
+        false,
+        Some(75),
+    );
+    let cooldown = build_row(
+        0,
+        "cooldown",
+        ProbabilityTrainingRegime::PostCrisisCooldown,
+        None,
+        true,
+        Some(5),
+    );
+    let normal = build_row(
+        0,
+        "outside",
+        ProbabilityTrainingRegime::Normal,
+        None,
+        false,
+        None,
+    );
+
+    let positive_class_weight = 9.0;
+    let prepare_weight = logistic_sample_weight(
+        &mandatory_prepare,
+        60,
+        positive_class_weight,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert!(
+        prepare_weight
+            > negative_sample_weight(
+                &mandatory_prepare,
+                60,
+                ProbabilityTargetLabelMode::ForwardCrisis
+            ),
+        "prepare prewarning rows should use soft-positive training weight"
+    );
+    assert!(
+        prepare_weight
+            > logistic_sample_weight(
+                &normal,
+                60,
+                positive_class_weight,
+                ProbabilityTargetLabelMode::ForwardCrisis
+            ),
+        "prepare prewarning rows should outrank normal negatives in training weight"
+    );
+    assert_eq!(
+        logistic_sample_weight(
+            &cooldown,
+            60,
+            positive_class_weight,
+            ProbabilityTargetLabelMode::ForwardCrisis
+        ),
+        negative_sample_weight(&cooldown, 60, ProbabilityTargetLabelMode::ForwardCrisis)
+    );
+}
