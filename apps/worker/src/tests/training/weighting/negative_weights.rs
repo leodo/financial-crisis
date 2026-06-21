@@ -128,7 +128,7 @@ fn forward_crisis_negative_weights_and_calibration_scope_follow_regime() {
             20,
             ProbabilityTargetLabelMode::ForwardCrisis,
         ),
-        1.20
+        1.45
     );
     assert_eq!(
         negative_sample_weight(
@@ -136,7 +136,7 @@ fn forward_crisis_negative_weights_and_calibration_scope_follow_regime() {
             60,
             ProbabilityTargetLabelMode::ForwardCrisis,
         ),
-        1.35
+        1.70
     );
     assert_eq!(
         negative_sample_weight(

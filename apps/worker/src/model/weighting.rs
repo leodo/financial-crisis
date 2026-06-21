@@ -411,8 +411,8 @@ pub(crate) fn negative_sample_weight(
                     },
                     "cooldown" => match horizon_days {
                         5 => 1.05,
-                        20 => 1.20,
-                        60 => 1.35,
+                        20 => 1.45,
+                        60 => 1.70,
                         _ => 1.00,
                     },
                     _ => match horizon_days {

@@ -97,7 +97,8 @@ fn threshold_has_usable_positive_window_support(
         && (positive_window_hit_rate - hits.normal_hit_rate())
             >= regime_floor_min_gap_vs_normal(horizon_days)
         && (hits.cooldown_row_count == 0
-            || positive_window_hit_rate + 1e-9 >= hits.cooldown_hit_rate())
+            || positive_window_hit_rate
+                >= hits.cooldown_hit_rate() + regime_floor_min_gap_vs_normal(horizon_days))
 }
 
 pub(in super::super) fn threshold_has_usable_forward_crisis_support(

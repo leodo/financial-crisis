@@ -39,6 +39,19 @@ fn threshold_regime_row(
     }
 }
 
+fn threshold_regime_row_60d(
+    regime_60d: ProbabilityTrainingRegime,
+    label_60d: u8,
+) -> ProbabilityTrainingRow {
+    ProbabilityTrainingRow {
+        regime_60d,
+        label_60d,
+        primary_scenario_supports_20d: false,
+        days_to_primary_crisis_start: Some(45),
+        ..threshold_regime_row(ProbabilityTrainingRegime::Normal, 0)
+    }
+}
+
 #[test]
 fn regime_support_adjustment_rejects_prewarning_only_20d_threshold() {
     let rows = vec![
@@ -100,4 +113,35 @@ fn regime_support_adjustment_rejects_prewarning_only_20d_threshold() {
     assert!(adjusted_threshold <= 0.62);
     assert!(positive_window_hit_count(adjusted_threshold) > 0);
     assert_eq!(cooldown_hit_count(adjusted_threshold), 0);
+}
+
+#[test]
+fn regime_support_adjustment_rejects_60d_threshold_that_ties_cooldown_hits() {
+    let rows = vec![
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PositiveWindow, 1),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PositiveWindow, 1),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+        threshold_regime_row_60d(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+    ];
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    let probabilities = vec![0.58, 0.56, 0.90, 0.89, 0.20, 0.18, 0.58, 0.56];
+    let labels = rows
+        .iter()
+        .map(|row| row.label_60d as f64)
+        .collect::<Vec<_>>();
+    let base_threshold = 0.90;
+    let adjusted_threshold = adjust_probability_decision_threshold_for_regime_support(
+        base_threshold,
+        &probabilities,
+        &labels,
+        &row_refs,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert_eq!(adjusted_threshold, base_threshold);
 }
