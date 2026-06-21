@@ -122,6 +122,13 @@ just formal-train
 just formal-candidate-screen us_formal_family_hybrid_20260604T034053 us_formal_family_hybrid_20260604T064930
 ```
 
+检查当前运行态是否具备正式概率 `active_default` 放行证据：
+
+```powershell
+just formal-go-no-go
+just formal-go-no-go-save
+```
+
 如果只想看固定窗口或关键特征差异，也可以分别运行：
 
 ```powershell
@@ -400,6 +407,7 @@ just refresh-latest-full # 日常刷新 + GDELT prototype 新闻聚合
 just backfill-backtest-history # 构建长区间免费历史库，尽量让 backtests 使用真实历史
 just db-check         # 检查本地 SQLite 关键指标是否足够新鲜
 just status           # 查看后台服务状态，并直接显示 data mode / 最新观测 / USDJPY
+just formal-go-no-go  # 生成正式概率 active_default Go/No-Go 证据报告
 just release-review <candidate_release_id> # 默认导出到忽略目录 artifacts/research/release-review
 just release-review-tracked <candidate_release_id> # 显式导出到 reports/release-review，作为长期证据保留
 just formal-train     # 默认导出到忽略目录 artifacts/research/model-*/generated

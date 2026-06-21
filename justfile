@@ -73,6 +73,18 @@ risk-threshold-alert:
 risk-threshold-alert-dry-run:
     $env:FC_ALERT_ON_SUCCESS='1'; $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; node ./scripts/risk-threshold-alert.mjs --dry-run --output "reports/risk-threshold/$timestamp.md"; Remove-Item Env:\FC_ALERT_ON_SUCCESS -ErrorAction SilentlyContinue
 
+# 生成正式概率 active_default Go/No-Go 证据报告；只审计，不训练、不激活、不回滚。
+formal-go-no-go:
+    node ./scripts/formal-go-no-go-report.mjs
+
+# 保存正式概率 Go/No-Go 证据报告，适合部署、候选评审或人工放行前留档。
+formal-go-no-go-save:
+    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; node ./scripts/formal-go-no-go-report.mjs --output "reports/formal-go-no-go/$timestamp.md"
+
+# 把 Go/No-Go 作为门禁运行；当前证据不足时返回非 0，适合人工放行前检查。
+formal-go-no-go-gate:
+    node ./scripts/formal-go-no-go-report.mjs --fail-on-no-go
+
 # 查看本地 SQLite 中已经登记的 model release 列表。
 # 适合检查当前有哪些候选版、激活版和历史版。
 release-list:

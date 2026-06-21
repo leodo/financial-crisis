@@ -1604,6 +1604,28 @@ async function validateUserFacingUiCopy() {
       justfile.includes("node ./scripts/risk-threshold-alert.mjs"),
     "justfile should expose operational and risk-threshold alert dry-run commands so webhook payloads can be previewed safely"
   );
+  const formalGoNoGoReport = await readFile(
+    new URL("../scripts/formal-go-no-go-report.mjs", import.meta.url),
+    "utf8"
+  );
+  assert(
+    justfile.includes("formal-go-no-go:") &&
+      justfile.includes("formal-go-no-go-save:") &&
+      justfile.includes("formal-go-no-go-gate:") &&
+      justfile.includes("node ./scripts/formal-go-no-go-report.mjs"),
+    "justfile should expose formal probability Go/No-Go report commands for operator evidence review"
+  );
+  assert(
+    formalGoNoGoReport.includes("/api/assessment/current") &&
+      formalGoNoGoReport.includes("/api/research/audit") &&
+      formalGoNoGoReport.includes("/api/sources") &&
+      formalGoNoGoReport.includes("--fail-on-no-go") &&
+      formalGoNoGoReport.includes("active_default") &&
+      formalGoNoGoReport.includes("latest_release_review") &&
+      formalGoNoGoReport.includes("prediction_snapshot_audit") &&
+      formalGoNoGoReport.includes("NO-GO"),
+    "formal Go/No-Go report should combine assessment, research audit, sources, release review, and snapshot evidence before active_default approval"
+  );
   const deployUpdate = await readFile(new URL("../deploy/update.sh", import.meta.url), "utf8");
   const deployBootstrap = await readFile(
     new URL("../deploy/bootstrap.sh", import.meta.url),
