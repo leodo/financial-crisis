@@ -57,16 +57,24 @@ pub fn actionable_warning_point(
     let strict_prepare_plateau_p20d_threshold = strict_prepare_plateau_p20d_threshold(thresholds);
     let strict_prepare_relaxed_plateau_p20d_threshold =
         strict_prepare_relaxed_plateau_p20d_threshold(thresholds);
+    let strict_now_p5d_threshold = thresholds
+        .map(|thresholds| thresholds.defend_p5d)
+        .unwrap_or(0.18)
+        .max(0.18);
+    let strict_weeks_p20d_threshold = thresholds
+        .map(|thresholds| thresholds.hedge_p20d)
+        .unwrap_or(0.25)
+        .max(0.25);
     let strict_short_horizon_signal =
         matches!(
             point.posture,
             DecisionPosture::Hedge | DecisionPosture::Defend
         ) || (matches!(point.time_to_risk_bucket, TimeToRiskBucket::Now)
             && point.overall_score >= 60.0
-            && point.p_5d >= 0.18)
+            && point.p_5d >= strict_now_p5d_threshold)
             || (matches!(point.time_to_risk_bucket, TimeToRiskBucket::Weeks)
                 && point.overall_score >= 58.0
-                && point.p_20d >= 0.25
+                && point.p_20d >= strict_weeks_p20d_threshold
                 && point.external_shock_score >= 44.0);
 
     let high_probability_prepare_signal = matches!(point.posture, DecisionPosture::Prepare)
@@ -106,7 +114,11 @@ pub fn actionable_warning_point(
     let history_hysteresis_months_signal =
         matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
             && history_hysteresis_trigger_code(point)
-            && point.p_20d >= STRICT_HISTORY_HYSTERESIS_MONTHS_P20D_FLOOR
+            && point.p_20d
+                >= thresholds
+                    .map(|thresholds| thresholds.hedge_p20d)
+                    .unwrap_or(STRICT_HISTORY_HYSTERESIS_MONTHS_P20D_FLOOR)
+                    .max(STRICT_HISTORY_HYSTERESIS_MONTHS_P20D_FLOOR)
             && point.p_60d
                 >= strict_prepare_p60d_threshold.max(STRICT_HISTORY_HYSTERESIS_MONTHS_P60D_FLOOR)
             && (point.overall_score >= STRICT_HISTORY_HYSTERESIS_MONTHS_OVERALL_FLOOR
@@ -177,10 +189,12 @@ pub fn weak_defend_only_runtime_floor(
 pub fn strict_prepare_p20d_threshold(thresholds: Option<ActionableGateThresholds>) -> f64 {
     thresholds
         .map(|thresholds| {
-            (thresholds.external_prepare_p20d * STRICT_PREPARE_P20D_THRESHOLD_RATIO).clamp(
-                STRICT_PREPARE_P20D_THRESHOLD_MIN,
-                LEGACY_STRICT_PREPARE_P20D_THRESHOLD,
-            )
+            (thresholds.external_prepare_p20d * STRICT_PREPARE_P20D_THRESHOLD_RATIO)
+                .clamp(
+                    STRICT_PREPARE_P20D_THRESHOLD_MIN,
+                    LEGACY_STRICT_PREPARE_P20D_THRESHOLD,
+                )
+                .max(thresholds.hedge_p20d)
         })
         .unwrap_or(LEGACY_STRICT_PREPARE_P20D_THRESHOLD)
 }
@@ -192,7 +206,9 @@ pub fn strict_prepare_p60d_threshold(thresholds: Option<ActionableGateThresholds
                 .max(thresholds.prepare_p60d * STRICT_PREPARE_P60D_THRESHOLD_LIFT)
                 .clamp(
                     STRICT_PREPARE_P60D_THRESHOLD_MIN,
-                    LEGACY_STRICT_PREPARE_P60D_THRESHOLD,
+                    thresholds
+                        .prepare_p60d
+                        .max(LEGACY_STRICT_PREPARE_P60D_THRESHOLD),
                 )
         })
         .unwrap_or(LEGACY_STRICT_PREPARE_P60D_THRESHOLD)
@@ -243,7 +259,7 @@ fn strict_prepare_plateau_p20d_threshold(thresholds: Option<ActionableGateThresh
         .map(|thresholds| {
             (thresholds.hedge_p20d + STRICT_PREPARE_PLATEAU_P20D_BUFFER).clamp(
                 STRICT_PREPARE_PLATEAU_P20D_MIN,
-                STRICT_PREPARE_PLATEAU_P20D_MAX,
+                thresholds.hedge_p20d.max(STRICT_PREPARE_PLATEAU_P20D_MAX),
             )
         })
         .unwrap_or(STRICT_PREPARE_PLATEAU_P20D_MAX)
@@ -275,7 +291,11 @@ fn actionable_prepare_weeks_plateau_hysteresis_signal(
 ) -> bool {
     has_prepare_weeks_plateau_hysteresis_setup(point)
         && point.p_20d >= strict_prepare_relaxed_plateau_p20d_threshold(thresholds)
-        && point.p_60d >= STRICT_PREPARE_PLATEAU_RELAXED_P60D_THRESHOLD
+        && point.p_60d
+            >= thresholds
+                .map(|thresholds| thresholds.prepare_p60d)
+                .unwrap_or(STRICT_PREPARE_PLATEAU_RELAXED_P60D_THRESHOLD)
+                .max(STRICT_PREPARE_PLATEAU_RELAXED_P60D_THRESHOLD)
         && point.overall_score >= STRICT_PREPARE_WEEKS_TRIGGER_OVERALL_FLOOR
         && point.external_shock_score >= STRICT_PREPARE_WEEKS_TRIGGER_EXTERNAL_FLOOR
 }
@@ -305,7 +325,11 @@ fn actionable_history_hysteresis_months_structural_carry_signal(
         && matches!(point.posture, DecisionPosture::Prepare)
         && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
         && history_hysteresis_trigger_code(point)
-        && point.p_20d >= STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P20D_FLOOR
+        && point.p_20d
+            >= thresholds
+                .map(|thresholds| thresholds.hedge_p20d)
+                .unwrap_or(STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P20D_FLOOR)
+                .max(STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P20D_FLOOR)
         && point.p_60d
             >= strict_prepare_p60d_threshold
                 .max(STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P60D_FLOOR)
@@ -354,6 +378,19 @@ mod tests {
     }
 
     #[test]
+    fn strict_prepare_thresholds_preserve_fail_closed_formal_floors() {
+        let thresholds = ActionableGateThresholds {
+            prepare_p60d: 0.99,
+            hedge_p20d: 0.99,
+            defend_p5d: 0.99,
+            external_prepare_p20d: 0.99,
+        };
+
+        assert_eq!(strict_prepare_p20d_threshold(Some(thresholds)), 0.99);
+        assert_eq!(strict_prepare_p60d_threshold(Some(thresholds)), 0.99);
+    }
+
+    #[test]
     fn actionable_warning_point_accepts_prepare_weeks_plateau_hysteresis() {
         let mut point = base_point();
         point.posture = DecisionPosture::Prepare;
@@ -375,6 +412,45 @@ mod tests {
         };
 
         assert!(actionable_warning_point(&point, false, Some(thresholds)));
+    }
+
+    #[test]
+    fn formal_fail_closed_thresholds_block_plateau_and_history_bypasses() {
+        let thresholds = ActionableGateThresholds {
+            prepare_p60d: 0.99,
+            hedge_p20d: 0.99,
+            defend_p5d: 0.99,
+            external_prepare_p20d: 0.99,
+        };
+
+        let mut weeks_point = base_point();
+        weeks_point.posture = DecisionPosture::Prepare;
+        weeks_point.time_to_risk_bucket = TimeToRiskBucket::Weeks;
+        weeks_point.p_20d = 0.55;
+        weeks_point.p_60d = 0.93;
+        weeks_point.overall_score = 62.0;
+        weeks_point.external_shock_score = 45.0;
+        weeks_point.posture_trigger_codes = vec![
+            "prepare_probability_plateau".to_string(),
+            "prepare_history_hysteresis".to_string(),
+        ];
+
+        let mut months_point = weeks_point.clone();
+        months_point.time_to_risk_bucket = TimeToRiskBucket::Months;
+        months_point.p_20d = 0.55;
+        months_point.p_60d = 0.93;
+        months_point.posture_trigger_codes = vec!["prepare_history_hysteresis".to_string()];
+
+        assert!(!actionable_warning_point(
+            &weeks_point,
+            false,
+            Some(thresholds)
+        ));
+        assert!(!actionable_warning_point(
+            &months_point,
+            false,
+            Some(thresholds)
+        ));
     }
 
     #[test]
