@@ -8,8 +8,20 @@ ROOT="/opt/financial-crisis"
 RELEASES_DIR="$ROOT/releases"
 CURRENT_LINK="$ROOT/current"
 LOGS_DIR="$ROOT/logs"
+mkdir -p "$LOGS_DIR" "$ROOT/data"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOGS_DIR/update.log"; }
+
+repair_runtime_permissions() {
+  mkdir -p "$ROOT/data" "$ROOT/logs"
+  if id fc-service >/dev/null 2>&1; then
+    chown -R fc-service:fc-service "$ROOT/data" "$ROOT/logs"
+    chmod 750 "$ROOT/data" "$ROOT/logs"
+    find "$ROOT/data" -maxdepth 1 -name 'fc-local.sqlite*' -exec chmod 660 {} + 2>/dev/null || true
+  else
+    log "警告: fc-service 用户不存在，跳过运行时权限修复"
+  fi
+}
 
 # 确定当前和上一个版本
 CURRENT_TARGET=$(readlink "$CURRENT_LINK")
@@ -37,6 +49,7 @@ if [ "$TARGET_DIR" = "$CURRENT_TARGET" ]; then
 fi
 
 log "=== 回滚: $CURRENT_NAME -> $TARGET_NAME ==="
+repair_runtime_permissions
 
 # 切换 symlink
 ln -sfn "$TARGET_DIR" "$CURRENT_LINK.tmp"
@@ -48,6 +61,10 @@ systemctl restart fc-api 2>/dev/null || true
 log "fc-api 已重启"
 
 "$ROOT/deploy/operational-check.sh" --mode rollback 2>&1 | tee -a "$LOGS_DIR/update.log"
+if [ -x "$ROOT/deploy/smoke-check.sh" ]; then
+  TARGET_COMMIT="$(cat "$TARGET_DIR/COMMIT" 2>/dev/null || true)"
+  "$ROOT/deploy/smoke-check.sh" --expected-commit "$TARGET_COMMIT" 2>&1 | tee -a "$LOGS_DIR/update.log"
+fi
 log "回滚验收完成"
 
 log "=== 回滚完成: $TARGET_NAME ==="

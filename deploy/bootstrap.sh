@@ -7,6 +7,17 @@ ROOT="/opt/financial-crisis"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+repair_runtime_permissions() {
+  mkdir -p "$ROOT/data" "$ROOT/logs"
+  if id fc-service >/dev/null 2>&1; then
+    chown -R fc-service:fc-service "$ROOT/data" "$ROOT/logs"
+    chmod 750 "$ROOT/data" "$ROOT/logs"
+    find "$ROOT/data" -maxdepth 1 -name 'fc-local.sqlite*' -exec chmod 660 {} + 2>/dev/null || true
+  else
+    echo "  - 警告: fc-service 用户不存在，跳过运行时权限修复"
+  fi
+}
+
 echo "============================================"
 echo " Financial Crisis 首次部署引导"
 echo "============================================"
@@ -51,6 +62,7 @@ else
   useradd --system --no-create-home --shell /usr/sbin/nologin fc-service
   echo "  - fc-service 已创建"
 fi
+repair_runtime_permissions
 
 # 4) 初始化数据库
 echo "[4/8] 初始化 SQLite 数据库..."
@@ -62,6 +74,7 @@ else
   echo "  - 数据库已初始化"
 fi
 cp "$ROOT/data/fc-local.sqlite" "$ROOT/data/fc-local.sqlite.init"  # 备份初始状态
+repair_runtime_permissions
 
 # 5) 复制环境变量
 echo "[5/8] 部署环境变量配置..."
@@ -88,7 +101,9 @@ cp "$REPO_DIR/deploy/fc-api.service" "$ROOT/deploy/"
 cp "$REPO_DIR/deploy/fc-refresh.service" "$ROOT/deploy/"
 cp "$REPO_DIR/deploy/fc-refresh.timer" "$ROOT/deploy/"
 cp "$REPO_DIR/deploy/operational-check.sh" "$ROOT/deploy/"
-chmod +x "$ROOT/deploy/operational-check.sh"
+cp "$REPO_DIR/deploy/smoke-check.sh" "$ROOT/deploy/"
+chmod +x "$ROOT/deploy/operational-check.sh" "$ROOT/deploy/smoke-check.sh"
+repair_runtime_permissions
 
 # 软链接到 systemd 目录
 ln -sf "$ROOT/deploy/fc-api.service" /etc/systemd/system/fc-api.service
@@ -102,6 +117,7 @@ systemctl enable --now fc-refresh.timer
 echo ""
 echo "部署验收:"
 "$ROOT/deploy/operational-check.sh" --mode bootstrap
+"$ROOT/deploy/smoke-check.sh"
 
 echo ""
 echo "============================================"
@@ -116,6 +132,7 @@ systemctl status fc-refresh.timer --no-pager 2>&1 | head -5
 echo ""
 echo "验证 API:"
 echo "  sudo $ROOT/deploy/operational-check.sh --mode deploy"
+echo "  sudo $ROOT/deploy/smoke-check.sh --expected-commit \"\$(cat $ROOT/current/COMMIT)\""
 echo ""
 echo "日常操作:"
 echo "  sudo systemctl status fc-api              # 查看 API 状态"

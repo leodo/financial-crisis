@@ -17,6 +17,7 @@ ROOT="/opt/financial-crisis"
 RELEASES_DIR="$ROOT/releases"
 LOGS_DIR="$ROOT/logs"
 CURRENT_LINK="$ROOT/current"
+mkdir -p "$RELEASES_DIR" "$LOGS_DIR" "$ROOT/data" "$ROOT/deploy"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -f "$SCRIPT_DIR/../Cargo.toml" ]; then
   REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -32,9 +33,43 @@ RELEASE_DIR="$RELEASES_DIR/v$TIMESTAMP"
 # 日志函数
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOGS_DIR/update.log"; }
 
+repair_runtime_permissions() {
+  mkdir -p "$ROOT/data" "$ROOT/logs"
+  if id fc-service >/dev/null 2>&1; then
+    chown -R fc-service:fc-service "$ROOT/data" "$ROOT/logs"
+    chmod 750 "$ROOT/data" "$ROOT/logs"
+    find "$ROOT/data" -maxdepth 1 -name 'fc-local.sqlite*' -exec chmod 660 {} + 2>/dev/null || true
+  else
+    log "警告: fc-service 用户不存在，跳过运行时权限修复"
+  fi
+}
+
+sync_deploy_files() {
+  mkdir -p "$ROOT/deploy"
+  cp "$REPO_DIR/deploy/fc-api.service" "$ROOT/deploy/"
+  cp "$REPO_DIR/deploy/fc-refresh.service" "$ROOT/deploy/"
+  cp "$REPO_DIR/deploy/fc-refresh.timer" "$ROOT/deploy/"
+  cp "$REPO_DIR/deploy/operational-check.sh" "$ROOT/deploy/"
+  cp "$REPO_DIR/deploy/smoke-check.sh" "$ROOT/deploy/"
+  chmod +x "$ROOT/deploy/operational-check.sh" "$ROOT/deploy/smoke-check.sh"
+
+  if [ "$(id -u)" -eq 0 ] && command -v systemctl >/dev/null 2>&1; then
+    ln -sf "$ROOT/deploy/fc-api.service" /etc/systemd/system/fc-api.service
+    ln -sf "$ROOT/deploy/fc-refresh.service" /etc/systemd/system/fc-refresh.service
+    ln -sf "$ROOT/deploy/fc-refresh.timer" /etc/systemd/system/fc-refresh.timer
+    systemctl daemon-reload
+    if systemctl is-enabled --quiet fc-refresh.timer 2>/dev/null; then
+      systemctl enable --now fc-refresh.timer >/dev/null 2>&1 || true
+    fi
+  else
+    log "警告: 不是 root 或 systemctl 不可用，跳过 systemd unit 同步"
+  fi
+}
+
 log "=== 开始更新: v$TIMESTAMP ==="
 log "脚本目录: $SCRIPT_DIR"
 log "仓库目录: $REPO_DIR"
+repair_runtime_permissions
 
 # 1) 拉取最新代码
 log "[1/8] 拉取最新代码..."
@@ -88,8 +123,8 @@ cp -r config/ "$RELEASE_DIR/config/"
 cp -r scripts/*.ps1 "$RELEASE_DIR/scripts/" 2>/dev/null || true
 cp -r scripts/*.mjs "$RELEASE_DIR/scripts/" 2>/dev/null || true
 cp justfile "$RELEASE_DIR/" 2>/dev/null || true
-cp "$REPO_DIR/deploy/operational-check.sh" "$ROOT/deploy/operational-check.sh"
-chmod +x "$ROOT/deploy/operational-check.sh"
+sync_deploy_files
+repair_runtime_permissions
 
 # 保留 commit 信息
 echo "$COMMIT_HASH" > "$RELEASE_DIR/COMMIT"
@@ -117,6 +152,7 @@ fi
 log "[7/8] 运行部署验收..."
 if [ "$API_SERVICE_RESTARTED" = "1" ]; then
   "$ROOT/deploy/operational-check.sh" --mode deploy 2>&1 | tee -a "$LOGS_DIR/update.log"
+  "$ROOT/deploy/smoke-check.sh" --expected-commit "$COMMIT_HASH" 2>&1 | tee -a "$LOGS_DIR/update.log"
   log "部署验收完成"
 else
   log "部署验收已跳过"

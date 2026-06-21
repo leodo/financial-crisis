@@ -1618,6 +1618,14 @@ async function validateUserFacingUiCopy() {
       deployBootstrap.includes("--mode bootstrap") &&
       deployRollback.includes("operational-check.sh") &&
       deployRollback.includes("--mode rollback") &&
+      deployUpdate.includes("smoke-check.sh") &&
+      deployBootstrap.includes("smoke-check.sh") &&
+      deployRollback.includes("smoke-check.sh") &&
+      deployUpdate.includes("chown -R fc-service:fc-service") &&
+      deployBootstrap.includes("chown -R fc-service:fc-service") &&
+      deployRollback.includes("chown -R fc-service:fc-service") &&
+      deployUpdate.includes("fc-refresh.service") &&
+      deployUpdate.includes("systemctl daemon-reload") &&
       operationalCheck.includes('RUN_RISK_THRESHOLD="${FC_RUN_RISK_THRESHOLD_AFTER_REFRESH:-1}"') &&
       operationalCheck.includes("risk-threshold-${MODE}") &&
       refreshService.includes("ExecStartPost=/opt/financial-crisis/deploy/operational-check.sh --mode refresh") &&

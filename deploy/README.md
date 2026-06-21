@@ -25,7 +25,8 @@
 │   ├── fc-api.env
 │   ├── fc-api.service -> /etc/systemd/system/fc-api.service
 │   ├── fc-refresh.timer
-│   └── operational-check.sh               # 部署/回滚/刷新后置验收
+│   ├── operational-check.sh               # 部署/回滚/刷新后置验收
+│   └── smoke-check.sh                     # 当前 release/API/systemd 快速冒烟检查
 ├── update.sh                              # 一键更新
 └── rollback.sh                            # 一键回滚
 ```
@@ -63,6 +64,9 @@ sudo bash deploy/update.sh
 
 # 如需手动补查
 sudo /opt/financial-crisis/deploy/operational-check.sh --mode deploy
+sudo /opt/financial-crisis/deploy/smoke-check.sh \
+  --expected-commit "$(cat /opt/financial-crisis/current/COMMIT)" \
+  --public-url http://45.32.75.106
 ```
 
 **更新过程会自动：**
@@ -73,7 +77,9 @@ sudo /opt/financial-crisis/deploy/operational-check.sh --mode deploy
 5. 切换 `current` symlink
 6. 重启 `fc-api` 服务
 7. 运行 `/opt/financial-crisis/deploy/operational-check.sh --mode deploy`，生成部署验收报告
-8. 清理旧版本（保留最近 3 个）
+8. 运行 `/opt/financial-crisis/deploy/smoke-check.sh`，检查当前 release、API、定时器、数据新鲜度和生产源状态
+9. 修复 `/opt/financial-crisis/data`、`logs` 的 `fc-service` 写权限，并同步 systemd service/timer 配置
+10. 清理旧版本（保留最近 3 个）
 
 如果是首次部署且 `fc-api` service 尚未安装，`update.sh` 会先跳过本阶段验收；
 `bootstrap.sh` 会在安装并启用 systemd 服务后运行 `--mode bootstrap` 验收。
@@ -92,7 +98,8 @@ ls /opt/financial-crisis/releases/
 ```
 
 回滚脚本会在切换 `current` 并重启 API 后自动运行
-`/opt/financial-crisis/deploy/operational-check.sh --mode rollback`。
+`/opt/financial-crisis/deploy/operational-check.sh --mode rollback` 和
+`/opt/financial-crisis/deploy/smoke-check.sh`。
 
 ## 系统服务
 
@@ -118,6 +125,11 @@ systemctl start fc-refresh.service      # 手动触发一次刷新
 ```bash
 # 1. 一键验收 API、assessment、sources、关键日期和生产源降级
 sudo /opt/financial-crisis/deploy/operational-check.sh --mode deploy
+
+# 1b. 快速检查当前 release、systemd、SQLite 数据模式、关键指标新鲜度和公网首页
+sudo /opt/financial-crisis/deploy/smoke-check.sh \
+  --expected-commit "$(cat /opt/financial-crisis/current/COMMIT)" \
+  --public-url http://45.32.75.106
 
 # 2. 如需排查数据源，再看底层刷新证据
 /opt/financial-crisis/current/bin/fc-worker refresh status
