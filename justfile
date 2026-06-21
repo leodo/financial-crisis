@@ -242,12 +242,12 @@ formal-candidate-jpy-carry-audit:
 # Historical Audit workstreams/actions 统一摊开，直接回答“为什么看见了风险却没形成可执行提前量”。
 # 用法：`just formal-candidate-leadtime-audit us_formal_family_hybrid_20260604T081030 us_formal_family_hybrid_20260605T202246`
 formal-candidate-leadtime-audit baseline_release_id candidate_release_id:
-    ./scripts/formal-candidate-leadtime-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+    node ./scripts/formal-candidate-leadtime-audit.mjs --baseline-release-id {{baseline_release_id}} --candidate-release-id {{candidate_release_id}}
 
 # 对比指定 history mode 的 release-review 工件；当 API 最新审计是 default 口径时，用这个命令生成可被页面匹配的 lead-time audit。
 # 用法：`just formal-candidate-leadtime-audit-mode us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260609T162641 default`
 formal-candidate-leadtime-audit-mode baseline_release_id candidate_release_id history_mode:
-    ./scripts/formal-candidate-leadtime-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}} -HistoryMode {{history_mode}}
+    node ./scripts/formal-candidate-leadtime-audit.mjs --baseline-release-id {{baseline_release_id}} --candidate-release-id {{candidate_release_id}} --history-mode {{history_mode}}
 
 # 用固定美国历史场景包一口气审计 baseline / candidate：
 # 直接把 1987、1990s、2000、2008、2011、2020、2022、2023 的 compare、coverage 和 release-review blocker
@@ -288,7 +288,11 @@ formal-candidate-rate-shock-audit baseline_release_id candidate_release_id:
 # 20d/60d cooldown regime、候选新增/拉长误报 episode 与 no-go 原因。
 # 用法：`just formal-candidate-cooldown-audit us_formal_family_hybrid_20260606T112926 us_formal_family_hybrid_20260608T191024`
 formal-candidate-cooldown-audit baseline_release_id candidate_release_id:
-    ./scripts/formal-candidate-cooldown-audit.ps1 -BaselineReleaseId {{baseline_release_id}} -CandidateReleaseId {{candidate_release_id}}
+    node ./scripts/formal-candidate-cooldown-audit.mjs --baseline-release-id {{baseline_release_id}} --candidate-release-id {{candidate_release_id}}
+
+# 对比指定 history mode 的 release-review 工件生成 cooldown / false-positive 审计。
+formal-candidate-cooldown-audit-mode baseline_release_id candidate_release_id history_mode:
+    node ./scripts/formal-candidate-cooldown-audit.mjs --baseline-release-id {{baseline_release_id}} --candidate-release-id {{candidate_release_id}} --history-mode {{history_mode}}
 
 # 标准候选筛选入口：先跑三段窗口 compare，再补 20d cross-window separation audit，然后读取或生成 default release review。
 # 它会把 20d cooldown bleed、动作精度、最长误报区间、runtime floor hit 和 threshold-policy blockers 纳入 no-go 判断，
