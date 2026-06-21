@@ -1607,6 +1607,7 @@ async function validateUserFacingUiCopy() {
   const smokeCheck = await readFile(new URL("../deploy/smoke-check.sh", import.meta.url), "utf8");
   const sqliteBackup = await readFile(new URL("../deploy/sqlite-backup.sh", import.meta.url), "utf8");
   const sqliteRestore = await readFile(new URL("../deploy/sqlite-restore.sh", import.meta.url), "utf8");
+  const sqliteDrill = await readFile(new URL("../deploy/sqlite-drill.sh", import.meta.url), "utf8");
   const refreshService = await readFile(
     new URL("../deploy/fc-refresh.service", import.meta.url),
     "utf8"
@@ -1637,14 +1638,20 @@ async function validateUserFacingUiCopy() {
       smokeCheck.includes("Array.isArray(sources) ? sources") &&
       deployUpdate.includes("sqlite-backup.sh") &&
       deployUpdate.includes("sqlite-restore.sh") &&
+      deployUpdate.includes("sqlite-drill.sh") &&
       deployBootstrap.includes("sqlite-backup.sh") &&
       deployBootstrap.includes("sqlite-restore.sh") &&
+      deployBootstrap.includes("sqlite-drill.sh") &&
       sqliteBackup.includes("VACUUM INTO") &&
       sqliteBackup.includes("PRAGMA integrity_check") &&
       sqliteRestore.includes("PRAGMA integrity_check") &&
       sqliteRestore.includes("systemctl stop fc-api") &&
       sqliteRestore.includes("$DB_PATH-wal") &&
       sqliteRestore.includes("smoke-check.sh") &&
+      sqliteRestore.includes("--skip-service") &&
+      sqliteDrill.includes("after-mutation") &&
+      sqliteDrill.includes("before-restore") &&
+      sqliteDrill.includes("sqlite-restore.sh") &&
       operationalCheck.includes('RUN_RISK_THRESHOLD="${FC_RUN_RISK_THRESHOLD_AFTER_REFRESH:-1}"') &&
       operationalCheck.includes("risk-threshold-${MODE}") &&
       refreshService.includes("ExecStartPost=/opt/financial-crisis/deploy/operational-check.sh --mode refresh") &&

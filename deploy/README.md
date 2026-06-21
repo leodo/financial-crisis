@@ -28,7 +28,8 @@
 │   ├── operational-check.sh               # 部署/回滚/刷新后置验收
 │   ├── smoke-check.sh                     # 当前 release/API/systemd 快速冒烟检查
 │   ├── sqlite-backup.sh                   # SQLite 一致性备份
-│   └── sqlite-restore.sh                  # SQLite 校验恢复
+│   ├── sqlite-restore.sh                  # SQLite 校验恢复
+│   └── sqlite-drill.sh                    # 非生产库备份/恢复演练
 ├── update.sh                              # 一键更新
 └── rollback.sh                            # 一键回滚
 ```
@@ -138,6 +139,9 @@ ls -lh /opt/financial-crisis/backups/sqlite/
 sudo /opt/financial-crisis/deploy/sqlite-restore.sh \
   --backup /opt/financial-crisis/backups/sqlite/fc-local-YYYYMMDD-HHMMSS.sqlite \
   --yes
+
+# 非破坏性恢复演练：只使用临时 SQLite，不触碰生产库
+sudo /opt/financial-crisis/deploy/sqlite-drill.sh
 ```
 
 ## 验证部署

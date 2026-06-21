@@ -46,6 +46,12 @@ jobs:
       - name: Check deployment shell scripts
         run: bash -n deploy/*.sh
 
+      - name: Install sqlite3
+        run: sudo apt-get update && sudo apt-get install -y sqlite3
+
+      - name: SQLite backup restore drill
+        run: bash deploy/sqlite-drill.sh
+
       - name: Rust format
         run: cargo fmt --all -- --check
 

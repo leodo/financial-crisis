@@ -53,7 +53,8 @@ sync_deploy_files() {
   cp "$REPO_DIR/deploy/smoke-check.sh" "$ROOT/deploy/"
   cp "$REPO_DIR/deploy/sqlite-backup.sh" "$ROOT/deploy/"
   cp "$REPO_DIR/deploy/sqlite-restore.sh" "$ROOT/deploy/"
-  chmod +x "$ROOT/deploy/operational-check.sh" "$ROOT/deploy/smoke-check.sh" "$ROOT/deploy/sqlite-backup.sh" "$ROOT/deploy/sqlite-restore.sh"
+  cp "$REPO_DIR/deploy/sqlite-drill.sh" "$ROOT/deploy/"
+  chmod +x "$ROOT/deploy/operational-check.sh" "$ROOT/deploy/smoke-check.sh" "$ROOT/deploy/sqlite-backup.sh" "$ROOT/deploy/sqlite-restore.sh" "$ROOT/deploy/sqlite-drill.sh"
 
   if [ "$(id -u)" -eq 0 ] && command -v systemctl >/dev/null 2>&1; then
     ln -sf "$ROOT/deploy/fc-api.service" /etc/systemd/system/fc-api.service

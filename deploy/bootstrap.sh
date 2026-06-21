@@ -107,7 +107,8 @@ cp "$REPO_DIR/deploy/operational-check.sh" "$ROOT/deploy/"
 cp "$REPO_DIR/deploy/smoke-check.sh" "$ROOT/deploy/"
 cp "$REPO_DIR/deploy/sqlite-backup.sh" "$ROOT/deploy/"
 cp "$REPO_DIR/deploy/sqlite-restore.sh" "$ROOT/deploy/"
-chmod +x "$ROOT/deploy/operational-check.sh" "$ROOT/deploy/smoke-check.sh" "$ROOT/deploy/sqlite-backup.sh" "$ROOT/deploy/sqlite-restore.sh"
+cp "$REPO_DIR/deploy/sqlite-drill.sh" "$ROOT/deploy/"
+chmod +x "$ROOT/deploy/operational-check.sh" "$ROOT/deploy/smoke-check.sh" "$ROOT/deploy/sqlite-backup.sh" "$ROOT/deploy/sqlite-restore.sh" "$ROOT/deploy/sqlite-drill.sh"
 repair_runtime_permissions
 
 # 软链接到 systemd 目录

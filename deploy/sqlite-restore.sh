@@ -8,7 +8,7 @@ BACKUP_PATH=""
 
 usage() {
   cat <<'EOF'
-Usage: sqlite-restore.sh --backup PATH [--db PATH] [--yes]
+Usage: sqlite-restore.sh --backup PATH [--db PATH] [--yes] [--skip-service] [--skip-smoke]
 
 Verifies the backup with PRAGMA integrity_check, stops fc-api when systemd is available,
 copies the current database aside, restores the backup atomically, repairs runtime
@@ -17,6 +17,8 @@ EOF
 }
 
 YES=0
+SKIP_SERVICE=0
+SKIP_SMOKE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --backup)
@@ -29,6 +31,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --yes)
       YES=1
+      shift
+      ;;
+    --skip-service)
+      SKIP_SERVICE=1
+      shift
+      ;;
+    --skip-smoke)
+      SKIP_SMOKE=1
       shift
       ;;
     -h|--help)
@@ -64,7 +74,7 @@ timestamp="$(date -u +%Y%m%d-%H%M%S)"
 pre_restore="$DB_PATH.pre-restore-$timestamp"
 tmp_restore="$DB_PATH.restore-tmp"
 
-if command -v systemctl >/dev/null 2>&1; then
+if [[ "$SKIP_SERVICE" != "1" ]] && command -v systemctl >/dev/null 2>&1; then
   systemctl stop fc-api 2>/dev/null || true
 fi
 
@@ -83,11 +93,11 @@ if id fc-service >/dev/null 2>&1; then
   chmod 660 "$DB_PATH" "$DB_PATH"* 2>/dev/null || true
 fi
 
-if command -v systemctl >/dev/null 2>&1; then
+if [[ "$SKIP_SERVICE" != "1" ]] && command -v systemctl >/dev/null 2>&1; then
   systemctl start fc-api
 fi
 
-if [[ -x "$ROOT/deploy/smoke-check.sh" ]]; then
+if [[ "$SKIP_SMOKE" != "1" && -x "$ROOT/deploy/smoke-check.sh" ]]; then
   "$ROOT/deploy/smoke-check.sh" --expected-commit "$(cat "$ROOT/current/COMMIT" 2>/dev/null || true)"
 fi
 
