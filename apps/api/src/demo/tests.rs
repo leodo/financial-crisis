@@ -741,3 +741,24 @@ fn formal_main_detection_accepts_versioned_feature_set_variants() {
     assert!(!use_transitional_actionable_bridge(Some(&serving_model)));
     assert!(method_version.contains("class=formal_main"));
 }
+
+#[test]
+fn formal_main_detection_accepts_trend_feature_set_variants() {
+    let mut serving_model = formal_serving_model_context();
+    serving_model.release.manifest.feature_set_version =
+        "feature_formal_v1_trend_20260621".to_string();
+    serving_model.probability_bundle.as_mut().unwrap().horizons = vec![
+        probability_horizon_with_threshold(5, 0.99),
+        probability_horizon_with_threshold(20, 0.99),
+        probability_horizon_with_threshold(60, 0.99),
+    ];
+
+    let thresholds = runtime_threshold_diagnostics(Some(&serving_model));
+    let method_version = expected_prediction_snapshot_method_version(Some(&serving_model));
+
+    assert_eq!(thresholds.defend_p5d, 0.99);
+    assert_eq!(thresholds.hedge_p20d, 0.99);
+    assert_eq!(thresholds.prepare_p60d, 0.99);
+    assert!(!use_transitional_actionable_bridge(Some(&serving_model)));
+    assert!(method_version.contains("class=formal_main"));
+}

@@ -1,6 +1,52 @@
 use super::*;
 
 #[test]
+fn release_review_structured_signal_counts_disable_bridge_for_trend_formal_main() {
+    let as_of_date = NaiveDate::from_ymd_opt(2023, 2, 20).unwrap();
+    let backtests = vec![synthetic_backtest_summary_with_dates(
+        "scenario_trend_formal",
+        "Trend Formal",
+        Some(as_of_date),
+        None,
+        Some(18),
+        None,
+        0,
+    )];
+    let history = vec![runtime_history_point_with_state(
+        as_of_date,
+        58.0,
+        0.02,
+        0.10,
+        0.18,
+        DecisionPosture::Prepare,
+        TimeToRiskBucket::Months,
+        46.0,
+        &[],
+    )];
+    let mut method = formal_main_audit_method_wire();
+    method.method.feature_set_version = "feature_formal_v1_trend_20260621".to_string();
+    method.runtime_thresholds = Some(RuntimeThresholdDiagnosticsWire {
+        prepare_p60d: 0.99,
+        hedge_p20d: 0.99,
+        defend_p5d: 0.99,
+        severe_now_p20d: 0.27,
+        elevated_weeks_p60d: 0.20,
+        external_prepare_p20d: 0.99,
+        carry_prepare_p60d: 0.99,
+        downgrade_prepare_p60d: 0.99,
+        downgrade_hedge_p20d: 0.99,
+        downgrade_defend_p5d: 0.99,
+        history_runtime_policy_version: "runtime_history_test".to_string(),
+    });
+
+    let (strict_actionable_point_count, runtime_floor_hit_count) =
+        release_review_structured_signal_counts(&backtests, &history, &method);
+
+    assert_eq!(strict_actionable_point_count, 0);
+    assert_eq!(runtime_floor_hit_count, 0);
+}
+
+#[test]
 fn release_review_structured_signal_counts_distinguish_strict_and_runtime_hits() {
     let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 10).unwrap();
     let backtests = vec![synthetic_backtest_summary_with_dates(

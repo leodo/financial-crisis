@@ -16,6 +16,8 @@ use fc_domain::{
 
 const RELEASE_REVIEW_SIGNAL_WINDOW: usize = 5;
 const RELEASE_REVIEW_SIGNAL_MIN_HITS: usize = 3;
+const FORMAL_MAIN_FEATURE_SET_PREFIXES: [&str; 2] =
+    ["feature_formal_v1_main", "feature_formal_v1_trend"];
 
 pub(super) type ReleaseReviewRuntimeFloorHits = ActionableGateFloorHits;
 
@@ -105,10 +107,9 @@ pub(super) fn release_review_uses_transitional_actionable_bridge(
 ) -> bool {
     !(method.method.probability_mode == "formal_bundle_v1"
         && method.method.label_version == "formal_label_v1_main"
-        && method
-            .method
-            .feature_set_version
-            .starts_with("feature_formal_v1_main"))
+        && FORMAL_MAIN_FEATURE_SET_PREFIXES
+            .iter()
+            .any(|prefix| method.method.feature_set_version.starts_with(prefix)))
 }
 
 pub(super) fn release_review_strict_prepare_p20d_threshold(
