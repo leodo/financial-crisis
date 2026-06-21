@@ -131,6 +131,59 @@ fn forward_crisis_broad_score_family_caps_only_apply_when_family_context_exists(
 }
 
 #[test]
+fn forward_crisis_raw_trend_family_caps_apply_on_20d_only() {
+    let family_feature_names = vec![
+        "us_housing_starts_level".to_string(),
+        "us_vix_change_20d".to_string(),
+        "us_vix_change_5d".to_string(),
+        "us_nfci_change_20d".to_string(),
+        "us_curve_10y2y_change_20d".to_string(),
+        "family_proxy__mixed_systemic".to_string(),
+    ];
+    let mut family_weights_20d = vec![-1.74, 0.94, 0.44, 1.04, -0.64, 0.04];
+    crate::project_forward_crisis_sign_constraints(
+        &mut family_weights_20d,
+        &family_feature_names,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert_eq!(family_weights_20d[0], -0.45);
+    assert_eq!(family_weights_20d[1], 0.28);
+    assert_eq!(family_weights_20d[2], 0.22);
+    assert_eq!(family_weights_20d[3], 0.45);
+    assert_eq!(family_weights_20d[4], -0.35);
+
+    let mut family_weights_60d = vec![-1.74, 0.94, 0.44, 1.04, -0.64, 0.04];
+    crate::project_forward_crisis_sign_constraints(
+        &mut family_weights_60d,
+        &family_feature_names,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert_eq!(family_weights_60d[0], -1.74);
+    assert_eq!(family_weights_60d[1], 0.94);
+    assert_eq!(family_weights_60d[2], 0.44);
+    assert_eq!(family_weights_60d[3], 1.04);
+    assert_eq!(family_weights_60d[4], -0.64);
+
+    let plain_feature_names = vec![
+        "us_housing_starts_level".to_string(),
+        "us_vix_change_20d".to_string(),
+        "us_nfci_change_20d".to_string(),
+    ];
+    let mut plain_weights_20d = vec![-1.74, 0.94, 1.04];
+    crate::project_forward_crisis_sign_constraints(
+        &mut plain_weights_20d,
+        &plain_feature_names,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert_eq!(plain_weights_20d[0], -1.74);
+    assert_eq!(plain_weights_20d[1], 0.94);
+    assert_eq!(plain_weights_20d[2], 1.04);
+}
+
+#[test]
 fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
     let family_feature_names = vec![
         "us_curve_10y2y_level".to_string(),

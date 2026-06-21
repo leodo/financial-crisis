@@ -158,6 +158,71 @@ fn regime_support_adjustment_rejects_prewarning_only_20d_threshold() {
 }
 
 #[test]
+fn regime_support_adjustment_keeps_20d_threshold_actionable_when_prewarning_separates() {
+    let mut rows = Vec::new();
+    let mut probabilities = Vec::new();
+    for _ in 0..44 {
+        rows.push(threshold_regime_row(
+            ProbabilityTrainingRegime::PositiveWindow,
+            1,
+        ));
+        probabilities.push(0.34);
+    }
+    for index in 0..71 {
+        rows.push(threshold_regime_row(
+            ProbabilityTrainingRegime::PreWarningBuffer,
+            0,
+        ));
+        probabilities.push(if index < 9 { 0.349 } else { 0.28 });
+    }
+    for index in 0..8166 {
+        rows.push(threshold_regime_row(ProbabilityTrainingRegime::Normal, 0));
+        probabilities.push(if index < 40 { 0.349 } else { 0.18 });
+    }
+    for index in 0..112 {
+        rows.push(threshold_regime_row(
+            ProbabilityTrainingRegime::PostCrisisCooldown,
+            0,
+        ));
+        probabilities.push(if index < 4 { 0.349 } else { 0.16 });
+    }
+
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    let labels = rows
+        .iter()
+        .map(|row| row.label_20d as f64)
+        .collect::<Vec<_>>();
+    let adjusted_threshold = adjust_probability_decision_threshold_for_regime_support(
+        0.36,
+        &probabilities,
+        &labels,
+        &row_refs,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    let prewarning_hit_count = probabilities
+        .iter()
+        .zip(row_refs.iter())
+        .filter(|(probability, row)| {
+            **probability >= adjusted_threshold
+                && row.regime_20d == ProbabilityTrainingRegime::PreWarningBuffer
+        })
+        .count();
+    let normal_hit_rate = probabilities
+        .iter()
+        .zip(row_refs.iter())
+        .filter(|(_, row)| row.regime_20d == ProbabilityTrainingRegime::Normal)
+        .filter(|(probability, _)| **probability >= adjusted_threshold)
+        .count() as f64
+        / 8166.0;
+
+    assert!(adjusted_threshold < 0.36);
+    assert!(adjusted_threshold <= 0.349);
+    assert!(prewarning_hit_count > 0);
+    assert!(normal_hit_rate < 0.01);
+}
+
+#[test]
 fn regime_support_adjustment_rejects_60d_threshold_that_ties_cooldown_hits() {
     let rows = vec![
         threshold_regime_row_60d(ProbabilityTrainingRegime::PositiveWindow, 1),

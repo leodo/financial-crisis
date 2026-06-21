@@ -223,6 +223,35 @@ fn forward_crisis_coefficient_bounds(
                 max: Some(0.12),
             })
         }
+        // Trend-feature audit on 2026-06-21 showed the 20d family-hybrid head
+        // over-ranking broad market shock days in 2011/2015 as normal/cooldown
+        // because slow housing weakness and raw VIX/NFCI changes dominated true
+        // positive-window ranking. Keep these raw macro/trend inputs auxiliary
+        // on 20d and leave sharper family/context semantics to carry action.
+        (20, "us_housing_starts_level") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(-0.45),
+                max: Some(0.0),
+            })
+        }
+        (20, "us_vix_change_20d") if uses_family_context_features => Some(CoefficientBounds {
+            min: Some(0.0),
+            max: Some(0.28),
+        }),
+        (20, "us_vix_change_5d") if uses_family_context_features => Some(CoefficientBounds {
+            min: Some(0.0),
+            max: Some(0.22),
+        }),
+        (20, "us_nfci_change_20d") if uses_family_context_features => Some(CoefficientBounds {
+            min: Some(0.0),
+            max: Some(0.45),
+        }),
+        (20, "us_curve_10y2y_change_20d") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(-0.35),
+                max: Some(0.0),
+            })
+        }
         // The best current family-hybrid candidate keeps USDJPY level as a real
         // positive driver. The failed 064930 / 064040 branch only looked cleaner
         // because it pushed the base level down toward 0.22 while simultaneously
