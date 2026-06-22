@@ -1631,8 +1631,11 @@ async function validateUserFacingUiCopy() {
       formalGoNoGoReport.includes("active_default") &&
       formalGoNoGoReport.includes("latest_release_review") &&
       formalGoNoGoReport.includes("prediction_snapshot_audit") &&
+      formalGoNoGoReport.includes("loadLatestGeneratedCandidate") &&
+      formalGoNoGoReport.includes("Latest generated formal candidate") &&
+      formalGoNoGoReport.includes("threshold remains fail-closed") &&
       formalGoNoGoReport.includes("NO-GO"),
-    "formal Go/No-Go report should combine assessment, research audit, sources, release review, and snapshot evidence before active_default approval"
+    "formal Go/No-Go report should combine runtime evidence plus latest generated candidate diagnostics before active_default approval"
   );
   assert(
     justfile.includes("formal-dataset-summary-pack:") &&

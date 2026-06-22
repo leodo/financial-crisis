@@ -1,5 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 
 const apiBaseUrl = process.env.FC_API_BASE_URL ?? "http://127.0.0.1:18080";
 const cliArgs = process.argv.slice(2);
@@ -43,6 +43,10 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
 function healthyServingStatus(value) {
   return String(value ?? "").toLowerCase() === "healthy";
 }
@@ -66,6 +70,59 @@ function actionLine(action) {
   return `- ${action}`;
 }
 
+function generatedCandidateReportLines(candidate, evaluation) {
+  if (!candidate) {
+    return [
+      "- Latest generated candidate: not found.",
+      "- Interpretation: no research-only candidate evaluation artifact is available for this report."
+    ];
+  }
+
+  const metrics = candidate.doc?.summary ?? {};
+  const lines = [
+    `- Release: ${candidate.releaseId}`,
+    `- Evaluation artifact: ${candidate.path}`,
+    `- Dataset: ${candidate.doc?.dataset_label ?? "unknown"}`,
+    `- Model shape: ${candidate.doc?.model_family ?? "unknown"} / ${
+      candidate.doc?.feature_transform ?? "unknown"
+    }`,
+    `- Status: ${evaluation.status}`,
+    `- Metrics: brier=${formatNumber(metrics.brier_score, 4)}, log_loss=${formatNumber(
+      metrics.log_loss,
+      4
+    )}, ece=${formatNumber(metrics.ece, 4)}`,
+    `- Usable early-warning horizons: ${
+      metrics.usable_early_warning_horizon_count ??
+      metrics.usable_early_warning_horizons ??
+      "unknown"
+    }`,
+    "",
+    "| Horizon | Regime diagnosis | Base threshold | Final threshold | Repair | Reason |",
+    "| --- | --- | ---: | ---: | --- | --- |",
+    ...evaluation.horizonRows.map(
+      (row) =>
+        `| ${row.horizonDays}d | ${row.diagnosis} | ${formatPercent(
+          row.baseThreshold,
+          1
+        )} | ${formatPercent(row.finalThreshold, 1)} | ${
+          row.repaired ? "yes" : "no"
+        } | ${row.repairReason} |`
+    )
+  ];
+
+  if (evaluation.blockers.length > 0) {
+    lines.push("", "Candidate blockers:");
+    lines.push(...evaluation.blockers.map(actionLine));
+  } else {
+    lines.push(
+      "",
+      "Candidate blockers: none detected by generated-evaluation checks. Release review and human approval are still required."
+    );
+  }
+
+  return lines;
+}
+
 async function fetchJson(path) {
   const response = await fetch(`${apiBaseUrl}${path}`);
   if (!response.ok) {
@@ -74,11 +131,186 @@ async function fetchJson(path) {
   return response.json();
 }
 
+async function pathExists(path) {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function generatedCandidateDirs() {
+  const cwd = process.cwd();
+  const deployRoot =
+    process.env.FC_DEPLOY_ROOT ??
+    (basename(cwd) === "current" ? dirname(cwd) : null);
+  return unique([
+    process.env.FC_FORMAL_GENERATED_BUNDLE_DIR
+      ? resolve(process.env.FC_FORMAL_GENERATED_BUNDLE_DIR)
+      : null,
+    resolve("artifacts/research/model-bundles/generated"),
+    resolve("config/model-bundles/generated"),
+    deployRoot ? resolve(deployRoot, "artifacts/research/model-bundles/generated") : null,
+    deployRoot ? resolve(deployRoot, "config/model-bundles/generated") : null
+  ]);
+}
+
+function releaseTimestamp(releaseId) {
+  const match = String(releaseId ?? "").match(/(\d{8}T\d{6})/);
+  if (!match) {
+    return null;
+  }
+  return match[1];
+}
+
+async function loadLatestGeneratedCandidate() {
+  const candidates = [];
+  for (const directory of generatedCandidateDirs()) {
+    if (!(await pathExists(directory))) {
+      continue;
+    }
+    const entries = await readdir(directory);
+    for (const entry of entries) {
+      if (!entry.endsWith("-evaluation.json")) {
+        continue;
+      }
+      const path = join(directory, entry);
+      try {
+        const [fileStat, raw] = await Promise.all([stat(path), readFile(path, "utf8")]);
+        const doc = JSON.parse(raw);
+        candidates.push({
+          doc,
+          mtimeMs: fileStat.mtimeMs,
+          path,
+          releaseId: doc?.release_id ?? entry.replace(/-evaluation\.json$/, ""),
+          timestamp: releaseTimestamp(doc?.release_id ?? entry)
+        });
+      } catch {
+        // Ignore partial or legacy generated files; the report should keep running.
+      }
+    }
+  }
+
+  return (
+    candidates.sort((left, right) => {
+      if (left.timestamp && right.timestamp && left.timestamp !== right.timestamp) {
+        return right.timestamp.localeCompare(left.timestamp);
+      }
+      if (left.timestamp && !right.timestamp) {
+        return -1;
+      }
+      if (!left.timestamp && right.timestamp) {
+        return 1;
+      }
+      return right.mtimeMs - left.mtimeMs;
+    })[0] ?? null
+  );
+}
+
+function thresholdDiagnosticForHorizon(candidate, horizonDays) {
+  return asArray(candidate?.doc?.horizons).find(
+    (horizon) => Number(horizon?.horizon_days) === horizonDays
+  )?.threshold_diagnostics;
+}
+
+function regimeSummaryForHorizon(candidate, horizonDays) {
+  return asArray(candidate?.doc?.summary?.regime_separation_summaries).find(
+    (summary) => Number(summary?.horizon_days) === horizonDays
+  );
+}
+
+function candidateThresholdWasRepaired(thresholdDiagnostic) {
+  if (!thresholdDiagnostic) {
+    return false;
+  }
+  return (
+    thresholdDiagnostic.repair_applied === true ||
+    thresholdDiagnostic.threshold_repaired === true ||
+    Number(thresholdDiagnostic.final_threshold ?? 0) >= 0.99
+  );
+}
+
+function evaluateLatestGeneratedCandidate(candidate, latestReview) {
+  if (!candidate) {
+    return {
+      blockers: [],
+      horizonRows: [],
+      status: "missing"
+    };
+  }
+
+  const blockers = [];
+  const latestReviewedTimestamp = releaseTimestamp(latestReview?.candidate_release_id);
+  if (
+    candidate.timestamp &&
+    latestReviewedTimestamp &&
+    candidate.timestamp < latestReviewedTimestamp
+  ) {
+    blockers.push(
+      `Generated candidate ${candidate.releaseId} is older than latest reviewed candidate ${latestReview.candidate_release_id}.`
+    );
+  }
+
+  const horizonRows = [5, 20, 60].map((horizonDays) => {
+    const thresholdDiagnostic = thresholdDiagnosticForHorizon(candidate, horizonDays);
+    const regimeSummary = regimeSummaryForHorizon(candidate, horizonDays) ?? {};
+    const repaired = candidateThresholdWasRepaired(thresholdDiagnostic ?? {});
+    const diagnosis = regimeSummary.diagnosis ?? "unknown";
+    const repairReason = thresholdDiagnostic?.repair_reason ?? "missing";
+
+    if (!thresholdDiagnostic) {
+      blockers.push(`${horizonDays}d generated evaluation lacks threshold diagnostics.`);
+    }
+    if (repaired) {
+      blockers.push(
+        `${horizonDays}d threshold remains fail-closed at ${formatPercent(
+          thresholdDiagnostic?.final_threshold,
+          1
+        )}; reason=${repairReason}.`
+      );
+    }
+    if (diagnosis === "unknown") {
+      blockers.push(`${horizonDays}d generated evaluation lacks regime separation diagnostics.`);
+    } else if (
+      diagnosis !== "usable_early_warning_separation" &&
+      diagnosis !== "usable_runtime_separation"
+    ) {
+      blockers.push(`${horizonDays}d regime separation is ${diagnosis}.`);
+    }
+
+    return {
+      baseThreshold: thresholdDiagnostic?.base_threshold,
+      diagnosis,
+      finalThreshold: thresholdDiagnostic?.final_threshold,
+      horizonDays,
+      repaired,
+      repairReason
+    };
+  });
+
+  const usableCount =
+    candidate.doc?.summary?.usable_early_warning_horizon_count ??
+    candidate.doc?.summary?.usable_early_warning_horizons;
+  if (typeof usableCount === "number" && usableCount < 2) {
+    blockers.push(
+      `Only ${usableCount} early-warning horizon(s) are usable; require at least 2 before promotion review.`
+    );
+  }
+
+  return {
+    blockers: unique(blockers),
+    horizonRows,
+    status: blockers.length === 0 ? "reviewable" : "blocked"
+  };
+}
+
 function addCheck(checks, status, label, detail, action) {
   checks.push({ action, detail, label, status });
 }
 
 async function collectState() {
+  const latestGeneratedCandidate = await loadLatestGeneratedCandidate();
   const [assessment, audit, sourcesResult] = await Promise.all([
     fetchJson("/api/assessment/current"),
     fetchJson("/api/research/audit"),
@@ -88,20 +320,26 @@ async function collectState() {
   return {
     assessment,
     audit,
+    latestGeneratedCandidate,
     sourceFetchError: sourcesResult?.error ?? null,
     sources: Array.isArray(sourcesResult) ? sourcesResult : []
   };
 }
 
 function evaluateGoNoGo(state) {
-  const { assessment, audit, sourceFetchError, sources } = state;
+  const { assessment, audit, latestGeneratedCandidate, sourceFetchError, sources } = state;
   const checks = [];
+  const latestReview = audit?.latest_release_review ?? null;
+  const latestCandidateEvaluation = evaluateLatestGeneratedCandidate(
+    latestGeneratedCandidate,
+    latestReview
+  );
   const sourceIssues = productionSourceIssues(sources);
   const probabilityMode = audit?.runtime_probability_mode ?? "unknown";
   const activeReleaseId = audit?.active_release_id ?? null;
   const servingStatus = audit?.runtime_release_status ?? "unknown";
   const snapshotAudit = audit?.prediction_snapshot_audit ?? {};
-  const releaseReview = audit?.latest_release_review ?? null;
+  const releaseReview = latestReview;
   const datasetSummaries = asArray(audit?.latest_dataset_summaries);
   const scenarioCoverageCatalog = releaseReview?.scenario_coverage_catalog ?? null;
   const probabilityInputStatus =
@@ -278,17 +516,36 @@ function evaluateGoNoGo(state) {
     "Run cooldown and false-positive audits before final human approval."
   );
 
+  if (latestGeneratedCandidate) {
+    addCheck(
+      checks,
+      latestCandidateEvaluation.blockers.length === 0 ? "pass" : "fail",
+      "Latest generated formal candidate",
+      `${latestGeneratedCandidate.releaseId}; status=${latestCandidateEvaluation.status}; blockers=${latestCandidateEvaluation.blockers.length}`,
+      "Keep the generated formal candidate research-only until threshold repair, regime separation, release review, lead-time, and cooldown audits all pass."
+    );
+  } else {
+    addCheck(
+      checks,
+      "warn",
+      "Latest generated formal candidate",
+      "not found in generated bundle directories",
+      "Run research-only formal training and retain the generated evaluation artifact before candidate promotion review."
+    );
+  }
+
   const hardFailures = checks.filter((check) => check.status === "fail");
   return {
     checks,
     hardFailures,
+    latestCandidateEvaluation,
     ok: hardFailures.length === 0,
     sourceIssues
   };
 }
 
 function buildReport(state, evaluation) {
-  const { assessment, audit } = state;
+  const { assessment, audit, latestGeneratedCandidate } = state;
   const status = evaluation.ok ? "GO-FOR-HUMAN-APPROVAL" : "NO-GO";
   const uniqueActions = [
     ...new Set(evaluation.hardFailures.map((check) => check.action).filter(Boolean))
@@ -342,10 +599,19 @@ function buildReport(state, evaluation) {
         ? `${latestReview.baseline_release_id} -> ${latestReview.candidate_release_id}`
         : "missing"
     }`,
+    `- Latest generated candidate: ${
+      latestGeneratedCandidate
+        ? `${latestGeneratedCandidate.releaseId} (${latestGeneratedCandidate.path})`
+        : "not found"
+    }`,
     "",
     "## Active-Default Checks",
     "",
     ...evaluation.checks.map(checkLine),
+    "",
+    "## Latest Generated Candidate",
+    "",
+    ...generatedCandidateReportLines(latestGeneratedCandidate, evaluation.latestCandidateEvaluation),
     "",
     "## Blocking Work",
     ""
