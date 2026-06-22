@@ -57,23 +57,86 @@ fn regime_positive_window_min_hit_rate(horizon_days: u32) -> f64 {
     }
 }
 
-fn probability_threshold_prediction_counts(
+#[derive(Clone, Copy, Debug, Default)]
+struct ProbabilityThresholdPositiveEvidence {
+    actual_positive_count: u32,
+    effective_positive_unit_count: u32,
+    effective_positive_mass: f64,
+    true_positive_count: u32,
+    effective_true_positive_mass: f64,
+    predicted_positive_count: u32,
+}
+
+impl ProbabilityThresholdPositiveEvidence {
+    fn effective_positive_count_for_ceiling(self) -> u32 {
+        self.actual_positive_count
+            .max(self.effective_positive_mass.ceil() as u32)
+            .max(1)
+    }
+
+    fn has_true_positive_support(self) -> bool {
+        self.true_positive_count > 0 || self.effective_true_positive_mass >= 0.5
+    }
+}
+
+fn probability_threshold_effective_positive_label(
+    row: &crate::ProbabilityTrainingRow,
+    hard_label: f64,
+    horizon_days: u32,
+) -> f64 {
+    if hard_label >= 0.5 {
+        return 1.0;
+    }
+    if row.regime_for_horizon(horizon_days) == crate::ProbabilityTrainingRegime::PostCrisisCooldown
+    {
+        return 0.0;
+    }
+
+    let target = crate::model::probability_training_target_label(
+        row,
+        horizon_days,
+        crate::ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    let floor = match horizon_days {
+        20 => 0.18,
+        60 => 0.24,
+        _ => 0.5,
+    };
+    if target >= floor {
+        target
+    } else {
+        0.0
+    }
+}
+
+fn probability_threshold_positive_evidence(
     probabilities: &[f64],
     labels: &[f64],
+    rows: &[&crate::ProbabilityTrainingRow],
+    horizon_days: u32,
     threshold: f64,
-) -> (u32, u32) {
-    let mut true_positive_count = 0_u32;
-    let mut predicted_positive_count = 0_u32;
-    for (probability, label) in probabilities.iter().zip(labels) {
+) -> ProbabilityThresholdPositiveEvidence {
+    let mut evidence = ProbabilityThresholdPositiveEvidence::default();
+    for ((probability, label), row) in probabilities.iter().zip(labels).zip(rows.iter().copied()) {
+        let effective_label =
+            probability_threshold_effective_positive_label(row, *label, horizon_days);
+        if *label >= 0.5 {
+            evidence.actual_positive_count += 1;
+        }
+        if effective_label > 0.0 {
+            evidence.effective_positive_unit_count += 1;
+            evidence.effective_positive_mass += effective_label;
+        }
         if *probability >= threshold {
-            predicted_positive_count += 1;
+            evidence.predicted_positive_count += 1;
             if *label >= 0.5 {
-                true_positive_count += 1;
+                evidence.true_positive_count += 1;
             }
+            evidence.effective_true_positive_mass += effective_label;
         }
     }
 
-    (true_positive_count, predicted_positive_count)
+    evidence
 }
 
 pub(in super::super) fn threshold_has_usable_early_warning_support(
@@ -144,11 +207,16 @@ fn threshold_has_over_tight_repair_candidate(
             continue;
         }
 
-        let (true_positive_count, predicted_positive_count) =
-            probability_threshold_prediction_counts(probabilities, labels, threshold);
-        if true_positive_count > 0
-            && predicted_positive_count > 0
-            && predicted_positive_count <= relaxed_prediction_ceiling
+        let evidence = probability_threshold_positive_evidence(
+            probabilities,
+            labels,
+            rows,
+            horizon_days,
+            threshold,
+        );
+        if evidence.has_true_positive_support()
+            && evidence.predicted_positive_count > 0
+            && evidence.predicted_positive_count <= relaxed_prediction_ceiling
         {
             return true;
         }
@@ -177,11 +245,16 @@ fn conservative_forward_crisis_threshold(
             continue;
         }
 
-        let (true_positive_count, predicted_positive_count) =
-            probability_threshold_prediction_counts(probabilities, labels, threshold);
-        if true_positive_count == 0
-            || predicted_positive_count == 0
-            || predicted_positive_count > relaxed_prediction_ceiling
+        let evidence = probability_threshold_positive_evidence(
+            probabilities,
+            labels,
+            rows,
+            horizon_days,
+            threshold,
+        );
+        if !evidence.has_true_positive_support()
+            || evidence.predicted_positive_count == 0
+            || evidence.predicted_positive_count > relaxed_prediction_ceiling
         {
             continue;
         }
@@ -226,8 +299,15 @@ pub(crate) fn adjust_probability_decision_threshold_for_regime_support(
         return base_threshold;
     }
 
-    let actual_positive_count = labels.iter().filter(|label| **label >= 0.5).count() as u32;
-    let positive_count = actual_positive_count as f64;
+    let positive_pool = probability_threshold_positive_evidence(
+        probabilities,
+        labels,
+        rows,
+        horizon_days,
+        f64::INFINITY,
+    );
+    let actual_positive_count = positive_pool.effective_positive_count_for_ceiling();
+    let positive_count = positive_pool.effective_positive_mass;
     if positive_count <= 0.0 {
         return base_threshold;
     }
@@ -307,14 +387,20 @@ pub(crate) fn adjust_probability_decision_threshold_for_regime_support(
             continue;
         }
 
-        let (true_positive_count, predicted_positive_count) =
-            probability_threshold_prediction_counts(probabilities, labels, threshold);
-        if predicted_positive_count == 0 || true_positive_count == 0 {
+        let evidence = probability_threshold_positive_evidence(
+            probabilities,
+            labels,
+            rows,
+            horizon_days,
+            threshold,
+        );
+        if evidence.predicted_positive_count == 0 || !evidence.has_true_positive_support() {
             continue;
         }
 
-        let precision = true_positive_count as f64 / predicted_positive_count as f64;
-        let recall = true_positive_count as f64 / positive_count;
+        let precision =
+            evidence.effective_true_positive_mass / evidence.predicted_positive_count as f64;
+        let recall = evidence.effective_true_positive_mass / positive_count;
         let f_beta = if precision > 0.0 || recall > 0.0 {
             (1.0 + beta_sq) * precision * recall / (beta_sq * precision + recall).max(1e-9)
         } else {
@@ -325,7 +411,7 @@ pub(crate) fn adjust_probability_decision_threshold_for_regime_support(
         let cooldown_hit_rate = hits.cooldown_hit_rate();
         let score = (
             early_warning_hit_rate >= regime_floor_min_hit_rate(horizon_days),
-            predicted_positive_count <= relaxed_prediction_ceiling,
+            evidence.predicted_positive_count <= relaxed_prediction_ceiling,
             ((early_warning_hit_rate - normal_hit_rate) * 1_000_000.0).round() as i64,
             ((hits.positive_window_hit_rate() - cooldown_hit_rate) * 1_000_000.0).round() as i64,
             ((hits.in_crisis_hit_rate() - cooldown_hit_rate) * 1_000_000.0).round() as i64,

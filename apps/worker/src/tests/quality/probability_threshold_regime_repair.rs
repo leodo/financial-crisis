@@ -158,6 +158,76 @@ fn regime_support_adjustment_rejects_prewarning_only_20d_threshold() {
 }
 
 #[test]
+fn regime_support_adjustment_uses_soft_forward_crisis_targets_for_20d_repair() {
+    let rows = vec![
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+    ];
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    let probabilities = vec![0.64, 0.62, 0.60, 0.58, 0.56, 0.54, 0.52, 0.18, 0.16, 0.12];
+    let labels = rows
+        .iter()
+        .map(|row| row.label_20d as f64)
+        .collect::<Vec<_>>();
+    let base_threshold = 0.90;
+    let adjusted_threshold = adjust_probability_decision_threshold_for_regime_support(
+        base_threshold,
+        &probabilities,
+        &labels,
+        &row_refs,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert!(labels.iter().all(|label| *label == 0.0));
+    assert!(adjusted_threshold < base_threshold);
+    assert!(adjusted_threshold <= 0.56);
+}
+
+#[test]
+fn regime_support_adjustment_rejects_soft_20d_repair_when_cooldown_bleeds() {
+    let rows = vec![
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+    ];
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    let probabilities = vec![
+        0.64, 0.62, 0.60, 0.58, 0.56, 0.54, 0.52, 0.18, 0.16, 0.62, 0.60,
+    ];
+    let labels = rows
+        .iter()
+        .map(|row| row.label_20d as f64)
+        .collect::<Vec<_>>();
+    let adjusted_threshold = adjust_probability_decision_threshold_for_regime_support(
+        0.90,
+        &probabilities,
+        &labels,
+        &row_refs,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert_eq!(adjusted_threshold, 0.99);
+}
+
+#[test]
 fn regime_support_adjustment_keeps_20d_threshold_actionable_when_prewarning_separates() {
     let mut rows = Vec::new();
     let mut probabilities = Vec::new();
