@@ -332,7 +332,7 @@ fn forward_crisis_coefficient_bounds(
             // After VIX / trigger-tail caps, the 60d head overfit persistent
             // curve inversion as a single all-regime driver. Keep inversion
             // directional, but prevent it from saturating normal/cooldown rows.
-            min: Some(-0.80),
+            min: Some(-1.80),
             max: None,
         }),
         (20, "interaction__us_curve_10y2y_level__us_fed_funds_level")

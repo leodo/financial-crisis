@@ -217,14 +217,14 @@ fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
     assert_eq!(low_interaction_family_weights_20d[1], 0.18);
     assert_eq!(low_interaction_family_weights_20d[2], 0.05);
 
-    let mut family_weights_60d = vec![-0.90, 0.60, 0.05];
+    let mut family_weights_60d = vec![-3.00, 0.60, 0.05];
     crate::project_forward_crisis_sign_constraints(
         &mut family_weights_60d,
         &family_feature_names,
         60,
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
-    assert_eq!(family_weights_60d[0], -0.80);
+    assert_eq!(family_weights_60d[0], -1.80);
     assert_eq!(family_weights_60d[1], 0.30);
     assert_eq!(family_weights_60d[2], 0.05);
 
@@ -252,14 +252,14 @@ fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
     assert_eq!(low_interaction_plain_weights_20d[0], -0.60);
     assert_eq!(low_interaction_plain_weights_20d[1], 0.02);
 
-    let mut plain_weights_60d = vec![-0.90, 0.60];
+    let mut plain_weights_60d = vec![-3.00, 0.60];
     crate::project_forward_crisis_sign_constraints(
         &mut plain_weights_60d,
         &plain_feature_names,
         60,
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
-    assert_eq!(plain_weights_60d[0], -0.80);
+    assert_eq!(plain_weights_60d[0], -1.80);
     assert_eq!(plain_weights_60d[1], 0.60);
 }
 
@@ -649,7 +649,7 @@ fn forward_crisis_curve_family_cap_gradient_only_activates_for_family_context_se
         "interaction__us_curve_10y2y_level__us_fed_funds_level".to_string(),
         "family_proxy__rate_shock".to_string(),
     ];
-    let family_weights = vec![-0.90, 0.60, 0.05];
+    let family_weights = vec![-3.00, 0.60, 0.05];
     let mut family_gradients = vec![0.0; family_weights.len()];
 
     crate::apply_forward_crisis_coefficient_bound_gradient(
@@ -715,7 +715,7 @@ fn forward_crisis_curve_family_cap_gradient_only_activates_for_family_context_se
         "us_curve_10y2y_level".to_string(),
         "interaction__us_curve_10y2y_level__us_fed_funds_level".to_string(),
     ];
-    let plain_weights = vec![-0.90, 0.60];
+    let plain_weights = vec![-3.00, 0.60];
     let mut plain_gradients = vec![0.0; plain_weights.len()];
 
     crate::apply_forward_crisis_coefficient_bound_gradient(
