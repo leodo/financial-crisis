@@ -375,6 +375,36 @@ pub struct ProbabilityRegimeTailDiagnostics {
     pub hit_rate_at_50pct: f64,
     pub hit_rate_at_80pct: f64,
     pub hit_rate_at_90pct: f64,
+    #[serde(default)]
+    pub top_samples: Vec<ProbabilityRegimeTailSampleDiagnostics>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProbabilityRegimeTailSampleDiagnostics {
+    pub as_of_date: String,
+    pub probability: f64,
+    pub label: f64,
+    pub regime: String,
+    #[serde(default)]
+    pub split_name: Option<String>,
+    #[serde(default)]
+    pub time_to_risk_bucket: Option<String>,
+    #[serde(default)]
+    pub primary_scenario_id: Option<String>,
+    #[serde(default)]
+    pub scenario_family: Option<String>,
+    #[serde(default)]
+    pub scenario_training_role: Option<String>,
+    #[serde(default)]
+    pub days_to_primary_crisis_start: Option<i64>,
+    #[serde(default)]
+    pub primary_scenario_supports_horizon: Option<bool>,
+    #[serde(default)]
+    pub protected_action_window: bool,
+    #[serde(default)]
+    pub top_feature_name: Option<String>,
+    #[serde(default)]
+    pub top_feature_value: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

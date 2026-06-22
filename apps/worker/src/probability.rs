@@ -6,7 +6,7 @@ mod threshold;
 use fc_domain::{
     apply_platt_probability_calibration, HorizonEvaluationSummary, LogisticProbabilityModel,
     PlattCalibrationArtifact, ProbabilityBundleEvaluation, ProbabilityHorizonBundle,
-    ProbabilityRegimeTailDiagnostics,
+    ProbabilityRegimeTailDiagnostics, ProbabilityRegimeTailSampleDiagnostics,
     ProbabilityThresholdDiagnostics as ProbabilityThresholdDiagnosticsWire,
     RegimeSeparationEvaluationSummary,
 };
@@ -29,6 +29,8 @@ struct TrainedProbabilityHead {
     decision_threshold: f64,
     threshold_diagnostics: ProbabilityThresholdDiagnosticsWire,
 }
+
+const PROBABILITY_REGIME_TAIL_TOP_SAMPLE_LIMIT: usize = 5;
 
 pub(crate) fn train_horizon_bundle(
     train_rows: &[crate::ProbabilityTrainingRow],
@@ -220,16 +222,25 @@ pub(crate) fn evaluate_regime_separation_summary_refs(
         sample_count: u32,
         probability_sum: f64,
         probabilities: Vec<f64>,
+        samples: Vec<ProbabilityRegimeTailSampleDiagnostics>,
     }
 
     let mut buckets = BTreeMap::<crate::ProbabilityTrainingRegime, Bucket>::new();
     for (probability, row) in probabilities.iter().zip(rows.iter().copied()) {
-        let bucket = buckets
-            .entry(row.regime_for_horizon(horizon_days))
-            .or_default();
+        let regime = row.regime_for_horizon(horizon_days);
+        let bucket = buckets.entry(regime).or_default();
         bucket.sample_count += 1;
         bucket.probability_sum += *probability;
         bucket.probabilities.push(*probability);
+        bucket
+            .samples
+            .push(probability_regime_tail_sample_diagnostics(
+                *probability,
+                row,
+                horizon_days,
+                label_mode,
+                regime,
+            ));
     }
 
     let average_probability = |regime: crate::ProbabilityTrainingRegime| {
@@ -245,7 +256,7 @@ pub(crate) fn evaluate_regime_separation_summary_refs(
         .map(|(regime, bucket)| {
             (
                 crate::probability_training_regime_name(*regime).to_string(),
-                probability_regime_tail_diagnostics(&bucket.probabilities),
+                probability_regime_tail_diagnostics(&bucket.probabilities, &bucket.samples),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -329,7 +340,10 @@ pub(crate) fn evaluate_regime_separation_summary_refs(
     })
 }
 
-fn probability_regime_tail_diagnostics(probabilities: &[f64]) -> ProbabilityRegimeTailDiagnostics {
+fn probability_regime_tail_diagnostics(
+    probabilities: &[f64],
+    samples: &[ProbabilityRegimeTailSampleDiagnostics],
+) -> ProbabilityRegimeTailDiagnostics {
     if probabilities.is_empty() {
         return ProbabilityRegimeTailDiagnostics::default();
     }
@@ -356,7 +370,54 @@ fn probability_regime_tail_diagnostics(probabilities: &[f64]) -> ProbabilityRegi
         hit_rate_at_50pct: hit_rate_at(0.50),
         hit_rate_at_80pct: hit_rate_at(0.80),
         hit_rate_at_90pct: hit_rate_at(0.90),
+        top_samples: probability_regime_tail_top_samples(samples),
     }
+}
+
+fn probability_regime_tail_sample_diagnostics(
+    probability: f64,
+    row: &crate::ProbabilityTrainingRow,
+    horizon_days: u32,
+    label_mode: crate::ProbabilityTargetLabelMode,
+    regime: crate::ProbabilityTrainingRegime,
+) -> ProbabilityRegimeTailSampleDiagnostics {
+    let (top_feature_name, top_feature_value) = row
+        .features
+        .iter()
+        .max_by(|(_, left), (_, right)| left.abs().total_cmp(&right.abs()))
+        .map(|(name, value)| (Some(name.clone()), Some(crate::round6(*value))))
+        .unwrap_or((None, None));
+
+    ProbabilityRegimeTailSampleDiagnostics {
+        as_of_date: row.as_of_date.to_string(),
+        probability: crate::round6(probability),
+        label: crate::round6(row.label_for_horizon(label_mode, horizon_days)),
+        regime: crate::probability_training_regime_name(regime).to_string(),
+        split_name: row.split_name.clone(),
+        time_to_risk_bucket: row.time_to_risk_bucket.clone(),
+        primary_scenario_id: row.primary_scenario_id.clone(),
+        scenario_family: row.scenario_family.clone(),
+        scenario_training_role: row.scenario_training_role.clone(),
+        days_to_primary_crisis_start: row.days_to_primary_crisis_start,
+        primary_scenario_supports_horizon: row.primary_scenario_supports_horizon(horizon_days),
+        protected_action_window: row.protected_action_window,
+        top_feature_name,
+        top_feature_value,
+    }
+}
+
+fn probability_regime_tail_top_samples(
+    samples: &[ProbabilityRegimeTailSampleDiagnostics],
+) -> Vec<ProbabilityRegimeTailSampleDiagnostics> {
+    let mut top_samples = samples.to_vec();
+    top_samples.sort_by(|left, right| {
+        right
+            .probability
+            .total_cmp(&left.probability)
+            .then_with(|| left.as_of_date.cmp(&right.as_of_date))
+    });
+    top_samples.truncate(PROBABILITY_REGIME_TAIL_TOP_SAMPLE_LIMIT);
+    top_samples
 }
 
 fn percentile_probability(sorted_probabilities: &[f64], percentile: f64) -> f64 {

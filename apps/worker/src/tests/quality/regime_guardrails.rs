@@ -72,7 +72,7 @@ fn offline_regime_classifier_uses_positive_window_gap_not_only_buffer_lift() {
 
 #[test]
 fn offline_regime_summary_records_probability_tail_diagnostics() {
-    let rows = vec![
+    let mut rows = vec![
         forward_crisis_row(
             NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
             0,
@@ -109,6 +109,10 @@ fn offline_regime_summary_records_probability_tail_diagnostics() {
             ProbabilityTrainingRegime::PostCrisisCooldown,
         ),
     ];
+    rows[2].features.insert("credit_spread_z".to_string(), 2.4);
+    rows[2].features.insert("vix_z".to_string(), -3.1);
+    rows[6].features.insert("funding_stress_z".to_string(), 1.2);
+    rows[6].protected_action_window = true;
     let row_refs = rows.iter().collect::<Vec<_>>();
     let probabilities = vec![0.10, 0.20, 0.92, 0.55, 0.70, 0.81, 0.83];
 
@@ -128,6 +132,16 @@ fn offline_regime_summary_records_probability_tail_diagnostics() {
     assert_eq!(normal_tail.p50_probability, 0.20);
     assert_eq!(normal_tail.p90_probability, 0.92);
     assert_eq!(normal_tail.hit_rate_at_90pct, 0.333333);
+    assert_eq!(normal_tail.top_samples.len(), 3);
+    assert_eq!(normal_tail.top_samples[0].as_of_date, "2020-01-03");
+    assert_eq!(normal_tail.top_samples[0].probability, 0.92);
+    assert_eq!(normal_tail.top_samples[0].label, 0.0);
+    assert_eq!(normal_tail.top_samples[0].regime, "normal");
+    assert_eq!(
+        normal_tail.top_samples[0].top_feature_name.as_deref(),
+        Some("vix_z")
+    );
+    assert_eq!(normal_tail.top_samples[0].top_feature_value, Some(-3.1));
 
     let cooldown_tail = summary
         .regime_tail_diagnostics
@@ -136,6 +150,14 @@ fn offline_regime_summary_records_probability_tail_diagnostics() {
     assert_eq!(cooldown_tail.sample_count, 2);
     assert_eq!(cooldown_tail.p95_probability, 0.83);
     assert_eq!(cooldown_tail.hit_rate_at_80pct, 1.0);
+    assert_eq!(cooldown_tail.top_samples.len(), 2);
+    assert_eq!(cooldown_tail.top_samples[0].as_of_date, "2020-01-07");
+    assert_eq!(cooldown_tail.top_samples[0].probability, 0.83);
+    assert!(cooldown_tail.top_samples[0].protected_action_window);
+    assert_eq!(
+        cooldown_tail.top_samples[0].top_feature_name.as_deref(),
+        Some("funding_stress_z")
+    );
 }
 
 #[test]
