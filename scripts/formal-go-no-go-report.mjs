@@ -240,14 +240,31 @@ function repairCandidateSummary(diagnostics) {
   ].join("; ");
 }
 
+function regimeLiftSummary(regimeSummary) {
+  if (!regimeSummary) {
+    return "-";
+  }
+
+  return [
+    `early=${formatNumber(regimeSummary.early_warning_lift_vs_normal, 3)}x`,
+    `positive=${formatNumber(regimeSummary.positive_window_lift_vs_normal, 3)}x`,
+    `cooldown=${formatNumber(regimeSummary.post_crisis_cooldown_lift_vs_normal, 3)}x`
+  ].join("; ");
+}
+
 function thresholdNextStep(row) {
   if (!row.thresholdDiagnostic) {
     return "Regenerate the evaluation artifact with threshold diagnostics enabled.";
   }
 
   const candidates = row.repairCandidateDiagnostics;
+  const earlyWarningLift = Number(row.regimeSummary?.early_warning_lift_vs_normal);
   if (row.splitMismatchDetail) {
     return "Inspect calibration/evaluation family and episode coverage before threshold tuning.";
+  }
+
+  if (row.repaired && Number.isFinite(earlyWarningLift) && earlyWarningLift < 1.5) {
+    return "Early-warning lift is below the safety guardrail; improve model ranking or family coverage before relaxing thresholds.";
   }
 
   if (
@@ -255,7 +272,7 @@ function thresholdNextStep(row) {
     candidates &&
     Number(candidates.accepted_candidate_count ?? 0) > 0
   ) {
-    return "Accepted repair candidates exist but final threshold is fail-closed; inspect guard ordering before retraining.";
+    return "Accepted repair candidates exist; inspect guard ordering only after confirming lift and false-positive safety.";
   }
 
   if (
@@ -327,13 +344,15 @@ function generatedCandidateReportLines(candidate, evaluation) {
     "",
     "Threshold diagnostics:",
     "",
-    "| Horizon | Base hits | Final hits | Repair candidates | Next step |",
-    "| --- | --- | --- | --- | --- |",
+    "| Horizon | Base hits | Final hits | Regime lift | Repair candidates | Next step |",
+    "| --- | --- | --- | --- | --- | --- |",
     ...evaluation.horizonRows.map(
       (row) =>
         `| ${row.horizonDays}d | ${thresholdHitSummary(
           row.baseSummary
-        )} | ${thresholdHitSummary(row.finalSummary)} | ${repairCandidateSummary(
+        )} | ${thresholdHitSummary(row.finalSummary)} | ${regimeLiftSummary(
+          row.regimeSummary
+        )} | ${repairCandidateSummary(
           row.repairCandidateDiagnostics
         )} | ${row.nextStep} |`
     )
@@ -565,10 +584,12 @@ function evaluateLatestGeneratedCandidate(candidate, latestReview) {
       repaired,
       repairCandidateDiagnostics: thresholdDiagnostic?.repair_candidate_diagnostics,
       repairReason,
+      regimeSummary,
       splitMismatchDetail,
       thresholdDiagnostic,
       nextStep: thresholdNextStep({
         repairCandidateDiagnostics: thresholdDiagnostic?.repair_candidate_diagnostics,
+        regimeSummary,
         repaired,
         splitMismatchDetail,
         thresholdDiagnostic
