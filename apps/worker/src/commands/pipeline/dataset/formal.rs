@@ -367,7 +367,7 @@ fn protected_context_topology_repair_target(
         "primary" => Some("train"),
         "late_validation"
             if row.scenario_training_role.as_deref() == Some("no_positive_main")
-                && matches!(row.primary_action_level.as_deref(), Some("prepare")) =>
+                && matches!(row.primary_action_level.as_deref(), None | Some("prepare")) =>
         {
             Some("calibration")
         }
@@ -458,6 +458,16 @@ mod tests {
             Some("no_positive_main"),
             "rate_shock_or_policy_dislocation",
         );
+        let mut late_validation_unleveled = topology_repair_row(
+            "2022-08-01",
+            "late_validation",
+            None,
+            true,
+            Some("no_positive_main"),
+            "rate_shock_or_policy_dislocation",
+        );
+        late_validation_unleveled.action_episode_id =
+            Some("us_rate_shock_2022:late_validation".to_string());
         let late_validation_hedge = topology_repair_row(
             "2022-07-15",
             "late_validation",
@@ -489,6 +499,10 @@ mod tests {
         );
         assert_eq!(
             protected_context_topology_repair_target(&late_validation),
+            Some("calibration")
+        );
+        assert_eq!(
+            protected_context_topology_repair_target(&late_validation_unleveled),
             Some("calibration")
         );
         assert_eq!(
@@ -586,6 +600,18 @@ mod tests {
                 Some("no_positive_main"),
                 "rate_shock_or_policy_dislocation",
             ),
+            {
+                let mut row = topology_repair_row(
+                    "2022-08-01",
+                    "late_validation",
+                    None,
+                    true,
+                    Some("no_positive_main"),
+                    "rate_shock_or_policy_dislocation",
+                );
+                row.action_episode_id = Some("us_rate_shock_2022:late_validation".to_string());
+                row
+            },
             topology_repair_row(
                 "2011-06-20",
                 "primary",
@@ -604,7 +630,7 @@ mod tests {
         );
 
         assert_eq!(summary.promoted_train_rows, 1);
-        assert_eq!(summary.promoted_calibration_rows, 2);
+        assert_eq!(summary.promoted_calibration_rows, 3);
         assert!(train_rows
             .iter()
             .any(|row| row.split_name.as_deref() == Some("train_topology_repair")));
@@ -621,6 +647,9 @@ mod tests {
             && row.split_name.as_deref() == Some("calibration_topology_repair")));
         assert!(calibration_rows.iter().any(|row| row.as_of_date
             == NaiveDate::parse_from_str("2022-01-10", "%Y-%m-%d").unwrap()
+            && row.split_name.as_deref() == Some("calibration_topology_repair")));
+        assert!(calibration_rows.iter().any(|row| row.as_of_date
+            == NaiveDate::parse_from_str("2022-08-01", "%Y-%m-%d").unwrap()
             && row.split_name.as_deref() == Some("calibration_topology_repair")));
     }
 }
