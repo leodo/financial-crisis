@@ -1634,8 +1634,12 @@ async function validateUserFacingUiCopy() {
       formalGoNoGoReport.includes("loadLatestGeneratedCandidate") &&
       formalGoNoGoReport.includes("Latest generated formal candidate") &&
       formalGoNoGoReport.includes("threshold remains fail-closed") &&
+      formalGoNoGoReport.includes("auditMatchesReleaseReview") &&
+      formalGoNoGoReport.includes("cooldownAuditDecision") &&
+      formalGoNoGoReport.includes("recommendation.startsWith(\"no_go\")") &&
+      formalGoNoGoReport.includes("Fix cooldown / false-positive no-go reasons before promoting the candidate.") &&
       formalGoNoGoReport.includes("NO-GO"),
-    "formal Go/No-Go report should combine runtime evidence plus latest generated candidate diagnostics before active_default approval"
+    "formal Go/No-Go report should combine runtime evidence, audit outcome diagnostics, and latest generated candidate diagnostics before active_default approval"
   );
   assert(
     justfile.includes("formal-dataset-summary-pack:") &&

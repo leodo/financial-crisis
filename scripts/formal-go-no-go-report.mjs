@@ -61,6 +61,113 @@ function productionSourceIssues(sources) {
   );
 }
 
+function auditMatchesReleaseReview(auditArtifact, releaseReview) {
+  if (!auditArtifact || !releaseReview) {
+    return false;
+  }
+  return (
+    auditArtifact.baseline_release_id === releaseReview.baseline_release_id &&
+    auditArtifact.candidate_release_id === releaseReview.candidate_release_id &&
+    auditArtifact.history_mode === releaseReview.history_mode
+  );
+}
+
+function auditTargetDetail(auditArtifact, releaseReview, extraParts = []) {
+  if (!auditArtifact) {
+    return "missing";
+  }
+
+  const parts = [
+    `${auditArtifact.baseline_release_id} -> ${auditArtifact.candidate_release_id}`,
+    `history=${auditArtifact.history_mode ?? "unknown"}`,
+    ...extraParts
+  ];
+
+  if (releaseReview && !auditMatchesReleaseReview(auditArtifact, releaseReview)) {
+    parts.push(
+      `does not match latest release review ${releaseReview.baseline_release_id} -> ${releaseReview.candidate_release_id}; history=${releaseReview.history_mode ?? "unknown"}`
+    );
+  }
+
+  return parts.join("; ");
+}
+
+function leadtimeAuditDecision(leadtimeAudit, releaseReview) {
+  if (!leadtimeAudit) {
+    return {
+      action: "Run a lead-time audit to prove the candidate does not lose actionable warning lead time.",
+      detail: "missing",
+      status: "fail"
+    };
+  }
+
+  if (releaseReview && !auditMatchesReleaseReview(leadtimeAudit, releaseReview)) {
+    return {
+      action:
+        "Regenerate lead-time audit evidence for the exact latest release-review baseline, candidate, and history mode.",
+      detail: auditTargetDetail(leadtimeAudit, releaseReview),
+      status: "fail"
+    };
+  }
+
+  return {
+    action: "Run a lead-time audit to prove the candidate does not lose actionable warning lead time.",
+    detail: auditTargetDetail(leadtimeAudit, releaseReview),
+    status: "pass"
+  };
+}
+
+function cooldownAuditDecision(cooldownAudit, releaseReview) {
+  if (!cooldownAudit) {
+    return {
+      action: "Run cooldown and false-positive audits before final human approval.",
+      detail: "missing",
+      status: "warn"
+    };
+  }
+
+  const recommendation = String(cooldownAudit.recommendation ?? "unknown");
+  const noGoReasons = asArray(cooldownAudit.no_go_reasons);
+  const reasonCodes = unique(noGoReasons.map((reason) => reason?.code));
+  const detail = auditTargetDetail(cooldownAudit, releaseReview, [
+    `recommendation=${recommendation}`,
+    reasonCodes.length > 0
+      ? `no_go_reasons=${reasonCodes.length} (${reasonCodes.join(", ")})`
+      : "no_go_reasons=0"
+  ]);
+
+  if (releaseReview && !auditMatchesReleaseReview(cooldownAudit, releaseReview)) {
+    return {
+      action:
+        "Regenerate cooldown / false-positive audit evidence for the exact latest release-review baseline, candidate, and history mode.",
+      detail,
+      status: "fail"
+    };
+  }
+
+  if (recommendation.startsWith("no_go") || noGoReasons.length > 0) {
+    return {
+      action: "Fix cooldown / false-positive no-go reasons before promoting the candidate.",
+      detail,
+      status: "fail"
+    };
+  }
+
+  if (recommendation.startsWith("manual_review")) {
+    return {
+      action: "Resolve manual false-positive episode review before final human approval.",
+      detail,
+      status: "warn"
+    };
+  }
+
+  return {
+    action: "Run cooldown and false-positive audits before final human approval.",
+    detail,
+    status: "pass"
+  };
+}
+
 function checkLine(check) {
   const marker = check.status === "pass" ? "x" : check.status === "warn" ? "~" : "!";
   return `- [${marker}] ${check.label}: ${check.detail}`;
@@ -496,24 +603,22 @@ function evaluateGoNoGo(state) {
     );
   }
 
+  const leadtimeDecision = leadtimeAuditDecision(audit?.latest_leadtime_audit, releaseReview);
   addCheck(
     checks,
-    audit?.latest_leadtime_audit ? "pass" : "fail",
+    leadtimeDecision.status,
     "Lead-time audit evidence",
-    audit?.latest_leadtime_audit
-      ? `${audit.latest_leadtime_audit.baseline_release_id} -> ${audit.latest_leadtime_audit.candidate_release_id}`
-      : "missing",
-    "Run a lead-time audit to prove the candidate does not lose actionable warning lead time."
+    leadtimeDecision.detail,
+    leadtimeDecision.action
   );
 
+  const cooldownDecision = cooldownAuditDecision(audit?.latest_cooldown_audit, releaseReview);
   addCheck(
     checks,
-    audit?.latest_cooldown_audit ? "pass" : "warn",
+    cooldownDecision.status,
     "Cooldown / false-positive audit evidence",
-    audit?.latest_cooldown_audit
-      ? `${audit.latest_cooldown_audit.baseline_release_id} -> ${audit.latest_cooldown_audit.candidate_release_id}`
-      : "missing",
-    "Run cooldown and false-positive audits before final human approval."
+    cooldownDecision.detail,
+    cooldownDecision.action
   );
 
   if (latestGeneratedCandidate) {
