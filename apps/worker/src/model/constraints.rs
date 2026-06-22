@@ -349,14 +349,14 @@ fn forward_crisis_coefficient_bounds(
                 max: Some(0.46),
             })
         }
-        (60, "interaction__us_curve_10y2y_level__us_fed_funds_level")
-            if uses_family_context_features =>
-        {
-            // 60d contribution diagnostics showed post-crisis cooldown bleed
-            // from this interaction. Cap only the positive side; unlike 20d, do
-            // not force a floor because the 60d head needs less post-event carry.
+        (60, "interaction__us_curve_10y2y_level__us_fed_funds_level") => {
+            // 2026-06-22 diagnostics showed plain family-hybrid 60d heads routing
+            // nearly all normal/cooldown tail probability through this broad
+            // curve x policy-rate interaction. Keep it as auxiliary context, but
+            // constrain both directions across formal feature sets so it cannot
+            // bypass the raw 60d curve cap.
             Some(CoefficientBounds {
-                min: None,
+                min: Some(-0.80),
                 max: Some(0.30),
             })
         }

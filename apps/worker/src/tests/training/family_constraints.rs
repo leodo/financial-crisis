@@ -189,7 +189,7 @@ fn forward_crisis_raw_trend_family_caps_apply_on_supported_horizons() {
 }
 
 #[test]
-fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
+fn forward_crisis_curve_caps_apply_to_60d_formal_heads() {
     let family_feature_names = vec![
         "us_curve_10y2y_level".to_string(),
         "interaction__us_curve_10y2y_level__us_fed_funds_level".to_string(),
@@ -228,6 +228,17 @@ fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
     assert_eq!(family_weights_60d[1], 0.30);
     assert_eq!(family_weights_60d[2], 0.05);
 
+    let mut negative_interaction_family_weights_60d = vec![-0.60, -2.40, 0.05];
+    crate::project_forward_crisis_sign_constraints(
+        &mut negative_interaction_family_weights_60d,
+        &family_feature_names,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert_eq!(negative_interaction_family_weights_60d[0], -0.60);
+    assert_eq!(negative_interaction_family_weights_60d[1], -0.80);
+    assert_eq!(negative_interaction_family_weights_60d[2], 0.05);
+
     let plain_feature_names = vec![
         "us_curve_10y2y_level".to_string(),
         "interaction__us_curve_10y2y_level__us_fed_funds_level".to_string(),
@@ -260,7 +271,17 @@ fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
     assert_eq!(plain_weights_60d[0], -1.80);
-    assert_eq!(plain_weights_60d[1], 0.60);
+    assert_eq!(plain_weights_60d[1], 0.30);
+
+    let mut negative_interaction_plain_weights_60d = vec![-0.60, -2.40];
+    crate::project_forward_crisis_sign_constraints(
+        &mut negative_interaction_plain_weights_60d,
+        &plain_feature_names,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert_eq!(negative_interaction_plain_weights_60d[0], -0.60);
+    assert_eq!(negative_interaction_plain_weights_60d[1], -0.80);
 }
 
 #[test]
@@ -643,7 +664,7 @@ fn forward_crisis_monotonic_interaction_sign_gradient_pushes_wrong_direction_up(
 }
 
 #[test]
-fn forward_crisis_curve_family_cap_gradient_only_activates_for_family_context_sets() {
+fn forward_crisis_curve_cap_gradient_applies_to_60d_formal_heads() {
     let family_feature_names = vec![
         "us_curve_10y2y_level".to_string(),
         "interaction__us_curve_10y2y_level__us_fed_funds_level".to_string(),
@@ -711,6 +732,22 @@ fn forward_crisis_curve_family_cap_gradient_only_activates_for_family_context_se
     assert_eq!(low_interaction_family_gradients_60d[1], 0.0);
     assert_eq!(low_interaction_family_gradients_60d[2], 0.0);
 
+    let negative_interaction_family_weights_60d = vec![-0.60, -2.40, 0.05];
+    let mut negative_interaction_family_gradients_60d =
+        vec![0.0; negative_interaction_family_weights_60d.len()];
+    crate::apply_forward_crisis_coefficient_bound_gradient(
+        &mut negative_interaction_family_gradients_60d,
+        &negative_interaction_family_weights_60d,
+        &family_feature_names,
+        100.0,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert_eq!(negative_interaction_family_gradients_60d[0], 0.0);
+    assert!(negative_interaction_family_gradients_60d[1] < 0.0);
+    assert_eq!(negative_interaction_family_gradients_60d[2], 0.0);
+
     let plain_feature_names = vec![
         "us_curve_10y2y_level".to_string(),
         "interaction__us_curve_10y2y_level__us_fed_funds_level".to_string(),
@@ -741,7 +778,22 @@ fn forward_crisis_curve_family_cap_gradient_only_activates_for_family_context_se
     );
 
     assert!(plain_gradients_60d[0] < 0.0);
-    assert_eq!(plain_gradients_60d[1], 0.0);
+    assert!(plain_gradients_60d[1] > 0.0);
+
+    let negative_interaction_plain_weights_60d = vec![-0.60, -2.40];
+    let mut negative_interaction_plain_gradients_60d =
+        vec![0.0; negative_interaction_plain_weights_60d.len()];
+    crate::apply_forward_crisis_coefficient_bound_gradient(
+        &mut negative_interaction_plain_gradients_60d,
+        &negative_interaction_plain_weights_60d,
+        &plain_feature_names,
+        100.0,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert_eq!(negative_interaction_plain_gradients_60d[0], 0.0);
+    assert!(negative_interaction_plain_gradients_60d[1] < 0.0);
 }
 
 #[test]
