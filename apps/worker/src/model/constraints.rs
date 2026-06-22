@@ -217,6 +217,16 @@ fn forward_crisis_coefficient_bounds(
                 max: Some(0.18),
             })
         }
+        // The 2026-06-22 contribution diagnostics showed the 60d family-hybrid
+        // head again routing no-positive-main and normal-window pressure through
+        // this generic trigger tail. Keep it available as auxiliary context, but
+        // do not let it become the primary 60d driver.
+        (60, "tail_pos__trigger_score__50") if uses_family_context_features => {
+            Some(CoefficientBounds {
+                min: Some(0.0),
+                max: Some(0.22),
+            })
+        }
         (20, "tail_pos__external_dimension_score__50") if uses_family_context_features => {
             Some(CoefficientBounds {
                 min: Some(0.0),
@@ -237,6 +247,13 @@ fn forward_crisis_coefficient_bounds(
         (20, "us_vix_change_20d") if uses_family_context_features => Some(CoefficientBounds {
             min: Some(0.0),
             max: Some(0.28),
+        }),
+        // Latest 60d candidates were dominated by isolated VIX acceleration on
+        // normal shock days. Treat the raw 20d VIX move as context and leave
+        // sustained warning semantics to family/scenario features.
+        (60, "us_vix_change_20d") if uses_family_context_features => Some(CoefficientBounds {
+            min: Some(0.0),
+            max: Some(0.24),
         }),
         (20, "us_vix_change_5d") if uses_family_context_features => Some(CoefficientBounds {
             min: Some(0.0),
@@ -314,6 +331,17 @@ fn forward_crisis_coefficient_bounds(
             Some(CoefficientBounds {
                 min: Some(0.18),
                 max: Some(0.46),
+            })
+        }
+        (60, "interaction__us_curve_10y2y_level__us_fed_funds_level")
+            if uses_family_context_features =>
+        {
+            // 60d contribution diagnostics showed post-crisis cooldown bleed
+            // from this interaction. Cap only the positive side; unlike 20d, do
+            // not force a floor because the 60d head needs less post-event carry.
+            Some(CoefficientBounds {
+                min: None,
+                max: Some(0.30),
             })
         }
         _ => None,
