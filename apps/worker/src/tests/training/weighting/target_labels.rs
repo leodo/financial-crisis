@@ -80,7 +80,7 @@ fn forward_crisis_training_target_softens_buffer_and_cooldown_negatives() {
             20,
             ProbabilityTargetLabelMode::ForwardCrisis
         ),
-        0.01
+        0.0
     );
     assert_eq!(
         crate::probability_training_target_label(
@@ -88,7 +88,7 @@ fn forward_crisis_training_target_softens_buffer_and_cooldown_negatives() {
             60,
             ProbabilityTargetLabelMode::ForwardCrisis
         ),
-        0.02
+        0.0
     );
     assert_eq!(
         crate::probability_training_target_label(

@@ -243,8 +243,8 @@ fn forward_crisis_60d_pairwise_prioritizes_cooldown_suppression() {
     assert!(buffer_vs_cooldown.weight > buffer_vs_normal.weight);
     assert!(positive_vs_cooldown.margin > positive_vs_normal.margin);
     assert!(positive_vs_cooldown.weight > positive_vs_normal.weight);
-    assert!(buffer_vs_cooldown.margin >= 1.80);
-    assert!(buffer_vs_cooldown.weight >= 2.75);
-    assert!(positive_vs_cooldown.margin >= 1.90);
-    assert!(positive_vs_cooldown.weight >= 2.50);
+    assert!(buffer_vs_cooldown.margin >= 2.25);
+    assert!(buffer_vs_cooldown.weight >= 3.40);
+    assert!(positive_vs_cooldown.margin >= 2.30);
+    assert!(positive_vs_cooldown.weight >= 3.20);
 }
