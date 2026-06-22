@@ -80,11 +80,12 @@ use output_paths::{
 #[cfg(test)]
 pub(crate) use probability::{
     adjust_probability_decision_threshold_for_regime_support,
-    build_probability_threshold_diagnostics, evaluate_regime_separation_summary_refs,
-    probability_calibration_selection_rows, probability_decision_threshold_selection,
-    select_probability_calibration_strategy, select_probability_decision_threshold,
-    ProbabilityCalibrationSelection, ProbabilityCalibrationStrategyInput,
-    ProbabilityThresholdDiagnosticsInput, ProbabilityThresholdSelection,
+    build_probability_threshold_diagnostics, evaluate_probabilities_for_rows_with_model,
+    evaluate_regime_separation_summary_refs, probability_calibration_selection_rows,
+    probability_decision_threshold_selection, select_probability_calibration_strategy,
+    select_probability_decision_threshold, ProbabilityCalibrationSelection,
+    ProbabilityCalibrationStrategyInput, ProbabilityThresholdDiagnosticsInput,
+    ProbabilityThresholdSelection,
 };
 pub(crate) use probability::{
     classify_probability_regime_separation, early_warning_regime_name, gap_retention_ratio,

@@ -405,6 +405,12 @@ pub struct ProbabilityRegimeTailSampleDiagnostics {
     pub top_feature_name: Option<String>,
     #[serde(default)]
     pub top_feature_value: Option<f64>,
+    #[serde(default)]
+    pub top_feature_normalized_value: Option<f64>,
+    #[serde(default)]
+    pub top_feature_weight: Option<f64>,
+    #[serde(default)]
+    pub top_feature_contribution: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

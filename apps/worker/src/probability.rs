@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 mod overlay;
 mod threshold;
@@ -163,11 +163,12 @@ fn train_probability_head(
             base_threshold: base_decision_threshold,
             final_threshold: decision_threshold,
         });
-    let evaluation = evaluate_probabilities_for_rows(
+    let evaluation = evaluate_probabilities_for_rows_with_model(
         &evaluation_probabilities,
         evaluation_rows,
         horizon_days,
         label_mode,
+        Some(&raw_model),
     );
 
     Ok(TrainedProbabilityHead {
@@ -187,11 +188,12 @@ fn probability_early_warning_regime(horizon_days: u32) -> crate::ProbabilityTrai
     }
 }
 
-pub(crate) fn evaluate_probabilities_for_rows(
+pub(crate) fn evaluate_probabilities_for_rows_with_model(
     probabilities: &[f64],
     rows: &[crate::ProbabilityTrainingRow],
     horizon_days: u32,
     label_mode: crate::ProbabilityTargetLabelMode,
+    model: Option<&LogisticProbabilityModel>,
 ) -> HorizonEvaluationSummary {
     let labels = rows
         .iter()
@@ -199,8 +201,13 @@ pub(crate) fn evaluate_probabilities_for_rows(
         .collect::<Vec<_>>();
     let mut summary = crate::evaluate_probabilities(probabilities, &labels);
     let row_refs = rows.iter().collect::<Vec<_>>();
-    summary.regime_separation =
-        evaluate_regime_separation_summary_refs(probabilities, &row_refs, horizon_days, label_mode);
+    summary.regime_separation = evaluate_regime_separation_summary_refs_with_model(
+        probabilities,
+        &row_refs,
+        horizon_days,
+        label_mode,
+        model,
+    );
     summary
 }
 
@@ -209,6 +216,22 @@ pub(crate) fn evaluate_regime_separation_summary_refs(
     rows: &[&crate::ProbabilityTrainingRow],
     horizon_days: u32,
     label_mode: crate::ProbabilityTargetLabelMode,
+) -> Option<RegimeSeparationEvaluationSummary> {
+    evaluate_regime_separation_summary_refs_with_model(
+        probabilities,
+        rows,
+        horizon_days,
+        label_mode,
+        None,
+    )
+}
+
+fn evaluate_regime_separation_summary_refs_with_model(
+    probabilities: &[f64],
+    rows: &[&crate::ProbabilityTrainingRow],
+    horizon_days: u32,
+    label_mode: crate::ProbabilityTargetLabelMode,
+    model: Option<&LogisticProbabilityModel>,
 ) -> Option<RegimeSeparationEvaluationSummary> {
     if label_mode != crate::ProbabilityTargetLabelMode::ForwardCrisis
         || probabilities.is_empty()
@@ -240,6 +263,7 @@ pub(crate) fn evaluate_regime_separation_summary_refs(
                 horizon_days,
                 label_mode,
                 regime,
+                model,
             ));
     }
 
@@ -380,13 +404,40 @@ fn probability_regime_tail_sample_diagnostics(
     horizon_days: u32,
     label_mode: crate::ProbabilityTargetLabelMode,
     regime: crate::ProbabilityTrainingRegime,
+    model: Option<&LogisticProbabilityModel>,
 ) -> ProbabilityRegimeTailSampleDiagnostics {
-    let (top_feature_name, top_feature_value) = row
-        .features
-        .iter()
-        .max_by(|(_, left), (_, right)| left.abs().total_cmp(&right.abs()))
-        .map(|(name, value)| (Some(name.clone()), Some(crate::round6(*value))))
-        .unwrap_or((None, None));
+    let contribution = model.and_then(|model| {
+        fc_domain::score_logistic_probability_model_with_diagnostics(model, &row.features)
+            .feature_contributions
+            .into_iter()
+            .max_by(|left, right| left.contribution.abs().total_cmp(&right.contribution.abs()))
+    });
+    let (
+        top_feature_name,
+        top_feature_value,
+        top_feature_normalized_value,
+        top_feature_weight,
+        top_feature_contribution,
+    ) = contribution.map_or_else(
+        || {
+            let (name, value) = row
+                .features
+                .iter()
+                .max_by(|(_, left), (_, right)| left.abs().total_cmp(&right.abs()))
+                .map(|(name, value)| (Some(name.clone()), Some(crate::round6(*value))))
+                .unwrap_or((None, None));
+            (name, value, None, None, None)
+        },
+        |contribution| {
+            (
+                Some(contribution.name),
+                Some(crate::round6(contribution.raw_value)),
+                Some(crate::round6(contribution.normalized_value)),
+                Some(crate::round6(contribution.weight)),
+                Some(crate::round6(contribution.contribution)),
+            )
+        },
+    );
 
     ProbabilityRegimeTailSampleDiagnostics {
         as_of_date: row.as_of_date.to_string(),
@@ -403,6 +454,9 @@ fn probability_regime_tail_sample_diagnostics(
         protected_action_window: row.protected_action_window,
         top_feature_name,
         top_feature_value,
+        top_feature_normalized_value,
+        top_feature_weight,
+        top_feature_contribution,
     }
 }
 
@@ -414,10 +468,36 @@ fn probability_regime_tail_top_samples(
         right
             .probability
             .total_cmp(&left.probability)
+            .then_with(|| {
+                probability_regime_tail_sample_context_rank(right)
+                    .cmp(&probability_regime_tail_sample_context_rank(left))
+            })
             .then_with(|| left.as_of_date.cmp(&right.as_of_date))
     });
-    top_samples.truncate(PROBABILITY_REGIME_TAIL_TOP_SAMPLE_LIMIT);
-    top_samples
+    let mut seen = BTreeSet::new();
+    let mut deduped = Vec::with_capacity(PROBABILITY_REGIME_TAIL_TOP_SAMPLE_LIMIT);
+    for sample in top_samples {
+        let key = (
+            sample.as_of_date.clone(),
+            sample.regime.clone(),
+            format!("{:.6}", sample.probability),
+        );
+        if seen.insert(key) {
+            deduped.push(sample);
+        }
+        if deduped.len() >= PROBABILITY_REGIME_TAIL_TOP_SAMPLE_LIMIT {
+            break;
+        }
+    }
+    deduped
+}
+
+fn probability_regime_tail_sample_context_rank(
+    sample: &ProbabilityRegimeTailSampleDiagnostics,
+) -> u8 {
+    u8::from(sample.primary_scenario_id.is_some()) * 4
+        + u8::from(sample.scenario_family.is_some()) * 2
+        + u8::from(sample.time_to_risk_bucket.is_some())
 }
 
 fn percentile_probability(sorted_probabilities: &[f64], percentile: f64) -> f64 {

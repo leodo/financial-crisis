@@ -6,8 +6,8 @@ use fc_domain::{
     ActionEpisodeTemplateId, ActionabilityBundle, ActionabilityEvaluationSummary,
     ActionabilityLevelBundle, DecisionPosture, FeatureSnapshotRecord, FormalDatasetRowRecord,
     Frequency, HorizonEvaluationSummary, LogisticProbabilityModel, PlattCalibrationArtifact,
-    ProbabilityBundle, ProbabilityBundleEvaluation, RegimeSeparationEvaluationSummary,
-    TimeToRiskBucket, PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1,
+    ProbabilityBundle, ProbabilityBundleEvaluation, ProbabilityCoefficient, ProbabilityFeatureStat,
+    RegimeSeparationEvaluationSummary, TimeToRiskBucket, PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1,
     PROBABILITY_MODEL_FAMILY_LINEAR_V1,
 };
 
@@ -30,8 +30,8 @@ use super::{
     adjust_probability_decision_threshold_for_regime_support,
     build_probability_threshold_diagnostics, classify_probability_regime_separation,
     classify_regime_separation, evaluate_actionability_summary,
-    evaluate_regime_separation_summary_refs, fit_platt_calibration,
-    formal_dataset_split_requirements, forward_crisis_label,
+    evaluate_probabilities_for_rows_with_model, evaluate_regime_separation_summary_refs,
+    fit_platt_calibration, formal_dataset_split_requirements, forward_crisis_label,
     forward_crisis_regime_pairwise_targets, forward_crisis_regime_sample_weight,
     forward_crisis_training_regime, forward_crisis_training_regime_with_context,
     logistic_sample_weight, negative_sample_weight, observation_is_visible_for_date,

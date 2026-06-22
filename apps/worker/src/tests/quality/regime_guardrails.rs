@@ -161,6 +161,101 @@ fn offline_regime_summary_records_probability_tail_diagnostics() {
 }
 
 #[test]
+fn offline_regime_tail_top_samples_use_model_contribution_and_deduplicate_context() {
+    let mut contextual_row = forward_crisis_row(
+        NaiveDate::from_ymd_opt(2024, 8, 5).unwrap(),
+        0,
+        ProbabilityTrainingRegime::Normal,
+    );
+    contextual_row
+        .features
+        .insert("large_raw_value".to_string(), 1000.0);
+    contextual_row
+        .features
+        .insert("model_driver".to_string(), 2.0);
+    contextual_row.primary_scenario_id = Some("scenario_context".to_string());
+    contextual_row.scenario_family = Some("context_family".to_string());
+    contextual_row.time_to_risk_bucket = Some("context_bucket".to_string());
+
+    let mut duplicate_row = contextual_row.clone();
+    duplicate_row.primary_scenario_id = None;
+    duplicate_row.scenario_family = None;
+    duplicate_row.time_to_risk_bucket = None;
+
+    let mut lower_probability_row = forward_crisis_row(
+        NaiveDate::from_ymd_opt(2024, 8, 6).unwrap(),
+        0,
+        ProbabilityTrainingRegime::Normal,
+    );
+    lower_probability_row
+        .features
+        .insert("large_raw_value".to_string(), 500.0);
+    lower_probability_row
+        .features
+        .insert("model_driver".to_string(), 1.0);
+
+    let rows = vec![contextual_row, duplicate_row, lower_probability_row];
+    let model = LogisticProbabilityModel {
+        intercept: 0.0,
+        feature_transform: PROBABILITY_FEATURE_TRANSFORM_IDENTITY_V1.to_string(),
+        feature_stats: vec![
+            ProbabilityFeatureStat {
+                name: "large_raw_value".to_string(),
+                mean: 0.0,
+                std_dev: 1.0,
+                fill_value: 0.0,
+            },
+            ProbabilityFeatureStat {
+                name: "model_driver".to_string(),
+                mean: 0.0,
+                std_dev: 1.0,
+                fill_value: 0.0,
+            },
+        ],
+        coefficients: vec![
+            ProbabilityCoefficient {
+                name: "large_raw_value".to_string(),
+                weight: 0.001,
+            },
+            ProbabilityCoefficient {
+                name: "model_driver".to_string(),
+                weight: 2.0,
+            },
+        ],
+    };
+
+    let summary = evaluate_probabilities_for_rows_with_model(
+        &[0.99, 0.99, 0.80],
+        &rows,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+        Some(&model),
+    )
+    .regime_separation
+    .expect("regime summary");
+
+    let normal_tail = summary
+        .regime_tail_diagnostics
+        .get("normal")
+        .expect("normal tail diagnostics");
+    assert_eq!(normal_tail.sample_count, 3);
+    assert_eq!(normal_tail.top_samples.len(), 2);
+
+    let top_sample = &normal_tail.top_samples[0];
+    assert_eq!(top_sample.as_of_date, "2024-08-05");
+    assert_eq!(top_sample.probability, 0.99);
+    assert_eq!(
+        top_sample.primary_scenario_id.as_deref(),
+        Some("scenario_context")
+    );
+    assert_eq!(top_sample.top_feature_name.as_deref(), Some("model_driver"));
+    assert_eq!(top_sample.top_feature_value, Some(2.0));
+    assert_eq!(top_sample.top_feature_normalized_value, Some(2.0));
+    assert_eq!(top_sample.top_feature_weight, Some(2.0));
+    assert_eq!(top_sample.top_feature_contribution, Some(4.0));
+}
+
+#[test]
 fn probability_guardrails_reject_zero_usable_early_warning_horizons() {
     let bundle = ProbabilityBundle {
         bundle_id: "candidate_guard_zero".to_string(),
