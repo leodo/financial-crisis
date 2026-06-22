@@ -521,6 +521,14 @@ pub(crate) fn adjust_probability_decision_threshold_for_regime_support(
                 base_threshold,
                 relaxed_prediction_ceiling,
             ));
+    let has_usable_repair_candidate = threshold_has_over_tight_repair_candidate(
+        probabilities,
+        labels,
+        rows,
+        horizon_days,
+        base_threshold,
+        relaxed_prediction_ceiling,
+    );
     let conservative_threshold = || {
         conservative_forward_crisis_threshold(
             probabilities,
@@ -536,6 +544,7 @@ pub(crate) fn adjust_probability_decision_threshold_for_regime_support(
         .unwrap_or_default()
         < 1.5
         && !over_tight_base_threshold
+        && !has_usable_repair_candidate
     {
         return crate::round3(conservative_threshold()).clamp(base_threshold, 0.99);
     }
@@ -610,7 +619,7 @@ pub(crate) fn adjust_probability_decision_threshold_for_regime_support(
     };
 
     let lower_bound = if best_score.is_some() {
-        0.005
+        0.001
     } else {
         base_threshold
     };
