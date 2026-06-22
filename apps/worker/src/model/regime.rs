@@ -59,8 +59,8 @@ pub(crate) fn forward_crisis_regime_pairwise_targets(
             (
                 ProbabilityTrainingRegime::PositiveWindow,
                 ProbabilityTrainingRegime::PostCrisisCooldown,
-                if uses_interaction_tail { 1.05 } else { 0.75 },
-                if uses_interaction_tail { 1.55 } else { 1.20 },
+                if uses_interaction_tail { 1.30 } else { 0.95 },
+                if uses_interaction_tail { 2.05 } else { 1.55 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
@@ -77,8 +77,8 @@ pub(crate) fn forward_crisis_regime_pairwise_targets(
             (
                 ProbabilityTrainingRegime::PreWarningBuffer,
                 ProbabilityTrainingRegime::PostCrisisCooldown,
-                if uses_interaction_tail { 0.70 } else { 0.55 },
-                if uses_interaction_tail { 0.80 } else { 0.70 },
+                if uses_interaction_tail { 0.95 } else { 0.75 },
+                if uses_interaction_tail { 1.15 } else { 0.95 },
             ),
         ],
         60 => vec![
@@ -103,14 +103,14 @@ pub(crate) fn forward_crisis_regime_pairwise_targets(
             (
                 ProbabilityTrainingRegime::PreWarningBuffer,
                 ProbabilityTrainingRegime::PostCrisisCooldown,
-                if uses_interaction_tail { 1.80 } else { 1.35 },
-                if uses_interaction_tail { 2.75 } else { 1.95 },
+                if uses_interaction_tail { 2.15 } else { 1.70 },
+                if uses_interaction_tail { 3.25 } else { 2.40 },
             ),
             (
                 ProbabilityTrainingRegime::PositiveWindow,
                 ProbabilityTrainingRegime::PostCrisisCooldown,
-                if uses_interaction_tail { 1.90 } else { 1.40 },
-                if uses_interaction_tail { 2.50 } else { 1.80 },
+                if uses_interaction_tail { 2.20 } else { 1.70 },
+                if uses_interaction_tail { 3.05 } else { 2.30 },
             ),
         ],
         _ => Vec::new(),
