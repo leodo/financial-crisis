@@ -32,6 +32,12 @@ function formatNumber(value, digits = 1) {
     : "-";
 }
 
+function formatInteger(value) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? String(Math.round(value))
+    : "-";
+}
+
 function formatPercent(value, digits = 1) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return "-";
@@ -177,6 +183,104 @@ function actionLine(action) {
   return `- ${action}`;
 }
 
+function thresholdHitSummary(summary) {
+  if (!summary) {
+    return "-";
+  }
+
+  return [
+    `pred=${formatInteger(summary.predicted_positive_count)}`,
+    `tp=${formatInteger(summary.true_positive_count)}`,
+    `early=${formatInteger(summary.early_warning_hit_count)}/${formatInteger(
+      summary.early_warning_row_count
+    )} (${formatPercent(summary.early_warning_hit_rate, 1)})`,
+    `normal=${formatInteger(summary.normal_hit_count)}/${formatInteger(
+      summary.normal_row_count
+    )} (${formatPercent(summary.normal_hit_rate, 1)})`,
+    `positive=${formatInteger(summary.positive_window_hit_count)}/${formatInteger(
+      summary.positive_window_row_count
+    )} (${formatPercent(summary.positive_window_hit_rate, 1)})`,
+    `cooldown=${formatInteger(summary.cooldown_hit_count)}/${formatInteger(
+      summary.cooldown_row_count
+    )} (${formatPercent(summary.cooldown_hit_rate, 1)})`
+  ].join("; ");
+}
+
+function repairCandidateSummary(diagnostics) {
+  if (!diagnostics) {
+    return "-";
+  }
+
+  const bestRejected = diagnostics.best_rejected_reason
+    ? `; best_rejected=${diagnostics.best_rejected_reason}@${formatPercent(
+        diagnostics.best_rejected_threshold,
+        1
+      )}, early=${formatPercent(
+        diagnostics.best_rejected_early_warning_hit_rate,
+        1
+      )}, positive=${formatPercent(
+        diagnostics.best_rejected_positive_window_hit_rate,
+        1
+      )}, normal=${formatPercent(
+        diagnostics.best_rejected_normal_hit_rate,
+        1
+      )}, cooldown=${formatPercent(
+        diagnostics.best_rejected_cooldown_hit_rate,
+        1
+      )}, pred=${formatInteger(diagnostics.best_rejected_predicted_positive_count)}`
+    : "";
+
+  return [
+    `candidates=${formatInteger(diagnostics.candidate_count)}`,
+    `accepted=${formatInteger(diagnostics.accepted_candidate_count)}`,
+    `no_early=${formatInteger(diagnostics.rejected_no_early_warning_hit_count)}`,
+    `regime_reject=${formatInteger(diagnostics.rejected_regime_support_count)}`,
+    `no_positive=${formatInteger(diagnostics.rejected_no_positive_support_count)}`,
+    `ceiling=${formatInteger(diagnostics.rejected_prediction_ceiling_count)}${bestRejected}`
+  ].join("; ");
+}
+
+function thresholdNextStep(row) {
+  if (!row.thresholdDiagnostic) {
+    return "Regenerate the evaluation artifact with threshold diagnostics enabled.";
+  }
+
+  const candidates = row.repairCandidateDiagnostics;
+  if (row.splitMismatchDetail) {
+    return "Inspect calibration/evaluation family and episode coverage before threshold tuning.";
+  }
+
+  if (
+    row.repaired &&
+    candidates &&
+    Number(candidates.accepted_candidate_count ?? 0) > 0
+  ) {
+    return "Accepted repair candidates exist but final threshold is fail-closed; inspect guard ordering before retraining.";
+  }
+
+  if (
+    row.repaired &&
+    candidates &&
+    Number(candidates.rejected_regime_support_count ?? 0) > 0
+  ) {
+    return "Improve model ranking or family coverage so early-warning hits beat normal/cooldown hits.";
+  }
+
+  if (
+    row.repaired &&
+    candidates &&
+    Number(candidates.rejected_prediction_ceiling_count ?? 0) > 0
+  ) {
+    return "Reduce broad normal hits before considering any prediction-ceiling policy change.";
+  }
+
+  if (row.repaired) {
+    return "Treat as fail-closed; improve training signal before promotion review.";
+  }
+
+  return "No threshold-specific blocker detected by generated candidate diagnostics.";
+}
+
 function generatedCandidateReportLines(candidate, evaluation) {
   if (!candidate) {
     return [
@@ -218,6 +322,22 @@ function generatedCandidateReportLines(candidate, evaluation) {
         } | ${row.repairReason} |`
     )
   ];
+
+  lines.push(
+    "",
+    "Threshold diagnostics:",
+    "",
+    "| Horizon | Base hits | Final hits | Repair candidates | Next step |",
+    "| --- | --- | --- | --- | --- |",
+    ...evaluation.horizonRows.map(
+      (row) =>
+        `| ${row.horizonDays}d | ${thresholdHitSummary(
+          row.baseSummary
+        )} | ${thresholdHitSummary(row.finalSummary)} | ${repairCandidateSummary(
+          row.repairCandidateDiagnostics
+        )} | ${row.nextStep} |`
+    )
+  );
 
   if (evaluation.blockers.length > 0) {
     lines.push("", "Candidate blockers:");
@@ -437,12 +557,22 @@ function evaluateLatestGeneratedCandidate(candidate, latestReview) {
 
     return {
       baseThreshold: thresholdDiagnostic?.base_threshold,
+      baseSummary: thresholdDiagnostic?.base_summary,
       diagnosis,
       finalThreshold: thresholdDiagnostic?.final_threshold,
+      finalSummary: thresholdDiagnostic?.final_summary,
       horizonDays,
       repaired,
+      repairCandidateDiagnostics: thresholdDiagnostic?.repair_candidate_diagnostics,
       repairReason,
-      splitMismatchDetail
+      splitMismatchDetail,
+      thresholdDiagnostic,
+      nextStep: thresholdNextStep({
+        repairCandidateDiagnostics: thresholdDiagnostic?.repair_candidate_diagnostics,
+        repaired,
+        splitMismatchDetail,
+        thresholdDiagnostic
+      })
     };
   });
 
