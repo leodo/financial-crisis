@@ -72,7 +72,7 @@ fn forward_crisis_training_target_softens_buffer_and_cooldown_negatives() {
             60,
             ProbabilityTargetLabelMode::ForwardCrisis
         ),
-        0.26
+        0.36
     );
     assert_eq!(
         crate::probability_training_target_label(
@@ -237,7 +237,7 @@ fn forward_crisis_60d_prepare_buffer_uses_episode_native_objective() {
             60,
             ProbabilityTargetLabelMode::ForwardCrisis
         ),
-        0.26
+        0.36
     );
 
     let acute_prepare = build_row(
@@ -532,6 +532,100 @@ fn forward_crisis_60d_prepare_soft_positive_gets_weight_but_cooldown_stays_negat
             positive_class_weight,
             ProbabilityTargetLabelMode::ForwardCrisis
         ),
+        negative_sample_weight(&cooldown, 60, ProbabilityTargetLabelMode::ForwardCrisis)
+    );
+}
+
+#[test]
+fn forward_crisis_60d_generic_prewarning_gets_early_warning_weight_without_lifting_cooldown() {
+    let build_row = |regime_60d: ProbabilityTrainingRegime,
+                     protected_action_window: bool,
+                     action_episode_phase: &str,
+                     days_to_primary_crisis_start: Option<i64>| {
+        ProbabilityTrainingRow {
+            as_of_date: NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+            market_scope: "financial_system".to_string(),
+            release_id: None,
+            probability_mode: Some("formal_bundle_v1".to_string()),
+            freshness_status: Some("a".to_string()),
+            time_to_risk_bucket: Some("months".to_string()),
+            split_name: Some("train".to_string()),
+            features: BTreeMap::new(),
+            primary_scenario_id: Some("scenario".to_string()),
+            scenario_family: Some("systemic_credit_banking_crisis".to_string()),
+            scenario_training_role: None,
+            days_to_primary_crisis_start,
+            primary_scenario_supports_5d: false,
+            primary_scenario_supports_20d: true,
+            primary_scenario_supports_60d: true,
+            label_5d: 0,
+            label_20d: 0,
+            label_60d: 0,
+            regime_5d: ProbabilityTrainingRegime::Normal,
+            regime_20d: ProbabilityTrainingRegime::Normal,
+            regime_60d,
+            action_label_5d: 0,
+            action_label_20d: 0,
+            action_label_60d: 0,
+            prepare_episode_label: 0,
+            hedge_episode_label: 0,
+            defend_episode_label: 0,
+            primary_action_level: None,
+            action_episode_id: None,
+            action_episode_phase: action_episode_phase.to_string(),
+            protected_action_window,
+        }
+    };
+
+    let prewarning = build_row(
+        ProbabilityTrainingRegime::PreWarningBuffer,
+        false,
+        "outside",
+        Some(45),
+    );
+    let normal = build_row(ProbabilityTrainingRegime::Normal, false, "outside", None);
+    let cooldown = build_row(
+        ProbabilityTrainingRegime::PostCrisisCooldown,
+        true,
+        "cooldown",
+        Some(5),
+    );
+
+    assert_eq!(
+        crate::probability_training_target_label(
+            &prewarning,
+            60,
+            ProbabilityTargetLabelMode::ForwardCrisis
+        ),
+        0.36
+    );
+
+    let positive_class_weight = 9.0;
+    let prewarning_weight = logistic_sample_weight(
+        &prewarning,
+        60,
+        positive_class_weight,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    let normal_weight = logistic_sample_weight(
+        &normal,
+        60,
+        positive_class_weight,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    let cooldown_weight = logistic_sample_weight(
+        &cooldown,
+        60,
+        positive_class_weight,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert!(
+        prewarning_weight > normal_weight * 3.0,
+        "generic 60d prewarning rows need enough lift to become early-warning candidates"
+    );
+    assert_eq!(
+        cooldown_weight,
         negative_sample_weight(&cooldown, 60, ProbabilityTargetLabelMode::ForwardCrisis)
     );
 }

@@ -401,7 +401,7 @@ fn regime_support_adjustment_lowers_60d_threshold_when_base_misses_prewarning_bu
     assert_eq!(prewarning_evidence.threshold_selected_row_count, 2);
     assert_eq!(prewarning_evidence.positive_label_count, 0);
     assert_eq!(prewarning_evidence.avg_hard_label, 0.0);
-    assert_eq!(prewarning_evidence.avg_training_target, 0.26);
+    assert_eq!(prewarning_evidence.avg_training_target, 0.36);
     assert_eq!(prewarning_evidence.avg_objective_weight, 0.6);
     assert_eq!(prewarning_evidence.episode_native_objective_row_count, 0);
     assert_eq!(prewarning_evidence.protected_no_positive_main_row_count, 0);

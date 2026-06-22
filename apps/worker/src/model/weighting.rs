@@ -63,7 +63,7 @@ pub(crate) fn probability_training_target_label(
         ProbabilityTrainingRegime::Normal => 0.0,
         ProbabilityTrainingRegime::PreWarningBuffer => match horizon_days {
             20 => 0.18,
-            60 => 0.26,
+            60 => forward_crisis_60d_prewarning_target_label(row),
             _ => 0.0,
         },
         ProbabilityTrainingRegime::PositiveWindow => match horizon_days {
@@ -81,6 +81,21 @@ pub(crate) fn probability_training_target_label(
             60 => 0.02,
             _ => 0.0,
         },
+    }
+}
+
+fn forward_crisis_60d_prewarning_target_label(row: &ProbabilityTrainingRow) -> f64 {
+    if row.primary_scenario_supports_horizon(60) != Some(true) {
+        return 0.26;
+    }
+
+    match row.scenario_family.as_deref() {
+        Some(
+            "systemic_credit_banking_crisis"
+            | "mixed_systemic_stress"
+            | "rate_shock_or_policy_dislocation",
+        ) => 0.36,
+        _ => 0.26,
     }
 }
 
@@ -293,7 +308,7 @@ pub(crate) fn forward_crisis_regime_sample_weight(
         ProbabilityTrainingRegime::PreWarningBuffer => match horizon_days {
             5 => 0.90,
             20 => 0.60,
-            60 => 0.50,
+            60 => 0.85,
             _ => 0.70,
         },
         ProbabilityTrainingRegime::PositiveWindow => match horizon_days {
