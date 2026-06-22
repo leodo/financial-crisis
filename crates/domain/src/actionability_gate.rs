@@ -32,7 +32,7 @@ const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P60D_FLOOR: f64 = 0.80;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_OVERALL_FLOOR: f64 = 43.5;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_EXTERNAL_FLOOR: f64 = 30.0;
 const STRICT_SATURATED_MONTHS_P60D_FLOOR: f64 = 0.90;
-const STRICT_SATURATED_MONTHS_EXTERNAL_FLOOR: f64 = 44.0;
+const STRICT_SATURATED_MONTHS_EXTERNAL_FLOOR: f64 = 48.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ActionableGateThresholds {
@@ -464,7 +464,10 @@ mod tests {
 
         assert!(!actionable_warning_point(&point, false, Some(thresholds)));
 
-        point.external_shock_score = 44.0;
+        point.external_shock_score = 47.9;
+        assert!(!actionable_warning_point(&point, false, Some(thresholds)));
+
+        point.external_shock_score = 48.0;
         assert!(actionable_warning_point(&point, false, Some(thresholds)));
     }
 
@@ -491,7 +494,10 @@ mod tests {
 
         assert!(!actionable_warning_point(&point, false, Some(thresholds)));
 
-        point.external_shock_score = 44.0;
+        point.external_shock_score = 47.9;
+        assert!(!actionable_warning_point(&point, false, Some(thresholds)));
+
+        point.external_shock_score = 48.0;
         assert!(actionable_warning_point(&point, false, Some(thresholds)));
     }
 

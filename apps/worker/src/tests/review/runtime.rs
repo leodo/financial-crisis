@@ -588,7 +588,7 @@ fn release_review_structured_signal_counts_require_confirmation_for_saturated_we
         0.93,
         DecisionPosture::Prepare,
         TimeToRiskBucket::Weeks,
-        44.0,
+        48.0,
         &["prepare_probability_plateau", "prepare_history_hysteresis"],
     )];
 
