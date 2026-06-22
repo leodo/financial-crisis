@@ -251,6 +251,16 @@ fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
     );
     assert_eq!(low_interaction_plain_weights_20d[0], -0.60);
     assert_eq!(low_interaction_plain_weights_20d[1], 0.02);
+
+    let mut plain_weights_60d = vec![-0.90, 0.60];
+    crate::project_forward_crisis_sign_constraints(
+        &mut plain_weights_60d,
+        &plain_feature_names,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+    assert_eq!(plain_weights_60d[0], -0.80);
+    assert_eq!(plain_weights_60d[1], 0.60);
 }
 
 #[test]
@@ -730,7 +740,7 @@ fn forward_crisis_curve_family_cap_gradient_only_activates_for_family_context_se
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
 
-    assert_eq!(plain_gradients_60d[0], 0.0);
+    assert!(plain_gradients_60d[0] < 0.0);
     assert_eq!(plain_gradients_60d[1], 0.0);
 }
 

@@ -328,7 +328,7 @@ fn forward_crisis_coefficient_bounds(
             min: Some(-0.72),
             max: None,
         }),
-        (60, "us_curve_10y2y_level") if uses_family_context_features => Some(CoefficientBounds {
+        (60, "us_curve_10y2y_level") => Some(CoefficientBounds {
             // After VIX / trigger-tail caps, the 60d head overfit persistent
             // curve inversion as a single all-regime driver. Keep inversion
             // directional, but prevent it from saturating normal/cooldown rows.
