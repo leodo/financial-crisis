@@ -208,7 +208,9 @@ function generatedCandidateReportLines(candidate, evaluation) {
     "| --- | --- | ---: | ---: | --- | --- |",
     ...evaluation.horizonRows.map(
       (row) =>
-        `| ${row.horizonDays}d | ${row.diagnosis} | ${formatPercent(
+        `| ${row.horizonDays}d | ${
+          row.splitMismatchDetail ? `${row.diagnosis}; split mismatch` : row.diagnosis
+        } | ${formatPercent(
           row.baseThreshold,
           1
         )} | ${formatPercent(row.finalThreshold, 1)} | ${
@@ -327,6 +329,46 @@ function regimeSummaryForHorizon(candidate, horizonDays) {
   );
 }
 
+function thresholdSplitMismatchDetail(thresholdDiagnostic, regimeSummary) {
+  if (!thresholdDiagnostic || !regimeSummary) {
+    return null;
+  }
+
+  const calibrationEarlyHitRate = Number(
+    thresholdDiagnostic.base_summary?.early_warning_hit_rate ?? 0
+  );
+  const evaluationEarlyAverage = Number(
+    regimeSummary.early_warning_avg_probability ??
+      regimeSummary.pre_warning_buffer_avg_probability ??
+      0
+  );
+  const evaluationEarlyCount = Number(
+    regimeSummary.early_warning_sample_count ??
+      regimeSummary.pre_warning_buffer_sample_count ??
+      0
+  );
+  const calibrationEarlyCount = Number(
+    thresholdDiagnostic.base_summary?.early_warning_row_count ?? 0
+  );
+
+  if (
+    calibrationEarlyCount > 0 &&
+    evaluationEarlyCount > 0 &&
+    calibrationEarlyHitRate === 0 &&
+    evaluationEarlyAverage >= 0.8
+  ) {
+    return `calibration early-warning hit rate is ${formatPercent(
+      calibrationEarlyHitRate,
+      1
+    )}, while evaluation early-warning average is ${formatPercent(
+      evaluationEarlyAverage,
+      1
+    )}; inspect split/family coverage before tuning thresholds`;
+  }
+
+  return null;
+}
+
 function candidateThresholdWasRepaired(thresholdDiagnostic) {
   if (!thresholdDiagnostic) {
     return false;
@@ -365,6 +407,10 @@ function evaluateLatestGeneratedCandidate(candidate, latestReview) {
     const repaired = candidateThresholdWasRepaired(thresholdDiagnostic ?? {});
     const diagnosis = regimeSummary.diagnosis ?? "unknown";
     const repairReason = thresholdDiagnostic?.repair_reason ?? "missing";
+    const splitMismatchDetail = thresholdSplitMismatchDetail(
+      thresholdDiagnostic,
+      regimeSummary
+    );
 
     if (!thresholdDiagnostic) {
       blockers.push(`${horizonDays}d generated evaluation lacks threshold diagnostics.`);
@@ -385,6 +431,9 @@ function evaluateLatestGeneratedCandidate(candidate, latestReview) {
     ) {
       blockers.push(`${horizonDays}d regime separation is ${diagnosis}.`);
     }
+    if (splitMismatchDetail) {
+      blockers.push(`${horizonDays}d calibration/evaluation split mismatch: ${splitMismatchDetail}.`);
+    }
 
     return {
       baseThreshold: thresholdDiagnostic?.base_threshold,
@@ -392,7 +441,8 @@ function evaluateLatestGeneratedCandidate(candidate, latestReview) {
       finalThreshold: thresholdDiagnostic?.final_threshold,
       horizonDays,
       repaired,
-      repairReason
+      repairReason,
+      splitMismatchDetail
     };
   });
 
