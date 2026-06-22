@@ -359,6 +359,12 @@ fn protected_context_topology_repair_target(
 
     match row.action_episode_phase.as_str() {
         "primary" => Some("train"),
+        "late_validation"
+            if row.scenario_training_role.as_deref() == Some("no_positive_main")
+                && matches!(row.primary_action_level.as_deref(), Some("prepare")) =>
+        {
+            Some("calibration")
+        }
         _ => None,
     }
 }
@@ -469,7 +475,7 @@ mod tests {
         );
         assert_eq!(
             protected_context_topology_repair_target(&late_validation),
-            None
+            Some("calibration")
         );
         assert_eq!(
             protected_context_topology_repair_target(&late_validation_hedge),
@@ -580,20 +586,20 @@ mod tests {
         );
 
         assert_eq!(summary.promoted_train_rows, 2);
-        assert_eq!(summary.promoted_calibration_rows, 0);
+        assert_eq!(summary.promoted_calibration_rows, 1);
         assert!(train_rows
             .iter()
             .any(|row| row.split_name.as_deref() == Some("train_topology_repair")));
-        assert!(!calibration_rows
+        assert!(calibration_rows
             .iter()
             .any(|row| row.split_name.as_deref() == Some("calibration_topology_repair")));
-        assert_eq!(evaluation_rows.len(), 2);
+        assert_eq!(evaluation_rows.len(), 1);
         assert!(evaluation_rows
             .iter()
             .any(|row| row.as_of_date == retained_evaluation.as_of_date
                 && row.split_name.as_deref() == Some("evaluation")));
-        assert!(evaluation_rows.iter().any(|row| row.as_of_date
+        assert!(calibration_rows.iter().any(|row| row.as_of_date
             == NaiveDate::parse_from_str("2022-03-15", "%Y-%m-%d").unwrap()
-            && row.split_name.as_deref() == Some("evaluation")));
+            && row.split_name.as_deref() == Some("calibration_topology_repair")));
     }
 }
