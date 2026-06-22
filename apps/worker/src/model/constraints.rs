@@ -205,6 +205,15 @@ fn forward_crisis_coefficient_bounds(
                 max: Some(0.30),
             })
         }
+        (20, "interaction__structural_score__trigger_score") if uses_family_context_features => {
+            // The 2026-06-22 065928 candidate routed 20d normal-window and
+            // cooldown lift through this broad nonlinear confirmation term.
+            // Keep it useful, but below family/context-specific drivers.
+            Some(CoefficientBounds {
+                min: Some(0.0),
+                max: Some(0.55),
+            })
+        }
         // The broad-score caps must include their high-tail variants. The
         // 2026-06-10 021404 candidate obeyed trigger_score <= 0.65 but routed
         // the same generic pressure through tail_pos__trigger_score__50=1.20,
@@ -317,6 +326,13 @@ fn forward_crisis_coefficient_bounds(
         }
         (20, "us_curve_10y2y_level") if uses_family_context_features => Some(CoefficientBounds {
             min: Some(-0.72),
+            max: None,
+        }),
+        (60, "us_curve_10y2y_level") if uses_family_context_features => Some(CoefficientBounds {
+            // After VIX / trigger-tail caps, the 60d head overfit persistent
+            // curve inversion as a single all-regime driver. Keep inversion
+            // directional, but prevent it from saturating normal/cooldown rows.
+            min: Some(-0.80),
             max: None,
         }),
         (20, "interaction__us_curve_10y2y_level__us_fed_funds_level")

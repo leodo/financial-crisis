@@ -59,6 +59,7 @@ fn forward_crisis_broad_score_family_caps_only_apply_when_family_context_exists(
     let family_feature_names = vec![
         "trigger_score".to_string(),
         "external_dimension_score".to_string(),
+        "interaction__structural_score__trigger_score".to_string(),
         "tail_pos__trigger_score__50".to_string(),
         "tail_pos__external_dimension_score__50".to_string(),
         "family_proxy__systemic_credit".to_string(),
@@ -70,7 +71,7 @@ fn forward_crisis_broad_score_family_caps_only_apply_when_family_context_exists(
         "family_proxy__rate_shock".to_string(),
     ];
     let mut family_weights_20d = vec![
-        0.90, 0.60, 1.20, 0.40, 0.01, 0.02, 0.03, 0.02, 0.02, 0.03, 0.05,
+        0.90, 0.60, 1.20, 1.20, 0.40, 0.01, 0.02, 0.03, 0.02, 0.02, 0.03, 0.05,
     ];
     crate::project_forward_crisis_sign_constraints(
         &mut family_weights_20d,
@@ -80,18 +81,19 @@ fn forward_crisis_broad_score_family_caps_only_apply_when_family_context_exists(
     );
     assert_eq!(family_weights_20d[0], 0.45);
     assert_eq!(family_weights_20d[1], 0.30);
-    assert_eq!(family_weights_20d[2], 0.18);
-    assert_eq!(family_weights_20d[3], 0.12);
-    assert_eq!(family_weights_20d[4], 0.04);
+    assert_eq!(family_weights_20d[2], 0.55);
+    assert_eq!(family_weights_20d[3], 0.18);
+    assert_eq!(family_weights_20d[4], 0.12);
     assert_eq!(family_weights_20d[5], 0.04);
-    assert_eq!(family_weights_20d[6], 0.06);
-    assert_eq!(family_weights_20d[7], 0.04);
+    assert_eq!(family_weights_20d[6], 0.04);
+    assert_eq!(family_weights_20d[7], 0.06);
     assert_eq!(family_weights_20d[8], 0.04);
-    assert_eq!(family_weights_20d[9], 0.08);
-    assert_eq!(family_weights_20d[10], 0.05);
+    assert_eq!(family_weights_20d[9], 0.04);
+    assert_eq!(family_weights_20d[10], 0.08);
+    assert_eq!(family_weights_20d[11], 0.05);
 
     let mut family_weights_60d = vec![
-        0.90, 0.60, 1.20, 0.40, 0.01, 0.02, 0.03, 0.02, 0.02, 0.03, 0.05,
+        0.90, 0.60, 1.20, 1.20, 0.40, 0.01, 0.02, 0.03, 0.02, 0.02, 0.03, 0.05,
     ];
     crate::project_forward_crisis_sign_constraints(
         &mut family_weights_60d,
@@ -101,23 +103,25 @@ fn forward_crisis_broad_score_family_caps_only_apply_when_family_context_exists(
     );
     assert_eq!(family_weights_60d[0], 0.90);
     assert_eq!(family_weights_60d[1], 0.60);
-    assert_eq!(family_weights_60d[2], 0.22);
-    assert_eq!(family_weights_60d[3], 0.40);
-    assert_eq!(family_weights_60d[4], 0.01);
-    assert_eq!(family_weights_60d[5], 0.02);
-    assert_eq!(family_weights_60d[6], 0.03);
-    assert_eq!(family_weights_60d[7], 0.02);
+    assert_eq!(family_weights_60d[2], 1.20);
+    assert_eq!(family_weights_60d[3], 0.22);
+    assert_eq!(family_weights_60d[4], 0.40);
+    assert_eq!(family_weights_60d[5], 0.01);
+    assert_eq!(family_weights_60d[6], 0.02);
+    assert_eq!(family_weights_60d[7], 0.03);
     assert_eq!(family_weights_60d[8], 0.02);
-    assert_eq!(family_weights_60d[9], 0.03);
-    assert_eq!(family_weights_60d[10], 0.05);
+    assert_eq!(family_weights_60d[9], 0.02);
+    assert_eq!(family_weights_60d[10], 0.03);
+    assert_eq!(family_weights_60d[11], 0.05);
 
     let plain_feature_names = vec![
         "trigger_score".to_string(),
         "external_dimension_score".to_string(),
+        "interaction__structural_score__trigger_score".to_string(),
         "tail_pos__trigger_score__50".to_string(),
         "tail_pos__external_dimension_score__50".to_string(),
     ];
-    let mut plain_weights_20d = vec![0.90, 0.60, 1.20, 0.40];
+    let mut plain_weights_20d = vec![0.90, 0.60, 1.20, 1.20, 0.40];
     crate::project_forward_crisis_sign_constraints(
         &mut plain_weights_20d,
         &plain_feature_names,
@@ -127,7 +131,8 @@ fn forward_crisis_broad_score_family_caps_only_apply_when_family_context_exists(
     assert_eq!(plain_weights_20d[0], 0.90);
     assert_eq!(plain_weights_20d[1], 0.60);
     assert_eq!(plain_weights_20d[2], 1.20);
-    assert_eq!(plain_weights_20d[3], 0.40);
+    assert_eq!(plain_weights_20d[3], 1.20);
+    assert_eq!(plain_weights_20d[4], 0.40);
 }
 
 #[test]
@@ -219,7 +224,7 @@ fn forward_crisis_curve_family_caps_only_apply_when_family_context_exists() {
         60,
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
-    assert_eq!(family_weights_60d[0], -0.90);
+    assert_eq!(family_weights_60d[0], -0.80);
     assert_eq!(family_weights_60d[1], 0.30);
     assert_eq!(family_weights_60d[2], 0.05);
 
@@ -481,6 +486,7 @@ fn forward_crisis_broad_score_family_cap_gradient_only_activates_for_family_cont
     let family_feature_names = vec![
         "trigger_score".to_string(),
         "external_dimension_score".to_string(),
+        "interaction__structural_score__trigger_score".to_string(),
         "tail_pos__trigger_score__50".to_string(),
         "tail_pos__external_dimension_score__50".to_string(),
         "family_proxy__systemic_credit".to_string(),
@@ -492,7 +498,7 @@ fn forward_crisis_broad_score_family_cap_gradient_only_activates_for_family_cont
         "family_proxy__rate_shock".to_string(),
     ];
     let family_weights = vec![
-        0.90, 0.60, 1.20, 0.40, 0.01, 0.02, 0.03, 0.02, 0.02, 0.03, 0.05,
+        0.90, 0.60, 1.20, 1.20, 0.40, 0.01, 0.02, 0.03, 0.02, 0.02, 0.03, 0.05,
     ];
     let mut family_gradients = vec![0.0; family_weights.len()];
 
@@ -509,13 +515,14 @@ fn forward_crisis_broad_score_family_cap_gradient_only_activates_for_family_cont
     assert!(family_gradients[1] > 0.0);
     assert!(family_gradients[2] > 0.0);
     assert!(family_gradients[3] > 0.0);
-    assert!(family_gradients[4] < 0.0);
+    assert!(family_gradients[4] > 0.0);
     assert!(family_gradients[5] < 0.0);
     assert!(family_gradients[6] < 0.0);
     assert!(family_gradients[7] < 0.0);
     assert!(family_gradients[8] < 0.0);
     assert!(family_gradients[9] < 0.0);
-    assert_eq!(family_gradients[10], 0.0);
+    assert!(family_gradients[10] < 0.0);
+    assert_eq!(family_gradients[11], 0.0);
 
     let mut family_gradients_60d = vec![0.0; family_weights.len()];
     crate::apply_forward_crisis_coefficient_bound_gradient(
@@ -529,8 +536,8 @@ fn forward_crisis_broad_score_family_cap_gradient_only_activates_for_family_cont
 
     assert_eq!(family_gradients_60d[0], 0.0);
     assert_eq!(family_gradients_60d[1], 0.0);
-    assert!(family_gradients_60d[2] > 0.0);
-    assert_eq!(family_gradients_60d[3], 0.0);
+    assert_eq!(family_gradients_60d[2], 0.0);
+    assert!(family_gradients_60d[3] > 0.0);
     assert_eq!(family_gradients_60d[4], 0.0);
     assert_eq!(family_gradients_60d[5], 0.0);
     assert_eq!(family_gradients_60d[6], 0.0);
@@ -538,14 +545,16 @@ fn forward_crisis_broad_score_family_cap_gradient_only_activates_for_family_cont
     assert_eq!(family_gradients_60d[8], 0.0);
     assert_eq!(family_gradients_60d[9], 0.0);
     assert_eq!(family_gradients_60d[10], 0.0);
+    assert_eq!(family_gradients_60d[11], 0.0);
 
     let plain_feature_names = vec![
         "trigger_score".to_string(),
         "external_dimension_score".to_string(),
+        "interaction__structural_score__trigger_score".to_string(),
         "tail_pos__trigger_score__50".to_string(),
         "tail_pos__external_dimension_score__50".to_string(),
     ];
-    let plain_weights = vec![0.90, 0.60, 1.20, 0.40];
+    let plain_weights = vec![0.90, 0.60, 1.20, 1.20, 0.40];
     let mut plain_gradients = vec![0.0; plain_weights.len()];
 
     crate::apply_forward_crisis_coefficient_bound_gradient(
@@ -561,6 +570,7 @@ fn forward_crisis_broad_score_family_cap_gradient_only_activates_for_family_cont
     assert_eq!(plain_gradients[1], 0.0);
     assert_eq!(plain_gradients[2], 0.0);
     assert_eq!(plain_gradients[3], 0.0);
+    assert_eq!(plain_gradients[4], 0.0);
 }
 
 #[test]
@@ -671,7 +681,7 @@ fn forward_crisis_curve_family_cap_gradient_only_activates_for_family_context_se
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
 
-    assert_eq!(family_gradients_60d[0], 0.0);
+    assert!(family_gradients_60d[0] < 0.0);
     assert!(family_gradients_60d[1] > 0.0);
     assert_eq!(family_gradients_60d[2], 0.0);
 
@@ -709,6 +719,19 @@ fn forward_crisis_curve_family_cap_gradient_only_activates_for_family_context_se
 
     assert_eq!(plain_gradients[0], 0.0);
     assert_eq!(plain_gradients[1], 0.0);
+
+    let mut plain_gradients_60d = vec![0.0; plain_weights.len()];
+    crate::apply_forward_crisis_coefficient_bound_gradient(
+        &mut plain_gradients_60d,
+        &plain_weights,
+        &plain_feature_names,
+        100.0,
+        60,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert_eq!(plain_gradients_60d[0], 0.0);
+    assert_eq!(plain_gradients_60d[1], 0.0);
 }
 
 #[test]
