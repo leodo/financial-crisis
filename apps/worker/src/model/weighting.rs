@@ -77,8 +77,8 @@ pub(crate) fn probability_training_target_label(
             _ => 0.0,
         },
         ProbabilityTrainingRegime::PostCrisisCooldown => match horizon_days {
-            20 => 0.0,
-            60 => 0.0,
+            20 => 0.01,
+            60 => 0.02,
             _ => 0.0,
         },
     }
@@ -298,8 +298,8 @@ pub(crate) fn forward_crisis_regime_sample_weight(
         },
         ProbabilityTrainingRegime::PositiveWindow => match horizon_days {
             5 => 2.0,
-            20 => 3.0,
-            60 => 2.2,
+            20 => 2.2,
+            60 => 1.8,
             _ => 2.0,
         },
         ProbabilityTrainingRegime::InCrisis => match horizon_days {
@@ -310,8 +310,8 @@ pub(crate) fn forward_crisis_regime_sample_weight(
         },
         ProbabilityTrainingRegime::PostCrisisCooldown => match horizon_days {
             5 => 1.10,
-            20 => 1.60,
-            60 => 2.40,
+            20 => 1.35,
+            60 => 1.60,
             _ => 1.25,
         },
     }
@@ -355,8 +355,8 @@ fn forward_crisis_negative_regime_sample_weight(
         },
         ProbabilityTrainingRegime::PostCrisisCooldown => match horizon_days {
             5 => 1.10,
-            20 => 1.75,
-            60 => 3.20,
+            20 => 1.45,
+            60 => 2.20,
             _ => 1.40,
         },
     }
@@ -452,8 +452,8 @@ pub(crate) fn negative_sample_weight(
                     },
                     "cooldown" => match horizon_days {
                         5 => 1.05,
-                        20 => 1.75,
-                        60 => 3.20,
+                        20 => 1.45,
+                        60 => 2.15,
                         _ => 1.00,
                     },
                     _ => match horizon_days {
