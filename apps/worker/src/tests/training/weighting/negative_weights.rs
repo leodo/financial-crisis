@@ -98,7 +98,7 @@ fn forward_crisis_negative_weights_and_calibration_scope_follow_regime() {
             20,
             ProbabilityTargetLabelMode::ForwardCrisis,
         ),
-        1.85
+        1.45
     );
     assert_eq!(
         negative_sample_weight(
@@ -106,7 +106,7 @@ fn forward_crisis_negative_weights_and_calibration_scope_follow_regime() {
             60,
             ProbabilityTargetLabelMode::ForwardCrisis,
         ),
-        2.85
+        2.20
     );
     let mut protected_negative = normal_negative.clone();
     protected_negative.primary_scenario_id = Some("scenario_protected".to_string());
@@ -136,7 +136,7 @@ fn forward_crisis_negative_weights_and_calibration_scope_follow_regime() {
             20,
             ProbabilityTargetLabelMode::ForwardCrisis,
         ),
-        1.85
+        1.45
     );
     assert_eq!(
         negative_sample_weight(
@@ -144,7 +144,7 @@ fn forward_crisis_negative_weights_and_calibration_scope_follow_regime() {
             60,
             ProbabilityTargetLabelMode::ForwardCrisis,
         ),
-        2.80
+        2.15
     );
     assert_eq!(
         negative_sample_weight(

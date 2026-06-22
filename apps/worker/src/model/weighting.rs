@@ -355,8 +355,8 @@ fn forward_crisis_negative_regime_sample_weight(
         },
         ProbabilityTrainingRegime::PostCrisisCooldown => match horizon_days {
             5 => 1.10,
-            20 => 1.85,
-            60 => 2.85,
+            20 => 1.45,
+            60 => 2.20,
             _ => 1.40,
         },
     }
@@ -452,8 +452,8 @@ pub(crate) fn negative_sample_weight(
                     },
                     "cooldown" => match horizon_days {
                         5 => 1.05,
-                        20 => 1.85,
-                        60 => 2.80,
+                        20 => 1.45,
+                        60 => 2.15,
                         _ => 1.00,
                     },
                     _ => match horizon_days {

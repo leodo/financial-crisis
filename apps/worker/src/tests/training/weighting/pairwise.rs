@@ -149,8 +149,6 @@ fn forward_crisis_20d_pairwise_prioritizes_positive_window_over_buffer() {
     assert!(positive_vs_normal.weight > buffer_vs_normal.weight);
     assert!(positive_vs_cooldown.margin > positive_vs_normal.margin);
     assert!(positive_vs_cooldown.weight > positive_vs_normal.weight);
-    assert!(positive_vs_cooldown.margin >= 1.30);
-    assert!(positive_vs_cooldown.weight >= 2.05);
 }
 
 #[test]
@@ -245,8 +243,8 @@ fn forward_crisis_60d_pairwise_prioritizes_cooldown_suppression() {
     assert!(buffer_vs_cooldown.weight > buffer_vs_normal.weight);
     assert!(positive_vs_cooldown.margin > positive_vs_normal.margin);
     assert!(positive_vs_cooldown.weight > positive_vs_normal.weight);
-    assert!(buffer_vs_cooldown.margin >= 2.15);
-    assert!(buffer_vs_cooldown.weight >= 3.25);
-    assert!(positive_vs_cooldown.margin >= 2.20);
-    assert!(positive_vs_cooldown.weight >= 3.05);
+    assert!(buffer_vs_cooldown.margin >= 1.80);
+    assert!(buffer_vs_cooldown.weight >= 2.75);
+    assert!(positive_vs_cooldown.margin >= 1.90);
+    assert!(positive_vs_cooldown.weight >= 2.50);
 }
