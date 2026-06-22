@@ -353,7 +353,7 @@ fn release_review_structured_signal_counts_accept_probability_plateau_clause_for
             0.892,
             DecisionPosture::Prepare,
             TimeToRiskBucket::Months,
-            48.2,
+            50.2,
             &["prepare_probability_plateau"],
         ),
         runtime_history_point_with_state(
@@ -496,7 +496,7 @@ fn release_review_structured_signal_counts_accept_history_hysteresis_months_clau
         DecisionPosture::Prepare,
         TimeToRiskBucket::Months,
         37.0,
-        &["prepare_history_hysteresis"],
+        &["prepare_history_hysteresis", "prepare_probability_plateau"],
     )];
     let method = formal_main_audit_method_wire();
 
