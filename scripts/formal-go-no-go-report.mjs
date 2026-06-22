@@ -368,6 +368,11 @@ function generatedCandidateReportLines(candidate, evaluation) {
     );
   }
 
+  if (evaluation.warnings?.length > 0) {
+    lines.push("", "Candidate warnings:");
+    lines.push(...evaluation.warnings.map(actionLine));
+  }
+
   return lines;
 }
 
@@ -519,16 +524,31 @@ function candidateThresholdWasRepaired(thresholdDiagnostic) {
   );
 }
 
+function usableGeneratedCandidateDiagnosis(diagnosis) {
+  return (
+    diagnosis === "usable_early_warning_separation" ||
+    diagnosis === "usable_runtime_separation"
+  );
+}
+
+function generatedCandidateHorizonIsCoreGate(horizonDays) {
+  // 5d remains a conservative short-term/defend layer until there is enough
+  // acute-crash coverage to make it a reliable formal promotion gate.
+  return horizonDays === 20 || horizonDays === 60;
+}
+
 function evaluateLatestGeneratedCandidate(candidate, latestReview) {
   if (!candidate) {
     return {
       blockers: [],
       horizonRows: [],
+      warnings: [],
       status: "missing"
     };
   }
 
   const blockers = [];
+  const warnings = [];
   const latestReviewedTimestamp = releaseTimestamp(latestReview?.candidate_release_id);
   if (
     candidate.timestamp &&
@@ -555,20 +575,26 @@ function evaluateLatestGeneratedCandidate(candidate, latestReview) {
       blockers.push(`${horizonDays}d generated evaluation lacks threshold diagnostics.`);
     }
     if (repaired) {
-      blockers.push(
+      const message =
         `${horizonDays}d threshold remains fail-closed at ${formatPercent(
           thresholdDiagnostic?.final_threshold,
           1
-        )}; reason=${repairReason}.`
-      );
+        )}; reason=${repairReason}.`;
+      if (generatedCandidateHorizonIsCoreGate(horizonDays)) {
+        blockers.push(message);
+      } else {
+        warnings.push(`${message} Treated as conservative short-term advisory.`);
+      }
     }
     if (diagnosis === "unknown") {
       blockers.push(`${horizonDays}d generated evaluation lacks regime separation diagnostics.`);
-    } else if (
-      diagnosis !== "usable_early_warning_separation" &&
-      diagnosis !== "usable_runtime_separation"
-    ) {
-      blockers.push(`${horizonDays}d regime separation is ${diagnosis}.`);
+    } else if (!usableGeneratedCandidateDiagnosis(diagnosis)) {
+      const message = `${horizonDays}d regime separation is ${diagnosis}.`;
+      if (generatedCandidateHorizonIsCoreGate(horizonDays)) {
+        blockers.push(message);
+      } else {
+        warnings.push(`${message} Treated as conservative short-term advisory.`);
+      }
     }
     if (splitMismatchDetail) {
       blockers.push(`${horizonDays}d calibration/evaluation split mismatch: ${splitMismatchDetail}.`);
@@ -609,6 +635,7 @@ function evaluateLatestGeneratedCandidate(candidate, latestReview) {
   return {
     blockers: unique(blockers),
     horizonRows,
+    warnings: unique(warnings),
     status: blockers.length === 0 ? "reviewable" : "blocked"
   };
 }
