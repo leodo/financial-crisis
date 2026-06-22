@@ -20,7 +20,8 @@
 │   ├── refresh.log
 │   ├── update.log
 │   ├── deploy-check-*.md
-│   └── daily-health-*.md
+│   ├── daily-health-*.md
+│   └── formal-go-no-go-*.md
 ├── deploy/                                # 服务配置
 │   ├── fc-api.env
 │   ├── fc-api.service -> /etc/systemd/system/fc-api.service
@@ -79,7 +80,7 @@ sudo /opt/financial-crisis/deploy/smoke-check.sh \
 4. 创建 `releases/vYYYYMMDD_HHMMSS/` 目录
 5. 切换 `current` symlink
 6. 重启 `fc-api` 服务
-7. 运行 `/opt/financial-crisis/deploy/operational-check.sh --mode deploy`，生成部署验收报告
+7. 运行 `/opt/financial-crisis/deploy/operational-check.sh --mode deploy`，生成部署验收和 Formal Go/No-Go 留档报告
 8. 运行 `/opt/financial-crisis/deploy/smoke-check.sh`，检查当前 release、API、定时器、数据新鲜度和生产源状态
 9. 修复 `/opt/financial-crisis/data`、`logs` 的 `fc-service` 写权限，并同步 systemd service/timer 配置
 10. 清理旧版本（保留最近 3 个）
@@ -121,7 +122,8 @@ systemctl start fc-refresh.service      # 手动触发一次刷新
 `fc-refresh.service` 刷新成功后会自动执行
 `/opt/financial-crisis/deploy/operational-check.sh --mode refresh`，
 并在 `/opt/financial-crisis/logs/` 写入 `deploy-check-refresh-*.md`
-、`daily-health-refresh-*.md` 和 `risk-threshold-refresh-*.md`。
+、`daily-health-refresh-*.md`、`formal-go-no-go-refresh-*.md`
+和 `risk-threshold-refresh-*.md`。
 
 ## SQLite 备份与恢复
 
@@ -163,6 +165,12 @@ FC_API_BASE_URL=http://127.0.0.1:18080 node scripts/daily-health-report.mjs \
   --output /opt/financial-crisis/logs/daily-health-$(date +%Y%m%d-%H%M%S).md \
   --fail-on-issues
 
+# 3b. 如需单独留存 Formal Go/No-Go 证据
+FC_API_BASE_URL=http://127.0.0.1:18080 \
+FC_DEPLOY_ROOT=/opt/financial-crisis \
+node scripts/formal-go-no-go-report.mjs \
+  --output /opt/financial-crisis/logs/formal-go-no-go-$(date +%Y%m%d-%H%M%S).md
+
 # 4. 当前运行版本
 readlink /opt/financial-crisis/current
 cat /opt/financial-crisis/current/COMMIT_MSG
@@ -202,6 +210,12 @@ FC_ALERT_WEBHOOK_URL=https://example.com/financial-crisis-alert
 部署、回滚、刷新后的 `operational-check.sh` 会在 `deploy-check` 或
 `daily-health-report` 返回非 0 时主动推送异常摘要和报告摘录。默认只提醒；
 不会触发任何自动交易或自动仓位调整。
+
+`operational-check.sh` 默认也会写入 `formal-go-no-go-*.md`，用于留存当前
+active release、最新 release review 和最新 generated formal candidate 的 Go/No-Go
+证据。该报告默认不带 `--fail-on-no-go`，所以 formal NO-GO 只作为审计证据，
+不会阻断当前 MVP 部署、回滚或刷新；如需只跑部署/健康检查可传
+`--skip-formal-go-no-go`，或设置 `FC_RUN_FORMAL_GO_NO_GO=0`。
 
 上线前可先运行 `just operational-alert-dry-run` 预览 payload；该命令不会发送外部消息。
 

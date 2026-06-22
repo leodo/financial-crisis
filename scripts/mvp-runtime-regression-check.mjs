@@ -1675,6 +1675,11 @@ async function validateUserFacingUiCopy() {
       deployBootstrap.includes("--mode bootstrap") &&
       deployRollback.includes("operational-check.sh") &&
       deployRollback.includes("--mode rollback") &&
+      operationalCheck.includes("formal-go-no-go-${MODE}-${timestamp}.md") &&
+      operationalCheck.includes("scripts/formal-go-no-go-report.mjs") &&
+      operationalCheck.includes("--skip-formal-go-no-go") &&
+      operationalCheck.includes("FC_RUN_FORMAL_GO_NO_GO") &&
+      !operationalCheck.includes("formal-go-no-go-report.mjs --fail-on-no-go") &&
       deployUpdate.includes("smoke-check.sh") &&
       deployBootstrap.includes("smoke-check.sh") &&
       deployRollback.includes("smoke-check.sh") &&

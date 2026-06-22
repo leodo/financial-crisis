@@ -10,19 +10,21 @@ MODE="deploy"
 RUN_DEPLOY_CHECK=1
 RUN_DAILY_HEALTH=0
 RUN_RISK_THRESHOLD=0
+RUN_FORMAL_GO_NO_GO="${FC_RUN_FORMAL_GO_NO_GO:-1}"
 SKIP_WEB="auto"
 CHECK_EXIT_CODE=0
 REPORT_PATHS=()
 
 usage() {
   cat <<'EOF'
-Usage: operational-check.sh [--mode deploy|bootstrap|rollback|refresh] [--skip-web] [--with-daily-health] [--with-risk-threshold]
+Usage: operational-check.sh [--mode deploy|bootstrap|rollback|refresh] [--skip-web] [--with-daily-health] [--with-risk-threshold] [--skip-formal-go-no-go]
 
-Runs the Node-based deployment check and/or daily health report against the current release.
+Runs the Node-based deployment check, formal Go/No-Go report, and optional daily health report against the current release.
 By default, deploy/bootstrap/rollback run deploy-check. Refresh runs deploy-check plus daily health.
 If FC_WEB_BASE_URL is not set, deploy-check skips the web root because production web is usually served by nginx.
 When FC_ALERT_* webhook variables are configured, failed checks send an operational alert.
 Refresh mode also writes a business risk-threshold report and sends reminder-only alerts when configured.
+The formal Go/No-Go report is audit-only by default: it is retained as evidence, but formal NO-GO does not fail MVP deploy/refresh checks.
 EOF
 }
 
@@ -84,9 +86,18 @@ while [[ $# -gt 0 ]]; do
       RUN_RISK_THRESHOLD=1
       shift
       ;;
+    --with-formal-go-no-go)
+      RUN_FORMAL_GO_NO_GO=1
+      shift
+      ;;
+    --skip-formal-go-no-go)
+      RUN_FORMAL_GO_NO_GO=0
+      shift
+      ;;
     --daily-health-only)
       RUN_DEPLOY_CHECK=0
       RUN_DAILY_HEALTH=1
+      RUN_FORMAL_GO_NO_GO=0
       shift
       ;;
     -h|--help)
@@ -135,6 +146,7 @@ timestamp="$(date -u +%Y%m%d-%H%M%S)"
 deploy_report="$LOGS_DIR/deploy-check-${MODE}-${timestamp}.md"
 health_report="$LOGS_DIR/daily-health-${MODE}-${timestamp}.md"
 risk_threshold_report="$LOGS_DIR/risk-threshold-${MODE}-${timestamp}.md"
+formal_go_no_go_report="$LOGS_DIR/formal-go-no-go-${MODE}-${timestamp}.md"
 
 if ! wait_for_api; then
   readiness_report="$LOGS_DIR/operational-check-${MODE}-${timestamp}.md"
@@ -208,6 +220,25 @@ if [[ "$RUN_RISK_THRESHOLD" == "1" ]]; then
   set -e
   if [[ "$risk_threshold_exit_code" -ne 0 && "$CHECK_EXIT_CODE" -eq 0 ]]; then
     CHECK_EXIT_CODE="$risk_threshold_exit_code"
+  fi
+fi
+
+if [[ "$RUN_FORMAL_GO_NO_GO" == "1" ]]; then
+  if [[ ! -f scripts/formal-go-no-go-report.mjs ]]; then
+    echo "Missing scripts/formal-go-no-go-report.mjs in $CURRENT_DIR" >&2
+    exit 1
+  fi
+  echo "Running formal Go/No-Go evidence report -> $formal_go_no_go_report"
+  REPORT_PATHS+=("$formal_go_no_go_report")
+  set +e
+  FC_API_BASE_URL="$API_BASE_URL" \
+    FC_DEPLOY_ROOT="$ROOT" \
+    node scripts/formal-go-no-go-report.mjs \
+      --output "$formal_go_no_go_report"
+  formal_go_no_go_exit_code=$?
+  set -e
+  if [[ "$formal_go_no_go_exit_code" -ne 0 && "$CHECK_EXIT_CODE" -eq 0 ]]; then
+    CHECK_EXIT_CODE="$formal_go_no_go_exit_code"
   fi
 fi
 
