@@ -92,7 +92,7 @@ impl ProbabilityModelShape {
     pub(crate) fn overlay_feature_transform_for_horizon(self, horizon_days: u32) -> &'static str {
         match self {
             Self::FamilyHybridV1 if horizon_days == 60 => {
-                crate::PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1
+                crate::PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1
             }
             Self::FamilyHybridV1 => crate::PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1,
             _ => self.feature_transform(),

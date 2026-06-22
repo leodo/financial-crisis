@@ -1,4 +1,8 @@
 use super::*;
+use crate::{
+    PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1,
+    PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1,
+};
 
 #[test]
 fn parses_pipeline_train_defaults_to_formal_dataset() {
@@ -99,6 +103,18 @@ fn parses_pipeline_train_family_hybrid_shape() {
 
     assert_eq!(options.model_shape, ProbabilityModelShape::FamilyHybridV1);
     assert_eq!(options.release_prefix, "us_formal_family_hybrid");
+}
+
+#[test]
+fn family_hybrid_keeps_60d_base_plain_but_uses_family_overlay_features() {
+    assert_eq!(
+        ProbabilityModelShape::FamilyHybridV1.base_feature_transform_for_horizon(60),
+        PROBABILITY_FEATURE_TRANSFORM_INTERACTION_TAIL_V1
+    );
+    assert_eq!(
+        ProbabilityModelShape::FamilyHybridV1.overlay_feature_transform_for_horizon(60),
+        PROBABILITY_FEATURE_TRANSFORM_FAMILY_CONDITIONAL_V1
+    );
 }
 
 #[test]
