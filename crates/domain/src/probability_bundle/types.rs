@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -358,7 +360,21 @@ pub struct RegimeSeparationEvaluationSummary {
     pub post_crisis_cooldown_gap_vs_normal: Option<f64>,
     #[serde(default)]
     pub max_non_normal_lift_vs_normal: Option<f64>,
+    #[serde(default)]
+    pub regime_tail_diagnostics: BTreeMap<String, ProbabilityRegimeTailDiagnostics>,
     pub diagnosis: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProbabilityRegimeTailDiagnostics {
+    pub sample_count: u32,
+    pub p50_probability: f64,
+    pub p90_probability: f64,
+    pub p95_probability: f64,
+    pub max_probability: f64,
+    pub hit_rate_at_50pct: f64,
+    pub hit_rate_at_80pct: f64,
+    pub hit_rate_at_90pct: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

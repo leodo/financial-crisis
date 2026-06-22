@@ -6,6 +6,7 @@ mod threshold;
 use fc_domain::{
     apply_platt_probability_calibration, HorizonEvaluationSummary, LogisticProbabilityModel,
     PlattCalibrationArtifact, ProbabilityBundleEvaluation, ProbabilityHorizonBundle,
+    ProbabilityRegimeTailDiagnostics,
     ProbabilityThresholdDiagnostics as ProbabilityThresholdDiagnosticsWire,
     RegimeSeparationEvaluationSummary,
 };
@@ -214,10 +215,11 @@ pub(crate) fn evaluate_regime_separation_summary_refs(
         return None;
     }
 
-    #[derive(Default, Clone, Copy)]
+    #[derive(Default, Clone)]
     struct Bucket {
         sample_count: u32,
         probability_sum: f64,
+        probabilities: Vec<f64>,
     }
 
     let mut buckets = BTreeMap::<crate::ProbabilityTrainingRegime, Bucket>::new();
@@ -227,6 +229,7 @@ pub(crate) fn evaluate_regime_separation_summary_refs(
             .or_default();
         bucket.sample_count += 1;
         bucket.probability_sum += *probability;
+        bucket.probabilities.push(*probability);
     }
 
     let average_probability = |regime: crate::ProbabilityTrainingRegime| {
@@ -237,6 +240,15 @@ pub(crate) fn evaluate_regime_separation_summary_refs(
     let sample_count = |regime: crate::ProbabilityTrainingRegime| {
         buckets.get(&regime).map_or(0, |bucket| bucket.sample_count)
     };
+    let regime_tail_diagnostics = buckets
+        .iter()
+        .map(|(regime, bucket)| {
+            (
+                crate::probability_training_regime_name(*regime).to_string(),
+                probability_regime_tail_diagnostics(&bucket.probabilities),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
 
     let early_warning_regime = match horizon_days {
         5 => crate::ProbabilityTrainingRegime::PositiveWindow,
@@ -312,8 +324,49 @@ pub(crate) fn evaluate_regime_separation_summary_refs(
         positive_window_gap_vs_normal: Some(positive_window_gap_vs_normal),
         post_crisis_cooldown_gap_vs_normal: Some(post_crisis_cooldown_gap_vs_normal),
         max_non_normal_lift_vs_normal,
+        regime_tail_diagnostics,
         diagnosis,
     })
+}
+
+fn probability_regime_tail_diagnostics(probabilities: &[f64]) -> ProbabilityRegimeTailDiagnostics {
+    if probabilities.is_empty() {
+        return ProbabilityRegimeTailDiagnostics::default();
+    }
+
+    let mut sorted_probabilities = probabilities.to_vec();
+    sorted_probabilities.sort_by(|left, right| left.total_cmp(right));
+    let sample_count = sorted_probabilities.len() as u32;
+    let hit_rate_at = |threshold: f64| {
+        crate::round6(crate::safe_divide(
+            sorted_probabilities
+                .iter()
+                .filter(|probability| **probability >= threshold)
+                .count() as f64,
+            sample_count as f64,
+        ))
+    };
+
+    ProbabilityRegimeTailDiagnostics {
+        sample_count,
+        p50_probability: percentile_probability(&sorted_probabilities, 0.50),
+        p90_probability: percentile_probability(&sorted_probabilities, 0.90),
+        p95_probability: percentile_probability(&sorted_probabilities, 0.95),
+        max_probability: crate::round6(*sorted_probabilities.last().unwrap_or(&0.0)),
+        hit_rate_at_50pct: hit_rate_at(0.50),
+        hit_rate_at_80pct: hit_rate_at(0.80),
+        hit_rate_at_90pct: hit_rate_at(0.90),
+    }
+}
+
+fn percentile_probability(sorted_probabilities: &[f64], percentile: f64) -> f64 {
+    if sorted_probabilities.is_empty() {
+        return 0.0;
+    }
+
+    let last_index = sorted_probabilities.len() - 1;
+    let index = ((last_index as f64) * percentile.clamp(0.0, 1.0)).round() as usize;
+    crate::round6(sorted_probabilities[index.min(last_index)])
 }
 
 pub(crate) fn regime_positive_window_gap_floor(horizon_days: u32) -> f64 {

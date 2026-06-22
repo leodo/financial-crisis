@@ -71,6 +71,74 @@ fn offline_regime_classifier_uses_positive_window_gap_not_only_buffer_lift() {
 }
 
 #[test]
+fn offline_regime_summary_records_probability_tail_diagnostics() {
+    let rows = vec![
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+            0,
+            ProbabilityTrainingRegime::Normal,
+        ),
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 2).unwrap(),
+            0,
+            ProbabilityTrainingRegime::Normal,
+        ),
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 3).unwrap(),
+            0,
+            ProbabilityTrainingRegime::Normal,
+        ),
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 4).unwrap(),
+            0,
+            ProbabilityTrainingRegime::PreWarningBuffer,
+        ),
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 5).unwrap(),
+            1,
+            ProbabilityTrainingRegime::PositiveWindow,
+        ),
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 6).unwrap(),
+            0,
+            ProbabilityTrainingRegime::PostCrisisCooldown,
+        ),
+        forward_crisis_row(
+            NaiveDate::from_ymd_opt(2020, 1, 7).unwrap(),
+            0,
+            ProbabilityTrainingRegime::PostCrisisCooldown,
+        ),
+    ];
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    let probabilities = vec![0.10, 0.20, 0.92, 0.55, 0.70, 0.81, 0.83];
+
+    let summary = evaluate_regime_separation_summary_refs(
+        &probabilities,
+        &row_refs,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    )
+    .expect("regime summary");
+
+    let normal_tail = summary
+        .regime_tail_diagnostics
+        .get("normal")
+        .expect("normal tail diagnostics");
+    assert_eq!(normal_tail.sample_count, 3);
+    assert_eq!(normal_tail.p50_probability, 0.20);
+    assert_eq!(normal_tail.p90_probability, 0.92);
+    assert_eq!(normal_tail.hit_rate_at_90pct, 0.333333);
+
+    let cooldown_tail = summary
+        .regime_tail_diagnostics
+        .get("post_crisis_cooldown")
+        .expect("cooldown tail diagnostics");
+    assert_eq!(cooldown_tail.sample_count, 2);
+    assert_eq!(cooldown_tail.p95_probability, 0.83);
+    assert_eq!(cooldown_tail.hit_rate_at_80pct, 1.0);
+}
+
+#[test]
 fn probability_guardrails_reject_zero_usable_early_warning_horizons() {
     let bundle = ProbabilityBundle {
         bundle_id: "candidate_guard_zero".to_string(),
@@ -113,6 +181,7 @@ fn probability_guardrails_reject_zero_usable_early_warning_horizons() {
                 positive_window_gap_vs_normal: Some(-0.001),
                 post_crisis_cooldown_gap_vs_normal: Some(0.01),
                 max_non_normal_lift_vs_normal: Some(2.0),
+                regime_tail_diagnostics: BTreeMap::new(),
                 diagnosis: "cold_across_all_regimes".to_string(),
             }],
             usable_early_warning_horizon_count: 0,
@@ -181,6 +250,7 @@ fn probability_guardrails_reject_cooldown_bleed_on_medium_horizons() {
                 positive_window_gap_vs_normal: Some(0.035),
                 post_crisis_cooldown_gap_vs_normal: Some(0.038),
                 max_non_normal_lift_vs_normal: Some(2.27),
+                regime_tail_diagnostics: BTreeMap::new(),
                 diagnosis: "cooldown_bleed".to_string(),
             }],
             usable_early_warning_horizon_count: 1,
@@ -226,6 +296,7 @@ fn probability_guardrails_reject_medium_horizon_threshold_above_positive_window_
         positive_window_gap_vs_normal: Some(0.7222),
         post_crisis_cooldown_gap_vs_normal: Some(0.205),
         max_non_normal_lift_vs_normal: Some(7.039),
+        regime_tail_diagnostics: BTreeMap::new(),
         diagnosis: "usable_early_warning_separation".to_string(),
     };
     let horizon_bundle = ProbabilityHorizonBundle {
@@ -379,6 +450,7 @@ fn probability_guardrails_reject_medium_horizon_threshold_when_cooldown_hits_mat
         positive_window_gap_vs_normal: Some(0.09),
         post_crisis_cooldown_gap_vs_normal: Some(0.05),
         max_non_normal_lift_vs_normal: Some(5.333),
+        regime_tail_diagnostics: BTreeMap::new(),
         diagnosis: "usable_early_warning_separation".to_string(),
     };
     let horizon_bundle = ProbabilityHorizonBundle {
