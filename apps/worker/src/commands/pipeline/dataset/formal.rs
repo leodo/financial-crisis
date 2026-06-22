@@ -358,6 +358,12 @@ fn protected_context_topology_repair_target(
     }
 
     match row.action_episode_phase.as_str() {
+        "primary"
+            if row.scenario_training_role.as_deref() == Some("no_positive_main")
+                && matches!(row.primary_action_level.as_deref(), Some("prepare")) =>
+        {
+            Some("calibration")
+        }
         "primary" => Some("train"),
         "late_validation"
             if row.scenario_training_role.as_deref() == Some("no_positive_main")
@@ -460,6 +466,14 @@ mod tests {
             Some("no_positive_main"),
             "rate_shock_or_policy_dislocation",
         );
+        let primary_hedge = topology_repair_row(
+            "2022-05-01",
+            "primary",
+            Some("hedge"),
+            true,
+            Some("no_positive_main"),
+            "rate_shock_or_policy_dislocation",
+        );
         let cooldown = topology_repair_row(
             "2022-10-10",
             "cooldown",
@@ -471,11 +485,15 @@ mod tests {
 
         assert_eq!(
             protected_context_topology_repair_target(&primary),
-            Some("train")
+            Some("calibration")
         );
         assert_eq!(
             protected_context_topology_repair_target(&late_validation),
             Some("calibration")
+        );
+        assert_eq!(
+            protected_context_topology_repair_target(&primary_hedge),
+            Some("train")
         );
         assert_eq!(
             protected_context_topology_repair_target(&late_validation_hedge),
@@ -585,8 +603,8 @@ mod tests {
             &mut evaluation_rows,
         );
 
-        assert_eq!(summary.promoted_train_rows, 2);
-        assert_eq!(summary.promoted_calibration_rows, 1);
+        assert_eq!(summary.promoted_train_rows, 1);
+        assert_eq!(summary.promoted_calibration_rows, 2);
         assert!(train_rows
             .iter()
             .any(|row| row.split_name.as_deref() == Some("train_topology_repair")));
@@ -600,6 +618,9 @@ mod tests {
                 && row.split_name.as_deref() == Some("evaluation")));
         assert!(calibration_rows.iter().any(|row| row.as_of_date
             == NaiveDate::parse_from_str("2022-03-15", "%Y-%m-%d").unwrap()
+            && row.split_name.as_deref() == Some("calibration_topology_repair")));
+        assert!(calibration_rows.iter().any(|row| row.as_of_date
+            == NaiveDate::parse_from_str("2022-01-10", "%Y-%m-%d").unwrap()
             && row.split_name.as_deref() == Some("calibration_topology_repair")));
     }
 }
