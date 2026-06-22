@@ -228,6 +228,120 @@ fn regime_support_adjustment_rejects_soft_20d_repair_when_cooldown_bleeds() {
 }
 
 #[test]
+fn threshold_diagnostics_count_accepted_soft_repair_candidates() {
+    let rows = vec![
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+    ];
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    let probabilities = vec![0.64, 0.62, 0.60, 0.58, 0.56, 0.54, 0.52, 0.18, 0.16, 0.12];
+    let labels = rows
+        .iter()
+        .map(|row| row.label_20d as f64)
+        .collect::<Vec<_>>();
+    let calibration_selection = ProbabilityCalibrationSelection {
+        rows: row_refs.clone(),
+        eligible_row_count: row_refs.len(),
+        eligible_positive_count: labels.iter().filter(|label| **label >= 0.5).count(),
+        eligible_negative_count: labels.iter().filter(|label| **label < 0.5).count(),
+        used_full_split_fallback: false,
+    };
+    let threshold_selection = ProbabilityThresholdSelection {
+        rows: row_refs,
+        probabilities,
+        labels,
+        used_full_split_fallback: false,
+    };
+    let diagnostics =
+        build_probability_threshold_diagnostics(ProbabilityThresholdDiagnosticsInput {
+            full_calibration_rows: &rows,
+            calibration_selection: &calibration_selection,
+            threshold_selection: &threshold_selection,
+            horizon_days: 20,
+            label_mode: ProbabilityTargetLabelMode::ForwardCrisis,
+            base_threshold: 0.90,
+            final_threshold: 0.56,
+        });
+
+    let repair_candidates = diagnostics
+        .repair_candidate_diagnostics
+        .expect("repair candidate diagnostics");
+    assert!(repair_candidates.candidate_count > 0);
+    assert!(repair_candidates.accepted_candidate_count > 0);
+}
+
+#[test]
+fn threshold_diagnostics_explain_cooldown_bleed_repair_rejections() {
+    let rows = vec![
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PositiveWindow, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PreWarningBuffer, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::Normal, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+        threshold_regime_row(ProbabilityTrainingRegime::PostCrisisCooldown, 0),
+    ];
+    let row_refs = rows.iter().collect::<Vec<_>>();
+    let probabilities = vec![
+        0.64, 0.62, 0.60, 0.58, 0.56, 0.54, 0.52, 0.18, 0.16, 0.64, 0.60,
+    ];
+    let labels = rows
+        .iter()
+        .map(|row| row.label_20d as f64)
+        .collect::<Vec<_>>();
+    let calibration_selection = ProbabilityCalibrationSelection {
+        rows: row_refs.clone(),
+        eligible_row_count: row_refs.len(),
+        eligible_positive_count: labels.iter().filter(|label| **label >= 0.5).count(),
+        eligible_negative_count: labels.iter().filter(|label| **label < 0.5).count(),
+        used_full_split_fallback: false,
+    };
+    let threshold_selection = ProbabilityThresholdSelection {
+        rows: row_refs,
+        probabilities,
+        labels,
+        used_full_split_fallback: false,
+    };
+    let diagnostics =
+        build_probability_threshold_diagnostics(ProbabilityThresholdDiagnosticsInput {
+            full_calibration_rows: &rows,
+            calibration_selection: &calibration_selection,
+            threshold_selection: &threshold_selection,
+            horizon_days: 20,
+            label_mode: ProbabilityTargetLabelMode::ForwardCrisis,
+            base_threshold: 0.90,
+            final_threshold: 0.90,
+        });
+
+    let repair_candidates = diagnostics
+        .repair_candidate_diagnostics
+        .expect("repair candidate diagnostics");
+    assert!(repair_candidates.candidate_count > 0);
+    assert_eq!(repair_candidates.accepted_candidate_count, 0);
+    assert!(repair_candidates.rejected_regime_support_count > 0);
+    assert_eq!(
+        repair_candidates.best_rejected_reason,
+        "regime_support_rejected"
+    );
+    assert!(
+        repair_candidates.best_rejected_cooldown_hit_rate
+            >= repair_candidates.best_rejected_positive_window_hit_rate
+    );
+}
+
+#[test]
 fn regime_support_adjustment_keeps_20d_threshold_actionable_when_prewarning_separates() {
     let mut rows = Vec::new();
     let mut probabilities = Vec::new();

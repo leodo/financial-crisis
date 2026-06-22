@@ -152,6 +152,25 @@ pub struct ProbabilityThresholdDiagnostics {
     pub final_summary: ProbabilityThresholdDecisionSummary,
     #[serde(default)]
     pub calibration_regime_evidence: Vec<ProbabilityCalibrationRegimeEvidence>,
+    #[serde(default)]
+    pub repair_candidate_diagnostics: Option<ProbabilityThresholdRepairCandidateDiagnostics>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbabilityThresholdRepairCandidateDiagnostics {
+    pub candidate_count: u32,
+    pub accepted_candidate_count: u32,
+    pub rejected_no_early_warning_hit_count: u32,
+    pub rejected_regime_support_count: u32,
+    pub rejected_no_positive_support_count: u32,
+    pub rejected_prediction_ceiling_count: u32,
+    pub best_rejected_reason: String,
+    pub best_rejected_threshold: Option<f64>,
+    pub best_rejected_early_warning_hit_rate: f64,
+    pub best_rejected_positive_window_hit_rate: f64,
+    pub best_rejected_normal_hit_rate: f64,
+    pub best_rejected_cooldown_hit_rate: f64,
+    pub best_rejected_predicted_positive_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

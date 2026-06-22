@@ -1,3 +1,5 @@
+use fc_domain::ProbabilityThresholdRepairCandidateDiagnostics;
+
 use super::super::ProbabilityThresholdRegimeHitSummary;
 use super::{
     metrics::probability_threshold_regime_hit_summary,
@@ -186,6 +188,176 @@ fn threshold_has_usable_repair_candidate_support(
     }
 
     threshold_has_usable_early_warning_support(hits, horizon_days) && positive_window_supported
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ProbabilityThresholdRepairCandidateAssessment {
+    threshold: f64,
+    reason: &'static str,
+    hits: ProbabilityThresholdRegimeHitSummary,
+    evidence: ProbabilityThresholdPositiveEvidence,
+}
+
+fn assess_probability_threshold_repair_candidate(
+    probabilities: &[f64],
+    labels: &[f64],
+    rows: &[&crate::ProbabilityTrainingRow],
+    horizon_days: u32,
+    threshold: f64,
+    relaxed_prediction_ceiling: u32,
+) -> ProbabilityThresholdRepairCandidateAssessment {
+    let hits =
+        probability_threshold_regime_hit_summary(probabilities, rows, horizon_days, threshold);
+    let evidence = probability_threshold_positive_evidence(
+        probabilities,
+        labels,
+        rows,
+        horizon_days,
+        threshold,
+    );
+    let reason = if hits.early_warning_hit_count == 0 {
+        "no_early_warning_hit"
+    } else if !threshold_has_usable_repair_candidate_support(hits, horizon_days) {
+        "regime_support_rejected"
+    } else if !evidence.has_true_positive_support() || evidence.predicted_positive_count == 0 {
+        "no_positive_support"
+    } else if evidence.predicted_positive_count > relaxed_prediction_ceiling {
+        "prediction_ceiling_exceeded"
+    } else {
+        "accepted"
+    };
+
+    ProbabilityThresholdRepairCandidateAssessment {
+        threshold,
+        reason,
+        hits,
+        evidence,
+    }
+}
+
+pub(in super::super) fn probability_threshold_repair_candidate_diagnostics(
+    base_threshold: f64,
+    probabilities: &[f64],
+    labels: &[f64],
+    rows: &[&crate::ProbabilityTrainingRow],
+    horizon_days: u32,
+    label_mode: crate::ProbabilityTargetLabelMode,
+) -> Option<ProbabilityThresholdRepairCandidateDiagnostics> {
+    if label_mode != crate::ProbabilityTargetLabelMode::ForwardCrisis
+        || !matches!(horizon_days, 20 | 60)
+        || probabilities.is_empty()
+        || rows.is_empty()
+        || probabilities.len() != rows.len()
+    {
+        return None;
+    }
+
+    let positive_pool = probability_threshold_positive_evidence(
+        probabilities,
+        labels,
+        rows,
+        horizon_days,
+        f64::INFINITY,
+    );
+    let relaxed_prediction_ceiling = regime_aware_threshold_prediction_ceiling(
+        positive_pool.effective_positive_count_for_ceiling(),
+        horizon_days,
+    );
+    let mut candidate_count = 0_u32;
+    let mut accepted_candidate_count = 0_u32;
+    let mut rejected_no_early_warning_hit_count = 0_u32;
+    let mut rejected_regime_support_count = 0_u32;
+    let mut rejected_no_positive_support_count = 0_u32;
+    let mut rejected_prediction_ceiling_count = 0_u32;
+    let mut best_rejected = None::<ProbabilityThresholdRepairCandidateAssessment>;
+
+    for threshold in probability_threshold_candidates(probabilities) {
+        if threshold >= base_threshold {
+            continue;
+        }
+        candidate_count += 1;
+        let assessment = assess_probability_threshold_repair_candidate(
+            probabilities,
+            labels,
+            rows,
+            horizon_days,
+            threshold,
+            relaxed_prediction_ceiling,
+        );
+        match assessment.reason {
+            "accepted" => accepted_candidate_count += 1,
+            "no_early_warning_hit" => rejected_no_early_warning_hit_count += 1,
+            "regime_support_rejected" => rejected_regime_support_count += 1,
+            "no_positive_support" => rejected_no_positive_support_count += 1,
+            "prediction_ceiling_exceeded" => rejected_prediction_ceiling_count += 1,
+            _ => {}
+        }
+
+        if assessment.reason != "accepted"
+            && best_rejected.is_none_or(|best| {
+                repair_candidate_diagnostic_score(assessment)
+                    > repair_candidate_diagnostic_score(best)
+            })
+        {
+            best_rejected = Some(assessment);
+        }
+    }
+
+    let (
+        best_rejected_reason,
+        best_rejected_threshold,
+        best_rejected_early_warning_hit_rate,
+        best_rejected_positive_window_hit_rate,
+        best_rejected_normal_hit_rate,
+        best_rejected_cooldown_hit_rate,
+        best_rejected_predicted_positive_count,
+    ) = if let Some(best) = best_rejected {
+        (
+            best.reason.to_string(),
+            Some(crate::round3(best.threshold)),
+            crate::round3(best.hits.early_warning_hit_rate()),
+            crate::round3(best.hits.positive_window_hit_rate()),
+            crate::round3(best.hits.normal_hit_rate()),
+            crate::round3(best.hits.cooldown_hit_rate()),
+            best.evidence.predicted_positive_count,
+        )
+    } else {
+        ("none".to_string(), None, 0.0, 0.0, 0.0, 0.0, 0)
+    };
+
+    Some(ProbabilityThresholdRepairCandidateDiagnostics {
+        candidate_count,
+        accepted_candidate_count,
+        rejected_no_early_warning_hit_count,
+        rejected_regime_support_count,
+        rejected_no_positive_support_count,
+        rejected_prediction_ceiling_count,
+        best_rejected_reason,
+        best_rejected_threshold,
+        best_rejected_early_warning_hit_rate,
+        best_rejected_positive_window_hit_rate,
+        best_rejected_normal_hit_rate,
+        best_rejected_cooldown_hit_rate,
+        best_rejected_predicted_positive_count,
+    })
+}
+
+fn repair_candidate_diagnostic_score(
+    assessment: ProbabilityThresholdRepairCandidateAssessment,
+) -> (bool, bool, i64, i64, i64, i64, i64) {
+    (
+        assessment.hits.early_warning_hit_count > 0,
+        assessment.evidence.has_true_positive_support(),
+        ((assessment.hits.positive_window_hit_rate() - assessment.hits.cooldown_hit_rate())
+            * 1_000_000.0)
+            .round() as i64,
+        ((assessment.hits.early_warning_hit_rate() - assessment.hits.normal_hit_rate())
+            * 1_000_000.0)
+            .round() as i64,
+        (assessment.evidence.effective_true_positive_mass * 1_000_000.0).round() as i64,
+        -((assessment.hits.cooldown_hit_rate() * 1_000_000.0).round() as i64),
+        -((assessment.threshold * 1_000.0).round() as i64),
+    )
 }
 
 fn threshold_has_over_tight_repair_candidate(

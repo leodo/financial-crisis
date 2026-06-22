@@ -294,6 +294,7 @@ fn probability_guardrails_reject_medium_horizon_threshold_above_positive_window_
                 cooldown_hit_rate: 0.0,
             },
             calibration_regime_evidence: Vec::new(),
+            repair_candidate_diagnostics: None,
         }),
         raw_model: LogisticProbabilityModel {
             intercept: 0.0,
@@ -446,6 +447,7 @@ fn probability_guardrails_reject_medium_horizon_threshold_when_cooldown_hits_mat
                 cooldown_hit_rate: 0.400,
             },
             calibration_regime_evidence: Vec::new(),
+            repair_candidate_diagnostics: None,
         }),
         raw_model: LogisticProbabilityModel {
             intercept: 0.0,
