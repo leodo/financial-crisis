@@ -545,7 +545,8 @@ fn release_review_structured_signal_counts_accept_history_hysteresis_months_stru
 }
 
 #[test]
-fn release_review_structured_signal_counts_accept_prepare_weeks_plateau_hysteresis_clause() {
+fn release_review_structured_signal_counts_require_confirmation_for_saturated_weeks_plateau_hysteresis(
+) {
     let plateau_date = NaiveDate::from_ymd_opt(2022, 12, 8).unwrap();
     let crisis_start = NaiveDate::from_ymd_opt(2023, 3, 8).unwrap();
     let crisis_end = NaiveDate::from_ymd_opt(2023, 3, 18).unwrap();
@@ -575,6 +576,24 @@ fn release_review_structured_signal_counts_accept_prepare_weeks_plateau_hysteres
 
     let (strict_actionable_point_count, runtime_floor_hit_count) =
         release_review_structured_signal_counts(&backtests, &history, &method);
+
+    assert_eq!(strict_actionable_point_count, 0);
+    assert_eq!(runtime_floor_hit_count, 1);
+
+    let confirmed_history = vec![runtime_history_point_with_state(
+        plateau_date,
+        51.8,
+        0.02,
+        0.456,
+        0.93,
+        DecisionPosture::Prepare,
+        TimeToRiskBucket::Weeks,
+        44.0,
+        &["prepare_probability_plateau", "prepare_history_hysteresis"],
+    )];
+
+    let (strict_actionable_point_count, runtime_floor_hit_count) =
+        release_review_structured_signal_counts(&backtests, &confirmed_history, &method);
 
     assert_eq!(strict_actionable_point_count, 1);
     assert_eq!(runtime_floor_hit_count, 1);
