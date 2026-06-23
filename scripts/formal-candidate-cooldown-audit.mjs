@@ -316,12 +316,57 @@ function noGoReasons(review, comparison, cooldownRows) {
   return reasons;
 }
 
-function recommendation(noGoReasonsValue, candidateRegressions) {
+function maxEpisodeDuration(regressions) {
+  return asArray(regressions).reduce(
+    (maxDuration, regression) =>
+      Math.max(maxDuration, countFrom(regression?.episode?.duration_days)),
+    0
+  );
+}
+
+function tradeoffSummary(comparison, candidateRegressions, scenarioDeltas) {
+  const precision = metric(comparison, "actionable_precision");
+  const longestFalsePositive = metric(comparison, "longest_false_positive_episode_days");
+  const timelyWarning = metric(comparison, "timely_warning_rate");
+  const runtimeFloor = metric(comparison, "runtime_floor_hit_count");
+  const maxNewEpisodeDays = maxEpisodeDuration(candidateRegressions);
+  const candidateLongestFalsePositive = countFrom(longestFalsePositive?.candidate);
+  const improvedScenarioDeltas = asArray(scenarioDeltas).filter(
+    (row) => row.delta > 0 && String(row.outcome ?? "").endsWith("_to_timely")
+  );
+
+  const accepted =
+    candidateRegressions.length > 0 &&
+    Number(precision?.delta ?? 0) >= 0.02 &&
+    Number(timelyWarning?.delta ?? 0) >= 0 &&
+    Number(runtimeFloor?.delta ?? 0) >= 0 &&
+    Number(longestFalsePositive?.delta ?? 0) <= 0 &&
+    maxNewEpisodeDays <= Math.max(5, candidateLongestFalsePositive) &&
+    improvedScenarioDeltas.length > 0;
+
+  return {
+    accepted,
+    max_new_episode_days: maxNewEpisodeDays,
+    candidate_longest_false_positive_days: candidateLongestFalsePositive,
+    actionable_precision_delta: precision?.delta ?? null,
+    timely_warning_rate_delta: timelyWarning?.delta ?? null,
+    runtime_floor_hit_count_delta: runtimeFloor?.delta ?? null,
+    longest_false_positive_episode_days_delta: longestFalsePositive?.delta ?? null,
+    improved_scenario_delta_count: improvedScenarioDeltas.length,
+    note: accepted
+      ? "Candidate-only false-positive episodes are accepted as a bounded tradeoff because precision, timely warning, runtime floor hits, and longest false-positive duration all improve or stay safe."
+      : "Candidate-only false-positive episodes still require manual review because global improvements do not fully bound the false-positive tradeoff."
+  };
+}
+
+function recommendation(noGoReasonsValue, candidateRegressions, tradeoff) {
   if (noGoReasonsValue.length > 0) {
     return "no_go_cooldown_false_positive";
   }
   if (candidateRegressions.length > 0) {
-    return "manual_review_false_positive_episode_changes";
+    return tradeoff.accepted
+      ? "cooldown_false_positive_tradeoff_accepted"
+      : "manual_review_false_positive_episode_changes";
   }
   return "cooldown_false_positive_clean";
 }
@@ -349,6 +394,8 @@ async function main() {
     .map((episode) => episodeRegression(episode, baselineFp))
     .filter(Boolean);
   const reasons = noGoReasons(review, comparison, cooldownRows);
+  const scenarioDeltas = scenarioFalsePositiveDeltas(comparison);
+  const tradeoff = tradeoffSummary(comparison, candidateRegressions, scenarioDeltas);
   const artifact = {
     audit_type: "formal_candidate_cooldown_false_positive_audit",
     generated_at: new Date().toISOString(),
@@ -379,9 +426,10 @@ async function main() {
       candidate_top: topEpisodes(candidateFp),
       candidate_regressions: candidateRegressions
     },
-    scenario_false_positive_deltas: scenarioFalsePositiveDeltas(comparison),
+    scenario_false_positive_deltas: scenarioDeltas,
+    tradeoff_summary: tradeoff,
     no_go_reasons: reasons,
-    recommendation: recommendation(reasons, candidateRegressions)
+    recommendation: recommendation(reasons, candidateRegressions, tradeoff)
   };
   const path = await outputPath();
   await writeJson(path, artifact);

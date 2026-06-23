@@ -135,12 +135,16 @@ function cooldownAuditDecision(cooldownAudit, releaseReview) {
   const recommendation = String(cooldownAudit.recommendation ?? "unknown");
   const noGoReasons = asArray(cooldownAudit.no_go_reasons);
   const reasonCodes = unique(noGoReasons.map((reason) => reason?.code));
+  const tradeoff = cooldownAudit.tradeoff_summary ?? null;
   const detail = auditTargetDetail(cooldownAudit, releaseReview, [
     `recommendation=${recommendation}`,
     reasonCodes.length > 0
       ? `no_go_reasons=${reasonCodes.length} (${reasonCodes.join(", ")})`
-      : "no_go_reasons=0"
-  ]);
+      : "no_go_reasons=0",
+    tradeoff?.accepted === true
+      ? `tradeoff=accepted; max_new_episode_days=${tradeoff.max_new_episode_days ?? "-"}`
+      : null
+  ].filter(Boolean));
 
   if (releaseReview && !auditMatchesReleaseReview(cooldownAudit, releaseReview)) {
     return {
@@ -164,6 +168,14 @@ function cooldownAuditDecision(cooldownAudit, releaseReview) {
       action: "Resolve manual false-positive episode review before final human approval.",
       detail,
       status: "warn"
+    };
+  }
+
+  if (recommendation === "cooldown_false_positive_tradeoff_accepted") {
+    return {
+      action: "Run cooldown and false-positive audits before final human approval.",
+      detail,
+      status: "pass"
     };
   }
 

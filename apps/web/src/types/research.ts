@@ -571,6 +571,18 @@ export interface CooldownAuditScenarioFalsePositiveDelta {
   outcome: string | null;
 }
 
+export interface CooldownAuditTradeoffSummary {
+  accepted: boolean;
+  max_new_episode_days: number;
+  candidate_longest_false_positive_days: number;
+  actionable_precision_delta: number | null;
+  timely_warning_rate_delta: number | null;
+  runtime_floor_hit_count_delta: number | null;
+  longest_false_positive_episode_days_delta: number | null;
+  improved_scenario_delta_count: number;
+  note: string;
+}
+
 export interface CooldownAuditArtifactSummary {
   generated_at: string;
   source: string;
@@ -584,6 +596,7 @@ export interface CooldownAuditArtifactSummary {
   runtime_cooldown_rows: CooldownAuditRuntimeRow[];
   false_positive_episodes: CooldownAuditFalsePositiveEpisodes;
   scenario_false_positive_deltas: CooldownAuditScenarioFalsePositiveDelta[];
+  tradeoff_summary: CooldownAuditTradeoffSummary | null;
   no_go_reasons: CooldownAuditNoGoReason[];
 }
 

@@ -986,6 +986,41 @@ mod tests {
             .candidate_regressions
             .is_empty());
         assert!(wire.scenario_false_positive_deltas.is_empty());
+        assert!(wire.tradeoff_summary.is_none());
+    }
+
+    #[test]
+    fn cooldown_wire_decodes_tradeoff_summary() {
+        let body = r#"
+        {
+          "generated_at": "2026-06-09T00:00:00+00:00",
+          "baseline_release_id": "baseline_release",
+          "candidate_release_id": "candidate_release",
+          "history_mode": "strict_rebuild",
+          "release_review_artifact": "review.json",
+          "recommendation": "cooldown_false_positive_tradeoff_accepted",
+          "tradeoff_summary": {
+            "accepted": true,
+            "max_new_episode_days": 5,
+            "candidate_longest_false_positive_days": 5,
+            "actionable_precision_delta": 0.134,
+            "timely_warning_rate_delta": 0.3,
+            "runtime_floor_hit_count_delta": 301,
+            "longest_false_positive_episode_days_delta": -9,
+            "improved_scenario_delta_count": 2,
+            "note": "bounded tradeoff"
+          }
+        }
+        "#;
+
+        let wire: CooldownAuditArtifactWire =
+            serde_json::from_str(body).expect("wire should deserialize");
+        let tradeoff = wire
+            .tradeoff_summary
+            .expect("tradeoff summary should deserialize");
+        assert!(tradeoff.accepted);
+        assert_eq!(tradeoff.max_new_episode_days, 5);
+        assert_eq!(tradeoff.improved_scenario_delta_count, 2);
     }
 
     #[test]

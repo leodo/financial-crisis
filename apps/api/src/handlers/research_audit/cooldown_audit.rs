@@ -64,6 +64,19 @@ pub(super) struct CooldownAuditScenarioFalsePositiveDelta {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(super) struct CooldownAuditTradeoffSummary {
+    pub(super) accepted: bool,
+    pub(super) max_new_episode_days: usize,
+    pub(super) candidate_longest_false_positive_days: usize,
+    pub(super) actionable_precision_delta: Option<f64>,
+    pub(super) timely_warning_rate_delta: Option<f64>,
+    pub(super) runtime_floor_hit_count_delta: Option<f64>,
+    pub(super) longest_false_positive_episode_days_delta: Option<f64>,
+    pub(super) improved_scenario_delta_count: usize,
+    pub(super) note: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(super) struct CooldownAuditArtifactWire {
     pub(super) generated_at: String,
     pub(super) baseline_release_id: String,
@@ -80,6 +93,8 @@ pub(super) struct CooldownAuditArtifactWire {
     pub(super) false_positive_episodes: CooldownAuditFalsePositiveEpisodes,
     #[serde(default)]
     pub(super) scenario_false_positive_deltas: Vec<CooldownAuditScenarioFalsePositiveDelta>,
+    #[serde(default)]
+    pub(super) tradeoff_summary: Option<CooldownAuditTradeoffSummary>,
     #[serde(default)]
     pub(super) no_go_reasons: Vec<CooldownAuditNoGoReason>,
 }
@@ -98,6 +113,7 @@ pub(super) struct CooldownAuditArtifactSummary {
     pub(super) runtime_cooldown_rows: Vec<CooldownAuditRuntimeRow>,
     pub(super) false_positive_episodes: CooldownAuditFalsePositiveEpisodes,
     pub(super) scenario_false_positive_deltas: Vec<CooldownAuditScenarioFalsePositiveDelta>,
+    pub(super) tradeoff_summary: Option<CooldownAuditTradeoffSummary>,
     pub(super) no_go_reasons: Vec<CooldownAuditNoGoReason>,
 }
 
@@ -153,6 +169,7 @@ pub(super) fn load_latest_cooldown_audit_summary(
                     runtime_cooldown_rows: wire.runtime_cooldown_rows,
                     false_positive_episodes: wire.false_positive_episodes,
                     scenario_false_positive_deltas: wire.scenario_false_positive_deltas,
+                    tradeoff_summary: wire.tradeoff_summary,
                     no_go_reasons: wire.no_go_reasons,
                 },
             ));

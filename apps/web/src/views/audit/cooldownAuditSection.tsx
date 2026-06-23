@@ -56,8 +56,23 @@ function formatOptionalPercent(value: number | null): string {
   return value === null ? "—" : formatPercent(value);
 }
 
+function formatSignedPercent(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "—";
+  }
+  return `${value >= 0 ? "+" : ""}${formatPercent(value)}`;
+}
+
+function formatSignedNumber(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "—";
+  }
+  return `${value >= 0 ? "+" : ""}${value}`;
+}
+
 export function CooldownAuditSection({ audit }: { audit: ResearchAuditResponse }) {
   const latestCooldownAudit = audit.latest_cooldown_audit;
+  const tradeoffSummary = latestCooldownAudit?.tradeoff_summary ?? null;
   const latestCooldownAuditSource = latestCooldownAudit
     ? compactFileReference(latestCooldownAudit.source)
     : null;
@@ -87,6 +102,11 @@ export function CooldownAuditSection({ audit }: { audit: ResearchAuditResponse }
           label: "场景误报 delta（历史）",
           value: `${latestCooldownAudit.scenario_false_positive_deltas.length}`,
           hint: "历史场景维度的误报变化条数，不是当前概率准确率。"
+        },
+        {
+          label: "权衡判定（离线）",
+          value: tradeoffSummary?.accepted ? "已接受" : "需复核",
+          hint: tradeoffSummary?.note ?? "基于误报 episode 与全局指标变化的离线判定。"
         }
       ]
     : [];
@@ -169,6 +189,27 @@ export function CooldownAuditSection({ audit }: { audit: ResearchAuditResponse }
           <RuleBox label="审计上下文">
             <DetailRows items={contextRows} compact />
           </RuleBox>
+          {tradeoffSummary ? (
+            <RuleBox label="误报权衡判定">
+              <DetailRows
+                compact
+                items={[
+                  {
+                    id: "cooldown-tradeoff-summary",
+                    title: tradeoffSummary.accepted ? "可接受权衡" : "仍需人工复核",
+                    detail: tradeoffSummary.note,
+                    note: `新增最长误报 ${tradeoffSummary.max_new_episode_days} 天；候选最长误报 ${tradeoffSummary.candidate_longest_false_positive_days} 天`
+                  },
+                  {
+                    id: "cooldown-tradeoff-metrics",
+                    title: "全局指标变化",
+                    detail: `及时预警 ${formatSignedPercent(tradeoffSummary.timely_warning_rate_delta)}；动作精度 ${formatSignedPercent(tradeoffSummary.actionable_precision_delta)}；运行阈值命中 ${formatSignedNumber(tradeoffSummary.runtime_floor_hit_count_delta)}`,
+                    note: `最长误报 ${formatSignedNumber(tradeoffSummary.longest_false_positive_episode_days_delta)} 天；改善场景 ${tradeoffSummary.improved_scenario_delta_count} 个`
+                  }
+                ]}
+              />
+            </RuleBox>
+          ) : null}
           {noGoRows.length > 0 ? (
             <RuleBox label="No-Go 原因">
               <DetailRows items={noGoRows} compact />
