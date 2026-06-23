@@ -400,7 +400,7 @@ MVP 当前判定：
    - [x] 明确 protected stress 在 formal main 中属于 `actionability context + regime-aware protected sample`，不是正式主正例
    - [x] 在 `ForwardCrisis` 概率头中引入更强的 protected-context / pre-warning separation（方向约束、软标签、margin pairwise、regime-aware calibration scope 已落地）
    - [x] 把 runtime `prepare / hedge` 触发从“有分离就直接越线”收敛到“可用但不过宽”，当前已把 `longest_false_positive_episode_days` 从 `38` 压到 `5`
-   - [x] 补入 `2022-11-03 ~ 2023-01-13` 的银行资产负债表压力 protected window，避免把区域银行危机前的系统性积压误记为纯噪声
+   - [x] 补入 `2022-11-03 ~ 2023-02-05` 的银行资产负债表压力 protected window，避免把区域银行危机前的系统性积压误记为纯噪声
    - [ ] 在 runtime floor 收紧后复核 `timely_warning_rate / actionable_precision` 是否仍保持正收益（当前 `actionable_precision=66.7%`，但 `timely_warning_rate` 从 `30.0%` 回落到 `10.0%`）
    - [ ] 逐个复盘 `1990-1993 / 2000 / 2008 / 2011 / 2020 / 2022` 的 missed 场景，判断是 `prepare` 过严、`hedge` 过晚，还是训练目标只学会了 `2023` 这类银行危机形态
    - [x] 为 formal 训练管线增加 `--aux-dataset-key`，支持把 `main + ext_stress + ext_acute` 作为同一轮候选训练输入

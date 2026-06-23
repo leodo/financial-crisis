@@ -109,6 +109,8 @@ fn validate_windows(windows: &[ProtectedStressWindow]) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    use chrono::NaiveDate;
+
     use super::embedded_protected_stress_window_catalog;
 
     #[test]
@@ -123,5 +125,24 @@ mod tests {
             .windows
             .windows(2)
             .all(|pair| pair[0].start_date <= pair[1].start_date));
+    }
+
+    #[test]
+    fn embedded_catalog_keeps_regional_bank_pre_crisis_stress_protected() {
+        let catalog = embedded_protected_stress_window_catalog();
+        let window = catalog
+            .windows
+            .iter()
+            .find(|window| window.window_id == "us_bank_balance_sheet_stress_2022_2023")
+            .expect("regional bank balance sheet stress window");
+
+        assert_eq!(
+            window.start_date,
+            NaiveDate::from_ymd_opt(2022, 11, 3).unwrap()
+        );
+        assert_eq!(
+            window.end_date,
+            NaiveDate::from_ymd_opt(2023, 2, 5).unwrap()
+        );
     }
 }
