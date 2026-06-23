@@ -3,7 +3,9 @@ mod split;
 
 use fc_domain::{ProbabilityFamilyOverlayAudit, ProbabilityFamilyOverlayBundle};
 
-use audit::{family_overlay_audit_specs, family_overlay_has_minimum_support};
+use audit::{
+    family_overlay_audit_specs, family_overlay_has_minimum_support, family_overlay_support_blockers,
+};
 use split::{build_family_overlay_dataset_rows, split_family_overlay_dataset_rows};
 
 pub(super) fn build_family_overlay_audits(
@@ -22,6 +24,16 @@ pub(super) fn build_family_overlay_audits(
         horizon_days,
         label_mode,
     )
+}
+
+pub(super) fn family_overlay_support_blocker_labels(
+    audit: &ProbabilityFamilyOverlayAudit,
+) -> Vec<&'static str> {
+    let specs = family_overlay_audit_specs();
+    let Some(spec) = specs.iter().find(|spec| spec.family_id == audit.family_id) else {
+        return vec!["unknown_family"];
+    };
+    family_overlay_support_blockers(audit, spec)
 }
 
 pub(super) fn train_family_overlays(

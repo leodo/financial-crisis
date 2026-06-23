@@ -191,6 +191,60 @@ fn family_overlay_minimum_support_uses_aggregate_support_not_original_split_shap
 }
 
 #[test]
+fn family_overlay_blocker_labels_match_minimum_support() {
+    let spec = systemic_credit_spec();
+    let audit = fc_domain::ProbabilityFamilyOverlayAudit {
+        family_id: "systemic_credit".to_string(),
+        gate_feature: spec.gate_feature.to_string(),
+        gate_active_threshold: spec.gate_active_threshold,
+        scenario_count: 1,
+        train_row_count: 6,
+        calibration_row_count: 2,
+        evaluation_row_count: 1,
+        train_gate_active_row_count: 2,
+        calibration_gate_active_row_count: 1,
+        evaluation_gate_active_row_count: 0,
+        positive_label_count: 0,
+        early_warning_row_count: 0,
+        protected_action_window_count: 0,
+        avg_gate_value: 0.11,
+        max_gate_value: 0.64,
+        note: "test".to_string(),
+    };
+
+    let blockers = super::family_overlay_support_blocker_labels(&audit);
+    assert_eq!(
+        blockers,
+        vec![
+            "scenario_count",
+            "positive_label",
+            "early_warning",
+            "candidate_rows",
+            "gate_active"
+        ]
+    );
+    assert_eq!(
+        blockers.is_empty(),
+        family_overlay_has_minimum_support(&audit, &spec)
+    );
+
+    let supported = fc_domain::ProbabilityFamilyOverlayAudit {
+        scenario_count: 2,
+        train_row_count: 7,
+        calibration_row_count: 2,
+        evaluation_row_count: 1,
+        train_gate_active_row_count: 3,
+        calibration_gate_active_row_count: 1,
+        evaluation_gate_active_row_count: 0,
+        positive_label_count: 1,
+        early_warning_row_count: 1,
+        ..audit
+    };
+    assert!(super::family_overlay_support_blocker_labels(&supported).is_empty());
+    assert!(family_overlay_has_minimum_support(&supported, &spec));
+}
+
+#[test]
 fn family_overlay_split_recovers_positive_and_early_warning_support_across_scenarios() {
     let spec = systemic_credit_spec();
     let rows = (0..150)

@@ -88,8 +88,9 @@ pub(crate) use probability::{
     ProbabilityThresholdSelection,
 };
 pub(crate) use probability::{
-    classify_probability_regime_separation, early_warning_regime_name, gap_retention_ratio,
-    lift_vs_baseline, summarize_bundle_evaluation, train_horizon_bundle,
+    build_probability_family_overlay_audits, classify_probability_regime_separation,
+    early_warning_regime_name, gap_retention_ratio, lift_vs_baseline,
+    probability_family_overlay_support_blockers, summarize_bundle_evaluation, train_horizon_bundle,
 };
 pub(crate) use release_review::{
     build_release_review_scenario_coverage, build_release_runtime_review_diagnostics,

@@ -5,8 +5,9 @@ mod threshold;
 
 use fc_domain::{
     apply_platt_probability_calibration, HorizonEvaluationSummary, LogisticProbabilityModel,
-    PlattCalibrationArtifact, ProbabilityBundleEvaluation, ProbabilityHorizonBundle,
-    ProbabilityRegimeTailDiagnostics, ProbabilityRegimeTailSampleDiagnostics,
+    PlattCalibrationArtifact, ProbabilityBundleEvaluation, ProbabilityFamilyOverlayAudit,
+    ProbabilityHorizonBundle, ProbabilityRegimeTailDiagnostics,
+    ProbabilityRegimeTailSampleDiagnostics,
     ProbabilityThresholdDiagnostics as ProbabilityThresholdDiagnosticsWire,
     RegimeSeparationEvaluationSummary,
 };
@@ -77,6 +78,30 @@ pub(crate) fn train_horizon_bundle(
         family_overlays,
         family_overlay_audits,
     })
+}
+
+pub(crate) fn build_probability_family_overlay_audits(
+    train_rows: &[crate::ProbabilityTrainingRow],
+    calibration_rows: &[crate::ProbabilityTrainingRow],
+    evaluation_rows: &[crate::ProbabilityTrainingRow],
+    overlay_feature_names: &[String],
+    horizon_days: u32,
+    label_mode: crate::ProbabilityTargetLabelMode,
+) -> Vec<ProbabilityFamilyOverlayAudit> {
+    overlay::build_family_overlay_audits(
+        train_rows,
+        calibration_rows,
+        evaluation_rows,
+        overlay_feature_names,
+        horizon_days,
+        label_mode,
+    )
+}
+
+pub(crate) fn probability_family_overlay_support_blockers(
+    audit: &ProbabilityFamilyOverlayAudit,
+) -> Vec<&'static str> {
+    overlay::family_overlay_support_blocker_labels(audit)
 }
 
 fn train_probability_head(

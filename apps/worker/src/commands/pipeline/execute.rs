@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use fc_domain::probability_feature_names_for_transform;
+
 use crate::training::PipelineArtifacts;
 
 use super::{options::PipelineBootstrapOptions, PipelineTrainOptions};
@@ -117,6 +119,65 @@ fn print_training_dry_run_summary(
         format_split_name_counts(&training.calibration_rows),
         format_split_name_counts(&training.evaluation_rows),
     );
+    print_family_overlay_support_dry_run(training, options);
+}
+
+fn print_family_overlay_support_dry_run(
+    training: &crate::ProbabilityTrainingInput,
+    options: &PipelineTrainOptions,
+) {
+    let label_mode = crate::ProbabilityTargetLabelMode::ForwardCrisis;
+    for horizon_days in [5_u32, 20_u32, 60_u32] {
+        let overlay_feature_names = probability_feature_names_for_transform(
+            &training.feature_names,
+            options
+                .model_shape
+                .overlay_feature_transform_for_horizon(horizon_days),
+        );
+        let audits = crate::build_probability_family_overlay_audits(
+            &training.train_rows,
+            &training.calibration_rows,
+            &training.evaluation_rows,
+            &overlay_feature_names,
+            horizon_days,
+            label_mode,
+        );
+        let pass_count = audits
+            .iter()
+            .filter(|audit| crate::probability_family_overlay_support_blockers(audit).is_empty())
+            .count();
+        println!(
+            "  overlay_support {:>2}d pass={} blocked={} audits={}",
+            horizon_days,
+            pass_count,
+            audits.len().saturating_sub(pass_count),
+            audits.len(),
+        );
+        for audit in &audits {
+            let blockers = crate::probability_family_overlay_support_blockers(audit);
+            println!(
+                "                   {} status={} blockers={} scenarios={} positives={} early_warning={} protected={} rows={}/{}/{} gate_active={}/{}/{} max_gate={:.3}",
+                audit.family_id,
+                if blockers.is_empty() { "pass" } else { "blocked" },
+                if blockers.is_empty() {
+                    "none".to_string()
+                } else {
+                    blockers.join(",")
+                },
+                audit.scenario_count,
+                audit.positive_label_count,
+                audit.early_warning_row_count,
+                audit.protected_action_window_count,
+                audit.train_row_count,
+                audit.calibration_row_count,
+                audit.evaluation_row_count,
+                audit.train_gate_active_row_count,
+                audit.calibration_gate_active_row_count,
+                audit.evaluation_gate_active_row_count,
+                audit.max_gate_value,
+            );
+        }
+    }
 }
 
 fn summarize_training_topology_rows(

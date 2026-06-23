@@ -227,11 +227,19 @@ pub(super) fn family_overlay_has_minimum_support(
     audit: &ProbabilityFamilyOverlayAudit,
     spec: &FamilyOverlayAuditSpec,
 ) -> bool {
+    family_overlay_support_blockers(audit, spec).is_empty()
+}
+
+pub(super) fn family_overlay_support_blockers(
+    audit: &ProbabilityFamilyOverlayAudit,
+    spec: &FamilyOverlayAuditSpec,
+) -> Vec<&'static str> {
+    let mut blockers = Vec::new();
     if spec.scenario_family.is_some() && audit.scenario_count < spec.min_scenario_count {
-        return false;
+        blockers.push("scenario_count");
     }
     if spec.scenario_family.is_none() && audit.protected_action_window_count == 0 {
-        return false;
+        blockers.push("protected_action_window");
     }
 
     let total_candidate_rows =
@@ -240,8 +248,17 @@ pub(super) fn family_overlay_has_minimum_support(
         + audit.calibration_gate_active_row_count
         + audit.evaluation_gate_active_row_count;
 
-    audit.positive_label_count > 0
-        && audit.early_warning_row_count > 0
-        && total_candidate_rows >= 10
-        && total_gate_active_rows >= 4
+    if audit.positive_label_count == 0 {
+        blockers.push("positive_label");
+    }
+    if audit.early_warning_row_count == 0 {
+        blockers.push("early_warning");
+    }
+    if total_candidate_rows < 10 {
+        blockers.push("candidate_rows");
+    }
+    if total_gate_active_rows < 4 {
+        blockers.push("gate_active");
+    }
+    blockers
 }
