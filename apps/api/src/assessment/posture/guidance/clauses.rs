@@ -30,6 +30,13 @@ const PREPARE_PROBABILITY_PLATEAU_RELAXED_STRUCTURAL_FLOOR: f64 = 44.0;
 const PREPARE_PROBABILITY_PLATEAU_RELAXED_TRIGGER_FLOOR: f64 = 36.0;
 const PREPARE_PROBABILITY_PLATEAU_RELAXED_EXTERNAL_FLOOR: f64 = 40.0;
 const PREPARE_PROBABILITY_PLATEAU_RELAXED_BREADTH_FLOOR: f64 = 34.0;
+const PREPARE_TRIGGER_DOMINANT_PLATEAU_P20D_FLOOR: f64 = 0.22;
+const PREPARE_TRIGGER_DOMINANT_PLATEAU_P60D_FLOOR: f64 = 0.80;
+const PREPARE_TRIGGER_DOMINANT_PLATEAU_OVERALL_FLOOR: f64 = 47.0;
+const PREPARE_TRIGGER_DOMINANT_PLATEAU_STRUCTURAL_CEILING: f64 = 48.0;
+const PREPARE_TRIGGER_DOMINANT_PLATEAU_TRIGGER_FLOOR: f64 = 53.0;
+const PREPARE_TRIGGER_DOMINANT_PLATEAU_EXTERNAL_FLOOR: f64 = 28.0;
+const PREPARE_TRIGGER_DOMINANT_PLATEAU_EXTERNAL_CEILING: f64 = 35.0;
 const LOW_RUNTIME_PREPARE_FLOOR_CEILING: f64 = 0.30;
 const LOW_RUNTIME_HEDGE_FLOOR_CEILING: f64 = 0.12;
 const SATURATED_PREPARE_LONG_WINDOW_P60D_FLOOR: f64 = 0.90;
@@ -189,6 +196,27 @@ pub(super) fn prepare_probability_plateau_signal(
             && saturated_prepare_context_confirmed)
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) fn prepare_trigger_dominant_plateau_signal(
+    probabilities: &ProbabilityBlock,
+    prepare_reference_p60d: Option<f64>,
+    overall_score: f64,
+    structural_score: f64,
+    trigger_score: f64,
+    external_shock_score: f64,
+    thresholds: ProbabilityActionThresholds,
+) -> bool {
+    let prepare_p60d = prepare_reference_p60d.unwrap_or(probabilities.p_60d);
+    low_runtime_thresholds(thresholds)
+        && probabilities.p_20d >= PREPARE_TRIGGER_DOMINANT_PLATEAU_P20D_FLOOR
+        && prepare_p60d >= PREPARE_TRIGGER_DOMINANT_PLATEAU_P60D_FLOOR
+        && overall_score >= PREPARE_TRIGGER_DOMINANT_PLATEAU_OVERALL_FLOOR
+        && structural_score <= PREPARE_TRIGGER_DOMINANT_PLATEAU_STRUCTURAL_CEILING
+        && trigger_score >= PREPARE_TRIGGER_DOMINANT_PLATEAU_TRIGGER_FLOOR
+        && external_shock_score >= PREPARE_TRIGGER_DOMINANT_PLATEAU_EXTERNAL_FLOOR
+        && external_shock_score <= PREPARE_TRIGGER_DOMINANT_PLATEAU_EXTERNAL_CEILING
+}
+
 fn low_runtime_thresholds(thresholds: ProbabilityActionThresholds) -> bool {
     thresholds.prepare_p60d < LOW_RUNTIME_PREPARE_FLOOR_CEILING
         && thresholds.hedge_p20d < LOW_RUNTIME_HEDGE_FLOOR_CEILING
@@ -328,6 +356,15 @@ pub(super) fn build_posture_clause_diagnostics(
         breadth_score,
         thresholds,
     );
+    let prepare_trigger_dominant_plateau = prepare_trigger_dominant_plateau_signal(
+        probabilities,
+        prepare_reference_p60d,
+        snapshot.overall_score,
+        snapshot.structural_score,
+        snapshot.trigger_score,
+        external_shock_score,
+        thresholds,
+    );
     let severe_carry = jpy_carry.score >= 70.0 && jpy_carry.funding_pressure_score >= 55.0;
     let stressed_carry = jpy_carry.score >= 58.0 && jpy_carry.funding_pressure_score >= 48.0;
 
@@ -443,6 +480,9 @@ pub(super) fn build_posture_clause_diagnostics(
     }
     if prepare_continuity_bridge {
         prepare_trigger_codes.push("prepare_continuity_bridge");
+    }
+    if prepare_trigger_dominant_plateau {
+        prepare_trigger_codes.push("prepare_trigger_dominant_plateau");
     }
     if prepare_probability_plateau_signal(
         probabilities,

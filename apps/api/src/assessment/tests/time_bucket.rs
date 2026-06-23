@@ -218,6 +218,60 @@ fn time_to_risk_bucket_uses_runtime_derived_prepare_continuity_floors() {
 }
 
 #[test]
+fn time_to_risk_bucket_promotes_months_for_trigger_dominant_plateau() {
+    let bucket = build_time_to_risk_bucket(
+        &ProbabilityBlock {
+            p_5d: 0.004,
+            p_20d: 0.239,
+            p_60d: 0.901,
+        },
+        Some(0.901),
+        None,
+        None,
+        48.1,
+        43.2,
+        54.2,
+        32.8,
+        30.0,
+        &quiet_jpy_carry(20.0),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.203,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.99,
+        },
+    );
+
+    assert_eq!(bucket, TimeToRiskBucket::Months);
+}
+
+#[test]
+fn time_to_risk_bucket_does_not_use_trigger_dominant_plateau_for_structural_context() {
+    let bucket = build_time_to_risk_bucket(
+        &ProbabilityBlock {
+            p_5d: 0.004,
+            p_20d: 0.39,
+            p_60d: 0.93,
+        },
+        Some(0.93),
+        None,
+        None,
+        54.1,
+        54.8,
+        53.2,
+        36.1,
+        30.0,
+        &quiet_jpy_carry(20.0),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.203,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.99,
+        },
+    );
+
+    assert_eq!(bucket, TimeToRiskBucket::Normal);
+}
+
+#[test]
 fn time_to_risk_bucket_blocks_saturated_weeks_without_strong_confirmation() {
     let bucket = build_time_to_risk_bucket(
         &ProbabilityBlock {

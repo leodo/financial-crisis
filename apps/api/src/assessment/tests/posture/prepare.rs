@@ -602,6 +602,118 @@ fn posture_guidance_uses_runtime_derived_prepare_continuity_floors() {
 }
 
 #[test]
+fn posture_guidance_emits_prepare_for_trigger_dominant_plateau() {
+    let snapshot = RiskSnapshot {
+        as_of_date: NaiveDate::from_ymd_opt(2000, 2, 18).unwrap(),
+        entity_id: "us".to_string(),
+        market_scope: "financial_system".to_string(),
+        overall_score: 48.1,
+        overall_level: RiskLevel::Stress,
+        structural_score: 43.2,
+        trigger_score: 54.2,
+        level_reason: "test".to_string(),
+        dimensions: Vec::new(),
+        top_contributors: Vec::new(),
+        data_quality_summary: DataQualitySummary {
+            overall_score: 90.0,
+            grade: QualityGrade::A,
+            stale_indicator_count: 0,
+            low_quality_indicator_count: 0,
+            prototype_source_count: 0,
+            blocked_indicator_count: 0,
+        },
+        generated_at: Utc::now(),
+        method_version: "test".to_string(),
+    };
+    let probabilities = ProbabilityBlock {
+        p_5d: 0.004,
+        p_20d: 0.239,
+        p_60d: 0.901,
+    };
+    let posture = build_posture_guidance(
+        &snapshot,
+        &probabilities,
+        Some(0.901),
+        None,
+        None,
+        0.55,
+        &test_data_trust(QualityGrade::A),
+        32.8,
+        30.0,
+        &[],
+        &quiet_jpy_carry(20.0),
+        &quiet_event_assessment(20.0),
+        &neutral_preferences(),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.203,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.99,
+        },
+    );
+
+    assert_eq!(posture.posture, DecisionPosture::Prepare);
+    assert_eq!(
+        posture.trigger_codes,
+        vec!["prepare_trigger_dominant_plateau".to_string()]
+    );
+    assert!(posture.blocker_codes.is_empty());
+}
+
+#[test]
+fn posture_guidance_keeps_structural_plateau_out_of_trigger_dominant_bridge() {
+    let snapshot = RiskSnapshot {
+        as_of_date: NaiveDate::from_ymd_opt(2022, 12, 9).unwrap(),
+        entity_id: "us".to_string(),
+        market_scope: "financial_system".to_string(),
+        overall_score: 54.1,
+        overall_level: RiskLevel::Stress,
+        structural_score: 54.8,
+        trigger_score: 53.2,
+        level_reason: "test".to_string(),
+        dimensions: Vec::new(),
+        top_contributors: Vec::new(),
+        data_quality_summary: DataQualitySummary {
+            overall_score: 90.0,
+            grade: QualityGrade::A,
+            stale_indicator_count: 0,
+            low_quality_indicator_count: 0,
+            prototype_source_count: 0,
+            blocked_indicator_count: 0,
+        },
+        generated_at: Utc::now(),
+        method_version: "test".to_string(),
+    };
+    let probabilities = ProbabilityBlock {
+        p_5d: 0.004,
+        p_20d: 0.39,
+        p_60d: 0.93,
+    };
+    let posture = build_posture_guidance(
+        &snapshot,
+        &probabilities,
+        Some(0.93),
+        None,
+        None,
+        0.55,
+        &test_data_trust(QualityGrade::A),
+        36.1,
+        30.0,
+        &[],
+        &quiet_jpy_carry(20.0),
+        &quiet_event_assessment(20.0),
+        &neutral_preferences(),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.203,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.99,
+        },
+    );
+
+    assert_eq!(posture.posture, DecisionPosture::Normal);
+    assert!(posture.trigger_codes.is_empty());
+}
+
+#[test]
 fn posture_guidance_blocks_saturated_plateau_without_strong_confirmation() {
     let snapshot = RiskSnapshot {
         as_of_date: NaiveDate::from_ymd_opt(2024, 8, 2).unwrap(),

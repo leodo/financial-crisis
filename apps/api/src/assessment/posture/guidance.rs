@@ -11,8 +11,8 @@ use fc_domain::{
 use super::super::{common::format_probability_percent, ProbabilityActionThresholds};
 use clauses::{
     build_posture_clause_diagnostics, prepare_continuity_bridge_signal,
-    prepare_probability_plateau_signal, saturated_hedge_context_confirmed,
-    saturated_prepare_structural_context_confirmed,
+    prepare_probability_plateau_signal, prepare_trigger_dominant_plateau_signal,
+    saturated_hedge_context_confirmed, saturated_prepare_structural_context_confirmed,
 };
 use counters::{
     prepare_context_confirmation_count_without_events,
@@ -105,6 +105,15 @@ pub(in super::super) fn build_time_to_risk_bucket(
         breadth_score,
         thresholds,
     );
+    let prepare_trigger_dominant_plateau = prepare_trigger_dominant_plateau_signal(
+        probabilities,
+        prepare_reference_p60d,
+        overall_score,
+        structural_score,
+        trigger_score,
+        external_shock_score,
+        thresholds,
+    );
 
     if (probabilities.p_5d >= thresholds.defend_p5d
         && trigger_score >= 62.0
@@ -151,6 +160,7 @@ pub(in super::super) fn build_time_to_risk_bucket(
         || (prepare_head_months && saturated_prepare_context_confirmed)
         || prepare_continuity_bridge
         || prepare_probability_plateau
+        || prepare_trigger_dominant_plateau
     {
         TimeToRiskBucket::Months
     } else {

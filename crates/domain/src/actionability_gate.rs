@@ -33,6 +33,11 @@ const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P20D_FLOOR: f64 = 0.25;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_P60D_FLOOR: f64 = 0.80;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_OVERALL_FLOOR: f64 = 43.5;
 const STRICT_HISTORY_HYSTERESIS_MONTHS_STRUCTURAL_CARRY_EXTERNAL_FLOOR: f64 = 30.0;
+const STRICT_TRIGGER_DOMINANT_PLATEAU_P20D_FLOOR: f64 = 0.22;
+const STRICT_TRIGGER_DOMINANT_PLATEAU_P60D_FLOOR: f64 = 0.80;
+const STRICT_TRIGGER_DOMINANT_PLATEAU_OVERALL_FLOOR: f64 = 47.0;
+const STRICT_TRIGGER_DOMINANT_PLATEAU_EXTERNAL_FLOOR: f64 = 28.0;
+const STRICT_TRIGGER_DOMINANT_PLATEAU_EXTERNAL_CEILING: f64 = 35.0;
 const STRICT_SATURATED_MONTHS_P60D_FLOOR: f64 = 0.90;
 const STRICT_SATURATED_MONTHS_EXTERNAL_FLOOR: f64 = 48.0;
 
@@ -139,6 +144,8 @@ pub fn actionable_warning_point(
             thresholds,
             strict_prepare_p60d_threshold,
         );
+    let trigger_dominant_plateau_signal =
+        actionable_trigger_dominant_plateau_signal(point, thresholds);
 
     let prepare_bridge_signal = use_transitional_bridge
         && matches!(point.posture, DecisionPosture::Prepare)
@@ -158,6 +165,7 @@ pub fn actionable_warning_point(
         || high_probability_months_signal
         || history_hysteresis_months_signal
         || history_hysteresis_months_structural_carry_signal
+        || trigger_dominant_plateau_signal
         || prepare_bridge_signal
         || months_bridge_signal
 }
@@ -246,6 +254,7 @@ pub fn strong_prepare_trigger_code(point: &AssessmentHistoryPoint) -> bool {
                 | "prepare_continuity_bridge"
                 | "prepare_history_hysteresis"
                 | "prepare_probability_plateau"
+                | "prepare_trigger_dominant_plateau"
         )
     })
 }
@@ -262,6 +271,13 @@ pub fn history_hysteresis_trigger_code(point: &AssessmentHistoryPoint) -> bool {
         .posture_trigger_codes
         .iter()
         .any(|code| code == "prepare_history_hysteresis")
+}
+
+fn trigger_dominant_plateau_trigger_code(point: &AssessmentHistoryPoint) -> bool {
+    point
+        .posture_trigger_codes
+        .iter()
+        .any(|code| code == "prepare_trigger_dominant_plateau")
 }
 
 fn saturated_action_context_confirmed(
@@ -395,6 +411,21 @@ fn actionable_history_hysteresis_months_structural_carry_signal(
         && saturated_action_context_confirmed(point, thresholds)
 }
 
+fn actionable_trigger_dominant_plateau_signal(
+    point: &AssessmentHistoryPoint,
+    thresholds: Option<ActionableGateThresholds>,
+) -> bool {
+    thresholds.is_some()
+        && matches!(point.posture, DecisionPosture::Prepare)
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
+        && trigger_dominant_plateau_trigger_code(point)
+        && point.p_20d >= STRICT_TRIGGER_DOMINANT_PLATEAU_P20D_FLOOR
+        && point.p_60d >= STRICT_TRIGGER_DOMINANT_PLATEAU_P60D_FLOOR
+        && point.overall_score >= STRICT_TRIGGER_DOMINANT_PLATEAU_OVERALL_FLOOR
+        && point.external_shock_score >= STRICT_TRIGGER_DOMINANT_PLATEAU_EXTERNAL_FLOOR
+        && point.external_shock_score <= STRICT_TRIGGER_DOMINANT_PLATEAU_EXTERNAL_CEILING
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::NaiveDate;
@@ -499,6 +530,51 @@ mod tests {
 
         point.external_shock_score = 50.0;
         assert!(actionable_warning_point(&point, false, Some(thresholds)));
+    }
+
+    #[test]
+    fn trigger_dominant_plateau_is_actionable_with_formal_thresholds() {
+        let thresholds = ActionableGateThresholds {
+            prepare_p60d: 0.203,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.99,
+            external_prepare_p20d: 0.042,
+        };
+
+        let mut point = base_point();
+        point.posture = DecisionPosture::Prepare;
+        point.time_to_risk_bucket = TimeToRiskBucket::Months;
+        point.p_20d = 0.239;
+        point.p_60d = 0.901;
+        point.overall_score = 48.1;
+        point.external_shock_score = 32.8;
+        point.posture_trigger_codes = vec!["prepare_trigger_dominant_plateau".to_string()];
+
+        assert!(actionable_warning_point(&point, false, Some(thresholds)));
+
+        point.posture_trigger_codes.clear();
+        assert!(!actionable_warning_point(&point, false, Some(thresholds)));
+    }
+
+    #[test]
+    fn trigger_dominant_plateau_rejects_structural_external_context() {
+        let thresholds = ActionableGateThresholds {
+            prepare_p60d: 0.203,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.99,
+            external_prepare_p20d: 0.042,
+        };
+
+        let mut point = base_point();
+        point.posture = DecisionPosture::Prepare;
+        point.time_to_risk_bucket = TimeToRiskBucket::Months;
+        point.p_20d = 0.39;
+        point.p_60d = 0.93;
+        point.overall_score = 54.1;
+        point.external_shock_score = 36.1;
+        point.posture_trigger_codes = vec!["prepare_trigger_dominant_plateau".to_string()];
+
+        assert!(!actionable_warning_point(&point, false, Some(thresholds)));
     }
 
     #[test]
