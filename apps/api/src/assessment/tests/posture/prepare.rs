@@ -304,7 +304,7 @@ fn posture_guidance_emits_prepare_continuity_bridge_for_long_window_pressure() {
     };
     let probabilities = ProbabilityBlock {
         p_5d: 0.01,
-        p_20d: 0.44,
+        p_20d: 0.89,
         p_60d: 0.99,
     };
     let posture = build_posture_guidance(
@@ -433,7 +433,7 @@ fn posture_guidance_uses_support_actionability_for_continuity_without_trigger_he
     };
     let probabilities = ProbabilityBlock {
         p_5d: 0.01,
-        p_20d: 0.44,
+        p_20d: 0.89,
         p_60d: 0.99,
     };
     let posture = build_posture_guidance(
@@ -561,7 +561,7 @@ fn posture_guidance_uses_runtime_derived_prepare_continuity_floors() {
     };
     let probabilities = ProbabilityBlock {
         p_5d: 0.01,
-        p_20d: 0.13,
+        p_20d: 0.181,
         p_60d: 0.22,
     };
     let posture = build_posture_guidance(
@@ -599,6 +599,179 @@ fn posture_guidance_uses_runtime_derived_prepare_continuity_floors() {
         vec!["prepare_continuity_bridge".to_string()]
     );
     assert!(posture.blocker_codes.is_empty());
+}
+
+#[test]
+fn posture_guidance_blocks_saturated_plateau_without_strong_confirmation() {
+    let snapshot = RiskSnapshot {
+        as_of_date: NaiveDate::from_ymd_opt(2024, 8, 2).unwrap(),
+        entity_id: "us".to_string(),
+        market_scope: "financial_system".to_string(),
+        overall_score: 49.3,
+        overall_level: RiskLevel::Stress,
+        structural_score: 55.2,
+        trigger_score: 42.0,
+        level_reason: "test".to_string(),
+        dimensions: Vec::new(),
+        top_contributors: Vec::new(),
+        data_quality_summary: DataQualitySummary {
+            overall_score: 90.0,
+            grade: QualityGrade::A,
+            stale_indicator_count: 0,
+            low_quality_indicator_count: 0,
+            prototype_source_count: 0,
+            blocked_indicator_count: 0,
+        },
+        generated_at: Utc::now(),
+        method_version: "test".to_string(),
+    };
+    let probabilities = ProbabilityBlock {
+        p_5d: 0.009,
+        p_20d: 0.503,
+        p_60d: 0.93,
+    };
+    let posture = build_posture_guidance(
+        &snapshot,
+        &probabilities,
+        Some(0.93),
+        None,
+        None,
+        0.55,
+        &test_data_trust(QualityGrade::A),
+        56.0,
+        34.0,
+        &[],
+        &quiet_jpy_carry(20.0),
+        &quiet_event_assessment(20.0),
+        &neutral_preferences(),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.12,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.05,
+        },
+    );
+
+    assert_eq!(posture.posture, DecisionPosture::Normal);
+    assert!(posture.trigger_codes.is_empty());
+}
+
+#[test]
+fn posture_guidance_keeps_saturated_plateau_with_extreme_p20d_confirmation() {
+    let snapshot = RiskSnapshot {
+        as_of_date: NaiveDate::from_ymd_opt(1990, 8, 25).unwrap(),
+        entity_id: "us".to_string(),
+        market_scope: "financial_system".to_string(),
+        overall_score: 44.1,
+        overall_level: RiskLevel::Stress,
+        structural_score: 45.6,
+        trigger_score: 42.3,
+        level_reason: "test".to_string(),
+        dimensions: Vec::new(),
+        top_contributors: Vec::new(),
+        data_quality_summary: DataQualitySummary {
+            overall_score: 90.0,
+            grade: QualityGrade::A,
+            stale_indicator_count: 0,
+            low_quality_indicator_count: 0,
+            prototype_source_count: 0,
+            blocked_indicator_count: 0,
+        },
+        generated_at: Utc::now(),
+        method_version: "test".to_string(),
+    };
+    let probabilities = ProbabilityBlock {
+        p_5d: 0.005,
+        p_20d: 0.918,
+        p_60d: 0.93,
+    };
+    let posture = build_posture_guidance(
+        &snapshot,
+        &probabilities,
+        Some(0.93),
+        None,
+        None,
+        0.55,
+        &test_data_trust(QualityGrade::A),
+        34.5,
+        38.0,
+        &[],
+        &quiet_jpy_carry(20.0),
+        &quiet_event_assessment(20.0),
+        &neutral_preferences(),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.12,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.05,
+        },
+    );
+
+    assert_eq!(posture.posture, DecisionPosture::Prepare);
+    assert_eq!(
+        posture.trigger_codes,
+        vec!["prepare_probability_plateau".to_string()]
+    );
+}
+
+#[test]
+fn posture_guidance_blocks_saturated_continuity_without_strong_confirmation() {
+    let snapshot = RiskSnapshot {
+        as_of_date: NaiveDate::from_ymd_opt(2023, 8, 26).unwrap(),
+        entity_id: "us".to_string(),
+        market_scope: "financial_system".to_string(),
+        overall_score: 55.4,
+        overall_level: RiskLevel::Stress,
+        structural_score: 63.4,
+        trigger_score: 45.6,
+        level_reason: "test".to_string(),
+        dimensions: Vec::new(),
+        top_contributors: Vec::new(),
+        data_quality_summary: DataQualitySummary {
+            overall_score: 90.0,
+            grade: QualityGrade::A,
+            stale_indicator_count: 0,
+            low_quality_indicator_count: 0,
+            prototype_source_count: 0,
+            blocked_indicator_count: 0,
+        },
+        generated_at: Utc::now(),
+        method_version: "test".to_string(),
+    };
+    let probabilities = ProbabilityBlock {
+        p_5d: 0.009,
+        p_20d: 0.62,
+        p_60d: 0.93,
+    };
+    let posture = build_posture_guidance(
+        &snapshot,
+        &probabilities,
+        Some(0.93),
+        Some(&ActionabilityBlock {
+            prepare: 0.406,
+            hedge: 0.16,
+            defend: 0.0,
+        }),
+        Some(&ActionabilityBlock {
+            prepare: 0.406,
+            hedge: 0.16,
+            defend: 0.0,
+        }),
+        0.56,
+        &test_data_trust(QualityGrade::A),
+        48.3,
+        40.0,
+        &[],
+        &quiet_jpy_carry(20.0),
+        &quiet_event_assessment(20.0),
+        &neutral_preferences(),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.12,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.05,
+        },
+    );
+
+    assert_eq!(posture.posture, DecisionPosture::Normal);
+    assert!(posture.trigger_codes.is_empty());
 }
 
 #[test]

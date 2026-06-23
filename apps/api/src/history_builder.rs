@@ -43,6 +43,12 @@ const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_P60D_FLOOR: f64 = 0.75;
 const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_OVERALL_FLOOR: f64 = 42.0;
 const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_STRUCTURAL_FLOOR: f64 = 55.0;
 const HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_TRIGGER_CEILING: f64 = 28.0;
+const HISTORY_PREPARE_HYSTERESIS_LONG_WINDOW_P60D_CONFIRMATION_FLOOR: f64 = 0.80;
+const HISTORY_PREPARE_HYSTERESIS_SATURATED_P60D_FLOOR: f64 = 0.90;
+const HISTORY_PREPARE_HYSTERESIS_SATURATED_P20D_CONFIRMATION_FLOOR: f64 = 0.85;
+const HISTORY_PREPARE_HYSTERESIS_SATURATED_TRIGGER_CONFIRMATION_FLOOR: f64 = 55.0;
+const HISTORY_PREPARE_HYSTERESIS_SATURATED_EXTERNAL_CONFIRMATION_FLOOR: f64 = 50.0;
+const HISTORY_PREPARE_HYSTERESIS_SATURATED_EXTERNAL_TRIGGER_FLOOR: f64 = 45.0;
 const HISTORY_PREPARE_HYSTERESIS_TRIGGER_CODE: &str = "prepare_history_hysteresis";
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -136,6 +142,8 @@ fn history_prepare_hysteresis_supported(assessment: &AssessmentSnapshot) -> bool
     assessment.scores.overall_score >= HISTORY_PREPARE_HYSTERESIS_OVERALL_FLOOR
         && assessment.scores.structural_score >= HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_FLOOR
         && (plateau_probability_support || long_window_probability_support)
+        && history_prepare_hysteresis_long_window_context_supported(assessment)
+        && history_prepare_hysteresis_saturated_context_supported(assessment)
 }
 
 fn history_prepare_hysteresis_extreme_carry_supported(assessment: &AssessmentSnapshot) -> bool {
@@ -145,6 +153,7 @@ fn history_prepare_hysteresis_extreme_carry_supported(assessment: &AssessmentSna
             >= HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_STRUCTURAL_FLOOR
         && assessment.scores.external_shock_score
             >= HISTORY_PREPARE_HYSTERESIS_EXTREME_CARRY_EXTERNAL_FLOOR
+        && history_prepare_hysteresis_saturated_context_supported(assessment)
 }
 
 fn history_prepare_hysteresis_structural_carry_supported(assessment: &AssessmentSnapshot) -> bool {
@@ -156,6 +165,7 @@ fn history_prepare_hysteresis_structural_carry_supported(assessment: &Assessment
             >= HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_STRUCTURAL_FLOOR
         && assessment.scores.trigger_score
             <= HISTORY_PREPARE_HYSTERESIS_STRUCTURAL_CARRY_TRIGGER_CEILING
+        && history_prepare_hysteresis_saturated_context_supported(assessment)
 }
 
 fn history_prepare_hysteresis_carry_grace_supported(assessment: &AssessmentSnapshot) -> bool {
@@ -164,6 +174,29 @@ fn history_prepare_hysteresis_carry_grace_supported(assessment: &AssessmentSnaps
         && assessment.scores.structural_score
             >= HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_STRUCTURAL_FLOOR
         && assessment.scores.trigger_score <= HISTORY_PREPARE_HYSTERESIS_CARRY_GRACE_TRIGGER_CEILING
+        && history_prepare_hysteresis_saturated_context_supported(assessment)
+}
+
+fn history_prepare_hysteresis_long_window_context_supported(
+    assessment: &AssessmentSnapshot,
+) -> bool {
+    assessment.probabilities.p_60d < HISTORY_PREPARE_HYSTERESIS_LONG_WINDOW_P60D_CONFIRMATION_FLOOR
+        || assessment.probabilities.p_20d
+            >= HISTORY_PREPARE_HYSTERESIS_SATURATED_P20D_CONFIRMATION_FLOOR
+        || assessment.scores.trigger_score
+            >= HISTORY_PREPARE_HYSTERESIS_SATURATED_TRIGGER_CONFIRMATION_FLOOR
+}
+
+fn history_prepare_hysteresis_saturated_context_supported(assessment: &AssessmentSnapshot) -> bool {
+    assessment.probabilities.p_60d < HISTORY_PREPARE_HYSTERESIS_SATURATED_P60D_FLOOR
+        || assessment.probabilities.p_20d
+            >= HISTORY_PREPARE_HYSTERESIS_SATURATED_P20D_CONFIRMATION_FLOOR
+        || assessment.scores.trigger_score
+            >= HISTORY_PREPARE_HYSTERESIS_SATURATED_TRIGGER_CONFIRMATION_FLOOR
+        || (assessment.scores.external_shock_score
+            >= HISTORY_PREPARE_HYSTERESIS_SATURATED_EXTERNAL_CONFIRMATION_FLOOR
+            && assessment.scores.trigger_score
+                >= HISTORY_PREPARE_HYSTERESIS_SATURATED_EXTERNAL_TRIGGER_FLOOR)
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -12,6 +12,7 @@ use super::counters::{
 const PREPARE_CONTINUITY_P20D_FLOOR_RATIO: f64 = 2.0;
 const PREPARE_CONTINUITY_P20D_FLOOR_MIN: f64 = 0.12;
 const PREPARE_CONTINUITY_P20D_FLOOR_MAX: f64 = 0.18;
+const PREPARE_CONTINUITY_LOW_RUNTIME_P20D_FLOOR: f64 = 0.18;
 const PREPARE_CONTINUITY_P60D_FLOOR_MIN: f64 = 0.22;
 const PREPARE_CONTINUITY_P60D_FLOOR_MAX: f64 = 0.45;
 const PREPARE_CONTINUITY_STRUCTURAL_FLOOR: f64 = 60.0;
@@ -29,6 +30,16 @@ const PREPARE_PROBABILITY_PLATEAU_RELAXED_STRUCTURAL_FLOOR: f64 = 44.0;
 const PREPARE_PROBABILITY_PLATEAU_RELAXED_TRIGGER_FLOOR: f64 = 36.0;
 const PREPARE_PROBABILITY_PLATEAU_RELAXED_EXTERNAL_FLOOR: f64 = 40.0;
 const PREPARE_PROBABILITY_PLATEAU_RELAXED_BREADTH_FLOOR: f64 = 34.0;
+const LOW_RUNTIME_PREPARE_FLOOR_CEILING: f64 = 0.30;
+const LOW_RUNTIME_HEDGE_FLOOR_CEILING: f64 = 0.12;
+const SATURATED_PREPARE_LONG_WINDOW_P60D_FLOOR: f64 = 0.90;
+const SATURATED_PREPARE_STRUCTURAL_LONG_WINDOW_P60D_FLOOR: f64 = 0.80;
+const SATURATED_PREPARE_P20D_CONFIRMATION_FLOOR: f64 = 0.85;
+const SATURATED_PREPARE_TRIGGER_CONFIRMATION_FLOOR: f64 = 55.0;
+const SATURATED_HEDGE_LONG_WINDOW_P60D_FLOOR: f64 = 0.80;
+const SATURATED_HEDGE_P20D_CONFIRMATION_FLOOR: f64 = 0.45;
+const SATURATED_HEDGE_TRIGGER_CONFIRMATION_FLOOR: f64 = 55.0;
+const SATURATED_HEDGE_EXTERNAL_CONFIRMATION_FLOOR: f64 = 48.0;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct PostureClauseDiagnostics {
@@ -94,6 +105,14 @@ pub(super) fn prepare_continuity_bridge_signal(
     let prepare_p60d = prepare_reference_p60d.unwrap_or(probabilities.p_60d);
     let prepare_continuity_p20d_floor = prepare_continuity_p20d_floor(thresholds);
     let prepare_continuity_p60d_floor = prepare_continuity_p60d_floor(thresholds);
+    let saturated_prepare_context_confirmed = saturated_prepare_structural_context_confirmed(
+        probabilities,
+        prepare_p60d,
+        trigger_score,
+        external_shock_score,
+        0.0,
+        thresholds,
+    );
 
     actionability.is_some_and(|scores| {
         scores.prepare >= PREPARE_CONTINUITY_ACTIONABILITY_FLOOR
@@ -101,14 +120,20 @@ pub(super) fn prepare_continuity_bridge_signal(
             && prepare_p60d >= prepare_continuity_p60d_floor
             && structural_score >= PREPARE_CONTINUITY_STRUCTURAL_FLOOR
             && (trigger_score >= 40.0 || external_shock_score >= 42.0 || breadth_score >= 36.0)
+            && saturated_prepare_context_confirmed
     })
 }
 
 fn prepare_continuity_p20d_floor(thresholds: ProbabilityActionThresholds) -> f64 {
-    (thresholds.hedge_p20d * PREPARE_CONTINUITY_P20D_FLOOR_RATIO).clamp(
+    let floor = (thresholds.hedge_p20d * PREPARE_CONTINUITY_P20D_FLOOR_RATIO).clamp(
         PREPARE_CONTINUITY_P20D_FLOOR_MIN,
         PREPARE_CONTINUITY_P20D_FLOOR_MAX,
-    )
+    );
+    if low_runtime_thresholds(thresholds) {
+        floor.max(PREPARE_CONTINUITY_LOW_RUNTIME_P20D_FLOOR)
+    } else {
+        floor
+    }
 }
 
 fn prepare_continuity_p60d_floor(thresholds: ProbabilityActionThresholds) -> f64 {
@@ -143,15 +168,95 @@ pub(super) fn prepare_probability_plateau_signal(
         && (trigger_score >= PREPARE_PROBABILITY_PLATEAU_RELAXED_TRIGGER_FLOOR
             || external_shock_score >= PREPARE_PROBABILITY_PLATEAU_RELAXED_EXTERNAL_FLOOR
             || breadth_score >= PREPARE_PROBABILITY_PLATEAU_RELAXED_BREADTH_FLOOR);
+    let saturated_prepare_context_confirmed = saturated_prepare_context_confirmed(
+        probabilities,
+        prepare_p60d,
+        trigger_score,
+        external_shock_score,
+        0.0,
+        thresholds,
+    );
 
     (overall_score >= PREPARE_PROBABILITY_PLATEAU_OVERALL_FLOOR
         && probabilities.p_20d >= plateau_p20d_floor
         && prepare_p60d >= PREPARE_PROBABILITY_PLATEAU_P60D_FLOOR
-        && plateau_context_ready)
+        && plateau_context_ready
+        && saturated_prepare_context_confirmed)
         || (overall_score >= PREPARE_PROBABILITY_PLATEAU_OVERALL_FLOOR
             && probabilities.p_20d >= relaxed_plateau_p20d_floor
             && prepare_p60d >= PREPARE_PROBABILITY_PLATEAU_RELAXED_P60D_FLOOR
-            && relaxed_plateau_context_ready)
+            && relaxed_plateau_context_ready
+            && saturated_prepare_context_confirmed)
+}
+
+fn low_runtime_thresholds(thresholds: ProbabilityActionThresholds) -> bool {
+    thresholds.prepare_p60d < LOW_RUNTIME_PREPARE_FLOOR_CEILING
+        && thresholds.hedge_p20d < LOW_RUNTIME_HEDGE_FLOOR_CEILING
+}
+
+fn saturated_long_window_context(
+    prepare_p60d: f64,
+    thresholds: ProbabilityActionThresholds,
+) -> bool {
+    low_runtime_thresholds(thresholds) && prepare_p60d >= SATURATED_PREPARE_LONG_WINDOW_P60D_FLOOR
+}
+
+fn saturated_hedge_long_window_context(
+    prepare_p60d: f64,
+    thresholds: ProbabilityActionThresholds,
+) -> bool {
+    low_runtime_thresholds(thresholds) && prepare_p60d >= SATURATED_HEDGE_LONG_WINDOW_P60D_FLOOR
+}
+
+fn saturated_prepare_structural_long_window_context(
+    prepare_p60d: f64,
+    thresholds: ProbabilityActionThresholds,
+) -> bool {
+    low_runtime_thresholds(thresholds)
+        && prepare_p60d >= SATURATED_PREPARE_STRUCTURAL_LONG_WINDOW_P60D_FLOOR
+}
+
+pub(super) fn saturated_prepare_context_confirmed(
+    probabilities: &ProbabilityBlock,
+    prepare_p60d: f64,
+    trigger_score: f64,
+    _external_shock_score: f64,
+    event_confirmation_score: f64,
+    thresholds: ProbabilityActionThresholds,
+) -> bool {
+    !saturated_long_window_context(prepare_p60d, thresholds)
+        || probabilities.p_20d >= SATURATED_PREPARE_P20D_CONFIRMATION_FLOOR
+        || trigger_score >= SATURATED_PREPARE_TRIGGER_CONFIRMATION_FLOOR
+        || event_confirmation_score >= SATURATED_PREPARE_TRIGGER_CONFIRMATION_FLOOR
+}
+
+pub(super) fn saturated_prepare_structural_context_confirmed(
+    probabilities: &ProbabilityBlock,
+    prepare_p60d: f64,
+    trigger_score: f64,
+    _external_shock_score: f64,
+    event_confirmation_score: f64,
+    thresholds: ProbabilityActionThresholds,
+) -> bool {
+    !saturated_prepare_structural_long_window_context(prepare_p60d, thresholds)
+        || probabilities.p_20d >= SATURATED_PREPARE_P20D_CONFIRMATION_FLOOR
+        || trigger_score >= SATURATED_PREPARE_TRIGGER_CONFIRMATION_FLOOR
+        || event_confirmation_score >= SATURATED_PREPARE_TRIGGER_CONFIRMATION_FLOOR
+}
+
+pub(super) fn saturated_hedge_context_confirmed(
+    probabilities: &ProbabilityBlock,
+    prepare_p60d: f64,
+    trigger_score: f64,
+    external_shock_score: f64,
+    event_confirmation_score: f64,
+    thresholds: ProbabilityActionThresholds,
+) -> bool {
+    !saturated_hedge_long_window_context(prepare_p60d, thresholds)
+        || (probabilities.p_20d >= SATURATED_HEDGE_P20D_CONFIRMATION_FLOOR
+            && (trigger_score >= SATURATED_HEDGE_TRIGGER_CONFIRMATION_FLOOR
+                || external_shock_score >= SATURATED_HEDGE_EXTERNAL_CONFIRMATION_FLOOR
+                || event_confirmation_score >= SATURATED_HEDGE_TRIGGER_CONFIRMATION_FLOOR))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -196,6 +301,22 @@ pub(super) fn build_posture_clause_diagnostics(
         external_shock_score,
         breadth_score,
         event_assessment.confirmation_score,
+    );
+    let saturated_prepare_context_confirmed = saturated_prepare_structural_context_confirmed(
+        probabilities,
+        prepare_p60d,
+        snapshot.trigger_score,
+        external_shock_score,
+        event_assessment.confirmation_score,
+        thresholds,
+    );
+    let saturated_hedge_context_confirmed = saturated_hedge_context_confirmed(
+        probabilities,
+        prepare_p60d,
+        snapshot.trigger_score,
+        external_shock_score,
+        event_assessment.confirmation_score,
+        thresholds,
     );
     let prepare_continuity_bridge = prepare_continuity_bridge_signal(
         probabilities,
@@ -251,6 +372,7 @@ pub(super) fn build_posture_clause_diagnostics(
         && hedge_context_support_count >= 2
         && hedge_medium_horizon_support
         && hedge_context_ready
+        && saturated_hedge_context_confirmed
     {
         hedge_trigger_codes.push("hedge_p20d_context");
     }
@@ -282,12 +404,14 @@ pub(super) fn build_posture_clause_diagnostics(
         if prepare_p60d >= thresholds.prepare_p60d
             && snapshot.structural_score >= 58.0
             && prepare_confirmation_count >= 2
+            && saturated_prepare_context_confirmed
         {
             prepare_trigger_codes.push("prepare_p60d_structural");
         }
         if snapshot.structural_score >= 64.0
             && prepare_p60d >= thresholds.downgrade_prepare_p60d()
             && prepare_confirmation_count >= 2
+            && saturated_prepare_context_confirmed
         {
             prepare_trigger_codes.push("prepare_structural_downgrade");
         }
@@ -295,6 +419,7 @@ pub(super) fn build_posture_clause_diagnostics(
             && snapshot.structural_score >= 54.0
             && probabilities.p_20d >= thresholds.external_prepare_p20d()
             && prepare_non_external_confirmation_count >= 1
+            && saturated_prepare_context_confirmed
         {
             prepare_trigger_codes.push("prepare_external_structural");
         }
@@ -302,6 +427,7 @@ pub(super) fn build_posture_clause_diagnostics(
             && snapshot.structural_score >= 56.0
             && prepare_p60d >= thresholds.carry_prepare_p60d()
             && prepare_non_carry_confirmation_count >= 1
+            && saturated_prepare_context_confirmed
         {
             prepare_trigger_codes.push("prepare_carry_structural");
         }
@@ -310,6 +436,7 @@ pub(super) fn build_posture_clause_diagnostics(
                 && prepare_p60d >= thresholds.downgrade_prepare_p60d()
                 && prepare_confirmation_count >= 2
                 && (snapshot.structural_score >= 56.0 || external_shock_score >= 55.0)
+                && saturated_prepare_context_confirmed
         }) {
             prepare_trigger_codes.push("prepare_actionability");
         }

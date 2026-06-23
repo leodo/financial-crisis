@@ -187,7 +187,7 @@ fn time_to_risk_bucket_uses_runtime_derived_prepare_continuity_floors() {
     let bucket = build_time_to_risk_bucket(
         &ProbabilityBlock {
             p_5d: 0.004,
-            p_20d: 0.13,
+            p_20d: 0.181,
             p_60d: 0.22,
         },
         Some(0.23),
@@ -215,6 +215,95 @@ fn time_to_risk_bucket_uses_runtime_derived_prepare_continuity_floors() {
     );
 
     assert_eq!(bucket, TimeToRiskBucket::Months);
+}
+
+#[test]
+fn time_to_risk_bucket_blocks_saturated_weeks_without_strong_confirmation() {
+    let bucket = build_time_to_risk_bucket(
+        &ProbabilityBlock {
+            p_5d: 0.01,
+            p_20d: 0.765,
+            p_60d: 0.93,
+        },
+        Some(0.93),
+        None,
+        None,
+        58.5,
+        63.6,
+        52.2,
+        39.1,
+        42.0,
+        &quiet_jpy_carry(20.0),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.12,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.05,
+        },
+    );
+
+    assert_eq!(bucket, TimeToRiskBucket::Normal);
+}
+
+#[test]
+fn time_to_risk_bucket_keeps_saturated_weeks_with_external_confirmation() {
+    let bucket = build_time_to_risk_bucket(
+        &ProbabilityBlock {
+            p_5d: 0.005,
+            p_20d: 0.501,
+            p_60d: 0.93,
+        },
+        Some(0.93),
+        None,
+        None,
+        51.5,
+        51.5,
+        51.6,
+        51.0,
+        42.0,
+        &quiet_jpy_carry(20.0),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.12,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.05,
+        },
+    );
+
+    assert_eq!(bucket, TimeToRiskBucket::Weeks);
+}
+
+#[test]
+fn time_to_risk_bucket_blocks_saturated_months_without_strong_confirmation() {
+    let bucket = build_time_to_risk_bucket(
+        &ProbabilityBlock {
+            p_5d: 0.009,
+            p_20d: 0.62,
+            p_60d: 0.93,
+        },
+        Some(0.93),
+        Some(&ActionabilityBlock {
+            prepare: 0.406,
+            hedge: 0.16,
+            defend: 0.0,
+        }),
+        Some(&ActionabilityBlock {
+            prepare: 0.406,
+            hedge: 0.16,
+            defend: 0.0,
+        }),
+        55.4,
+        63.4,
+        45.6,
+        48.3,
+        40.0,
+        &quiet_jpy_carry(20.0),
+        ProbabilityActionThresholds {
+            prepare_p60d: 0.12,
+            hedge_p20d: 0.06,
+            defend_p5d: 0.05,
+        },
+    );
+
+    assert_eq!(bucket, TimeToRiskBucket::Normal);
 }
 
 #[test]

@@ -11,7 +11,8 @@ use fc_domain::{
 use super::super::{common::format_probability_percent, ProbabilityActionThresholds};
 use clauses::{
     build_posture_clause_diagnostics, prepare_continuity_bridge_signal,
-    prepare_probability_plateau_signal,
+    prepare_probability_plateau_signal, saturated_hedge_context_confirmed,
+    saturated_prepare_structural_context_confirmed,
 };
 use counters::{
     prepare_context_confirmation_count_without_events,
@@ -68,6 +69,22 @@ pub(in super::super) fn build_time_to_risk_bucket(
             && prepare_confirmation_count >= 2
             && (structural_score >= 56.0 || external_shock_score >= 55.0)
     });
+    let saturated_prepare_context_confirmed = saturated_prepare_structural_context_confirmed(
+        probabilities,
+        prepare_p60d,
+        trigger_score,
+        external_shock_score,
+        0.0,
+        thresholds,
+    );
+    let saturated_hedge_context_confirmed = saturated_hedge_context_confirmed(
+        probabilities,
+        prepare_p60d,
+        trigger_score,
+        external_shock_score,
+        0.0,
+        thresholds,
+    );
     let prepare_continuity_bridge = prepare_continuity_bridge_signal(
         probabilities,
         prepare_reference_p60d,
@@ -102,30 +119,36 @@ pub(in super::super) fn build_time_to_risk_bucket(
         TimeToRiskBucket::Now
     } else if (probabilities.p_20d >= thresholds.hedge_p20d
         && (trigger_score >= 50.0 || external_shock_score >= 50.0)
-        && breadth_score >= 38.0)
+        && breadth_score >= 38.0
+        && saturated_hedge_context_confirmed)
         || (probabilities.p_60d >= thresholds.elevated_weeks_p60d()
             && structural_score >= 55.0
             && trigger_score >= 55.0
-            && breadth_score >= 40.0)
+            && breadth_score >= 40.0
+            && saturated_hedge_context_confirmed)
         || (stressed_carry && external_shock_score >= 50.0 && structural_score >= 50.0)
-        || hedge_head_weeks
+        || (hedge_head_weeks && saturated_hedge_context_confirmed)
     {
         TimeToRiskBucket::Weeks
     } else if (prepare_p60d >= thresholds.prepare_p60d
         && structural_score >= 58.0
-        && prepare_confirmation_count >= 2)
+        && prepare_confirmation_count >= 2
+        && saturated_prepare_context_confirmed)
         || (structural_score >= 62.0
             && prepare_confirmation_count >= 2
-            && prepare_p60d >= thresholds.downgrade_prepare_p60d())
+            && prepare_p60d >= thresholds.downgrade_prepare_p60d()
+            && saturated_prepare_context_confirmed)
         || (external_shock_score >= 58.0
             && structural_score >= 54.0
             && prepare_non_external_confirmation_count >= 1
-            && probabilities.p_20d >= thresholds.external_prepare_p20d())
+            && probabilities.p_20d >= thresholds.external_prepare_p20d()
+            && saturated_prepare_context_confirmed)
         || (stressed_carry
             && structural_score >= 56.0
             && prepare_non_carry_confirmation_count >= 1
-            && prepare_p60d >= thresholds.carry_prepare_p60d())
-        || prepare_head_months
+            && prepare_p60d >= thresholds.carry_prepare_p60d()
+            && saturated_prepare_context_confirmed)
+        || (prepare_head_months && saturated_prepare_context_confirmed)
         || prepare_continuity_bridge
         || prepare_probability_plateau
     {
