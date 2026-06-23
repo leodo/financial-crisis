@@ -212,14 +212,19 @@ function addReason(reasons, code, summary, evidence) {
 function noGoReasons(review, comparison, cooldownRows) {
   const reasons = [];
   const precision = metric(comparison, "actionable_precision");
-  if (
-    precision &&
-    (Number(precision.candidate ?? 1) < 0.7 || Number(precision.delta ?? 0) <= -0.05)
-  ) {
+  if (precision && Number(precision.candidate ?? 1) < 0.7) {
+    addReason(
+      reasons,
+      "actionable_precision_floor_miss",
+      "Candidate actionable precision is below the active-default promotion floor.",
+      precision
+    );
+  }
+  if (precision && Number(precision.delta ?? 0) <= -0.05) {
     addReason(
       reasons,
       "actionable_precision_regression",
-      "Candidate actionable precision is too weak for promotion.",
+      "Candidate actionable precision materially regresses versus baseline.",
       precision
     );
   }
