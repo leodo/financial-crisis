@@ -375,24 +375,33 @@ fn release_review_focus_diagnostic_includes_structural_only_missed_scenarios() {
     assert_eq!(rows[0].candidate_runtime_floor_hit_point_count, 2);
     assert_eq!(
         rows[0].baseline_primary_failure_mode.as_deref(),
-        Some("strict_gate_mismatch")
+        Some("posture_continuity_failure")
     );
     assert_eq!(
         rows[0].candidate_primary_failure_mode.as_deref(),
-        Some("strict_gate_mismatch")
+        Some("posture_continuity_failure")
     );
+    assert!(rows[0]
+        .runtime_block_counts
+        .iter()
+        .any(|block| block.category == "posture_bucket_normal"
+            && block.baseline_count == 2
+            && block.candidate_count == 2));
     assert_eq!(rows[0].runtime_block_counts.len(), 1);
-    assert_eq!(rows[0].runtime_block_counts[0].category, "review_gate_gap");
+    assert_eq!(
+        rows[0].runtime_block_counts[0].category,
+        "posture_bucket_normal"
+    );
     assert_eq!(rows[0].runtime_block_counts[0].baseline_count, 2);
     assert_eq!(rows[0].runtime_block_counts[0].candidate_count, 2);
     assert_eq!(
         rows[0].dominant_runtime_blocks.baseline_categories,
-        vec!["review_gate_gap".to_string()]
+        vec!["posture_bucket_normal".to_string()]
     );
     assert_eq!(rows[0].dominant_runtime_blocks.baseline_count, 2);
     assert_eq!(
         rows[0].dominant_runtime_blocks.candidate_categories,
-        vec!["review_gate_gap".to_string()]
+        vec!["posture_bucket_normal".to_string()]
     );
     assert_eq!(rows[0].dominant_runtime_blocks.candidate_count, 2);
     assert!(rows[0]
@@ -496,12 +505,18 @@ fn release_review_focus_diagnostic_includes_runtime_floor_only_scenarios_without
     assert_eq!(rows[0].candidate_runtime_floor_hit_point_count, 2);
     assert_eq!(
         rows[0].baseline_primary_failure_mode.as_deref(),
-        Some("strict_gate_mismatch")
+        Some("posture_continuity_failure")
     );
     assert_eq!(
         rows[0].candidate_primary_failure_mode.as_deref(),
-        Some("strict_gate_mismatch")
+        Some("posture_continuity_failure")
     );
+    assert!(rows[0]
+        .runtime_block_counts
+        .iter()
+        .any(|block| block.category == "posture_bucket_normal"
+            && block.baseline_count == 2
+            && block.candidate_count == 2));
     assert_eq!(
         rows[0].baseline_first_runtime_floor_hit_without_l3_date,
         Some(runtime_floor_date)

@@ -21,6 +21,16 @@ pub(in super::super) fn release_review_actionable_diagnostic(
     }
 
     let runtime_floor_hit = release_review_hits_runtime_floor(point, thresholds);
+    if matches!(point.posture, DecisionPosture::Normal)
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
+    {
+        return if runtime_floor_hit {
+            "hit runtime floor, but posture/bucket stayed normal".to_string()
+        } else {
+            "posture/bucket stayed normal".to_string()
+        };
+    }
+
     let defend_only_runtime_floor_hit = release_review_runtime_floor_hits(point, thresholds)
         .is_some_and(|hits| hits.defend && !hits.hedge && !hits.prepare);
     let strict_prepare_p20d_threshold = release_review_strict_prepare_p20d_threshold(thresholds);
@@ -48,16 +58,6 @@ pub(in super::super) fn release_review_actionable_diagnostic(
             format!("hit runtime floor, but review gate still needs {joined}")
         } else {
             joined
-        };
-    }
-
-    if matches!(point.posture, DecisionPosture::Normal)
-        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
-    {
-        return if runtime_floor_hit {
-            "hit runtime floor, but posture/bucket stayed normal".to_string()
-        } else {
-            "posture/bucket stayed normal".to_string()
         };
     }
 
@@ -112,6 +112,12 @@ pub(in super::super) fn release_review_runtime_actionable_block_category(
         return None;
     }
 
+    if matches!(point.posture, DecisionPosture::Normal)
+        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
+    {
+        return Some("posture_bucket_normal");
+    }
+
     let strict_prepare_p20d_threshold = release_review_strict_prepare_p20d_threshold(thresholds);
     let strict_prepare_p60d_threshold = release_review_strict_prepare_p60d_threshold(thresholds);
     let defend_only_runtime_floor_hit = release_review_runtime_floor_hits(point, thresholds)
@@ -121,12 +127,6 @@ pub(in super::super) fn release_review_runtime_actionable_block_category(
             || point.p_60d < strict_prepare_p60d_threshold)
     {
         return Some("review_gate_gap");
-    }
-
-    if matches!(point.posture, DecisionPosture::Normal)
-        && matches!(point.time_to_risk_bucket, TimeToRiskBucket::Normal)
-    {
-        return Some("posture_bucket_normal");
     }
 
     if matches!(point.time_to_risk_bucket, TimeToRiskBucket::Months)
