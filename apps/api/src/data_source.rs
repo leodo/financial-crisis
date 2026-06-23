@@ -1,6 +1,9 @@
-use std::{env, fs};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use chrono::{Duration, NaiveDate, Utc};
 use fc_domain::{AssessmentHistoryPoint, DataMode, ModelReleaseRecord, ProbabilityBundle};
 use fc_storage::{PostgresStore, SqliteStore};
@@ -428,10 +431,60 @@ fn degraded_serving_model_context(release: ModelReleaseRecord) -> ServingModelCo
 }
 
 fn load_probability_bundle(bundle_uri: &str) -> anyhow::Result<ProbabilityBundle> {
-    let raw = fs::read_to_string(bundle_uri)
-        .with_context(|| format!("failed to read probability bundle from {bundle_uri}"))?;
-    serde_json::from_str(&raw)
-        .with_context(|| format!("failed to parse probability bundle at {bundle_uri}"))
+    let deploy_root = env::var_os("FC_DEPLOY_ROOT").map(PathBuf::from);
+    load_probability_bundle_with_deploy_root(bundle_uri, deploy_root.as_deref())
+}
+
+fn load_probability_bundle_with_deploy_root(
+    bundle_uri: &str,
+    deploy_root: Option<&Path>,
+) -> anyhow::Result<ProbabilityBundle> {
+    let candidates = probability_bundle_candidate_paths(bundle_uri, deploy_root);
+    let mut read_errors = Vec::new();
+    for path in &candidates {
+        match fs::read_to_string(path) {
+            Ok(raw) => {
+                return serde_json::from_str(&raw).with_context(|| {
+                    format!("failed to parse probability bundle at {}", path.display())
+                });
+            }
+            Err(error) => read_errors.push(format!("{} ({error})", path.display())),
+        }
+    }
+
+    bail!(
+        "failed to read probability bundle from {bundle_uri}; tried {}",
+        read_errors.join(", ")
+    )
+}
+
+fn probability_bundle_candidate_paths(
+    bundle_uri: &str,
+    deploy_root: Option<&Path>,
+) -> Vec<PathBuf> {
+    let normalized_uri = bundle_uri.strip_prefix("file://").unwrap_or(bundle_uri);
+    let bundle_path = PathBuf::from(normalized_uri);
+    if bundle_path.is_absolute() {
+        return vec![bundle_path];
+    }
+
+    let mut candidates = vec![bundle_path.clone()];
+    if let Some(deploy_root) = deploy_root.filter(|path| !path.as_os_str().is_empty()) {
+        candidates.push(deploy_root.join(&bundle_path));
+        candidates.push(deploy_root.join("current").join(&bundle_path));
+    }
+
+    dedupe_paths(candidates)
+}
+
+fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut unique = Vec::new();
+    for path in paths {
+        if !unique.iter().any(|existing| existing == &path) {
+            unique.push(path);
+        }
+    }
+    unique
 }
 
 #[cfg(test)]
@@ -454,8 +507,9 @@ mod tests {
     };
 
     use super::{
-        build_serving_model_context, load_app_data_with_runtime_options, AppDataSource,
-        AssessmentHistoryBuildMode, ServingRuntimePurpose,
+        build_serving_model_context, load_app_data_with_runtime_options,
+        load_probability_bundle_with_deploy_root, AppDataSource, AssessmentHistoryBuildMode,
+        ServingRuntimePurpose,
     };
 
     fn temp_bundle_path() -> PathBuf {
@@ -668,6 +722,30 @@ mod tests {
         assert!(context.probability_bundle.is_some());
 
         let _ = std::fs::remove_file(bundle_path);
+    }
+
+    #[test]
+    fn relative_bundle_uri_can_resolve_from_deploy_current() {
+        let deploy_root = env::temp_dir().join(format!("fc-api-deploy-root-{}", Uuid::new_v4()));
+        let relative_bundle_path =
+            PathBuf::from("artifacts/research/model-bundles/generated").join("bundle.json");
+        let bundle_path = deploy_root.join("current").join(&relative_bundle_path);
+        std::fs::create_dir_all(bundle_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &bundle_path,
+            serde_json::to_string(&test_probability_bundle()).unwrap(),
+        )
+        .unwrap();
+
+        let bundle = load_probability_bundle_with_deploy_root(
+            &relative_bundle_path.to_string_lossy(),
+            Some(&deploy_root),
+        )
+        .unwrap();
+
+        assert_eq!(bundle.probability_mode, "formal_bundle_v1");
+
+        let _ = std::fs::remove_dir_all(deploy_root);
     }
 
     #[test]

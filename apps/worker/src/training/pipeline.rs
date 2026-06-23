@@ -1,8 +1,10 @@
 use std::{
-    fs,
+    env, fs,
     io::{self, Write},
+    path::{Path, PathBuf},
 };
 
+use anyhow::Context;
 use chrono::Utc;
 use fc_domain::{
     probability_feature_names_for_transform, ActionabilityBundle, ModelReleaseManifest,
@@ -186,12 +188,24 @@ pub(crate) async fn train_probability_pipeline(
         &evaluation_path,
         serde_json::to_string_pretty(&evaluation_report)?,
     )?;
+    let deployed_artifacts = maybe_sync_bootstrap_artifacts_to_deploy_root(
+        options,
+        &bundle_path,
+        &manifest_path,
+        &evaluation_path,
+    )?;
     log_training_progress(format!(
         "Wrote probability bundle artifacts: bundle={} manifest={} evaluation={}",
         bundle_path.display(),
         manifest_path.display(),
         evaluation_path.display(),
     ));
+    for path in deployed_artifacts {
+        log_training_progress(format!(
+            "Synced formal bootstrap artifact for deployment: {}",
+            path.display()
+        ));
+    }
 
     Ok(PipelineArtifacts {
         release,
@@ -202,6 +216,84 @@ pub(crate) async fn train_probability_pipeline(
         dataset_source: training.dataset_source.as_str().to_string(),
         dataset_label: training.dataset_label,
     })
+}
+
+fn maybe_sync_bootstrap_artifacts_to_deploy_root(
+    options: &PipelineTrainOptions,
+    bundle_path: &Path,
+    manifest_path: &Path,
+    evaluation_path: &Path,
+) -> anyhow::Result<Vec<PathBuf>> {
+    if !matches!(
+        options.release_manifest_mode,
+        PipelineReleaseManifestMode::ApprovedFormalBootstrap
+    ) {
+        return Ok(Vec::new());
+    }
+    let Some(deploy_root) = env::var_os("FC_DEPLOY_ROOT")
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+    else {
+        return Ok(Vec::new());
+    };
+
+    let current_root = deploy_root.join("current");
+    let mut synced_paths = Vec::new();
+    for root in [deploy_root.as_path(), current_root.as_path()] {
+        synced_paths.push(sync_artifact_under_root(
+            bundle_path,
+            root,
+            &options.output_dir,
+        )?);
+        synced_paths.push(sync_artifact_under_root(
+            manifest_path,
+            root,
+            &options.manifest_dir,
+        )?);
+        synced_paths.push(sync_artifact_under_root(
+            evaluation_path,
+            root,
+            &options.output_dir,
+        )?);
+    }
+
+    Ok(dedupe_paths(synced_paths))
+}
+
+fn sync_artifact_under_root(
+    source_path: &Path,
+    root: &Path,
+    relative_dir: &Path,
+) -> anyhow::Result<PathBuf> {
+    let target_path =
+        root.join(relative_dir)
+            .join(source_path.file_name().with_context(|| {
+                format!("artifact path has no file name: {}", source_path.display())
+            })?);
+    if target_path == source_path {
+        return Ok(target_path);
+    }
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::copy(source_path, &target_path).with_context(|| {
+        format!(
+            "failed to sync artifact {} to {}",
+            source_path.display(),
+            target_path.display()
+        )
+    })?;
+    Ok(target_path)
+}
+
+fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut unique = Vec::new();
+    for path in paths {
+        if !unique.iter().any(|existing| existing == &path) {
+            unique.push(path);
+        }
+    }
+    unique
 }
 
 fn log_training_progress(message: impl AsRef<str>) {
@@ -310,9 +402,23 @@ fn release_manifest_note(
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
     use crate::commands::{PipelineDatasetSource, PipelineReleaseManifestMode};
 
-    use super::release_manifest_state;
+    use super::{release_manifest_state, sync_artifact_under_root};
+
+    fn temp_test_dir(prefix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("{prefix}-{}-{nanos}", std::process::id()))
+    }
 
     #[test]
     fn formal_train_probability_generates_candidate_shadow_release_state() {
@@ -356,5 +462,29 @@ mod tests {
             ),
             ("candidate", "shadow")
         );
+    }
+
+    #[test]
+    fn sync_artifact_under_root_copies_to_matching_relative_deploy_path() {
+        let root = temp_test_dir("fc-worker-artifact-sync");
+        let source_dir = root
+            .join("source")
+            .join("artifacts/research/model-bundles/generated");
+        fs::create_dir_all(&source_dir).unwrap();
+        let source_path = source_dir.join("bundle.json");
+        fs::write(&source_path, "bundle").unwrap();
+
+        let deploy_root = root.join("deploy");
+        let relative_dir = PathBuf::from("artifacts/research/model-bundles/generated");
+        let target_path =
+            sync_artifact_under_root(&source_path, &deploy_root, &relative_dir).unwrap();
+
+        assert_eq!(
+            target_path,
+            deploy_root.join(relative_dir).join("bundle.json")
+        );
+        assert_eq!(fs::read_to_string(target_path).unwrap(), "bundle");
+
+        let _ = fs::remove_dir_all(root);
     }
 }
