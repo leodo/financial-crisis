@@ -277,6 +277,7 @@ fn probability_threshold_acceptance_regression(
 
     if final_summary.cooldown_row_count > 0
         && final_summary.positive_window_row_count > 0
+        && final_summary.positive_window_hit_count > 0
         && final_summary.cooldown_hit_rate + 0.001 >= final_summary.positive_window_hit_rate
     {
         return Some(format!(
