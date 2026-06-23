@@ -149,9 +149,10 @@ fn release_review_candidate_revealed_next_blocker(
     baseline_runtime_floor_hit_point_count: u32,
     candidate_runtime_floor_hit_point_count: u32,
 ) -> bool {
-    release_review_has_known_failure_mode(baseline_failure_mode)
-        && release_review_candidate_outcome_not_worse(outcome)
+    release_review_candidate_outcome_not_worse(outcome)
         && candidate_runtime_floor_hit_point_count >= baseline_runtime_floor_hit_point_count
+        && (release_review_has_known_failure_mode(baseline_failure_mode)
+            || candidate_runtime_floor_hit_point_count > baseline_runtime_floor_hit_point_count)
 }
 
 fn release_review_has_known_failure_mode(failure_mode: &str) -> bool {

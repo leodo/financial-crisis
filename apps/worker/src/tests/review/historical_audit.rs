@@ -620,16 +620,16 @@ fn release_review_historical_audit_attribution_marks_revealed_next_blocker() {
             scenario_family: "mixed_systemic_stress".to_string(),
             training_role: "candidate_optional".to_string(),
             protected_window: true,
-            baseline_failure_mode: "strict_gate_mismatch".to_string(),
-            candidate_failure_mode: "residual_review_l3_failure".to_string(),
+            baseline_failure_mode: "unclassified".to_string(),
+            candidate_failure_mode: "strict_gate_mismatch".to_string(),
             baseline_actionable_point_count: 0,
             candidate_actionable_point_count: 0,
-            baseline_runtime_floor_hit_point_count: 3,
-            candidate_runtime_floor_hit_point_count: 13,
+            baseline_runtime_floor_hit_point_count: 0,
+            candidate_runtime_floor_hit_point_count: 81,
             baseline_gate_gap_profile: None,
-            candidate_gate_gap_profile: None,
-            primary_workstream: "residual_release_review_audit".to_string(),
-            suggested_review: "继续逐点复核 mixed_systemic_stress 的 runtime block mix".to_string(),
+            candidate_gate_gap_profile: Some("p20d_only".to_string()),
+            primary_workstream: "strict_review_vs_runtime_mapping".to_string(),
+            suggested_review: "复核 strict review gate 与 runtime floor 的映射".to_string(),
             coverage_recommended_role: None,
             coverage_grade: None,
             coverage_point_in_time_mode: None,
@@ -668,21 +668,14 @@ fn release_review_historical_audit_attribution_marks_revealed_next_blocker() {
                 && row.workstream == "strict_review_vs_runtime_mapping"
         })
         .expect("revealed next blocker gate row");
-    assert_eq!(revealed_gate.scenario_count, 1);
+    assert_eq!(revealed_gate.scenario_count, 2);
     assert_eq!(revealed_gate.baseline_count, 0);
-    assert_eq!(revealed_gate.candidate_count, 1);
+    assert_eq!(revealed_gate.candidate_count, 2);
     assert!(revealed_gate.explanation.contains("暴露出下一层 blocker"));
-
-    let revealed_residual = rows
-        .iter()
-        .find(|row| {
-            row.attribution == "candidate_revealed_next_blocker"
-                && row.workstream == "residual_release_review_audit"
-        })
-        .expect("revealed next blocker residual row");
-    assert_eq!(revealed_residual.scenario_count, 1);
-    assert_eq!(revealed_residual.candidate_count, 1);
-    assert!(revealed_residual
+    assert!(revealed_gate
+        .candidate_scenarios
+        .contains(&"1990-1993 美国银行与衰退压力".to_string()));
+    assert!(revealed_gate
         .candidate_scenarios
         .contains(&"2000-2001 科网泡沫出清".to_string()));
 
