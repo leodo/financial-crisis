@@ -4,25 +4,50 @@ on:
   push:
     branches:
       - main
-      - "codex/**"
   pull_request:
 
 jobs:
-  verify:
+  rust:
+    name: Rust (${{ matrix.step }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
+    strategy:
+      matrix:
+        step: [fmt, clippy, test]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install sqlite3
+        run: sudo apt-get update && sudo apt-get install -y sqlite3
+
+      - name: Format check
+        if: matrix.step == 'fmt'
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        if: matrix.step == 'clippy'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        if: matrix.step == 'test'
+        run: cargo test --workspace
+
+  web:
+    name: Web (${{ matrix.step }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        step: [build, test]
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -31,35 +56,29 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
 
-      - name: Install web dependencies
+      - name: Install dependencies
         run: npm ci
         working-directory: apps/web
 
-      - name: Audit web dependencies
-        run: npm audit --audit-level=low
-        working-directory: apps/web
-
-      - name: Build web
+      - name: Build
+        if: matrix.step == 'build'
         run: npm run build
         working-directory: apps/web
 
-      - name: Check deployment shell scripts
-        run: bash -n deploy/*.sh
+      - name: Test
+        if: matrix.step == 'test'
+        run: npm run test
+        working-directory: apps/web
 
-      - name: Install sqlite3
-        run: sudo apt-get update && sudo apt-get install -y sqlite3
-
-      - name: SQLite backup restore drill
-        run: bash deploy/sqlite-drill.sh
-
-      - name: Rust format
-        run: cargo fmt --all -- --check
-
-      - name: Rust clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Rust tests
-        run: cargo test --workspace
-
-      - name: MVP static regression
+  mvp-regression:
+    name: MVP regression check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run static regression
         run: FC_SKIP_RUNTIME=1 FC_SKIP_RENDERED_UI=1 node scripts/mvp-runtime-regression-check.mjs

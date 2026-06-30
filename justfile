@@ -431,6 +431,16 @@ refresh-latest-full:
     cargo run -p fc-worker -- refresh latest-free --skip-world-bank --include-gdelt
     ./scripts/dev-status.ps1
 
+# 注册 Windows 计划任务，定时执行数据刷新 + 健康报告 + 部署检查。
+# Interval 格式：ISO 8601 持续时间，默认 PT1H（每小时）。
+# 示例：just schedule-refresh PT30M（每 30 分钟）, just schedule-refresh PT2H（每 2 小时）。
+schedule-refresh interval PT1H:
+    ./scripts/schedule-refresh.ps1 -Interval "{{interval}}"
+
+# 卸载定时刷新任务。
+schedule-refresh-uninstall:
+    ./scripts/schedule-refresh.ps1 -Uninstall
+
 # 无需 API key，使用 FRED 图表 CSV 回填历史数据到本地 SQLite。
 backfill-fred:
     cargo run -p fc-worker -- backfill fred
