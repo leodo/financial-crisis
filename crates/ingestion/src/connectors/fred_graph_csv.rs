@@ -289,4 +289,168 @@ mod tests {
         assert_eq!(batch.observations[0].value, 12.85);
         assert_eq!(batch.warnings.len(), 1);
     }
+
+    #[test]
+    fn parse_rejects_csv_without_observation_date_column() {
+        let connector = FredGraphCsvConnector::new();
+        let plan = FetchPlan {
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            target_id: "us_market_vix_close".to_string(),
+            external_code: Some("VIXCLS".to_string()),
+            run_mode: RunMode::Backfill,
+            requested_start: None,
+            requested_end: None,
+            frequency: Frequency::Daily,
+        };
+        let payload = RawPayload {
+            raw_payload_id: Uuid::new_v4(),
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            request_url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS".to_string(),
+            response_hash: "hash".to_string(),
+            content_type: "text/csv".to_string(),
+            body: "bad_header,value\n2020-01-01,12.47\n".to_string(),
+            fetched_at: Utc::now(),
+        };
+        let result = connector.parse(&plan, &payload);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_rejects_csv_with_non_iso_date() {
+        let connector = FredGraphCsvConnector::new();
+        let plan = FetchPlan {
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            target_id: "us_market_vix_close".to_string(),
+            external_code: Some("VIXCLS".to_string()),
+            run_mode: RunMode::Backfill,
+            requested_start: None,
+            requested_end: None,
+            frequency: Frequency::Daily,
+        };
+        let payload = RawPayload {
+            raw_payload_id: Uuid::new_v4(),
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            request_url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS".to_string(),
+            response_hash: "hash".to_string(),
+            content_type: "text/csv".to_string(),
+            body: "observation_date,VIXCLS\n01/01/2020,12.47\n".to_string(),
+            fetched_at: Utc::now(),
+        };
+        let result = connector.parse(&plan, &payload);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_skips_empty_value_rows_with_warning() {
+        let connector = FredGraphCsvConnector::new();
+        let plan = FetchPlan {
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            target_id: "us_market_vix_close".to_string(),
+            external_code: Some("VIXCLS".to_string()),
+            run_mode: RunMode::Backfill,
+            requested_start: None,
+            requested_end: None,
+            frequency: Frequency::Daily,
+        };
+        let payload = RawPayload {
+            raw_payload_id: Uuid::new_v4(),
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            request_url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS".to_string(),
+            response_hash: "hash".to_string(),
+            content_type: "text/csv".to_string(),
+            body: "observation_date,VIXCLS\n2020-01-01,\n2020-01-02,12.50\n".to_string(),
+            fetched_at: Utc::now(),
+        };
+        let batch = connector.parse(&plan, &payload).unwrap();
+        assert_eq!(batch.observations.len(), 1);
+        assert_eq!(batch.warnings.len(), 1);
+    }
+
+    #[test]
+    fn parse_skips_dot_value_rows_as_missing() {
+        let connector = FredGraphCsvConnector::new();
+        let plan = FetchPlan {
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            target_id: "us_market_vix_close".to_string(),
+            external_code: Some("VIXCLS".to_string()),
+            run_mode: RunMode::Backfill,
+            requested_start: None,
+            requested_end: None,
+            frequency: Frequency::Daily,
+        };
+        let payload = RawPayload {
+            raw_payload_id: Uuid::new_v4(),
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            request_url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS".to_string(),
+            response_hash: "hash".to_string(),
+            content_type: "text/csv".to_string(),
+            body: "observation_date,VIXCLS\n2020-01-01,.\n2020-01-02,13.00\n".to_string(),
+            fetched_at: Utc::now(),
+        };
+        let batch = connector.parse(&plan, &payload).unwrap();
+        assert_eq!(batch.observations.len(), 1);
+        assert_eq!(batch.warnings.len(), 1);
+    }
+
+    #[test]
+    fn parse_returns_empty_batch_for_csv_with_header_only() {
+        let connector = FredGraphCsvConnector::new();
+        let plan = FetchPlan {
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            target_id: "us_market_vix_close".to_string(),
+            external_code: Some("VIXCLS".to_string()),
+            run_mode: RunMode::Backfill,
+            requested_start: None,
+            requested_end: None,
+            frequency: Frequency::Daily,
+        };
+        let payload = RawPayload {
+            raw_payload_id: Uuid::new_v4(),
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            request_url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS".to_string(),
+            response_hash: "hash".to_string(),
+            content_type: "text/csv".to_string(),
+            body: "observation_date,VIXCLS\n".to_string(),
+            fetched_at: Utc::now(),
+        };
+        let batch = connector.parse(&plan, &payload).unwrap();
+        assert!(batch.observations.is_empty());
+    }
+
+    #[test]
+    fn parse_rejects_csv_with_non_numeric_value() {
+        let connector = FredGraphCsvConnector::new();
+        let plan = FetchPlan {
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            target_id: "us_market_vix_close".to_string(),
+            external_code: Some("VIXCLS".to_string()),
+            run_mode: RunMode::Backfill,
+            requested_start: None,
+            requested_end: None,
+            frequency: Frequency::Daily,
+        };
+        let payload = RawPayload {
+            raw_payload_id: Uuid::new_v4(),
+            source_id: "fred".to_string(),
+            dataset_id: "fred_series_observations".to_string(),
+            request_url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS".to_string(),
+            response_hash: "hash".to_string(),
+            content_type: "text/csv".to_string(),
+            body: "observation_date,VIXCLS\n2020-01-01,not_a_number\n".to_string(),
+            fetched_at: Utc::now(),
+        };
+        let result = connector.parse(&plan, &payload);
+        assert!(result.is_err());
+    }
 }

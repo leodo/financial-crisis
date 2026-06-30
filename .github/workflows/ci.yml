@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        step: [fmt, clippy, test]
+        step: [fmt, clippy, test, deny]
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +38,13 @@ jobs:
       - name: Test
         if: matrix.step == 'test'
         run: cargo test --workspace
+
+      - name: Deny
+        if: matrix.step == 'deny'
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all
 
   web:
     name: Web (${{ matrix.step }})

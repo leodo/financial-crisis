@@ -86,3 +86,120 @@ impl Connector for MockConnector {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use chrono::NaiveDate;
+    use fc_domain::Frequency;
+    use uuid::Uuid;
+
+    use crate::{Connector, ConnectorError, FetchPlan, RunMode};
+
+    use super::MockConnector;
+
+    fn test_plan() -> FetchPlan {
+        FetchPlan {
+            source_id: "mock".to_string(),
+            dataset_id: "mock_data".to_string(),
+            target_id: "us_test".to_string(),
+            external_code: None,
+            run_mode: RunMode::Incremental,
+            requested_start: None,
+            requested_end: Some(NaiveDate::from_ymd_opt(2026, 5, 30).unwrap()),
+            frequency: Frequency::Daily,
+        }
+    }
+
+    #[tokio::test]
+    async fn mock_connector_fetch_returns_valid_payload() {
+        let connector = MockConnector;
+        let plan = test_plan();
+        let payload = connector.fetch(&plan).await.unwrap();
+        assert_eq!(payload.source_id, "mock");
+        assert!(payload.body.contains("value"));
+    }
+
+    #[tokio::test]
+    async fn mock_connector_parse_returns_valid_batch() {
+        let connector = MockConnector;
+        let plan = test_plan();
+        let payload = connector.fetch(&plan).await.unwrap();
+        let batch = connector.parse(&plan, &payload).unwrap();
+        assert_eq!(batch.observations.len(), 1);
+        assert_eq!(batch.observations[0].indicator_id, "us_test");
+    }
+
+    #[test]
+    fn mock_connector_parse_rejects_empty_json() {
+        let connector = MockConnector;
+        let payload = crate::RawPayload {
+            raw_payload_id: Uuid::new_v4(),
+            source_id: "mock".to_string(),
+            dataset_id: "test".to_string(),
+            request_url: "mock://local".to_string(),
+            response_hash: "empty".to_string(),
+            content_type: "application/json".to_string(),
+            body: "{}".to_string(),
+            fetched_at: chrono::Utc::now(),
+        };
+        let plan = test_plan();
+        let result = connector.parse(&plan, &payload);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ConnectorError::SchemaChanged(_) => {} // expected: missing as_of_date
+            other => panic!("expected SchemaChanged, got {other}"),
+        }
+    }
+
+    #[test]
+    fn mock_connector_parse_rejects_invalid_json() {
+        let connector = MockConnector;
+        let payload = crate::RawPayload {
+            raw_payload_id: Uuid::new_v4(),
+            source_id: "mock".to_string(),
+            dataset_id: "test".to_string(),
+            request_url: "mock://local".to_string(),
+            response_hash: "bad".to_string(),
+            content_type: "application/json".to_string(),
+            body: "{invalid json}".to_string(),
+            fetched_at: chrono::Utc::now(),
+        };
+        let plan = test_plan();
+        let result = connector.parse(&plan, &payload);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ConnectorError::Parse(_) => {} // expected: parse error
+            other => panic!("expected Parse, got {other}"),
+        }
+    }
+
+    #[test]
+    fn mock_connector_parse_rejects_missing_value() {
+        let connector = MockConnector;
+        let payload = crate::RawPayload {
+            raw_payload_id: Uuid::new_v4(),
+            source_id: "mock".to_string(),
+            dataset_id: "test".to_string(),
+            request_url: "mock://local".to_string(),
+            response_hash: "no-val".to_string(),
+            content_type: "application/json".to_string(),
+            body: r#"{"as_of_date": "2026-05-30"}"#.to_string(),
+            fetched_at: chrono::Utc::now(),
+        };
+        let plan = test_plan();
+        let result = connector.parse(&plan, &payload);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ConnectorError::SchemaChanged(_) => {} // expected: missing value
+            other => panic!("expected SchemaChanged, got {other}"),
+        }
+    }
+
+    #[test]
+    fn mock_connector_describe_returns_prototype() {
+        let connector = MockConnector;
+        let desc = connector.describe();
+        assert_eq!(desc.source_id, "mock");
+        assert!(!desc.production_allowed);
+    }
+}
