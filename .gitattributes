@@ -1,3 +1,36 @@
+# Auto-detect text vs binary; normalize to LF in the index
+* text=auto
+
+# Shell scripts must stay LF even on Windows
 *.sh text eol=lf
+
+# Systemd units must stay LF
 deploy/*.service text eol=lf
 deploy/*.timer text eol=lf
+
+# Rust
+*.rs text eol=lf
+
+# Frontend
+*.ts text eol=lf
+*.tsx text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+
+# PowerShell scripts — CRLF is conventional on Windows, but LF is fine in repo
+*.ps1 text eof=lf
+
+# Markdown / docs
+*.md text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binary — never touch
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
