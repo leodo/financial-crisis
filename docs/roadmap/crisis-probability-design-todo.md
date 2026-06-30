@@ -2,7 +2,7 @@
 
 状态：`Draft`
 
-最后更新：2026-06-11
+最后更新：2026-06-30
 
 ## 1. 目的
 
@@ -237,6 +237,47 @@ MVP 当前判定：
 补充判断：
 
 - 如果目标是继续完善当前可运行系统，上述顺序仍成立。
+
+## 7. 2026-06-30 interaction_tail_v2 训练结果
+
+本轮在 `feat/formal-interaction-tail-v2` 分支上进行了以下改动并完成训练：
+
+### 代码改动
+
+- **regime.rs**: 增强 5d/20d/60d 三组 pairwise margin/weight，新增 PostCrisisCooldown vs Normal 基线约束
+- **constraints.rs**: derived tail / interaction 符号约束限制为仅 20d，60d 释放（经验证可减轻 cooldown bleed）
+- 所有改动通过 `cargo clippy -- -D warnings`，487 测试通过
+
+### 训练候选
+
+`us_formal_interaction_tail_20260630T153426`（基于 dataset `formal_v1_main_1990_daily:20260609Trateshockoverride`）
+
+### Release Review 结果
+
+```
+guard_passed = false
+
+指标                    baseline         candidate
+timely_warning_rate     10.0%           0.0%
+actionable_precision    70.2%           0.0%
+longest_fp_episode_days 9               0
+```
+
+### 诊断
+
+1. **20d**: `usable_early_warning_separation`（PositiveWindow=3.13x vs Normal），base 分离度良好，但 calibration 阈值修复把 `final=0.990` 推到了不可达位置
+2. **60d**: `cold_across_all_regimes`，base 原始命中 `53/60` 良好但 calibration 后全丢失；cooldown 已降至 Normal 以下（cooldown bleed 修复成功）
+3. **5d**: `cold_across_all_regimes`，calibration 仅 3 条 early warning，不足以学习分离
+4. 所有 horizon 的阈值最终都被修复到了 `0.990`——核心瓶颈已从**特征 / 训练目标**转移到**calibration 与 threshold selection**
+
+### 结论与下阶段优先级
+
+当前瓶颈排序：
+1. **P1（新）**：calibration / threshold selection 修复 —— `final=0.990` 压死所有信号，需要降低 threshold repair 的 aggressiveness
+2. **P1（既有）**：60d positive_window 分离度 —— cooldown bleed 已修但 positive_window 丢失
+3. **P2（既有）**：5d 正样本稀疏 —— calibration 仅 3 条
+
+主要障碍不再是特征或 pairwise targets，而是**阈值选择策略本身**。在 threshold repair 修复前，训练新的 interaction_tail 候选不会改善结果。下一轮应优先审计 `select_probability_decision_threshold` 和 `adjust_probability_decision_threshold_for_regime_support` 两个函数。
 - 如果目标是做“最终可信的 formal probability model”，现在应优先进入：
   - `raw feature store`
   - `scenario catalog` 配置化
