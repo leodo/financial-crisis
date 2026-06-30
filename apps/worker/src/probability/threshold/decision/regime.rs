@@ -436,7 +436,7 @@ fn conservative_forward_crisis_threshold(
         }
     }
 
-    best_threshold.unwrap_or(0.99)
+    best_threshold.unwrap_or(base_threshold)
 }
 
 pub(crate) fn adjust_probability_decision_threshold_for_regime_support(

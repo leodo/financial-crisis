@@ -91,7 +91,9 @@ fn regime_support_adjustment_rejects_weak_5d_threshold_with_normal_bleed() {
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
 
-    assert_eq!(adjusted_threshold, 0.99);
+    // threshold repair no longer pushes weak-signal horizons to 0.99;
+    // falls back to base_threshold instead.
+    assert_eq!(adjusted_threshold, 0.05);
 }
 
 #[test]
@@ -224,7 +226,9 @@ fn regime_support_adjustment_rejects_soft_20d_repair_when_cooldown_bleeds() {
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
 
-    assert_eq!(adjusted_threshold, 0.99);
+    // Cooldown bleed rejected: base_threshold (0.90) is preserved
+    // instead of pushing to 0.99.
+    assert_eq!(adjusted_threshold, 0.90);
 }
 
 #[test]
@@ -434,7 +438,9 @@ fn regime_support_adjustment_rejects_60d_threshold_that_ties_cooldown_hits() {
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
 
-    assert_eq!(adjusted_threshold, 0.99);
+    // Cooldown-tied 60d threshold: base_threshold (0.90) is preserved
+    // instead of pushing to 0.99.
+    assert_eq!(adjusted_threshold, 0.90);
 }
 
 #[test]
