@@ -531,8 +531,16 @@ web-dev:
 web-build:
     cd apps/web; npm run build
 
-# 常用检查：格式检查、Rust 测试、前端构建。
-check-all: fmt-check test web-build
+# 运行前端测试。
+web-test:
+    cd apps/web; npm run test
+
+# 以 watch 模式运行前端测试。
+web-test-watch:
+    cd apps/web; npm run test:watch
+
+# 常用检查：格式检查、Rust 测试、前端测试、前端构建。
+check-all: fmt-check test web-test web-build
 
 # 完整本地门禁：版本化工件审计、Rust 格式检查、测试、clippy、前端构建。
 verify: verify-artifacts verify-hotspots fmt-check test lint web-build
