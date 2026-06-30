@@ -25,32 +25,64 @@ fn forward_crisis_expected_coefficient_sign(
         return Some(ExpectedCoefficientSign::Positive);
     }
 
-    // Tail features inherit the sign of the underlying risk semantics across
-    // forward-crisis horizons. Leaving 60d tails unconstrained let high credit
-    // spread / broad pressure tails become strong negative suppressors, which
-    // produced cold_across_all_regimes candidates.
-    // The 20d curve inversion tail is the one exception: once inversion is
-    // entrenched, forcing that tail nonnegative re-opens broad normal-window
-    // noise, so 20d handles it through the explicit coefficient bound below.
+    // 20d curve inversion: once inversion is entrenched, forcing that tail
+    // nonnegative re-opens broad normal-window noise. Handle it through the
+    // explicit coefficient bound below instead.
     if horizon_days == 20 && feature_name == "tail_neg__us_curve_10y2y_level__0" {
         return None;
     }
 
-    if let Some(base_feature_name) = derived_tail_base_feature_name(feature_name, "tail_pos__") {
-        if matches!(
-            forward_crisis_expected_base_coefficient_sign(base_feature_name),
-            Some(ExpectedCoefficientSign::Positive)
-        ) {
-            return Some(ExpectedCoefficientSign::Positive);
+    // Derived tail sign constraints: apply to 20d only.
+    //
+    // At 60d, forcing tail features (tail_pos__, tail_neg__, interaction__)
+    // to have nonnegative or nonpositive coefficients was a major cause of
+    // cooldown bleed: high credit spread / STLFSI tails kept 60d probabilities
+    // elevated during post-crisis normal periods, preventing the model from
+    // distinguishing cooldown from positive-window regimes.
+    //
+    // Keeping these constraints only on 20d was validated as effective:
+    // us_formal_family_hybrid_20260603T192249 (20d-only tails) vs extmix10
+    // improved 20d positive_window hit rate from 40% to 80% while keeping
+    // 60d false-positive hits at 0.
+    //
+    // Base feature sign constraints (overall_score, us_vix_level, etc.)
+    // still apply at both 20d and 60d below.
+    if horizon_days < 60 {
+        // Derived tail and interaction feature sign constraints: 20d only.
+        if let Some(base_feature_name) = derived_tail_base_feature_name(feature_name, "tail_pos__")
+        {
+            if matches!(
+                forward_crisis_expected_base_coefficient_sign(base_feature_name),
+                Some(ExpectedCoefficientSign::Positive)
+            ) {
+                return Some(ExpectedCoefficientSign::Positive);
+            }
         }
-    }
 
-    if let Some(base_feature_name) = derived_tail_base_feature_name(feature_name, "tail_neg__") {
-        if matches!(
-            forward_crisis_expected_base_coefficient_sign(base_feature_name),
-            Some(ExpectedCoefficientSign::Negative)
-        ) {
-            return Some(ExpectedCoefficientSign::Positive);
+        if let Some(base_feature_name) = derived_tail_base_feature_name(feature_name, "tail_neg__")
+        {
+            if matches!(
+                forward_crisis_expected_base_coefficient_sign(base_feature_name),
+                Some(ExpectedCoefficientSign::Negative)
+            ) {
+                return Some(ExpectedCoefficientSign::Positive);
+            }
+        }
+
+        // Interaction features (interaction__*) semantically combine two base features.
+        // At 20d they help capture nonlinear regime separation; at 60d they exaggerated
+        // cooldown bleed by binding broad pressure scores together when separation is
+        // already weaker. Keep them positively constrained only at 20d.
+        match feature_name {
+            "interaction__overall_score__us_vix_level"
+            | "interaction__structural_score__trigger_score"
+            | "interaction__trigger_score__us_vix_level"
+            | "interaction__external_dimension_score__us_usdjpy_level"
+            | "interaction__us_nfci_level__us_stlfsi_level"
+            | "interaction__us_baa_10y_spread_level__us_vix_level" => {
+                return Some(ExpectedCoefficientSign::Positive);
+            }
+            _ => {}
         }
     }
 
@@ -65,12 +97,6 @@ fn forward_crisis_expected_base_coefficient_sign(
         | "structural_score"
         | "trigger_score"
         | "external_dimension_score"
-        | "interaction__overall_score__us_vix_level"
-        | "interaction__structural_score__trigger_score"
-        | "interaction__trigger_score__us_vix_level"
-        | "interaction__external_dimension_score__us_usdjpy_level"
-        | "interaction__us_nfci_level__us_stlfsi_level"
-        | "interaction__us_baa_10y_spread_level__us_vix_level"
         | "us_vix_level"
         | "us_vix_change_5d"
         | "us_baa_10y_spread_level"

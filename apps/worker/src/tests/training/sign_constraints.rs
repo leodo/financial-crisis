@@ -60,6 +60,29 @@ fn forward_crisis_sign_projection_clips_wrong_direction_monotonic_interactions()
     ];
     let mut weights = vec![-0.2, -0.6, -0.4];
 
+    // Interaction sign constraints apply at 20d (not 60d, to avoid cooldown bleed).
+    crate::project_forward_crisis_sign_constraints(
+        &mut weights,
+        &feature_names,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert_eq!(weights[0], 0.0);
+    assert_eq!(weights[1], 0.0);
+    assert_eq!(weights[2], 0.0);
+}
+
+#[test]
+fn forward_crisis_sign_projection_does_not_clip_interactions_at_60d() {
+    let feature_names = vec![
+        "interaction__overall_score__us_vix_level".to_string(),
+        "interaction__us_baa_10y_spread_level__us_vix_level".to_string(),
+        "interaction__external_dimension_score__us_usdjpy_level".to_string(),
+    ];
+    let mut weights = vec![-0.2, -0.6, -0.4];
+
+    // 60d interaction constraints are intentionally removed (cooldown bleed fix).
     crate::project_forward_crisis_sign_constraints(
         &mut weights,
         &feature_names,
@@ -67,9 +90,10 @@ fn forward_crisis_sign_projection_clips_wrong_direction_monotonic_interactions()
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
 
-    assert_eq!(weights[0], 0.0);
-    assert_eq!(weights[1], 0.0);
-    assert_eq!(weights[2], 0.0);
+    // No clipping at 60d — weights remain negative.
+    assert!(weights[0] < 0.0);
+    assert!(weights[1] < 0.0);
+    assert!(weights[2] < 0.0);
 }
 
 #[test]
@@ -97,9 +121,11 @@ fn forward_crisis_tail_sign_projection_applies_on_forward_horizons() {
         60,
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
-    assert_eq!(weights_60d[0], 0.0);
-    assert_eq!(weights_60d[1], 0.0);
-    assert_eq!(weights_60d[2], 0.0);
+    // At 60d, tail sign constraints are intentionally removed to avoid
+    // cooldown bleed. All three tail weights remain unchanged at 60d.
+    assert_eq!(weights_60d[0], -0.4);
+    assert_eq!(weights_60d[1], -0.1);
+    assert_eq!(weights_60d[2], -0.2);
 }
 
 #[test]

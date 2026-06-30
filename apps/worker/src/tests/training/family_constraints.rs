@@ -642,7 +642,7 @@ fn forward_crisis_raw_vix_60d_family_cap_gradient_only_activates_for_family_cont
 }
 
 #[test]
-fn forward_crisis_monotonic_interaction_sign_gradient_pushes_wrong_direction_up() {
+fn forward_crisis_monotonic_interaction_sign_gradient_pushes_wrong_direction_up_at_20d() {
     let feature_names = vec![
         "interaction__overall_score__us_vix_level".to_string(),
         "interaction__us_baa_10y_spread_level__us_vix_level".to_string(),
@@ -650,6 +650,30 @@ fn forward_crisis_monotonic_interaction_sign_gradient_pushes_wrong_direction_up(
     let weights = vec![-0.20, -0.60];
     let mut gradients = vec![0.0; weights.len()];
 
+    // Interaction sign constraints apply at 20d.
+    crate::apply_forward_crisis_sign_gradient(
+        &mut gradients,
+        &weights,
+        &feature_names,
+        100.0,
+        20,
+        ProbabilityTargetLabelMode::ForwardCrisis,
+    );
+
+    assert!(gradients[0] < 0.0);
+    assert!(gradients[1] < 0.0);
+}
+
+#[test]
+fn forward_crisis_monotonic_interaction_sign_gradient_does_not_apply_at_60d() {
+    let feature_names = vec![
+        "interaction__overall_score__us_vix_level".to_string(),
+        "interaction__us_baa_10y_spread_level__us_vix_level".to_string(),
+    ];
+    let weights = vec![-0.20, -0.60];
+    let mut gradients = vec![0.0; weights.len()];
+
+    // Interaction sign constraints intentionally removed at 60d (cooldown bleed fix).
     crate::apply_forward_crisis_sign_gradient(
         &mut gradients,
         &weights,
@@ -659,8 +683,8 @@ fn forward_crisis_monotonic_interaction_sign_gradient_pushes_wrong_direction_up(
         ProbabilityTargetLabelMode::ForwardCrisis,
     );
 
-    assert!(gradients[0] < 0.0);
-    assert!(gradients[1] < 0.0);
+    assert_eq!(gradients[0], 0.0);
+    assert_eq!(gradients[1], 0.0);
 }
 
 #[test]
