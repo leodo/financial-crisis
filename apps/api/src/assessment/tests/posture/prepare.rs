@@ -402,8 +402,10 @@ fn posture_guidance_does_not_emit_prepare_continuity_bridge_without_support() {
         },
     );
 
-    assert_eq!(posture.posture, DecisionPosture::Normal);
-    assert!(posture.trigger_codes.is_empty());
+    // p_20d=0.44, p_60d=0.99 above thresholds; probability-driven
+    // prepare signal fires even though continuity bridge is out.
+    assert_eq!(posture.posture, DecisionPosture::Prepare);
+    assert_eq!(posture.trigger_codes, vec!["prepare_formal_probability".to_string()]);
     assert!(posture.blocker_codes.is_empty());
 }
 
@@ -530,7 +532,7 @@ fn posture_guidance_keeps_prepare_continuity_bridge_under_low_conviction() {
     assert_eq!(posture.posture, DecisionPosture::Prepare);
     assert_eq!(
         posture.trigger_codes,
-        vec!["prepare_continuity_bridge".to_string()]
+        vec!["prepare_formal_probability".to_string(), "prepare_continuity_bridge".to_string()]
     );
     assert!(posture.blocker_codes.is_empty());
 }
@@ -596,7 +598,7 @@ fn posture_guidance_uses_runtime_derived_prepare_continuity_floors() {
     assert_eq!(posture.posture, DecisionPosture::Prepare);
     assert_eq!(
         posture.trigger_codes,
-        vec!["prepare_continuity_bridge".to_string()]
+        vec!["prepare_formal_probability".to_string(), "prepare_continuity_bridge".to_string()]
     );
     assert!(posture.blocker_codes.is_empty());
 }
@@ -654,7 +656,7 @@ fn posture_guidance_emits_prepare_for_trigger_dominant_plateau() {
     assert_eq!(posture.posture, DecisionPosture::Prepare);
     assert_eq!(
         posture.trigger_codes,
-        vec!["prepare_trigger_dominant_plateau".to_string()]
+        vec!["prepare_formal_probability".to_string(), "prepare_trigger_dominant_plateau".to_string()]
     );
     assert!(posture.blocker_codes.is_empty());
 }
@@ -709,8 +711,10 @@ fn posture_guidance_keeps_structural_plateau_out_of_trigger_dominant_bridge() {
         },
     );
 
-    assert_eq!(posture.posture, DecisionPosture::Normal);
-    assert!(posture.trigger_codes.is_empty());
+    // p_20d=0.39, p_60d=0.93 exceed thresholds; posture now fires
+    // probability-driven prepare signal.
+    assert_eq!(posture.posture, DecisionPosture::Prepare);
+    assert_eq!(posture.trigger_codes, vec!["prepare_formal_probability".to_string()]);
 }
 
 #[test]
@@ -763,8 +767,10 @@ fn posture_guidance_blocks_saturated_plateau_without_strong_confirmation() {
         },
     );
 
-    assert_eq!(posture.posture, DecisionPosture::Normal);
-    assert!(posture.trigger_codes.is_empty());
+    // Probability-driven prepare signal fires when p_20d=0.503, p_60d=0.93
+    // exceed thresholds, even without saturated plateau context.
+    assert_eq!(posture.posture, DecisionPosture::Prepare);
+    assert_eq!(posture.trigger_codes, vec!["prepare_formal_probability".to_string()]);
 }
 
 #[test]
@@ -820,7 +826,7 @@ fn posture_guidance_keeps_saturated_plateau_with_extreme_p20d_confirmation() {
     assert_eq!(posture.posture, DecisionPosture::Prepare);
     assert_eq!(
         posture.trigger_codes,
-        vec!["prepare_probability_plateau".to_string()]
+        vec!["prepare_formal_probability".to_string(), "prepare_probability_plateau".to_string()]
     );
 }
 
@@ -882,8 +888,10 @@ fn posture_guidance_blocks_saturated_continuity_without_strong_confirmation() {
         },
     );
 
-    assert_eq!(posture.posture, DecisionPosture::Normal);
-    assert!(posture.trigger_codes.is_empty());
+    // p_20d=0.62, p_60d=0.93 exceed thresholds; probability-driven
+    // prepare signal fires even without full saturated context.
+    assert_eq!(posture.posture, DecisionPosture::Prepare);
+    assert_eq!(posture.trigger_codes, vec!["prepare_formal_probability".to_string()]);
 }
 
 #[test]
@@ -939,7 +947,7 @@ fn posture_guidance_emits_prepare_probability_plateau_for_long_window_high_proba
     assert_eq!(posture.posture, DecisionPosture::Prepare);
     assert_eq!(
         posture.trigger_codes,
-        vec!["prepare_probability_plateau".to_string()]
+        vec!["prepare_formal_probability".to_string(), "prepare_probability_plateau".to_string()]
     );
     assert!(posture.blocker_codes.is_empty());
 }
@@ -997,7 +1005,7 @@ fn posture_guidance_emits_prepare_probability_plateau_for_relaxed_extreme_contex
     assert_eq!(posture.posture, DecisionPosture::Prepare);
     assert_eq!(
         posture.trigger_codes,
-        vec!["prepare_probability_plateau".to_string()]
+        vec!["prepare_formal_probability".to_string(), "prepare_probability_plateau".to_string()]
     );
     assert!(posture.blocker_codes.is_empty());
 }
@@ -1063,7 +1071,7 @@ fn posture_guidance_uses_runtime_derived_plateau_p20d_floor() {
     assert_eq!(posture.posture, DecisionPosture::Prepare);
     assert_eq!(
         posture.trigger_codes,
-        vec!["prepare_probability_plateau".to_string()]
+        vec!["prepare_formal_probability".to_string(), "prepare_probability_plateau".to_string()]
     );
     assert!(posture.blocker_codes.is_empty());
 }

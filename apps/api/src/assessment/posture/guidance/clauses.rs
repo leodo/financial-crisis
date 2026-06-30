@@ -477,6 +477,24 @@ pub(super) fn build_posture_clause_diagnostics(
             prepare_trigger_codes.push("prepare_actionability");
         }
     }
+
+    // Probability-driven prepare signal: when the formal model's output
+    // consistently exceeds its own decision thresholds, treat it as a
+    // prepare-level warning even if structural/trigger context is moderate.
+    // This fixes posture continuity for scenarios where the model detects
+    // elevated near-term risk but traditional score-based context hasn't
+    // fully built up yet (e.g. 2022 rate shock scenario).
+    if !severe_quality_block
+        && conviction_score >= 0.50
+        && probabilities.p_20d >= thresholds.hedge_p20d
+        && prepare_p60d >= thresholds.prepare_p60d
+        && (snapshot.structural_score >= 48.0
+            || snapshot.trigger_score >= 40.0
+            || external_shock_score >= 40.0
+            || breadth_score >= 28.0)
+    {
+        prepare_trigger_codes.push("prepare_formal_probability");
+    }
     if prepare_continuity_bridge {
         prepare_trigger_codes.push("prepare_continuity_bridge");
     }

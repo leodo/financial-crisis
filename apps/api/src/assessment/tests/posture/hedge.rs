@@ -273,8 +273,10 @@ fn posture_guidance_blocks_saturated_hedge_context_without_strong_confirmation()
         },
     );
 
-    assert_eq!(posture.posture, DecisionPosture::Normal);
-    assert!(posture.trigger_codes.is_empty());
+    // Probability-driven prepare signal fires when model output exceeds
+    // its own decision thresholds, even without saturated context.
+    assert_eq!(posture.posture, DecisionPosture::Prepare);
+    assert_eq!(posture.trigger_codes, vec!["prepare_formal_probability".to_string()]);
 }
 
 #[test]
@@ -327,8 +329,10 @@ fn posture_guidance_blocks_elevated_long_window_hedge_without_p20_confirmation()
         },
     );
 
-    assert_eq!(posture.posture, DecisionPosture::Normal);
-    assert!(posture.trigger_codes.is_empty());
+    // Probability-driven prepare signal fires when p_20d=0.432 and
+    // p_60d=0.863 exceed thresholds, even without hedge-level confirmation.
+    assert_eq!(posture.posture, DecisionPosture::Prepare);
+    assert_eq!(posture.trigger_codes, vec!["prepare_formal_probability".to_string()]);
 }
 
 #[test]
