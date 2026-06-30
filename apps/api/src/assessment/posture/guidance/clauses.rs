@@ -213,8 +213,7 @@ pub(super) fn prepare_trigger_dominant_plateau_signal(
         && overall_score >= PREPARE_TRIGGER_DOMINANT_PLATEAU_OVERALL_FLOOR
         && structural_score <= PREPARE_TRIGGER_DOMINANT_PLATEAU_STRUCTURAL_CEILING
         && trigger_score >= PREPARE_TRIGGER_DOMINANT_PLATEAU_TRIGGER_FLOOR
-        && external_shock_score >= PREPARE_TRIGGER_DOMINANT_PLATEAU_EXTERNAL_FLOOR
-        && external_shock_score <= PREPARE_TRIGGER_DOMINANT_PLATEAU_EXTERNAL_CEILING
+        && (PREPARE_TRIGGER_DOMINANT_PLATEAU_EXTERNAL_FLOOR..=PREPARE_TRIGGER_DOMINANT_PLATEAU_EXTERNAL_CEILING).contains(&external_shock_score)
 }
 
 fn low_runtime_thresholds(thresholds: ProbabilityActionThresholds) -> bool {
