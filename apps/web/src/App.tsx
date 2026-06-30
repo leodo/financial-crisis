@@ -311,7 +311,13 @@ export default function App() {
     error: queryStateByKey[key].isError
   }));
   const readyCount = loadProgress.filter((item) => item.ready).length;
-  const pendingLabels = loadProgress.filter((item) => !item.ready).map((item) => item.label);
+  const pendingLabels = loadProgress
+    .filter((item) => !item.ready && item.pending && !item.error)
+    .map((item) => item.label);
+  const timedOutLikeLabels = loadProgress
+    .filter((item) => !item.ready && !item.pending && !item.error)
+    .map((item) => item.label);
+  const blockedLoadingLabels = [...pendingLabels, ...timedOutLikeLabels];
   const errorText = formatErrorText(viewError);
   const assessmentErrorText = formatErrorText(queries.assessment.error);
   const healthErrorText = formatErrorText(queries.systemHealth.error);
@@ -618,13 +624,23 @@ export default function App() {
                   }
                 >
                   <span>{item.label}</span>
-                  <strong>{item.ready ? "已就绪" : item.error ? "失败" : "加载中"}</strong>
+                  <strong>
+                    {item.ready
+                      ? "已就绪"
+                      : item.error
+                        ? "失败"
+                        : item.pending
+                          ? "加载中"
+                          : "等待返回"}
+                  </strong>
                 </div>
               ))}
             </div>
             <small className="loading-state-footer">
-              {pendingLabels.length > 0
-                ? `仍在等待：${pendingLabels.join("、")}。若超过 10 秒仍未进入完整面板，先执行 just status，再点右上角刷新。`
+              {blockedLoadingLabels.length > 0
+                ? `仍在等待：${blockedLoadingLabels.join(
+                    "、"
+                  )}。若超过 15 秒仍未进入完整面板，通常是本地 API 未返回或旧进程卡住；先执行 just status，必要时执行 just stop 后再执行 just dev-sqlite。`
                 : "页面已经拿到全部模块，正在进入完整视图。"}
             </small>
           </section>
@@ -658,13 +674,23 @@ export default function App() {
                   }
                 >
                   <span>{item.label}</span>
-                  <strong>{item.ready ? "已就绪" : item.error ? "失败" : "加载中"}</strong>
+                  <strong>
+                    {item.ready
+                      ? "已就绪"
+                      : item.error
+                        ? "失败"
+                        : item.pending
+                          ? "加载中"
+                          : "等待返回"}
+                  </strong>
                 </div>
               ))}
             </div>
             <small className="loading-state-footer">
-              {pendingLabels.length > 0
-                ? `仍在等待：${pendingLabels.join("、")}。如果超过 10 秒仍未进入完整页面，先执行 just status，再点右上角刷新。`
+              {blockedLoadingLabels.length > 0
+                ? `仍在等待：${blockedLoadingLabels.join(
+                    "、"
+                  )}。如果超过 15 秒仍未进入完整页面，通常是本地 API 未返回或旧进程卡住；先执行 just status，必要时执行 just stop 后再执行 just dev-sqlite。`
                 : "页面已经启动，正在拼装当前视图。"}
             </small>
           </section>

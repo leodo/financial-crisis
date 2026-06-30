@@ -6,6 +6,7 @@ const liveQueryOptions = {
   refetchIntervalInBackground: true,
   refetchOnMount: "always" as const,
   refetchOnWindowFocus: true,
+  retry: false,
   staleTime: 10_000
 };
 

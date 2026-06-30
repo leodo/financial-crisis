@@ -511,9 +511,13 @@ function NumberAuditRows({ rows }: { rows: DecisionNumberAuditRow[] }) {
             </div>
             <details className="number-audit-note">
               <summary>口径与限制</summary>
-              <span className="number-audit-note-copy">
-                <HighlightedAuditText text={item.note} />
-              </span>
+              <div className="number-audit-note-copy">
+                {splitAuditNote(item.note).map((segment, index) => (
+                  <span className="number-audit-note-line" key={`${item.id}-note-${index}`}>
+                    <HighlightedAuditText text={segment} />
+                  </span>
+                ))}
+              </div>
             </details>
           </div>
           <span className="number-audit-meta">
@@ -574,6 +578,15 @@ function splitAuditDetail(detail: string): string[] {
     .map((segment) => segment.trim())
     .filter(Boolean);
   return segments.length > 0 ? segments : [detail];
+}
+
+function splitAuditNote(note: string): string[] {
+  const normalized = note.replace(/\s+/g, " ").trim();
+  const segments = normalized
+    .split(/(?<=。)\s*|(?<=；)\s*/)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+  return segments.length > 0 ? segments : [normalized];
 }
 
 function auditSegmentClassName(segment: string): string {

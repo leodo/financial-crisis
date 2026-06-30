@@ -488,13 +488,25 @@
 }
 
 .number-audit-note-copy {
-  display: block;
+  display: grid;
+  gap: 5px;
   margin-top: 6px;
   overflow-wrap: anywhere;
 }
 
+.number-audit-note-line {
+  display: block;
+  padding: 6px 8px;
+  border-left: 2px solid var(--number-audit-border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #4f5d67;
+}
+
 .number-audit-note .number-audit-value {
   display: inline;
+  padding: 1px 4px;
+  font-size: 12px;
 }
 
 .number-audit-tone-primary {
