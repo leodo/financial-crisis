@@ -165,8 +165,8 @@ pub(crate) fn forward_crisis_regime_pairwise_targets(
             (
                 ProbabilityTrainingRegime::PostCrisisCooldown,
                 ProbabilityTrainingRegime::Normal,
+                0.30,
                 0.60,
-                1.20,
             ),
         ],
         60 => vec![
@@ -259,7 +259,7 @@ fn regime_pairwise_strength(horizon_days: u32, uses_interaction_tail: bool) -> f
     match (horizon_days, uses_interaction_tail) {
         (5, true) => 0.90,
         (20, true) => 1.05,
-        (60, true) => 1.75,
+        (60, true) => 1.25,
         (20, false) => 0.80,
         (60, false) => 1.35,
         _ => 0.0,
